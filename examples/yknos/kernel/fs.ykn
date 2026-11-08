@@ -1,53 +1,84 @@
 # ============================================================
-# YknOS Bellek Ici Sanal Dosya Sistemi (In-Memory RamFS)
-# Dosya Olusturma, Okuma, Yazma ve Listeleme Islemleri
+# YknOS Gelismis Sanal Dosya Sistemi (Linux-Compatible VFS)
+# Hiyerarsik Dizinler, /proc Dinamik Dosyalari, mkdir, rm, touch
 # ============================================================
 
 ice_aktar "utils.ykn";
 ice_aktar "serial.ykn";
 
 yapi RamDosyasi {
-    isim:         [32]u8;
-    icerik:       [512]u8;
+    isim:         [48]u8;
+    icerik:       [1024]u8;
     boyut:        tamsayi;
+    dizin_mi:     tamsayi; # 1: Dizin, 0: Normal Dosya
     salt_okunur:  tamsayi;
+    aktif:        tamsayi; # 1: Kullaniliyor, 0: Silinmis
 }
 
-degisken g_fs_dosyalar: [16]RamDosyasi;
+degisken g_fs_dosyalar: [32]RamDosyasi;
 degisken g_fs_dosya_sayisi: tamsayi = 0;
+degisken g_fs_su_anki_dizin: [48]u8;
+degisken g_fs_proc_tampon: [1024]u8;
+degisken g_fs_uptime_saniye: tamsayi = 18;
 
 isv fs_baslat() {
     g_fs_dosya_sayisi = 0;
+    ykn_metin_kopyala(g_fs_su_anki_dizin, "/".ptr);
 
-    # 1. /sistem.cfg (Cekirdek yapilandirma dosyasi)
-    fs_dosya_yaz("/sistem.cfg".ptr, "cekirdek=YknOS\nsurum=0.1.0-alpha\nmimari=x86_64\nbellek_mb=64\nhttp_port=8080\nsql_tablo_sayisi=2\n".ptr, 1);
+    # 1. Standart Linux Dizin Agaci (Root & Subdirectories)
+    fs_dizin_olustur_dahili("/".ptr);
+    fs_dizin_olustur_dahili("/bin".ptr);
+    fs_dizin_olustur_dahili("/etc".ptr);
+    fs_dizin_olustur_dahili("/proc".ptr);
+    fs_dizin_olustur_dahili("/dev".ptr);
+    fs_dizin_olustur_dahili("/home".ptr);
+    fs_dizin_olustur_dahili("/home/root".ptr);
+    fs_dizin_olustur_dahili("/var".ptr);
+    fs_dizin_olustur_dahili("/var/log".ptr);
 
-    # 2. /index.html (Gomulu Web Sunucusu Ana Sayfasi)
-    fs_dosya_yaz("/index.html".ptr, "<!DOCTYPE html><html><head><title>YknOS Dashboard</title><style>body{font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:2rem;}h1{color:#38bdf8;}pre{background:#1e293b;padding:1rem;border-radius:8px;}</style></head><body><h1>YknOS Cekirdek Paneli</h1><p>Yukinary ile gelistirilen gomulu mikro-isletim sistemi.</p><pre>Durum: ONLINE | Port: 8080 | SQL: Aktif</pre></body></html>\n".ptr, 1);
+    # 2. Linux Sistem Dosyalari
+    fs_dosya_yaz_dahili("/etc/os-release".ptr, "NAME=\"YknOS Linux Subsystem\"\nVERSION=\"6.1.0-ykn\"\nID=yknos\nPRETTY_NAME=\"YknOS GNU/Linux 6.1 (Yukinary Engine)\"\nHOME_URL=\"https://github.com/ykncode/yukinary\"\n".ptr, 1);
+    fs_dosya_yaz_dahili("/etc/hostname".ptr, "yknos-box\n".ptr, 0);
+    fs_dosya_yaz_dahili("/etc/passwd".ptr, "root:x:0:0:root:/home/root:/bin/yknsh\nykn:x:1000:1000:Yukinary User:/home/ykn:/bin/yknsh\n".ptr, 1);
+    fs_dosya_yaz_dahili("/etc/hosts".ptr, "127.0.0.1 localhost\n127.0.1.1 yknos-box\n".ptr, 0);
+    fs_dosya_yaz_dahili("/etc/motd".ptr, "Welcome to YknOS Linux 6.1.0-ykn (x86_64 SMP)!\n * Dokumantasyon: https://github.com/ykncode/yukinary\n * Masaustu icin: 'gui' veya 'masaustu'\n".ptr, 0);
 
-    # 3. /veritabani.sql (SQL Sema ve Tohum Verisi)
-    fs_dosya_yaz("/veritabani.sql".ptr, "CREATE TABLE sistem_metrikleri (id INT, servis TEXT, cpu INT, mem INT);\nINSERT INTO sistem_metrikleri VALUES (1, 'KERNEL', 3, 128);\nINSERT INTO sistem_metrikleri VALUES (2, 'HTTP_NET', 14, 512);\n".ptr, 0);
+    # 3. /var/log Dosyalari
+    fs_dosya_yaz_dahili("/var/log/dmesg.log".ptr, "[    0.000000] Linux version 6.1.0-yknos (ykn@builder) #1 SMP PREEMPT\n[    0.001000] Command line: BOOT_IMAGE=/boot/vmlinuz-ykn root=/dev/ram0 ro\n[    0.002000] x86/fpu: Supporting XSAVE feature 0x002\n[    0.003000] Memory: 65536K/65536K available (2048K kernel code)\n[    0.004000] PCI: Probing PCI hardware (bus 00)\n[    0.005000] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled\n[    0.006000] serial8250: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200)\n[    0.007000] RamFS: Virtual ramdisk driver initialized (32 inodes)\n[    0.008000] Net: Listening on 0.0.0.0:8080 (REST microservice)\n[    0.009000] SQL: Relational in-memory engine ready\n".ptr, 0);
 
-    # 4. /gunluk.txt (Cekirdek Olay Gunlugu)
-    fs_dosya_yaz("/gunluk.txt".ptr, "[BOOT] YknOS Cekirdek RamFS dosya sistemi basariyla yuklendi.\n[INFO] 4 varsayilan dosya mount edildi.\n".ptr, 0);
+    # 4. /home/root Kullanici Dosyalari
+    fs_dosya_yaz_dahili("/home/root/notlar.txt".ptr, "YknOS Gorev Plani:\n1. SQL veritabanini denetle\n2. Port 8080 HTTP sunucusunu test et\n3. /proc sanal dosya sistemini oku\n".ptr, 0);
 
-    seri_gunluk_yaz("RAMFS".ptr, "RamFS sanal dosya sistemi baslatildi (4 dosya yuklendi)".ptr);
+    # 5. Kok Dizin Servis Dosyalari
+    fs_dosya_yaz_dahili("/sistem.cfg".ptr, "cekirdek=YknOS\nsurum=0.1.0-alpha\nmimari=x86_64\nbellek_mb=64\nhttp_port=8080\nsql_tablo_sayisi=2\n".ptr, 1);
+    fs_dosya_yaz_dahili("/index.html".ptr, "<!DOCTYPE html><html><head><title>YknOS Linux Dashboard</title><style>body{font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:2rem;}h1{color:#38bdf8;}pre{background:#1e293b;padding:1rem;border-radius:8px;}</style></head><body><h1>YknOS Cekirdek Paneli</h1><p>Yukinary ile gelistirilen gomulu mikro-isletim sistemi.</p><pre>Durum: ONLINE | Port: 8080 | SQL: Aktif</pre></body></html>\n".ptr, 1);
+    fs_dosya_yaz_dahili("/veritabani.sql".ptr, "CREATE TABLE sistem_metrikleri (id INT, servis TEXT, cpu INT, mem INT);\nINSERT INTO sistem_metrikleri VALUES (1, 'KERNEL', 3, 128);\nINSERT INTO sistem_metrikleri VALUES (2, 'HTTP_NET', 14, 512);\n".ptr, 0);
+    fs_dosya_yaz_dahili("/gunluk.txt".ptr, "[BOOT] YknOS Cekirdek RamFS VFS dosya sistemi basariyla yuklendi.\n[INFO] Linux standart hiyerarsisi mount edildi.\n".ptr, 0);
+
+    seri_gunluk_yaz("VFS".ptr, "Linux-uyumlu VFS baslatildi (/bin, /etc, /proc, /dev, /home, /var)".ptr);
 }
 
-isv fs_dosya_yaz(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
-    # Once dosya mevcut mu kontrol et
+isv fs_dizin_olustur_dahili(yol: *u8) {
+    eger g_fs_dosya_sayisi >= 32 ise { dondu; }
+    degisken idx: tamsayi = g_fs_dosya_sayisi;
+    ykn_metin_kopyala(g_fs_dosyalar[idx].isim, yol);
+    g_fs_dosyalar[idx].dizin_mi = 1;
+    g_fs_dosyalar[idx].boyut = 4096;
+    g_fs_dosyalar[idx].salt_okunur = 0;
+    g_fs_dosyalar[idx].aktif = 1;
+    g_fs_dosyalar[idx].icerik[0] = 0;
+    g_fs_dosya_sayisi = g_fs_dosya_sayisi + 1;
+}
+
+isv fs_dosya_yaz_dahili(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
     degisken i: tamsayi = 0;
     dongu i < g_fs_dosya_sayisi {
-        eger ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
+        eger g_fs_dosyalar[i].aktif == 1 ve ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
             eger g_fs_dosyalar[i].salt_okunur == 1 ise {
-                ekrana_yaz("HATA: Dosya salt okunur: ".ptr);
-                ekrana_yaz(yol);
-                ekrana_yaz("\n".ptr);
                 dondu 0 - 1;
             }
-            # Uzerine yaz
             degisken j: tamsayi = 0;
-            dongu metin[j] != 0 ve j < 510 {
+            dongu metin[j] != 0 ve j < 1020 {
                 g_fs_dosyalar[i].icerik[j] = metin[j];
                 j = j + 1;
             }
@@ -58,18 +89,18 @@ isv fs_dosya_yaz(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
         i = i + 1;
     }
 
-    # Yeni dosya olustur
-    eger g_fs_dosya_sayisi >= 16 ise {
-        ekrana_yaz("HATA: RamFS dosya kapasitesi dolu!\n".ptr);
+    eger g_fs_dosya_sayisi >= 32 ise {
         dondu 0 - 1;
     }
 
     degisken idx: tamsayi = g_fs_dosya_sayisi;
     ykn_metin_kopyala(g_fs_dosyalar[idx].isim, yol);
+    g_fs_dosyalar[idx].dizin_mi = 0;
     g_fs_dosyalar[idx].salt_okunur = salt_okunur;
+    g_fs_dosyalar[idx].aktif = 1;
 
     degisken k: tamsayi = 0;
-    dongu metin[k] != 0 ve k < 510 {
+    dongu metin[k] != 0 ve k < 1020 {
         g_fs_dosyalar[idx].icerik[k] = metin[k];
         k = k + 1;
     }
@@ -80,49 +111,225 @@ isv fs_dosya_yaz(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
     dondu 0;
 }
 
+# Kullanici tarafindan dosya olusturma / yazma (echo "..." > yol)
+isv fs_dosya_yaz(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
+    degisken res: tamsayi = fs_dosya_yaz_dahili(yol, metin, salt_okunur);
+    eger res < 0 ise {
+        ekrana_yaz("fs_yaz hatasi: Dosya yazilamadi veya salt okunur: ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+    }
+    dondu res;
+}
+
+# Dosyanin sonuna ekleme (echo "..." >> yol)
+isv fs_dosya_ekle(yol: *u8, metin: *u8) -> tamsayi {
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx < 0 ise {
+        # Yoksa yeni olustur
+        dondu fs_dosya_yaz_dahili(yol, metin, 0);
+    }
+    eger g_fs_dosyalar[idx].salt_okunur == 1 ise {
+        ekrana_yaz("fs_ekle hatasi: Dosya salt okunur!\n".ptr);
+        dondu 0 - 1;
+    }
+
+    degisken cur_len: tamsayi = g_fs_dosyalar[idx].boyut;
+    degisken k: tamsayi = 0;
+    dongu metin[k] != 0 ve (cur_len + k) < 1020 {
+        g_fs_dosyalar[idx].icerik[cur_len + k] = metin[k];
+        k = k + 1;
+    }
+    g_fs_dosyalar[idx].icerik[cur_len + k] = 0;
+    g_fs_dosyalar[idx].boyut = cur_len + k;
+    dondu 0;
+}
+
+isv fs_touch(yol: *u8) -> tamsayi {
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx >= 0 ise {
+        dondu 0; # Zaten var
+    }
+    dondu fs_dosya_yaz_dahili(yol, "".ptr, 0);
+}
+
+isv fs_mkdir(yol: *u8) -> tamsayi {
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx >= 0 ise {
+        ekrana_yaz("mkdir hatasi: Dizin veya dosya zaten mevcut: ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0 - 1;
+    }
+    fs_dizin_olustur_dahili(yol);
+    dondu 0;
+}
+
+isv fs_rm(yol: *u8) -> tamsayi {
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx < 0 ise {
+        ekrana_yaz("rm hatasi: Dosya bulunamadi: ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0 - 1;
+    }
+    eger g_fs_dosyalar[idx].salt_okunur == 1 ise {
+        ekrana_yaz("rm hatasi: Salt okunur dosya silinemez: ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0 - 1;
+    }
+    g_fs_dosyalar[idx].aktif = 0;
+    g_fs_dosyalar[idx].boyut = 0;
+    g_fs_dosyalar[idx].isim[0] = 0;
+    dondu 0;
+}
+
 isv fs_dosya_bul(yol: *u8) -> tamsayi {
     degisken i: tamsayi = 0;
     dongu i < g_fs_dosya_sayisi {
-        eger ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
+        eger g_fs_dosyalar[i].aktif == 1 ve ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
             dondu i;
         }
         i = i + 1;
     }
-    dondu 0 - 1; # Bulunamadi
+    dondu 0 - 1;
+}
+
+# Linux /proc Sanal Dosyalarini Canli Olarak Uretir
+isv fs_proc_uret(yol: *u8) -> tamsayi {
+    g_fs_uptime_saniye = g_fs_uptime_saniye + 1;
+
+    eger ykn_metin_esit_mi(yol, "/proc/cpuinfo".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_proc_tampon, "processor\t: 0\nvendor_id\t: GenuineYukinary\ncpu family\t: 6\nmodel\t\t: 158\nmodel name\t: Yukinary Virtual x86_64 Processor @ 3.60GHz\nstepping\t: 9\ncpu MHz\t\t: 3600.000\ncache size\t: 8192 KB\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx lm\nbogomips\t: 7199.98\nclflush size\t: 64\naddress sizes\t: 39 bits physical, 48 bits virtual\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(yol, "/proc/meminfo".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_proc_tampon, "MemTotal:          65536 kB\nMemFree:           61440 kB\nMemAvailable:      62480 kB\nBuffers:            1024 kB\nCached:             2048 kB\nSwapCached:            0 kB\nActive:             2560 kB\nInactive:           1024 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nSlab:                512 kB\nPageTables:          128 kB\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(yol, "/proc/uptime".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_proc_tampon, "142.85 138.20\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(yol, "/proc/version".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_proc_tampon, "Linux version 6.1.0-yknos (ykn@builder) (ykn-x86_64 compiler 1.0) #1 SMP PREEMPT Sun Nov 8 2026\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(yol, "/proc/loadavg".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_proc_tampon, "0.08 0.04 0.01 1/64 204\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
 }
 
 isv fs_dosya_yazdir(yol: *u8) -> tamsayi {
+    # 1. Once /proc sanal dosyasi mi bak
+    eger fs_proc_uret(yol) == 1 ise {
+        ekrana_yaz(g_fs_proc_tampon);
+        dondu 1;
+    }
+
+    # 2. RamFS tablosunda ara
     degisken idx: tamsayi = fs_dosya_bul(yol);
     eger idx < 0 ise {
-        ekrana_yaz("HATA: Dosya bulunamadi: ".ptr);
+        ekrana_yaz("cat: ");
         ekrana_yaz(yol);
-        ekrana_yaz("\n".ptr);
+        ekrana_yaz(": Boyle bir dosya veya dizin yok\n".ptr);
         dondu 0;
     }
+
+    eger g_fs_dosyalar[idx].dizin_mi == 1 ise {
+        ekrana_yaz("cat: ");
+        ekrana_yaz(yol);
+        ekrana_yaz(": Bir dizin\n".ptr);
+        dondu 0;
+    }
+
     ekrana_yaz(g_fs_dosyalar[idx].icerik);
     dondu 1;
 }
 
-isv fs_dosyalari_listele() {
-    ekrana_yaz("\n=== YknOS Sanal Dosya Sistemi (RamFS /) ===\n".ptr);
-    ekrana_yaz("BOYUT(B)\tIZIN\t\tDOSYA YOLU\n".ptr);
-    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+isv fs_cd(yol: *u8) -> tamsayi {
+    eger ykn_metin_esit_mi(yol, "/".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_su_anki_dizin, "/".ptr);
+        dondu 0;
+    }
+    eger ykn_metin_esit_mi(yol, "~".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_su_anki_dizin, "/home/root".ptr);
+        dondu 0;
+    }
+    eger ykn_metin_esit_mi(yol, "..".ptr) == 1 ise {
+        ykn_metin_kopyala(g_fs_su_anki_dizin, "/".ptr);
+        dondu 0;
+    }
 
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx < 0 veya g_fs_dosyalar[idx].dizin_mi != 1 ise {
+        ekrana_yaz("cd: ");
+        ekrana_yaz(yol);
+        ekrana_yaz(": Boyle bir dizin yok\n".ptr);
+        dondu 0 - 1;
+    }
+
+    ykn_metin_kopyala(g_fs_su_anki_dizin, yol);
+    dondu 0;
+}
+
+isv fs_pwd() {
+    ekrana_yaz(g_fs_su_anki_dizin);
+    ekrana_yaz("\n".ptr);
+}
+
+isv fs_dosyalari_listele_detayli() {
+    ekrana_yaz("toplam 64\n".ptr);
     degisken i: tamsayi = 0;
     dongu i < g_fs_dosya_sayisi {
-        ykn_sayi_yaz(g_fs_dosyalar[i].boyut);
-        ekrana_yaz(" B\t\t".ptr);
-        eger g_fs_dosyalar[i].salt_okunur == 1 ise {
-            ekrana_yaz("r-- (ro)\t".ptr);
-        } yoksa {
-            ekrana_yaz("rw- (rw)\t".ptr);
+        eger g_fs_dosyalar[i].aktif == 1 ise {
+            eger g_fs_dosyalar[i].dizin_mi == 1 ise {
+                ekrana_yaz("drwxr-xr-x 2 root root 4096 Nov  8 22:00 ".ptr);
+            } yoksa eger g_fs_dosyalar[i].salt_okunur == 1 ise {
+                ekrana_yaz("-r--r--r-- 1 root root  ".ptr);
+                ykn_sayi_yaz(g_fs_dosyalar[i].boyut);
+                ekrana_yaz(" Nov  8 22:00 ".ptr);
+            } yoksa {
+                ekrana_yaz("-rw-r--r-- 1 root root  ".ptr);
+                ykn_sayi_yaz(g_fs_dosyalar[i].boyut);
+                ekrana_yaz(" Nov  8 22:00 ".ptr);
+            }
+            ekrana_yaz(g_fs_dosyalar[i].isim);
+            ekrana_yaz("\n".ptr);
         }
-        ekrana_yaz(g_fs_dosyalar[i].isim);
-        ekrana_yaz("\n".ptr);
         i = i + 1;
     }
-    ekrana_yaz("----------------------------------------------------------------\n".ptr);
-    ekrana_yaz("Toplam: ".ptr);
-    ykn_sayi_yaz(g_fs_dosya_sayisi);
-    ekrana_yaz(" dosya mevcut.\n".ptr);
+}
+
+isv fs_dosyalari_listele() {
+    degisken i: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    dongu i < g_fs_dosya_sayisi {
+        eger g_fs_dosyalar[i].aktif == 1 ise {
+            ekrana_yaz(g_fs_dosyalar[i].isim);
+            eger g_fs_dosyalar[i].dizin_mi == 1 ise {
+                ekrana_yaz("/\t".ptr);
+            } yoksa {
+                ekrana_yaz("\t".ptr);
+            }
+            sutun = sutun + 1;
+            eger sutun % 3 == 0 ise {
+                ekrana_yaz("\n".ptr);
+            }
+        }
+        i = i + 1;
+    }
+    eger sutun % 3 != 0 ise {
+        ekrana_yaz("\n".ptr);
+    }
+}
+
+isv fs_df_yaz() {
+    ekrana_yaz("Filesystem     1K-blocks  Used Available Use% Mounted on\n".ptr);
+    ekrana_yaz("/dev/ram0          65536  4096     61440   7% /\n".ptr);
+    ekrana_yaz("proc                   0     0         0   0% /proc\n".ptr);
+    ekrana_yaz("udev                1024     0      1024   0% /dev\n".ptr);
 }

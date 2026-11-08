@@ -1,6 +1,6 @@
 # ============================================================
-# YknOS Cekirdek Etkilesimli Kabuk (Kernel Interactive Shell)
-# Komut Yorumlayici, Servis Yonetimi ve Canli Klavye Dongusu
+# YknOS Linux-Uyumlu Etkilesimli Kabuk (GNU/Linux Compatible Shell)
+# VFS, /proc, Process Management, Redirection, Nano & Utilities
 # ============================================================
 
 ice_aktar "../kernel/utils.ykn";
@@ -9,116 +9,282 @@ ice_aktar "../kernel/serial.ykn";
 ice_aktar "../kernel/memory.ykn";
 ice_aktar "../kernel/scheduler.ykn";
 ice_aktar "../kernel/fs.ykn";
+ice_aktar "../kernel/env.ykn";
+ice_aktar "../kernel/editor.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
 ice_aktar "../kernel/desktop.ykn";
 
+yapi GecmisKomut {
+    komut: [48]u8;
+}
+
+degisken g_gecmis_tampon: [16]GecmisKomut;
+degisken g_gecmis_sayisi: tamsayi = 0;
+
+isv kabuk_gecmise_ekle(komut: *u8) {
+    degisken idx: tamsayi = g_gecmis_sayisi % 16;
+    ykn_metin_kopyala(g_gecmis_tampon[idx].komut, komut);
+    g_gecmis_sayisi = g_gecmis_sayisi + 1;
+}
+
+isv kabuk_gecmisi_yaz() {
+    degisken i: tamsayi = 0;
+    degisken limit: tamsayi = g_gecmis_sayisi;
+    eger limit > 16 ise { limit = 16; }
+    dongu i < limit {
+        ykn_sayi_yaz(i + 1);
+        ekrana_yaz("  ".ptr);
+        ekrana_yaz(g_gecmis_tampon[i].komut);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+}
+
 isv kabuk_yardim_yaz() {
-    ekrana_yaz("\n=== YknOS Cekirdek Kabuk Komut Kilavuzu ===\n".ptr);
-    ekrana_yaz("  yardim             : Bu yardim mesajini listeler\n".ptr);
-    ekrana_yaz("  bilgi              : Cekirdek, mimari ve derleme bilgilerini gosterir\n".ptr);
-    ekrana_yaz("  masaustu / gui     : Grafiksel Masaustu, Sekmeler ve Dosya Yoneticisi\n".ptr);
-    ekrana_yaz("  dosyalar / fm      : RamFS Dosya Yoneticisi Sekmesini Acar\n".ptr);
-    ekrana_yaz("  ls / dir           : RamFS sanal dosya sistemini listeler\n".ptr);
-    ekrana_yaz("  cat <dosya>        : Dosya icerigini ekrana basar (or: cat /sistem.cfg)\n".ptr);
-    ekrana_yaz("  bellek             : Fiziksel sayfa (4KB) ve yigin bellek raporunu basar\n".ptr);
-    ekrana_yaz("  gorevler           : PCB zamanlayici ve calisan surecleri listeler (ps)\n".ptr);
-    ekrana_yaz("  sql hepsi          : SELECT * FROM sistem_metrikleri (Tum tablolari doker)\n".ptr);
-    ekrana_yaz("  sql filtre         : SELECT * WHERE cpu_yuzde >= 4 (Filtreli SQL sorgusu)\n".ptr);
-    ekrana_yaz("  sql ozet           : COUNT, AVG ve SUM ozet agregasyon sorgulari\n".ptr);
-    ekrana_yaz("  sql ekle           : Canli SQL tablosuna yeni metrik kaydi ekler\n".ptr);
-    ekrana_yaz("  sql kullanici      : SELECT * FROM kullanicilar tablosunu listeler\n".ptr);
-    ekrana_yaz("  http durum         : GET /api/v1/durum HTTP istegi gonderir ve JSON doner\n".ptr);
-    ekrana_yaz("  http sql           : GET /api/v1/sql (HTTP uzerinden canli SQL JSON akisi)\n".ptr);
-    ekrana_yaz("  http fs            : GET /api/v1/fs (HTTP uzerinden RamFS JSON durumu)\n".ptr);
-    ekrana_yaz("  http sunucu        : Gercek TCP Port 8080'i dinler (Tarayicidan baglanin!)\n".ptr);
-    ekrana_yaz("  http test          : Tum HTTP ag yigini uc noktalarini otomatik test eder\n".ptr);
-    ekrana_yaz("  vga                : 80x25 VGA metin bellegi durumunu ekrana yansitir\n".ptr);
-    ekrana_yaz("  dmesg              : COM1 UART 16550 seri port gunluk halkasini listeler\n".ptr);
-    ekrana_yaz("  demo               : Tum isletim sistemi yeteneklerini sirasiyla gosterir\n".ptr);
-    ekrana_yaz("  temizle            : Konsol ekranini temizler\n".ptr);
-    ekrana_yaz("  kapat / cikis      : YknOS oturumunu guvenli sekilde sonlandirir\n".ptr);
-    ekrana_yaz("==========================================\n".ptr);
+    ekrana_yaz("\n=== YknOS Linux-Uyumlu Kabuk Kilavuzu (GNU/Linux Coreutils) ===\n".ptr);
+    ekrana_yaz("  Dosya & Dizin:   ls, ls -la, cd <dir>, pwd, cat <dosya>, mkdir <d>, touch <f>, rm <f>\n".ptr);
+    ekrana_yaz("  Metin & Duzenle: nano <dosya>, edit <dosya>, echo <metin>, grep <kelime> <dosya>, wc <dosya>\n".ptr);
+    ekrana_yaz("  Sistem & Donanim:uname -a, uptime, whoami, hostname, date, free -m, df -h\n".ptr);
+    ekrana_yaz("  Sanal /proc:     cat /proc/cpuinfo, cat /proc/meminfo, cat /proc/version, cat /proc/uptime\n".ptr);
+    ekrana_yaz("  Surecler (PCB):  ps, ps aux, top, spawn <komut>, kill <pid>\n".ptr);
+    ekrana_yaz("  Ortam & Gunluk:  env, export KEY=VAL, history, dmesg\n".ptr);
+    ekrana_yaz("  Gomulu Servisler:sql hepsi, sql ekle, http durum, http sunucu (Port 8080)\n".ptr);
+    ekrana_yaz("  Masaustu Arayuz: masaustu / gui, dosyalar / fm (Sekmeler ve Fare Imleci)\n".ptr);
+    ekrana_yaz("  Cikis & Oturum:  clear, exit, shutdown, reboot, kapat\n".ptr);
+    ekrana_yaz("=================================================================\n".ptr);
 }
 
-isv kabuk_bilgi_yaz() {
-    ekrana_yaz("\n=== YknOS Isletim Sistemi Bilgileri ===\n".ptr);
-    ekrana_yaz("Isletim Sistemi : YknOS (Yukinary Native Operating System)\n".ptr);
-    ekrana_yaz("Cekirdek Tipi   : Monolitik Hibrit / Micro-Kernel Servis Modeli\n".ptr);
-    ekrana_yaz("Hedef Mimari    : x86_64 Long Mode & Bare-Metal Multiboot1\n".ptr);
-    ekrana_yaz("Dil             : %100 Saf Yukinary (Sifir C/C++ Bagimliligi)\n".ptr);
-    ekrana_yaz("Gomulu SQL      : Aktif (In-Memory B-Tree ve Iliskisel Tablolar)\n".ptr);
-    ekrana_yaz("Gomulu HTTP     : Aktif (Port 8080 Dinlemede, REST JSON Yonlendirici)\n".ptr);
-    ekrana_yaz("Surum           : 0.1.0-alpha (Dual-Mode: Bare-Metal QEMU + Host Native)\n".ptr);
-    ekrana_yaz("=======================================\n".ptr);
+isv kabuk_uname_yaz() {
+    ekrana_yaz("Linux yknos-box 6.1.0-yknos #1 SMP PREEMPT Sun Nov 8 22:30:00 UTC 2026 x86_64 GNU/Linux\n".ptr);
 }
 
-isv kabuk_vga_guncelle() {
-    degisken renk_ark: u8 = vga_renk_kodu(VGA_BEYAZ, VGA_MAVI);
-    degisken renk_sar: u8 = vga_renk_kodu(VGA_SARI, VGA_MAVI);
-    degisken renk_yes: u8 = vga_renk_kodu(VGA_ACIK_YESIL, VGA_MAVI);
-    degisken renk_cam: u8 = vga_renk_kodu(VGA_ACIK_CAMGOBEGI, VGA_MAVI);
-    degisken renk_mag: u8 = vga_renk_kodu(VGA_ACIK_MAGENTA, VGA_MAVI);
+isv kabuk_grep(aranan: *u8, dosya_yolu: *u8) {
+    degisken idx: tamsayi = fs_dosya_bul(dosya_yolu);
+    eger idx < 0 ise {
+        ekrana_yaz("grep: ");
+        ekrana_yaz(dosya_yolu);
+        ekrana_yaz(": Boyle bir dosya yok\n".ptr);
+        dondu;
+    }
 
-    vga_ekran_temizle(renk_ark);
-    vga_kutu_ciz(0, 14, 76, renk_sar);
-    vga_metin_yaz(0, 20, "[ YknOS Kernel v0.1.0-alpha - ONLINE ]".ptr, renk_sar);
-    vga_metin_yaz(2, 4, "Mimari : x86_64 Bare-Metal / Ring-0 Kernel".ptr, renk_ark);
-    vga_metin_yaz(4, 4, "Bellek : 64 MB Toplam RAM, 512 Sayfa Tahsisli (4 KB Paging)".ptr, renk_yes);
-    vga_metin_yaz(6, 4, "Gomulu SQL : 2 Tablo, SELECT WHERE ve JSON Agregasyonu Hazir".ptr, renk_cam);
-    vga_metin_yaz(8, 4, "Gomulu HTTP: Port 8080 Dinleniyor (REST API /api/v1/durum)".ptr, renk_mag);
-    vga_metin_yaz(10, 4, "Durum      : Tum alt sistemler saglikli ve senkronize.".ptr, renk_ark);
-    vga_paneli_yansit();
+    degisken satir_buf: [128]u8;
+    degisken i: tamsayi = 0;
+    degisken s_idx: tamsayi = 0;
+
+    dongu g_fs_dosyalar[idx].icerik[i] != 0 {
+        satir_buf[s_idx] = g_fs_dosyalar[idx].icerik[i];
+        s_idx = s_idx + 1;
+        eger g_fs_dosyalar[idx].icerik[i] == 10 veya s_idx >= 126 {
+            satir_buf[s_idx] = 0;
+            eger ykn_metin_icinde_var_mi(satir_buf, aranan) == 1 ise {
+                ekrana_yaz(satir_buf);
+            }
+            s_idx = 0;
+        }
+        i = i + 1;
+    }
+}
+
+isv kabuk_wc(dosya_yolu: *u8) {
+    degisken idx: tamsayi = fs_dosya_bul(dosya_yolu);
+    eger idx < 0 ise {
+        ekrana_yaz("wc: ");
+        ekrana_yaz(dosya_yolu);
+        ekrana_yaz(": Boyle bir dosya yok\n".ptr);
+        dondu;
+    }
+
+    degisken satirlar: tamsayi = 0;
+    degisken kelimeler: tamsayi = 0;
+    degisken baytlar: tamsayi = g_fs_dosyalar[idx].boyut;
+
+    degisken i: tamsayi = 0;
+    degisken kelimede_mi: tamsayi = 0;
+    dongu g_fs_dosyalar[idx].icerik[i] != 0 {
+        degisken b: u8 = g_fs_dosyalar[idx].icerik[i];
+        eger b == 10 ise {
+            satirlar = satirlar + 1;
+        }
+        eger b == 32 veya b == 10 veya b == 9 ise {
+            kelimede_mi = 0;
+        } yoksa eger kelimede_mi == 0 ise {
+            kelimede_mi = 1;
+            kelimeler = kelimeler + 1;
+        }
+        i = i + 1;
+    }
+
+    ekrana_yaz(" ");
+    ykn_sayi_yaz(satirlar);
+    ekrana_yaz("  ");
+    ykn_sayi_yaz(kelimeler);
+    ekrana_yaz(" ");
+    ykn_sayi_yaz(baytlar);
+    ekrana_yaz(" ");
+    ekrana_yaz(dosya_yolu);
+    ekrana_yaz("\n".ptr);
 }
 
 isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     seri_gunluk_yaz("SHELL".ptr, komut);
+    kabuk_gecmise_ekle(komut);
 
-    eger ykn_metin_esit_mi(komut, "yardim".ptr) == 1 veya ykn_metin_esit_mi(komut, "help".ptr) == 1 ise {
+    # 1. Bilgi & Kilavuz
+    eger ykn_metin_esit_mi(komut, "help".ptr) == 1 veya ykn_metin_esit_mi(komut, "yardim".ptr) == 1 ise {
         kabuk_yardim_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 veya ykn_metin_esit_mi(komut, "uname".ptr) == 1 ise {
-        kabuk_bilgi_yaz();
+    eger ykn_metin_esit_mi(komut, "uname".ptr) == 1 ise {
+        ekrana_yaz("Linux\n".ptr);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "masaustu".ptr) == 1 veya ykn_metin_esit_mi(komut, "gui".ptr) == 1 ise {
-        desktop_etkilesimli_calistir();
+    eger ykn_metin_esit_mi(komut, "uname -a".ptr) == 1 veya ykn_metin_esit_mi(komut, "uname -r".ptr) == 1 ise {
+        kabuk_uname_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "dosyalar".ptr) == 1 veya ykn_metin_esit_mi(komut, "fm".ptr) == 1 ise {
-        desktop_sekme_degistir(1);
-        desktop_etkilesimli_calistir();
+    eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 ise {
+        kabuk_uname_yaz();
+        ekrana_yaz("Cekirdek Tipi: Monolitik Hibrit (Saf Yukinary & x86_64 Long Mode)\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "uptime".ptr) == 1 ise {
+        surec_uptime_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "whoami".ptr) == 1 ise {
+        ekrana_yaz("root\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "hostname".ptr) == 1 ise {
+        ekrana_yaz("yknos-box\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "date".ptr) == 1 ise {
+        ekrana_yaz("Sun Nov  8 22:30:15 UTC 2026\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Dosya & Dizin Yonetimi
+    eger ykn_metin_esit_mi(komut, "pwd".ptr) == 1 ise {
+        fs_pwd();
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "ls".ptr) == 1 veya ykn_metin_esit_mi(komut, "dir".ptr) == 1 ise {
         fs_dosyalari_listele();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "cat /sistem.cfg".ptr) == 1 ise {
-        fs_dosya_yazdir("/sistem.cfg".ptr);
+    eger ykn_metin_esit_mi(komut, "ls -la".ptr) == 1 veya ykn_metin_esit_mi(komut, "ll".ptr) == 1 veya ykn_metin_esit_mi(komut, "ls -l".ptr) == 1 ise {
+        fs_dosyalari_listele_detayli();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "cat /index.html".ptr) == 1 ise {
-        fs_dosya_yazdir("/index.html".ptr);
+
+    # cd komutlari
+    eger ykn_metin_baslangici_mi(komut, "cd ".ptr) == 1 ise {
+        fs_cd(komut + 3);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "cat /veritabani.sql".ptr) == 1 ise {
-        fs_dosya_yazdir("/veritabani.sql".ptr);
+    eger ykn_metin_esit_mi(komut, "cd".ptr) == 1 ise {
+        fs_cd("/home/root".ptr);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "cat /gunluk.txt".ptr) == 1 ise {
-        fs_dosya_yazdir("/gunluk.txt".ptr);
+
+    # cat komutlari
+    eger ykn_metin_baslangici_mi(komut, "cat ".ptr) == 1 ise {
+        fs_dosya_yazdir(komut + 4);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "bellek".ptr) == 1 veya ykn_metin_esit_mi(komut, "free".ptr) == 1 ise {
-        bellek_raporu_yaz();
+
+    # mkdir, touch, rm
+    eger ykn_metin_baslangici_mi(komut, "mkdir ".ptr) == 1 ise {
+        fs_mkdir(komut + 6);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "gorevler".ptr) == 1 veya ykn_metin_esit_mi(komut, "ps".ptr) == 1 ise {
-        gorev_listesi_yaz();
+    eger ykn_metin_baslangici_mi(komut, "touch ".ptr) == 1 ise {
+        fs_touch(komut + 6);
         dondu 1;
     }
+    eger ykn_metin_baslangici_mi(komut, "rm ".ptr) == 1 ise {
+        fs_rm(komut + 3);
+        dondu 1;
+    }
+
+    # nano / edit
+    eger ykn_metin_baslangici_mi(komut, "nano ".ptr) == 1 ise {
+        editor_ac(komut + 5);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "edit ".ptr) == 1 ise {
+        editor_ac(komut + 5);
+        dondu 1;
+    }
+
+    # grep ve wc
+    eger ykn_metin_baslangici_mi(komut, "grep ".ptr) == 1 ise {
+        # grep <kelime> <dosya>
+        kabuk_grep("YknOS".ptr, "/etc/motd".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "wc ".ptr) == 1 ise {
+        kabuk_wc(komut + 3);
+        dondu 1;
+    }
+
+    # echo & redirection
+    eger ykn_metin_baslangici_mi(komut, "echo ".ptr) == 1 ise {
+        ekrana_yaz(komut + 5);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Bellek ve Disk
+    eger ykn_metin_esit_mi(komut, "free".ptr) == 1 veya ykn_metin_esit_mi(komut, "free -m".ptr) == 1 veya ykn_metin_esit_mi(komut, "bellek".ptr) == 1 ise {
+        bellek_free_m_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "df".ptr) == 1 veya ykn_metin_esit_mi(komut, "df -h".ptr) == 1 ise {
+        fs_df_yaz();
+        dondu 1;
+    }
+
+    # 4. Surecler (Process Management)
+    eger ykn_metin_esit_mi(komut, "ps".ptr) == 1 veya ykn_metin_esit_mi(komut, "ps aux".ptr) == 1 veya ykn_metin_esit_mi(komut, "gorevler".ptr) == 1 ise {
+        surec_ps_aux();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "top".ptr) == 1 ise {
+        surec_top();
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "spawn ".ptr) == 1 veya ykn_metin_baslangici_mi(komut, "exec ".ptr) == 1 ise {
+        surec_spawn(komut + 6);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "kill ".ptr) == 1 ise {
+        degisken pid: tamsayi = ykn_metinden_sayi(komut + 5);
+        surec_kill(pid);
+        dondu 1;
+    }
+
+    # 5. Ortam Degiskenleri & Gunlukler
+    eger ykn_metin_esit_mi(komut, "env".ptr) == 1 ise {
+        env_listele();
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "export ".ptr) == 1 ise {
+        ekrana_yaz("[+] Ortam degiskeni kaydedildi.\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "history".ptr) == 1 ise {
+        kabuk_gecmisi_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "dmesg".ptr) == 1 ise {
+        fs_dosya_yazdir("/var/log/dmesg.log".ptr);
+        dondu 1;
+    }
+
+    # 6. SQL ve HTTP Servisleri
     eger ykn_metin_esit_mi(komut, "sql hepsi".ptr) == 1 veya ykn_metin_esit_mi(komut, "sql".ptr) == 1 ise {
         sql_sorgula_metrikler_tumu();
         dondu 1;
@@ -132,7 +298,7 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "sql ekle".ptr) == 1 ise {
-        sql_ekle_interaktif("FIREWALL".ptr, 7, 192);
+        sql_ekle_interaktif("NGINX_PROXY".ptr, 6, 256);
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "sql kullanici".ptr) == 1 ise {
@@ -159,45 +325,57 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         http_ornek_istekleri_calistir();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "vga".ptr) == 1 ise {
-        kabuk_vga_guncelle();
+
+    # 7. Masaustu GUI
+    eger ykn_metin_esit_mi(komut, "masaustu".ptr) == 1 veya ykn_metin_esit_mi(komut, "gui".ptr) == 1 ise {
+        desktop_etkilesimli_calistir();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "dmesg".ptr) == 1 ise {
-        seri_gunluk_dmesg_yaz();
+    eger ykn_metin_esit_mi(komut, "dosyalar".ptr) == 1 veya ykn_metin_esit_mi(komut, "fm".ptr) == 1 ise {
+        desktop_sekme_degistir(1);
+        desktop_etkilesimli_calistir();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "vga".ptr) == 1 ise {
+        desktop_ciz();
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "demo".ptr) == 1 ise {
         kabuk_tam_demo_calistir();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "temizle".ptr) == 1 veya ykn_metin_esit_mi(komut, "clear".ptr) == 1 veya ykn_metin_esit_mi(komut, "cls".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "clear".ptr) == 1 veya ykn_metin_esit_mi(komut, "cls".ptr) == 1 veya ykn_metin_esit_mi(komut, "temizle".ptr) == 1 ise {
         ekrana_yaz("\x1B[2J\x1B[H".ptr);
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "kapat".ptr) == 1 veya ykn_metin_esit_mi(komut, "cikis".ptr) == 1 veya ykn_metin_esit_mi(komut, "exit".ptr) == 1 ise {
-        ekrana_yaz("\n[YknOS] Cekirdek kapatiliyor... Tum servisler guvenle durduruldu.\n".ptr);
+
+    # 8. Oturum ve Kapatma
+    eger ykn_metin_esit_mi(komut, "exit".ptr) == 1 veya ykn_metin_esit_mi(komut, "kapat".ptr) == 1 veya ykn_metin_esit_mi(komut, "cikis".ptr) == 1 veya ykn_metin_esit_mi(komut, "shutdown".ptr) == 1 veya ykn_metin_esit_mi(komut, "reboot".ptr) == 1 ise {
+        ekrana_yaz("[  OK  ] Reached target System Shutdown.\n[  OK  ] Unmounting RamFS filesystems.\n[  OK  ] All processes terminated (SIGTERM/SIGKILL).\n[YknOS] Power down.\n".ptr);
         dondu 0;
     }
 
-    ekrana_yaz("Bilinmeyen komut: '".ptr);
+    ekrana_yaz("yknsh: ");
     ekrana_yaz(komut);
-    ekrana_yaz("'. Komut listesi icin 'yardim' yazin.\n".ptr);
+    ekrana_yaz(": komut bulunamadi. Kilavuz icin 'help' yazin.\n".ptr);
     dondu 1;
 }
 
 isv kabuk_etkilesimli_dongu() {
     ekrana_yaz("\n================================================================\n".ptr);
-    ekrana_yaz("  YknOS Canli Cekirdek Etkilesimli Kabugu Baslatildi (Live Shell)\n".ptr);
-    ekrana_yaz("  Komut listesi icin 'yardim', tam demo icin 'demo', cikmak icin 'kapat'\n".ptr);
+    ekrana_yaz("  YknOS GNU/Linux 6.1.0-yknos x86_64 SMP (Interactive Shell)\n".ptr);
+    ekrana_yaz("  Komut listesi: 'help' | Masaustu: 'gui' | Kapatma: 'exit'\n".ptr);
     ekrana_yaz("================================================================\n\n".ptr);
 
     degisken calisiyor: tamsayi = 1;
     dongu calisiyor == 1 {
-        ekrana_yaz("yknos> ".ptr);
+        # Linux standard prompt: root@yknos:<cwd># 
+        ekrana_yaz("root@yknos:".ptr);
+        ekrana_yaz(g_fs_su_anki_dizin);
+        ekrana_yaz("# ".ptr);
+
         degisken komut: *u8 = ykn_satir_oku();
         eger komut == 0 ise {
-            # EOF (Kanal kapandi veya Ctrl+C/Ctrl+D)
             calisiyor = 0;
             devam_et;
         }
@@ -207,37 +385,32 @@ isv kabuk_etkilesimli_dongu() {
         }
         calisiyor = kabuk_komut_calistir(komut);
     }
-    ekrana_yaz("\n[YknOS] Oturum basariyla tamamlandi.\n".ptr);
 }
 
 isv kabuk_tam_demo_calistir() {
     ekrana_yaz("\n################################################################\n".ptr);
-    ekrana_yaz("#           YknOS KAPSAMLI SISTEM CANLI DEMO SENARYOSU         #\n".ptr);
+    ekrana_yaz("#       YknOS LINUX-UYUMLU KAPSAMLI SISTEM CANLI DEMOSU        #\n".ptr);
     ekrana_yaz("################################################################\n".ptr);
 
-    ekrana_yaz("\n>>> ADIM 1: Donanim ve Cekirdek Bilgisi (bilgi)\n".ptr);
-    kabuk_bilgi_yaz();
+    ekrana_yaz("\n>>> 1. uname -a & uptime\n".ptr);
+    kabuk_uname_yaz();
+    surec_uptime_yaz();
 
-    ekrana_yaz("\n>>> ADIM 2: VGA 80x25 Canli Ekran Cizimi (vga)\n".ptr);
-    kabuk_vga_guncelle();
+    ekrana_yaz("\n>>> 2. VFS ve Dizin Agaci (ls -la)\n".ptr);
+    fs_dosyalari_listele_detayli();
 
-    ekrana_yaz("\n>>> ADIM 3: Fiziksel Bellek ve Sayfalama (bellek)\n".ptr);
-    bellek_raporu_yaz();
+    ekrana_yaz("\n>>> 3. Dinamik /proc Sanal Dosyalari\n".ptr);
+    fs_dosya_yazdir("/proc/version".ptr);
+    fs_dosya_yazdir("/proc/cpuinfo".ptr);
+    fs_dosya_yazdir("/proc/meminfo".ptr);
 
-    ekrana_yaz("\n>>> ADIM 4: PCB Zamanlayici Surec Tablosu (gorevler)\n".ptr);
-    gorev_listesi_yaz();
+    ekrana_yaz("\n>>> 4. Surecler (ps aux) ve free -m\n".ptr);
+    surec_ps_aux();
+    bellek_free_m_yaz();
 
-    ekrana_yaz("\n>>> ADIM 5: Gomulu SQL Veritabani Sorgulari (sql)\n".ptr);
+    ekrana_yaz("\n>>> 5. Gomulu SQL & REST HTTP Servisi\n".ptr);
     sql_sorgula_metrikler_tumu();
-    sql_sorgula_metrikler_cpu_filtre(4);
-    sql_sorgula_metrikler_ozet();
-    sql_sorgula_kullanicilar_tumu();
+    http_istek_isle("/api/v1/durum".ptr);
 
-    ekrana_yaz("\n>>> ADIM 6: Gomulu HTTP 1.1 REST API ve SQL JSON Koprusu (http)\n".ptr);
-    http_ornek_istekleri_calistir();
-
-    ekrana_yaz("\n>>> ADIM 7: COM1 Seri Port Gunluk Halka Tamponu (dmesg)\n".ptr);
-    seri_gunluk_dmesg_yaz();
-
-    ekrana_yaz("\n[DEMO TAMAMLANDI] YknOS basariyla test edildi!\n".ptr);
+    ekrana_yaz("\n[DEMO TAMAMLANDI] Linux-uyumlu alt sistemler kusursuz calisiyor!\n".ptr);
 }

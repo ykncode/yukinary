@@ -1,0 +1,90 @@
+# ============================================================
+# YknOS Gomulu Metin Editoru (Nano / Vi Uyumlu Editor)
+# Dosya Duzenleme, Satir Ekleme, Kaydetme ve Cikis
+# ============================================================
+
+ice_aktar "utils.ykn";
+ice_aktar "fs.ykn";
+
+degisken g_editor_tampon: [1024]u8;
+degisken g_editor_dosya_yolu: [48]u8;
+degisken g_editor_uzunluk: tamsayi = 0;
+
+isv editor_ac(yol: *u8) {
+    ykn_metin_kopyala(g_editor_dosya_yolu, yol);
+
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    g_editor_uzunluk = 0;
+    g_editor_tampon[0] = 0;
+
+    eger idx >= 0 ise {
+        # Mevcut icerigi kopyala
+        degisken i: tamsayi = 0;
+        dongu g_fs_dosyalar[idx].icerik[i] != 0 ve i < 1000 {
+            g_editor_tampon[i] = g_fs_dosyalar[idx].icerik[i];
+            i = i + 1;
+        }
+        g_editor_tampon[i] = 0;
+        g_editor_uzunluk = i;
+    } yoksa {
+        # Yeni dosya
+        fs_touch(yol);
+    }
+
+    ekrana_yaz("\x1B[2J\x1B[H".ptr); # Ekrani temizle
+    ekrana_yaz("================================================================\n".ptr);
+    ekrana_yaz("  GNU nano (YknOS Edition) v6.2         Dosya: ".ptr);
+    ekrana_yaz(yol);
+    ekrana_yaz("\n================================================================\n".ptr);
+    ekrana_yaz("Komutlar: ':wq' (Kaydet ve Cik), ':w' (Kaydet), ':q' (Cikis)\n".ptr);
+    ekrana_yaz("Yazdiginiz her satir dosyaya eklenecektir.\n\n".ptr);
+
+    # Mevcut icerigi ekrana dok
+    eger g_editor_uzunluk > 0 ise {
+        ekrana_yaz("--- [ Mevcut Dosya Icerigi ] ---\n".ptr);
+        ekrana_yaz(g_editor_tampon);
+        ekrana_yaz("\n--------------------------------\n".ptr);
+    }
+
+    degisken acik: tamsayi = 1;
+    dongu acik == 1 {
+        ekrana_yaz("nano> ".ptr);
+        degisken satir: *u8 = ykn_satir_oku();
+        eger satir == 0 ise {
+            durdur;
+        }
+
+        eger ykn_metin_esit_mi(satir, ":q".ptr) == 1 ise {
+            ekrana_yaz("[nano] Degisiklikler kaydedilmeden cikildi.\n".ptr);
+            durdur;
+        }
+        eger ykn_metin_esit_mi(satir, ":w".ptr) == 1 ise {
+            fs_dosya_yaz(g_editor_dosya_yolu, g_editor_tampon, 0);
+            ekrana_yaz("[nano] [ ");
+            ykn_sayi_yaz(g_editor_uzunluk);
+            ekrana_yaz(" bayt diske yazildi ]\n".ptr);
+            devam_et;
+        }
+        eger ykn_metin_esit_mi(satir, ":wq".ptr) == 1 ise {
+            fs_dosya_yaz(g_editor_dosya_yolu, g_editor_tampon, 0);
+            ekrana_yaz("[nano] [ ");
+            ykn_sayi_yaz(g_editor_uzunluk);
+            ekrana_yaz(" bayt diske yazildi ve cikildi ]\n".ptr);
+            durdur;
+        }
+
+        # Satiri tamponun sonuna ekle
+        degisken j: tamsayi = 0;
+        dongu satir[j] != 0 ve g_editor_uzunluk < 1000 {
+            g_editor_tampon[g_editor_uzunluk] = satir[j];
+            g_editor_uzunluk = g_editor_uzunluk + 1;
+            j = j + 1;
+        }
+        # Satir sonu ekle
+        g_editor_tampon[g_editor_uzunluk] = 10;
+        g_editor_uzunluk = g_editor_uzunluk + 1;
+        g_editor_tampon[g_editor_uzunluk] = 0;
+    }
+
+    ekrana_yaz("================================================================\n".ptr);
+}

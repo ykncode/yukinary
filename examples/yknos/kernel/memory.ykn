@@ -1,6 +1,6 @@
 # ============================================================
 # YknOS Fiziksel Sayfa ve Yigin (Heap) Bellek Yoneticisi
-# 4 KB Sayfalama, Cerceve Tahsisi ve Istatistik Raporlama
+# 4 KB Sayfalama, free -m Raporlama ve Sayfa Tahsisi
 # ============================================================
 
 ice_aktar "utils.ykn";
@@ -9,13 +9,13 @@ ice_aktar "serial.ykn";
 degisken g_toplam_ram_mb: tamsayi = 64;
 degisken g_sayfa_boyutu_bayt: tamsayi = 4096; # 4 KB
 degisken g_toplam_sayfa: tamsayi = 16384;      # 64 MB / 4 KB
-degisken g_kullanilan_sayfa: tamsayi = 512;    # Cekirdek ve VRAM icin ilk 2 MB
-degisken g_tahsis_sayaci: tamsayi = 1;
+degisken g_kullanilan_sayfa: tamsayi = 768;    # Cekirdek, RamFS ve VRAM
+degisken g_tahsis_sayaci: tamsayi = 6;
 
 isv bellek_yoneticisi_baslat(toplam_mb: tamsayi) {
     g_toplam_ram_mb = toplam_mb;
     g_toplam_sayfa = (toplam_mb * 1024 * 1024) / g_sayfa_boyutu_bayt;
-    g_kullanilan_sayfa = 512;
+    g_kullanilan_sayfa = 768;
     seri_gunluk_yaz("MMU".ptr, "Fiziksel sayfa cerceve yoneticisi (4KB) baslatildi".ptr);
 }
 
@@ -30,36 +30,28 @@ isv bellek_sayfa_ayir(adet: tamsayi) -> tamsayi {
     dondu baslangic_sayfa;
 }
 
-isv bellek_raporu_yaz() {
-    degisken toplam_kb: tamsayi = g_toplam_ram_mb * 1024;
-    degisken kullanilan_kb: tamsayi = (g_kullanilan_sayfa * g_sayfa_boyutu_bayt) / 1024;
-    degisken serbest_kb: tamsayi = toplam_kb - kullanilan_kb;
+# Standart Linux 'free -m' komutu ciktisi
+isv bellek_free_m_yaz() {
+    degisken toplam_mb: tamsayi = g_toplam_ram_mb;
+    degisken kullanilan_mb: tamsayi = (g_kullanilan_sayfa * 4) / 1024;
+    degisken serbest_mb: tamsayi = toplam_mb - kullanilan_mb;
+    degisken buff_cache_mb: tamsayi = 1;
+    degisken avail_mb: tamsayi = serbest_mb + buff_cache_mb;
 
-    ekrana_yaz("=== YknOS Fiziksel ve Yigin Bellek Durumu ===\n".ptr);
-    ekrana_yaz("Toplam Fiziksel RAM : ".ptr);
-    ykn_sayi_yaz(g_toplam_ram_mb);
-    ekrana_yaz(" MB (".ptr);
-    ykn_sayi_yaz(toplam_kb);
-    ekrana_yaz(" KB)\n".ptr);
-
-    ekrana_yaz("Sayfa Boyutu        : 4096 Bayt (4 KB)\n".ptr);
-    ekrana_yaz("Toplam Cerceve      : ".ptr);
-    ykn_sayi_yaz(g_toplam_sayfa);
-    ekrana_yaz(" sayfa\n".ptr);
-
-    ekrana_yaz("Tahsis Edilen Sayfa : ".ptr);
-    ykn_sayi_yaz(g_kullanilan_sayfa);
-    ekrana_yaz(" sayfa (".ptr);
-    ykn_sayi_yaz(kullanilan_kb);
-    ekrana_yaz(" KB)\n".ptr);
-
-    ekrana_yaz("Serbest Bellek      : ".ptr);
-    ykn_sayi_yaz(serbest_kb);
-    ekrana_yaz(" KB\n".ptr);
-
-    ekrana_yaz("Toplam Islem/Tahsis : ".ptr);
-    ykn_sayi_yaz(g_tahsis_sayaci);
-    ekrana_yaz(" adet\n".ptr);
-    ekrana_yaz("=============================================\n".ptr);
+    ekrana_yaz("               total        used        free      shared  buff/cache   available\n".ptr);
+    ekrana_yaz("Mem:              ".ptr);
+    ykn_sayi_yaz(toplam_mb);
+    ekrana_yaz("           ".ptr);
+    ykn_sayi_yaz(kullanilan_mb);
+    ekrana_yaz("          ".ptr);
+    ykn_sayi_yaz(serbest_mb);
+    ekrana_yaz("           0           ".ptr);
+    ykn_sayi_yaz(buff_cache_mb);
+    ekrana_yaz("          ".ptr);
+    ykn_sayi_yaz(avail_mb);
+    ekrana_yaz("\nSwap:              0           0           0\n".ptr);
 }
 
+isv bellek_raporu_yaz() {
+    bellek_free_m_yaz();
+}

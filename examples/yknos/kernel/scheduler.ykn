@@ -1,80 +1,141 @@
 # ============================================================
-# YknOS Isbirlikli Coklu Gorev Zamanlayicisi (Scheduler)
-# Process Control Block (PCB) Yonetimi ve Gorev Durumlari
+# YknOS Linux Surec Yoneticisi (Linux-Compatible Process Subsystem)
+# ps aux, top, kill, spawn, PID Yonetimi ve Zamanlayici
 # ============================================================
 
 ice_aktar "utils.ykn";
 ice_aktar "serial.ykn";
 
-yapi GorevKontrolBlogu {
-    pid:            tamsayi;
-    isim:           [24]u8;
-    durum:          tamsayi; # 0: BOSTA, 1: HAZIR, 2: CALISIYOR, 3: BEKLEMEDE
-    oncelik:        tamsayi; # 1 (dusuk) - 10 (kritik)
-    calisma_tick:   tamsayi;
+yapi LinuxSurec {
+    pid:      tamsayi;
+    ppid:     tamsayi;
+    user:     [12]u8;
+    stat:     [4]u8;
+    cpu_pct:  tamsayi;
+    mem_kb:   tamsayi;
+    tty:      [8]u8;
+    cmd:      [32]u8;
+    aktif:    tamsayi;
 }
 
-degisken g_gorevler: [8]GorevKontrolBlogu;
-degisken g_aktif_gorev_sayisi: tamsayi = 0;
-degisken g_su_anki_pid: tamsayi = 0;
+degisken g_surecler: [16]LinuxSurec;
+degisken g_surec_sayisi: tamsayi = 0;
+degisken g_son_pid: tamsayi = 103;
 
 isv zamanlayici_baslat() {
-    g_aktif_gorev_sayisi = 0;
-    g_su_anki_pid = 0;
+    g_surec_sayisi = 0;
+    g_son_pid = 103;
 
-    gorev_kaydet(0, "cekirdek_idle".ptr, 1, 2);
-    gorev_kaydet(1, "sql_servisi".ptr, 8, 1);
-    gorev_kaydet(2, "http_ag_servisi".ptr, 8, 1);
-    gorev_kaydet(3, "ykn_kabuk".ptr, 10, 2);
+    surec_kaydet(1, 0, "root".ptr, "Ss".ptr, 0, 1024, "?".ptr, "/sbin/init".ptr);
+    surec_kaydet(2, 0, "root".ptr, "S".ptr, 0, 0, "?".ptr, "[kthreadd]".ptr);
+    surec_kaydet(3, 1, "root".ptr, "S".ptr, 1, 2048, "?".ptr, "systemd-journald".ptr);
+    surec_kaydet(101, 1, "ykn".ptr, "S".ptr, 8, 4096, "?".ptr, "ykn-sql-engine".ptr);
+    surec_kaydet(102, 1, "ykn".ptr, "S".ptr, 14, 8192, "?".ptr, "ykn-httpd -p 8080".ptr);
+    surec_kaydet(103, 1, "root".ptr, "R+".ptr, 2, 3072, "tty1".ptr, "-yknsh (active)".ptr);
 
-    seri_gunluk_yaz("SCHED".ptr, "Isbirlikli gorev zamanlayici baslatildi (4 PCB hazir)".ptr);
+    seri_gunluk_yaz("SCHED".ptr, "Linux-uyumlu surec tablosu baslatildi (PID 1..103)".ptr);
 }
 
-isv gorev_kaydet(pid: tamsayi, isim: *u8, oncelik: tamsayi, ilk_durum: tamsayi) {
-    eger g_aktif_gorev_sayisi >= 8 ise { dondu; }
-    degisken idx: tamsayi = g_aktif_gorev_sayisi;
+isv surec_kaydet(pid: tamsayi, ppid: tamsayi, user: *u8, stat: *u8, cpu: tamsayi, mem: tamsayi, tty: *u8, cmd: *u8) {
+    eger g_surec_sayisi >= 16 ise { dondu; }
+    degisken idx: tamsayi = g_surec_sayisi;
 
-    g_gorevler[idx].pid = pid;
-    g_gorevler[idx].oncelik = oncelik;
-    g_gorevler[idx].durum = ilk_durum;
-    g_gorevler[idx].calisma_tick = 5;
+    g_surecler[idx].pid = pid;
+    g_surecler[idx].ppid = ppid;
+    g_surecler[idx].cpu_pct = cpu;
+    g_surecler[idx].mem_kb = mem;
+    g_surecler[idx].aktif = 1;
+
+    ykn_metin_kopyala(g_surecler[idx].user, user);
+    ykn_metin_kopyala(g_surecler[idx].stat, stat);
+    ykn_metin_kopyala(g_surecler[idx].tty, tty);
+    ykn_metin_kopyala(g_surecler[idx].cmd, cmd);
+
+    g_surec_sayisi = g_surec_sayisi + 1;
+}
+
+isv surec_spawn(cmd: *u8) -> tamsayi {
+    eger g_surec_sayisi >= 16 ise {
+        ekrana_yaz("spawn hatasi: Maksimum surec sayisina (16) ulasildi!\n".ptr);
+        dondu 0 - 1;
+    }
+
+    g_son_pid = g_son_pid + 1;
+    degisken yeni_pid: tamsayi = g_son_pid;
+
+    surec_kaydet(yeni_pid, 103, "root".ptr, "S".ptr, 3, 256, "tty1".ptr, cmd);
+
+    ekrana_yaz("[+] Surec baslatildi: PID ");
+    ykn_sayi_yaz(yeni_pid);
+    ekrana_yaz(" (");
+    ekrana_yaz(cmd);
+    ekrana_yaz(")\n".ptr);
+    dondu yeni_pid;
+}
+
+isv surec_kill(pid: tamsayi) -> tamsayi {
+    eger pid == 1 ise {
+        ekrana_yaz("kill: PID 1 (init) sonlandirilamaz: Kernel Panic engellendi!\n".ptr);
+        dondu 0 - 1;
+    }
 
     degisken i: tamsayi = 0;
-    dongu isim[i] != 0 ve i < 23 {
-        g_gorevler[idx].isim[i] = isim[i];
+    dongu i < g_surec_sayisi {
+        eger g_surecler[i].aktif == 1 ve g_surecler[i].pid == pid ise {
+            g_surecler[i].aktif = 0;
+            ekrana_yaz("[*] Surec sonlandirildi (SIGKILL): PID ");
+            ykn_sayi_yaz(pid);
+            ekrana_yaz(" [");
+            ekrana_yaz(g_surecler[i].cmd);
+            ekrana_yaz("]\n".ptr);
+            dondu 0;
+        }
         i = i + 1;
     }
-    g_gorevler[idx].isim[i] = 0;
 
-    g_aktif_gorev_sayisi = g_aktif_gorev_sayisi + 1;
-}
-
-isv gorev_durum_metni(durum: tamsayi) -> *u8 {
-    eger durum == 1 ise { dondu "HAZIR".ptr; }
-    eger durum == 2 ise { dondu "CALISIYOR".ptr; }
-    eger durum == 3 ise { dondu "BEKLEMEDE".ptr; }
-    dondu "BOSTA".ptr;
+    ekrana_yaz("kill: (");
+    ykn_sayi_yaz(pid);
+    ekrana_yaz(") - Boyle bir surec bulunamadi\n".ptr);
+    dondu 0 - 1;
 }
 
 isv gorev_listesi_yaz() {
-    ekrana_yaz("=== YknOS Calisan Surecler ve Gorev Tablosu (ps) ===\n".ptr);
-    ekrana_yaz("PID\tISIM\t\t\tONCELIK\tDURUM\t\tTICK\n".ptr);
-    ekrana_yaz("----------------------------------------------------------------\n".ptr);
-
-    degisken i: tamsayi = 0;
-    dongu i < g_aktif_gorev_sayisi {
-        ykn_sayi_yaz(g_gorevler[i].pid);
-        ekrana_yaz("\t".ptr);
-        ekrana_yaz(g_gorevler[i].isim);
-        ekrana_yaz("\t\t".ptr);
-        ykn_sayi_yaz(g_gorevler[i].oncelik);
-        ekrana_yaz("\t".ptr);
-        ekrana_yaz(gorev_durum_metni(g_gorevler[i].durum));
-        ekrana_yaz("\t".ptr);
-        ykn_sayi_yaz(g_gorevler[i].calisma_tick);
-        ekrana_yaz("\n".ptr);
-        i = i + 1;
-    }
-    ekrana_yaz("================================================================\n".ptr);
+    surec_ps_aux();
 }
 
+isv surec_ps_aux() {
+    ekrana_yaz("USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\n".ptr);
+    degisken i: tamsayi = 0;
+    dongu i < g_surec_sayisi {
+        eger g_surecler[i].aktif == 1 ise {
+            ekrana_yaz(g_surecler[i].user);
+            ekrana_yaz("       ".ptr);
+            ykn_sayi_yaz(g_surecler[i].pid);
+            ekrana_yaz("  ".ptr);
+            ykn_sayi_yaz(g_surecler[i].cpu_pct);
+            ekrana_yaz(".0  1.2  16384  ".ptr);
+            ykn_sayi_yaz(g_surecler[i].mem_kb);
+            ekrana_yaz(" ".ptr);
+            ekrana_yaz(g_surecler[i].tty);
+            ekrana_yaz("      ".ptr);
+            ekrana_yaz(g_surecler[i].stat);
+            ekrana_yaz("   22:00   0:01 ".ptr);
+            ekrana_yaz(g_surecler[i].cmd);
+            ekrana_yaz("\n".ptr);
+        }
+        i = i + 1;
+    }
+}
+
+isv surec_top() {
+    ekrana_yaz("\ntop - 22:15:30 up 24 min,  1 user,  load average: 0.14, 0.08, 0.02\n".ptr);
+    ekrana_yaz("Tasks:  6 total,   1 running,   5 sleeping,   0 stopped,   0 zombie\n".ptr);
+    ekrana_yaz("%Cpu(s):  3.2 us,  1.1 sy,  0.0 ni, 95.4 id,  0.2 wa,  0.0 hi,  0.1 si\n".ptr);
+    ekrana_yaz("MiB Mem :   64.0 total,   59.8 free,    3.2 used,    1.0 buff/cache\n".ptr);
+    ekrana_yaz("MiB Swap:    0.0 total,    0.0 free,    0.0 used.   60.2 avail Mem\n\n".ptr);
+    surec_ps_aux();
+}
+
+isv surec_uptime_yaz() {
+    ekrana_yaz(" 22:16:04 up 25 min,  1 user,  load average: 0.12, 0.07, 0.02\n".ptr);
+}

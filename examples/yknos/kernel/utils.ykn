@@ -87,6 +87,51 @@ isv ykn_bellek_sifirla(hedef: *u8, boyut: tamsayi) {
     }
 }
 
+isv ykn_metin_baslangici_mi(metin: *u8, on_ek: *u8) -> tamsayi {
+    eger metin == 0 veya on_ek == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu on_ek[i] != 0 {
+        eger metin[i] != on_ek[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ykn_metin_icinde_var_mi(metin: *u8, aranan: *u8) -> tamsayi {
+    eger metin == 0 veya aranan == 0 ise { dondu 0; }
+    degisken m_len: tamsayi = ykn_metin_uzunluk(metin);
+    degisken a_len: tamsayi = ykn_metin_uzunluk(aranan);
+    eger a_len > m_len ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i <= (m_len - a_len) {
+        degisken esit: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < a_len {
+            eger metin[i + j] != aranan[j] ise {
+                esit = 0;
+                durdur;
+            }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv ykn_metinden_sayi(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu s[i] >= 48 ve s[i] <= 57 {
+        sonuc = (sonuc * 10) + (s[i] - 48);
+        i = i + 1;
+    }
+    dondu sonuc;
+}
+
 # Standart girdiden (klavye) satir okur ve sondaki \r, \n temizler
 isv ykn_satir_oku() -> *u8 {
     degisken hStdin: tamsayi = GetStdHandle(0 - 10); # STD_INPUT_HANDLE = -10

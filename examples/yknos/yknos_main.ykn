@@ -9,6 +9,7 @@ ice_aktar "kernel/serial.ykn";
 ice_aktar "kernel/memory.ykn";
 ice_aktar "kernel/scheduler.ykn";
 ice_aktar "kernel/fs.ykn";
+ice_aktar "kernel/env.ykn";
 ice_aktar "services/sql_engine.ykn";
 ice_aktar "services/http_engine.ykn";
 ice_aktar "shell/shell.ykn";
@@ -33,6 +34,7 @@ isv cekirdek_onyukleme() {
 
     ekrana_yaz("[0.04s] [RAMFS] Sanal dosya sistemi mount edildi (/sistem.cfg, /index.html).\n".ptr);
     fs_baslat();
+    env_baslat();
 
     ekrana_yaz("[0.05s] [SQL]  Gomulu iliskisel veritabani motoru yuklendi.\n".ptr);
     sql_motoru_baslat();
