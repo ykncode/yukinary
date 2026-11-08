@@ -92,11 +92,11 @@ Yukinary integrates artificial intelligence into the compilation pipeline throug
 │ • Size: 16,448 Bytes (~16 KB)     │       │ • Size: 1 GB – 40 GB GGUF v3      │
 │ • Baked into binary (.rodata)     │       │ • Loaded dynamically from disk    │
 │ • Zero files, zero internet,      │       │ • CLI: `--llm-model model.gguf`   │
-│   zero external dependencies      │       │ • Compile-time generative coding  │
-│ • Sub-millisecond latency (<1ms)  │       │   via `#prompt "..."` directives  │
-│ • Purpose: Compiler Reflexes,     │       │ • Complex module & algorithmic    │
-│   Self-Healing, LSP Autocomplete, │       │   synthesis from natural language │
-│   Neural-guided `#convert`        │       │                                   │
+│   zero external dependencies      │       │ • Polyglot `#convert` Engine      │
+│ • Sub-millisecond latency (<1ms)  │       │   (Deep semantic library trans-   │
+│ • Purpose: Compiler Reflexes,     │       │   pilation: C/C++/Python/Rust)    │
+│   Self-Healing, LSP Autocomplete, │       │ • Natural language `#prompt "..."`│
+│   Offline signature fallback      │       │   algorithmic code synthesis      │
 └───────────────────────────────────┘       └───────────────────────────────────┘
 ```
 
@@ -108,7 +108,7 @@ Yukinary integrates artificial intelligence into the compilation pipeline throug
 | **Size & Weights** | **16,448 Bytes (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet causal transformer | **1 GB – 40 GB** (BitNet b1.58, Llama-3, Mistral, Qwen, etc.) |
 | **Hardware Reqs** | **Zero GPU, Zero Python, Zero Internet.** Runs on any standard 64-bit CPU using Q16.16 fixed-point arithmetic | Requires 4 GB – 32 GB RAM / VRAM depending on quantization and context size |
 | **Inference Latency** | **Sub-millisecond (< 1 ms)** — imperceptible compile-time overhead | 10 – 50 milliseconds per token |
-| **Primary Scope** | **Compiler Reflexes & Tooling:**<br>• Syntax & typo repair (`--self-heal`: semicolons, parens)<br>• Defensive `null-guard` injection against crashes<br>• Real-time LSP struct field and token autocompletion<br>• Neural intent assistance for polyglot AST transpilers (`#convert`) | **Generative Developer Synthesis:**<br>• Synthesizing complex data structures and algorithms from scratch<br>• Natural language prompt execution (`#prompt "write an HTTP server"` -> native YKN)<br>• Large-scale architectural transformations |
+| **Primary Scope** | **Compiler Reflexes & Tooling:**<br>• Syntax & typo repair (`--self-heal`: semicolons, parens)<br>• Defensive `null-guard` injection against crashes<br>• Real-time LSP struct field and token autocompletion<br>• Lightweight offline keyword/signature translation fallback | **Deep Semantic & Generative Power:**<br>• **Full Polyglot `#convert` Engine:** Translating entire Python, C, C++, and Rust libraries into native idiomatic YKN<br>• Natural language prompt execution (`#prompt "write an HTTP server"` -> native YKN)<br>• Synthesizing complex data structures and algorithmic modules |
 | **Activation Mode** | **Transparent (Always-On).** Silent, ubiquitous, and always available | **Explicit (Opt-in).** Invoked when developer passes `--llm-model <path.gguf>` |
 
 ---
@@ -147,7 +147,7 @@ fn add(a: i64, b: i64) -> i64 { return a + b; }
 YKN never suffers from the "no libraries yet" dilemma:
 * **Zero-Cost FFI (`harici isv`):** Directly invoke compiled C/C++/Rust shared libraries (`.dll` / `.so`) via OS dynamic loaders (`LoadLibraryA` / `dlopen`).
 * **Direct Convert Directives (`#C-convert`, `#PY-convert`, `#JS-convert`, etc.):** Embed code from other languages directly into your source files. The convert engine translates them to idiomatic YKN and caches them with two-level SHA-256 in `.ykn_cache/convert/`.
-* **In-Compiler Polyglot Transpiler:** The embedded neural engine translates C functions, structs, types, Python `def`s, and Rust syntax directly into YKN.
+* **In-Compiler Polyglot Transpiler:** The Full LLM engine (with offline AST transpiler fallback) translates C functions, structs, types, Python `def`s, and Rust syntax directly into idiomatic YKN.
 
 ### 4. Tagged Enums (Algebraic Data Types) & Pattern Matching
 Supports variants with and without payloads with 16-byte aligned `{ discriminant, payload }` representations:

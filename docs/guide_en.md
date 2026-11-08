@@ -280,7 +280,7 @@ Yukinary embeds artificial intelligence through two complementary tiers designed
 | **Size & Weights** | **16,448 Bytes (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet backbone | **1 GB – 40 GB** (Llama-3, Mistral, Qwen, BitNet b1.58, etc.) |
 | **Hardware Prerequisites** | **Zero GPU, Zero Python, Zero Internet.** Runs on any standard CPU | Requires 4 GB – 32 GB RAM or dedicated GPU |
 | **Latency** | **0.1 milliseconds (sub-perceptual instant execution)** | 10 – 50 milliseconds per token |
-| **Primary Goal** | **Compiler Reflextive Automation:**<br>• Syntax repair (`Self-Healing`: semicolons, braces)<br>• Protective `null-guard` injection<br>• Real-time VSCode structure field and intent completion<br>• In-compiler C/Python/Rust transpilation (`#convert`) | **Developer Generation:**<br>• Generating complex data structures and modules from scratch<br>• Natural language to YKN code synthesis (`#prompt "write a web server"`)<br>• Large-scale architectural refactoring |
+| **Primary Goal** | **Compiler Reflexes & Automation:**<br>• Syntax repair (`Self-Healing`: semicolons, braces)<br>• Protective `null-guard` injection against crashes<br>• Real-time VSCode structure field and intent completion<br>• Lightweight offline signature transpilation fallback | **Deep Semantic & Generative Power:**<br>• **Full Polyglot `#convert` Engine:** Translating entire Python, C, C++, and Rust libraries into native YKN<br>• Natural language to YKN synthesis (`#prompt "write a web server"`)<br>• Synthesizing complex data structures and modules from scratch |
 | **User Invocations** | **Transparent (Always-On).** Operates silently in the background | **Explicit.** Invoked via `--llm-model model.gguf --prompt "..."` |
 
 ### 1. Embedded Micro-LLM
