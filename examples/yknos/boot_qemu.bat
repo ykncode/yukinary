@@ -25,3 +25,4 @@ echo ============================================================
 echo.
 
 %QEMU_EXE% -kernel %BIN_FILE% -serial stdio
+

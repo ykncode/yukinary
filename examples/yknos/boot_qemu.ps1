@@ -23,3 +23,4 @@ Write-Host "  Seri port (COM1 0x3F8) gunlukleri bu terminale akacaktir." -Foregr
 Write-Host "============================================================`n" -ForegroundColor Cyan
 
 & $QemuPath -kernel $BinTarget -serial stdio
+

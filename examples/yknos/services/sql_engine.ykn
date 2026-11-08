@@ -47,6 +47,17 @@ isv sql_motoru_baslat() {
     seri_gunluk_yaz("SQL".ptr, "Gomulu SQL motoru baslatildi (2 tablo, 10 kayit yuklendi)".ptr);
 }
 
+isv sql_ekle_interaktif(servis: *u8, cpu: tamsayi, bellek: tamsayi) {
+    sql_metrik_ekle(servis, cpu, bellek, 0);
+    ekrana_yaz("[SQL INSERT] Yeni kayit eklendi: '".ptr);
+    ekrana_yaz(servis);
+    ekrana_yaz("' (CPU: ".ptr);
+    ykn_sayi_yaz(cpu);
+    ekrana_yaz("%, Bellek: ".ptr);
+    ykn_sayi_yaz(bellek);
+    ekrana_yaz(" KB)\n".ptr);
+}
+
 isv sql_metrik_ekle(servis_adi: *u8, cpu: tamsayi, bellek: tamsayi, hata: tamsayi) {
     eger g_sql_metrik_sayisi >= 16 ise { dondu; }
     degisken idx: tamsayi = g_sql_metrik_sayisi;

@@ -92,13 +92,18 @@ examples\yknos\run_demo.bat
 Açılan `yknos> ` kabuğunda kullanabileceğiniz komutlar:
 - `yardim` : Tüm komutların listesi
 - `bilgi` : Çekirdek ve mimari bilgileri
+- `ls / dir` : RamFS bellek içi sanal dosya sistemini listeleme
+- `cat <dosya>` : Dosya içeriğini okuma (`cat /sistem.cfg`, `cat /index.html`, `cat /veritabani.sql`)
 - `bellek` : 64 MB fiziksel RAM ve 4 KB sayfalama durumu
 - `gorevler` : Çalışan süreçler ve PCB zamanlayıcı
-- `sql` : Gömülü ilişkisel SQL tablosunu listeleme ve filtreleme
-- `http` : Gömülü HTTP 1.1 mikroservisini sorgulama ve JSON çıktıları
+- `sql` : Gömülü ilişkisel SQL tablosunu listeleme ve filtreleme (`sql hepsi`, `sql filtre`, `sql ozet`)
+- `sql ekle` : Canlı SQL tablosuna yeni çalışma zamanı metriği ekleme
+- `http durum` : Gömülü HTTP 1.1 mikroservisini sorgulama ve JSON çıktıları (`/api/v1/durum`, `/api/v1/sql`, `/api/v1/fs`)
+- `http sunucu`: Gerçek TCP Port 8080 soketini dinleme (Tarayıcınızdan `http://localhost:8080` adresine girip canlı HTML panelini görüntüleyebilirsiniz!)
 - `vga` : 80x25 renkli VGA ekran çerçevesini ekrana yansıtma
 - `dmesg` : COM1 seri port dairesel günlük halkasını dökme
 - `demo` : 7 adımlık otomatik sistem tanıtım senaryosu
+- `temizle` : Terminal ekranını temizleme
 - `kapat` : Oturumu sonlandırma
 
 ---

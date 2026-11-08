@@ -1,14 +1,16 @@
 # ============================================================
 # YknOS Gomulu HTTP 1.1 Web Sunucusu ve Ag Paketi Ayristirici
-# REST API Yonlendirici, JSON Uretici ve SQL Servis Entegrasyonu
+# REST API Yonlendirici, RamFS Dosya Sunumu ve Gercek TCP Soket Dinleyicisi
 # ============================================================
 
 ice_aktar "../kernel/utils.ykn";
 ice_aktar "../kernel/serial.ykn";
+ice_aktar "../kernel/fs.ykn";
 ice_aktar "sql_engine.ykn";
 
 degisken g_http_port: tamsayi = 8080;
 degisken g_http_toplam_istek: tamsayi = 0;
+degisken g_http_ag_tamponu: [1024]u8;
 
 isv http_servisi_baslat(port: tamsayi) {
     g_http_port = port;
@@ -38,14 +40,20 @@ isv http_istek_isle(istek_yolu: *u8) -> tamsayi {
     ekrana_yaz(istek_yolu);
     ekrana_yaz(" <<<\n".ptr);
 
-    # 1. Kok Dizin: /
-    eger ykn_metin_esit_mi(istek_yolu, "/".ptr) == 1 ise {
-        seri_gunluk_yaz("HTTP".ptr, "GET / -> 200 OK (text/plain)".ptr);
-        degisken govde: *u8 = "YknOS Cekirdek HTTP Servisi Aktif. Yukinary ile bare-metal ve gomulu calisir.\n".ptr;
-        degisken len: tamsayi = ykn_metin_uzunluk(govde);
-
-        http_yanit_basligi_yaz(200, "OK".ptr, "text/plain; charset=utf-8".ptr, len);
-        ekrana_yaz(govde);
+    # 1. Kok Dizin: / veya /index.html (RamFS uzerinden servis edilir)
+    eger ykn_metin_esit_mi(istek_yolu, "/".ptr) == 1 veya ykn_metin_esit_mi(istek_yolu, "/index.html".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET /index.html -> 200 OK (RamFS)".ptr);
+        degisken f_idx: tamsayi = fs_dosya_bul("/index.html".ptr);
+        eger f_idx >= 0 ise {
+            degisken len: tamsayi = g_fs_dosyalar[f_idx].boyut;
+            http_yanit_basligi_yaz(200, "OK".ptr, "text/html; charset=utf-8".ptr, len);
+            ekrana_yaz(g_fs_dosyalar[f_idx].icerik);
+        } yoksa {
+            degisken fallback: *u8 = "YknOS HTTP Servisi Aktif.\n".ptr;
+            degisken flen: tamsayi = ykn_metin_uzunluk(fallback);
+            http_yanit_basligi_yaz(200, "OK".ptr, "text/plain; charset=utf-8".ptr, flen);
+            ekrana_yaz(fallback);
+        }
         dondu 200;
     }
 
@@ -60,11 +68,10 @@ isv http_istek_isle(istek_yolu: *u8) -> tamsayi {
         dondu 200;
     }
 
-    # 3. SQL Veritabani API'si: /api/v1/sql
+    # 3. SQL Veritabani API'si: /api/v1/sql (Canli iliskisel SQL dokumu)
     eger ykn_metin_esit_mi(istek_yolu, "/api/v1/sql".ptr) == 1 ise {
         seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/sql -> 200 OK (JSON serialization)".ptr);
 
-        # SQL sonuclarini dinamik JSON dizisi olarak olustur
         ekrana_yaz("HTTP/1.1 200 OK\r\n".ptr);
         ekrana_yaz("Server: YknOS-Embedded-HTTP/0.1.0\r\n".ptr);
         ekrana_yaz("Content-Type: application/json; charset=utf-8\r\n\r\n".ptr);
@@ -96,14 +103,14 @@ isv http_istek_isle(istek_yolu: *u8) -> tamsayi {
         dondu 200;
     }
 
-    # 4. Gorevler API'si: /api/v1/gorevler
-    eger ykn_metin_esit_mi(istek_yolu, "/api/v1/gorevler".ptr) == 1 ise {
-        seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/gorevler -> 200 OK".ptr);
-        degisken gorev_json: *u8 = "{\"aktif_surecler\":4,\"zamanlayici\":\"cooperative_pcb\",\"kuantum_ms\":10}\n".ptr;
-        degisken len3: tamsayi = ykn_metin_uzunluk(gorev_json);
+    # 4. RamFS Dosya Sistemi API'si: /api/v1/fs
+    eger ykn_metin_esit_mi(istek_yolu, "/api/v1/fs".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/fs -> 200 OK (RamFS JSON)".ptr);
+        degisken fs_json: *u8 = "{\"mount\":\"/\",\"tur\":\"ramfs\",\"dosya_sayisi\":4,\"durum\":\"READY\"}\n".ptr;
+        degisken len_fs: tamsayi = ykn_metin_uzunluk(fs_json);
 
-        http_yanit_basligi_yaz(200, "OK".ptr, "application/json; charset=utf-8".ptr, len3);
-        ekrana_yaz(gorev_json);
+        http_yanit_basligi_yaz(200, "OK".ptr, "application/json; charset=utf-8".ptr, len_fs);
+        ekrana_yaz(fs_json);
         dondu 200;
     }
 
@@ -117,21 +124,80 @@ isv http_istek_isle(istek_yolu: *u8) -> tamsayi {
     dondu 404;
 }
 
-isv http_ornek_istekleri_calistir() {
-    ekrana_yaz("\n=== YknOS Gomulu HTTP ve SQL Entegrasyon Testi ===\n".ptr);
+# Gercek yerel TCP soketi acarak web tarayicisindan gelen istekleri kabul eder
+isv http_canli_sunucu_baslat(port: tamsayi, istek_limiti: tamsayi) {
+    ekrana_yaz("\n=== YknOS Gercek TCP Web Sunucusu Baslatiliyor ===\n".ptr);
+    ekrana_yaz("Ag Yigini: Winsock / BSD Sockets Aktif\n".ptr);
+    ekrana_yaz("Dinleme Adresi: http://localhost:".ptr);
+    ykn_sayi_yaz(port);
+    ekrana_yaz("/ (Tarayicinizdan baglanabilirsiniz!)\n".ptr);
+    ekrana_yaz("Beklenen istek limiti: ".ptr);
+    ykn_sayi_yaz(istek_limiti);
+    ekrana_yaz(" istek sonra kabuga donulur.\n\n".ptr);
 
-    # Test 1: Kok istek
-    http_istek_isle("/".ptr);
+    yukinary_sys_net_init();
+    degisken sunucu_soket: tamsayi = yukinary_sys_socket_create(2, 1, 6); # AF_INET, SOCK_STREAM, TCP
+    eger sunucu_soket <= 0 ise {
+        ekrana_yaz("HATA: TCP soket olusturulamadi!\n".ptr);
+        dondu;
+    }
 
-    # Test 2: Sistem durumu API'si
-    http_istek_isle("/api/v1/durum".ptr);
+    yukinary_sys_socket_set_reuseaddr(sunucu_soket);
+    degisken bind_res: tamsayi = yukinary_sys_socket_bind(sunucu_soket, 0, port);
+    eger bind_res != 0 ise {
+        ekrana_yaz("HATA: Port ".ptr);
+        ykn_sayi_yaz(port);
+        ekrana_yaz(" baglanamadi (baska bir uygulama kullaniyor olabilir).\n".ptr);
+        yukinary_sys_socket_close(sunucu_soket);
+        dondu;
+    }
 
-    # Test 3: SQL sorgu API'si (HTTP uzerinden JSON formatinda canli SQL tablosu cekme)
-    http_istek_isle("/api/v1/sql".ptr);
+    yukinary_sys_socket_listen(sunucu_soket, 5);
+    seri_gunluk_yaz("NET_LISTEN".ptr, "Port 8080 gercek TCP dinleme moduna alindi".ptr);
 
-    # Test 4: Gecersiz yol (404 kontrolu)
-    http_istek_isle("/api/v1/bilinmeyen".ptr);
+    degisken sayac: tamsayi = 0;
+    dongu sayac < istek_limiti {
+        ekrana_yaz("[HTTP DINLEMEDE] Tarayici veya curl istegi bekleniyor... (Istek ".ptr);
+        ykn_sayi_yaz(sayac + 1);
+        ekrana_yaz("/".ptr);
+        ykn_sayi_yaz(istek_limiti);
+        ekrana_yaz(")\n".ptr);
 
-    ekrana_yaz("==================================================\n".ptr);
+        degisken istemci: tamsayi = yukinary_sys_socket_accept(sunucu_soket);
+        eger istemci > 0 ise {
+            degisken okunan: tamsayi = yukinary_sys_socket_recv(istemci, g_http_ag_tamponu, 1000);
+            eger okunan > 0 ise {
+                g_http_ag_tamponu[okunan] = 0;
+                ekrana_yaz("--- Tarayicidan Gelen Istek Ilk Satiri ---\n".ptr);
+                # Sadece ilk satiri bas (GET / HTTP/1.1)
+                degisken k: tamsayi = 0;
+                dongu k < okunan ve g_http_ag_tamponu[k] != 10 ve g_http_ag_tamponu[k] != 13 {
+                    ykn_karakter_yaz(g_http_ag_tamponu[k]);
+                    k = k + 1;
+                }
+                ekrana_yaz("\n-----------------------------------------\n".ptr);
+
+                # HTTP 200 OK Yaniti gonder (HTML Dashboard)
+                degisken html_yaniti: *u8 = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nServer: YknOS-Real-HTTP\r\nConnection: close\r\n\r\n<!DOCTYPE html><html><head><meta charset='utf-8'><title>YknOS Live Dashboard</title><style>body{font-family:Segoe UI,sans-serif;background:#0f172a;color:#f8fafc;padding:3rem;}h1{color:#38bdf8;}div.box{background:#1e293b;padding:1.5rem;border-radius:10px;border:1px solid #334155;max-width:600px;}span.badge{background:#10b981;color:#042f2e;padding:4px 8px;border-radius:4px;font-weight:bold;}</style></head><body><div class='box'><h1>YknOS Live Operating System</h1><p>Status: <span class='badge'>ONLINE</span></p><p>Web Sunucusu: <strong>%100 Saf Yukinary Soket Motoru</strong></p><p>Gomulu SQL: <strong>Aktif (6 Metrik Kaydi)</strong></p><p>Bellek: <strong>64 MB RAM, 4KB Paging</strong></p><hr style='border:none;border-top:1px solid #334155;margin:1rem 0;'><p><small>Tebrikler! Tarayiciniz su an YknOS icindeki gercek TCP HTTP sunucusu ile iletisim kuruyor.</small></p></div></body></html>\r\n".ptr;
+                degisken html_len: tamsayi = ykn_metin_uzunluk(html_yaniti);
+                yukinary_sys_socket_send(istemci, html_yaniti, html_len);
+            }
+            yukinary_sys_socket_close(istemci);
+            ekrana_yaz("[HTTP YANITLANDI] Tarayiciya HTTP 200 OK HTML paneli iletildi.\n\n".ptr);
+            sayac = sayac + 1;
+        }
+    }
+
+    yukinary_sys_socket_close(sunucu_soket);
+    ekrana_yaz("=== HTTP Canli Sunucu Tamamlandi, Kabuga Donuluyor ===\n\n".ptr);
 }
 
+isv http_ornek_istekleri_calistir() {
+    ekrana_yaz("\n=== YknOS Gomulu HTTP ve SQL Entegrasyon Testi ===\n".ptr);
+    http_istek_isle("/".ptr);
+    http_istek_isle("/api/v1/durum".ptr);
+    http_istek_isle("/api/v1/sql".ptr);
+    http_istek_isle("/api/v1/fs".ptr);
+    http_istek_isle("/api/v1/bilinmeyen".ptr);
+    ekrana_yaz("==================================================\n".ptr);
+}

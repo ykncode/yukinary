@@ -8,6 +8,7 @@ ice_aktar "kernel/vga.ykn";
 ice_aktar "kernel/serial.ykn";
 ice_aktar "kernel/memory.ykn";
 ice_aktar "kernel/scheduler.ykn";
+ice_aktar "kernel/fs.ykn";
 ice_aktar "services/sql_engine.ykn";
 ice_aktar "services/http_engine.ykn";
 ice_aktar "shell/shell.ykn";
@@ -30,13 +31,16 @@ isv cekirdek_onyukleme() {
     ekrana_yaz("[0.03s] [TASK] Isbirlikli gorev zamanlayicisi baslatildi (4 process).\n".ptr);
     zamanlayici_baslat();
 
-    ekrana_yaz("[0.04s] [SQL]  Gomulu iliskisel veritabani motoru yuklendi.\n".ptr);
+    ekrana_yaz("[0.04s] [RAMFS] Sanal dosya sistemi mount edildi (/sistem.cfg, /index.html).\n".ptr);
+    fs_baslat();
+
+    ekrana_yaz("[0.05s] [SQL]  Gomulu iliskisel veritabani motoru yuklendi.\n".ptr);
     sql_motoru_baslat();
 
-    ekrana_yaz("[0.05s] [NET]  Gomulu HTTP 1.1 mikroservisi 0.0.0.0:8080 baslatildi.\n".ptr);
+    ekrana_yaz("[0.06s] [NET]  Gomulu HTTP 1.1 mikroservisi 0.0.0.0:8080 baslatildi.\n".ptr);
     http_servisi_baslat(8080);
 
-    ekrana_yaz("[0.06s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
+    ekrana_yaz("[0.07s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
 }
 
 isv ana() -> tamsayi {

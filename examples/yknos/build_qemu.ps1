@@ -20,3 +20,4 @@ if ($LASTEXITCODE -eq 0) {
 } else {
     Write-Error "[YknOS] Derleme basarisiz oldu! Kod: $LASTEXITCODE"
 }
+

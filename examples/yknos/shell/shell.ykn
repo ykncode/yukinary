@@ -8,6 +8,7 @@ ice_aktar "../kernel/vga.ykn";
 ice_aktar "../kernel/serial.ykn";
 ice_aktar "../kernel/memory.ykn";
 ice_aktar "../kernel/scheduler.ykn";
+ice_aktar "../kernel/fs.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
 
@@ -15,14 +16,19 @@ isv kabuk_yardim_yaz() {
     ekrana_yaz("\n=== YknOS Cekirdek Kabuk Komut Kilavuzu ===\n".ptr);
     ekrana_yaz("  yardim             : Bu yardim mesajini listeler\n".ptr);
     ekrana_yaz("  bilgi              : Cekirdek, mimari ve derleme bilgilerini gosterir\n".ptr);
+    ekrana_yaz("  ls / dir           : RamFS sanal dosya sistemini listeler\n".ptr);
+    ekrana_yaz("  cat <dosya>        : Dosya icerigini ekrana basar (or: cat /sistem.cfg)\n".ptr);
     ekrana_yaz("  bellek             : Fiziksel sayfa (4KB) ve yigin bellek raporunu basar\n".ptr);
     ekrana_yaz("  gorevler           : PCB zamanlayici ve calisan surecleri listeler (ps)\n".ptr);
     ekrana_yaz("  sql hepsi          : SELECT * FROM sistem_metrikleri (Tum tablolari doker)\n".ptr);
     ekrana_yaz("  sql filtre         : SELECT * WHERE cpu_yuzde >= 4 (Filtreli SQL sorgusu)\n".ptr);
     ekrana_yaz("  sql ozet           : COUNT, AVG ve SUM ozet agregasyon sorgulari\n".ptr);
+    ekrana_yaz("  sql ekle           : Canli SQL tablosuna yeni metrik kaydi ekler\n".ptr);
     ekrana_yaz("  sql kullanici      : SELECT * FROM kullanicilar tablosunu listeler\n".ptr);
     ekrana_yaz("  http durum         : GET /api/v1/durum HTTP istegi gonderir ve JSON doner\n".ptr);
     ekrana_yaz("  http sql           : GET /api/v1/sql (HTTP uzerinden canli SQL JSON akisi)\n".ptr);
+    ekrana_yaz("  http fs            : GET /api/v1/fs (HTTP uzerinden RamFS JSON durumu)\n".ptr);
+    ekrana_yaz("  http sunucu        : Gercek TCP Port 8080'i dinler (Tarayicidan baglanin!)\n".ptr);
     ekrana_yaz("  http test          : Tum HTTP ag yigini uc noktalarini otomatik test eder\n".ptr);
     ekrana_yaz("  vga                : 80x25 VGA metin bellegi durumunu ekrana yansitir\n".ptr);
     ekrana_yaz("  dmesg              : COM1 UART 16550 seri port gunluk halkasini listeler\n".ptr);
@@ -73,6 +79,26 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         kabuk_bilgi_yaz();
         dondu 1;
     }
+    eger ykn_metin_esit_mi(komut, "ls".ptr) == 1 veya ykn_metin_esit_mi(komut, "dir".ptr) == 1 ise {
+        fs_dosyalari_listele();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "cat /sistem.cfg".ptr) == 1 ise {
+        fs_dosya_yazdir("/sistem.cfg".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "cat /index.html".ptr) == 1 ise {
+        fs_dosya_yazdir("/index.html".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "cat /veritabani.sql".ptr) == 1 ise {
+        fs_dosya_yazdir("/veritabani.sql".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "cat /gunluk.txt".ptr) == 1 ise {
+        fs_dosya_yazdir("/gunluk.txt".ptr);
+        dondu 1;
+    }
     eger ykn_metin_esit_mi(komut, "bellek".ptr) == 1 veya ykn_metin_esit_mi(komut, "free".ptr) == 1 ise {
         bellek_raporu_yaz();
         dondu 1;
@@ -93,6 +119,10 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         sql_sorgula_metrikler_ozet();
         dondu 1;
     }
+    eger ykn_metin_esit_mi(komut, "sql ekle".ptr) == 1 ise {
+        sql_ekle_interaktif("FIREWALL".ptr, 7, 192);
+        dondu 1;
+    }
     eger ykn_metin_esit_mi(komut, "sql kullanici".ptr) == 1 ise {
         sql_sorgula_kullanicilar_tumu();
         dondu 1;
@@ -103,6 +133,14 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     }
     eger ykn_metin_esit_mi(komut, "http sql".ptr) == 1 ise {
         http_istek_isle("/api/v1/sql".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "http fs".ptr) == 1 ise {
+        http_istek_isle("/api/v1/fs".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "http sunucu".ptr) == 1 ise {
+        http_canli_sunucu_baslat(8080, 2);
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "http test".ptr) == 1 ise {

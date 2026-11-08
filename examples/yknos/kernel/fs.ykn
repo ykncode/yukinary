@@ -1,0 +1,128 @@
+# ============================================================
+# YknOS Bellek Ici Sanal Dosya Sistemi (In-Memory RamFS)
+# Dosya Olusturma, Okuma, Yazma ve Listeleme Islemleri
+# ============================================================
+
+ice_aktar "utils.ykn";
+ice_aktar "serial.ykn";
+
+yapi RamDosyasi {
+    isim:         [32]u8;
+    icerik:       [512]u8;
+    boyut:        tamsayi;
+    salt_okunur:  tamsayi;
+}
+
+degisken g_fs_dosyalar: [16]RamDosyasi;
+degisken g_fs_dosya_sayisi: tamsayi = 0;
+
+isv fs_baslat() {
+    g_fs_dosya_sayisi = 0;
+
+    # 1. /sistem.cfg (Cekirdek yapilandirma dosyasi)
+    fs_dosya_yaz("/sistem.cfg".ptr, "cekirdek=YknOS\nsurum=0.1.0-alpha\nmimari=x86_64\nbellek_mb=64\nhttp_port=8080\nsql_tablo_sayisi=2\n".ptr, 1);
+
+    # 2. /index.html (Gomulu Web Sunucusu Ana Sayfasi)
+    fs_dosya_yaz("/index.html".ptr, "<!DOCTYPE html><html><head><title>YknOS Dashboard</title><style>body{font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:2rem;}h1{color:#38bdf8;}pre{background:#1e293b;padding:1rem;border-radius:8px;}</style></head><body><h1>YknOS Cekirdek Paneli</h1><p>Yukinary ile gelistirilen gomulu mikro-isletim sistemi.</p><pre>Durum: ONLINE | Port: 8080 | SQL: Aktif</pre></body></html>\n".ptr, 1);
+
+    # 3. /veritabani.sql (SQL Sema ve Tohum Verisi)
+    fs_dosya_yaz("/veritabani.sql".ptr, "CREATE TABLE sistem_metrikleri (id INT, servis TEXT, cpu INT, mem INT);\nINSERT INTO sistem_metrikleri VALUES (1, 'KERNEL', 3, 128);\nINSERT INTO sistem_metrikleri VALUES (2, 'HTTP_NET', 14, 512);\n".ptr, 0);
+
+    # 4. /gunluk.txt (Cekirdek Olay Gunlugu)
+    fs_dosya_yaz("/gunluk.txt".ptr, "[BOOT] YknOS Cekirdek RamFS dosya sistemi basariyla yuklendi.\n[INFO] 4 varsayilan dosya mount edildi.\n".ptr, 0);
+
+    seri_gunluk_yaz("RAMFS".ptr, "RamFS sanal dosya sistemi baslatildi (4 dosya yuklendi)".ptr);
+}
+
+isv fs_dosya_yaz(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
+    # Once dosya mevcut mu kontrol et
+    degisken i: tamsayi = 0;
+    dongu i < g_fs_dosya_sayisi {
+        eger ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
+            eger g_fs_dosyalar[i].salt_okunur == 1 ise {
+                ekrana_yaz("HATA: Dosya salt okunur: ".ptr);
+                ekrana_yaz(yol);
+                ekrana_yaz("\n".ptr);
+                dondu 0 - 1;
+            }
+            # Uzerine yaz
+            degisken j: tamsayi = 0;
+            dongu metin[j] != 0 ve j < 510 {
+                g_fs_dosyalar[i].icerik[j] = metin[j];
+                j = j + 1;
+            }
+            g_fs_dosyalar[i].icerik[j] = 0;
+            g_fs_dosyalar[i].boyut = j;
+            dondu 0;
+        }
+        i = i + 1;
+    }
+
+    # Yeni dosya olustur
+    eger g_fs_dosya_sayisi >= 16 ise {
+        ekrana_yaz("HATA: RamFS dosya kapasitesi dolu!\n".ptr);
+        dondu 0 - 1;
+    }
+
+    degisken idx: tamsayi = g_fs_dosya_sayisi;
+    ykn_metin_kopyala(g_fs_dosyalar[idx].isim, yol);
+    g_fs_dosyalar[idx].salt_okunur = salt_okunur;
+
+    degisken k: tamsayi = 0;
+    dongu metin[k] != 0 ve k < 510 {
+        g_fs_dosyalar[idx].icerik[k] = metin[k];
+        k = k + 1;
+    }
+    g_fs_dosyalar[idx].icerik[k] = 0;
+    g_fs_dosyalar[idx].boyut = k;
+
+    g_fs_dosya_sayisi = g_fs_dosya_sayisi + 1;
+    dondu 0;
+}
+
+isv fs_dosya_bul(yol: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_fs_dosya_sayisi {
+        eger ykn_metin_esit_mi(g_fs_dosyalar[i].isim, yol) == 1 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1; # Bulunamadi
+}
+
+isv fs_dosya_yazdir(yol: *u8) -> tamsayi {
+    degisken idx: tamsayi = fs_dosya_bul(yol);
+    eger idx < 0 ise {
+        ekrana_yaz("HATA: Dosya bulunamadi: ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+    ekrana_yaz(g_fs_dosyalar[idx].icerik);
+    dondu 1;
+}
+
+isv fs_dosyalari_listele() {
+    ekrana_yaz("\n=== YknOS Sanal Dosya Sistemi (RamFS /) ===\n".ptr);
+    ekrana_yaz("BOYUT(B)\tIZIN\t\tDOSYA YOLU\n".ptr);
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+
+    degisken i: tamsayi = 0;
+    dongu i < g_fs_dosya_sayisi {
+        ykn_sayi_yaz(g_fs_dosyalar[i].boyut);
+        ekrana_yaz(" B\t\t".ptr);
+        eger g_fs_dosyalar[i].salt_okunur == 1 ise {
+            ekrana_yaz("r-- (ro)\t".ptr);
+        } yoksa {
+            ekrana_yaz("rw- (rw)\t".ptr);
+        }
+        ekrana_yaz(g_fs_dosyalar[i].isim);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+    ekrana_yaz("Toplam: ".ptr);
+    ykn_sayi_yaz(g_fs_dosya_sayisi);
+    ekrana_yaz(" dosya mevcut.\n".ptr);
+}

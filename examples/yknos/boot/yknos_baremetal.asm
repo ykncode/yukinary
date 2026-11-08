@@ -149,6 +149,20 @@ dispatch_command:
     jz .do_bilgi
 
     mov esi, cmd_buffer
+    mov edi, str_ls
+    call strcmp
+    jz .do_ls
+    mov esi, cmd_buffer
+    mov edi, str_dir
+    call strcmp
+    jz .do_ls
+
+    mov esi, cmd_buffer
+    mov edi, str_cat
+    call strcmp
+    jz .do_cat
+
+    mov esi, cmd_buffer
     mov edi, str_sql
     call strcmp
     jz .do_sql
@@ -190,6 +204,20 @@ dispatch_command:
     mov esi, msg_bilgi
     call vga_print
     mov esi, msg_bilgi
+    call serial_print
+    ret
+
+.do_ls:
+    mov esi, msg_ls_result
+    call vga_print
+    mov esi, msg_ls_result
+    call serial_print
+    ret
+
+.do_cat:
+    mov esi, msg_cat_result
+    call vga_print
+    mov esi, msg_cat_result
     call serial_print
     ret
 
@@ -413,6 +441,9 @@ cmd_buffer: times 64 db 0
 str_yardim:   db "yardim", 0
 str_help:     db "help", 0
 str_bilgi:    db "bilgi", 0
+str_ls:       db "ls", 0
+str_dir:      db "dir", 0
+str_cat:      db "cat", 0
 str_sql:      db "sql", 0
 str_http:     db "http", 0
 str_bellek:   db "bellek", 0
@@ -426,12 +457,14 @@ msg_info_vga:   db "VRAM : 0xB8000 Physical Video Memory (80x25 Blue Console)", 
 msg_info_uart:  db "UART : COM1 (0x3F8) 38400 Baud 8N1 Serial Streaming Online", 0
 msg_info_sql:   db "SQL  : In-Memory Relational Engine (System Tables Loaded)", 0
 msg_info_http:  db "NET  : Embedded HTTP 1.1 Microservice Stack Ready", 0
-msg_hint:       db "Komutlar: yardim, bilgi, sql, http, bellek, temizle, kapat", 0
+msg_hint:       db "Komutlar: yardim, bilgi, ls, cat, sql, http, bellek, temizle, kapat", 0
 
 msg_prompt:     db "yknos> ", 0
 msg_bilinmeyen: db "Bilinmeyen komut! 'yardim' yazin.", 10, 0
-msg_yardim:     db "Komutlar: bilgi (OS Detayi), sql (Sorgu), http (JSON), bellek, temizle, kapat", 10, 0
+msg_yardim:     db "Komutlar: bilgi, ls, cat, sql (Sorgu), http (JSON), bellek, temizle, kapat", 10, 0
 msg_bilgi:      db "YknOS v0.1.0 Ring-0 Kernel | %100 Bare-Metal Machine Code | No OS Underneath", 10, 0
+msg_ls_result:  db "RamFS: /sistem.cfg (94B) | /index.html (390B) | /veritabani.sql (195B)", 10, 0
+msg_cat_result: db "cekirdek=YknOS, surum=0.1.0-alpha, mimari=x86_64, ram=64MB, port=8080", 10, 0
 msg_sql_result: db "SELECT * FROM metrikler => KERNEL: 3% CPU | HTTP: 14% CPU | SQL: 8% CPU (OK)", 10, 0
 msg_http_result:db "HTTP/1.1 200 OK | Content-Type: application/json | {os:'YknOS', durum:'ONLINE'}", 10, 0
 msg_bellek_result: db "RAM: 64 MB Toplam | 512 Sayfa Tahsisli (4 KB Paging) | Serbest: 61440 KB", 10, 0
@@ -447,3 +480,4 @@ scancode_table:
     db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
 
 _kernel_end:
+
