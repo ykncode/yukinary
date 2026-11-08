@@ -1,6 +1,8 @@
 <div align="center">
 
-# ❄️ Yukinary (YKN) Programming Language
+<img src="assets/logo.png" alt="Yukinary Programming Language Logo" width="180" />
+
+# Yukinary (YKN) Programming Language
 
 **Zero-Dependency • Direct Native Machine Code • Multi-Lingual Grammar • Self-Healing • Embedded BitNet AI • Polyglot `#convert` & FFI**
 
