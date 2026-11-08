@@ -11,11 +11,14 @@ ice_aktar "../kernel/scheduler.ykn";
 ice_aktar "../kernel/fs.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
+ice_aktar "../kernel/desktop.ykn";
 
 isv kabuk_yardim_yaz() {
     ekrana_yaz("\n=== YknOS Cekirdek Kabuk Komut Kilavuzu ===\n".ptr);
     ekrana_yaz("  yardim             : Bu yardim mesajini listeler\n".ptr);
     ekrana_yaz("  bilgi              : Cekirdek, mimari ve derleme bilgilerini gosterir\n".ptr);
+    ekrana_yaz("  masaustu / gui     : Grafiksel Masaustu, Sekmeler ve Dosya Yoneticisi\n".ptr);
+    ekrana_yaz("  dosyalar / fm      : RamFS Dosya Yoneticisi Sekmesini Acar\n".ptr);
     ekrana_yaz("  ls / dir           : RamFS sanal dosya sistemini listeler\n".ptr);
     ekrana_yaz("  cat <dosya>        : Dosya icerigini ekrana basar (or: cat /sistem.cfg)\n".ptr);
     ekrana_yaz("  bellek             : Fiziksel sayfa (4KB) ve yigin bellek raporunu basar\n".ptr);
@@ -77,6 +80,15 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     }
     eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 veya ykn_metin_esit_mi(komut, "uname".ptr) == 1 ise {
         kabuk_bilgi_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "masaustu".ptr) == 1 veya ykn_metin_esit_mi(komut, "gui".ptr) == 1 ise {
+        desktop_etkilesimli_calistir();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "dosyalar".ptr) == 1 veya ykn_metin_esit_mi(komut, "fm".ptr) == 1 ise {
+        desktop_sekme_degistir(1);
+        desktop_etkilesimli_calistir();
         dondu 1;
     }
     eger ykn_metin_esit_mi(komut, "ls".ptr) == 1 veya ykn_metin_esit_mi(komut, "dir".ptr) == 1 ise {

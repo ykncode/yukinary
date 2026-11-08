@@ -90,19 +90,28 @@ isv ykn_bellek_sifirla(hedef: *u8, boyut: tamsayi) {
 # Standart girdiden (klavye) satir okur ve sondaki \r, \n temizler
 isv ykn_satir_oku() -> *u8 {
     degisken hStdin: tamsayi = GetStdHandle(0 - 10); # STD_INPUT_HANDLE = -10
+    degisken idx: tamsayi = 0;
+    degisken tek_bayt: [2]u8;
     g_okunan_bayt_dizisi[0] = 0;
-    degisken res: tamsayi = ReadFile(hStdin, g_satir_girdi_tamponu, 250, g_okunan_bayt_dizisi, 0);
 
-    degisken n: tamsayi = g_okunan_bayt_dizisi[0];
-    eger res == 0 veya n <= 0 ise {
-        dondu 0; # EOF
+    dongu idx < 250 {
+        tek_bayt[0] = 0;
+        degisken res: tamsayi = ReadFile(hStdin, tek_bayt, 1, g_okunan_bayt_dizisi, 0);
+        eger res == 0 veya g_okunan_bayt_dizisi[0] <= 0 ise {
+            eger idx == 0 ise {
+                dondu 0; # EOF
+            }
+            durdur;
+        }
+        degisken c: u8 = tek_bayt[0];
+        eger c == 10 ise {
+            durdur;
+        }
+        eger c != 13 ise {
+            g_satir_girdi_tamponu[idx] = c;
+            idx = idx + 1;
+        }
     }
-
-    # Sondaki \r veya \n veya bosluklari temizle
-    dongu n > 0 ve (g_satir_girdi_tamponu[n - 1] == 10 veya g_satir_girdi_tamponu[n - 1] == 13 veya g_satir_girdi_tamponu[n - 1] == 32) {
-        g_satir_girdi_tamponu[n - 1] = 0;
-        n = n - 1;
-    }
-    g_satir_girdi_tamponu[n] = 0;
+    g_satir_girdi_tamponu[idx] = 0;
     dondu g_satir_girdi_tamponu;
 }
