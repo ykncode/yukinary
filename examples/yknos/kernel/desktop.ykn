@@ -1,6 +1,6 @@
 # ============================================================
-# YknOS Grafiksel Masaustu ve Pencere Yoneticisi (Desktop GUI)
-# Etkilesimli Fare Tiklamasi, Baslat Menusu, Sekmeler ve VFS
+# YknOS Gelismis Masaustu Pencere Yoneticisi (Desktop GUI Window Manager)
+# Gercek Fare Olaylari, Pencereler, Gorev Cubugu, Simgeler ve Baslat Menusu
 # ============================================================
 
 ice_aktar "utils.ykn";
@@ -12,20 +12,26 @@ ice_aktar "fs.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
 
-degisken g_gui_aktif_sekme: tamsayi = 1; # 1: Dosyalar, 2: SQL, 3: Ag/HTTP, 4: Terminal
-degisken g_gui_baslat_acik: tamsayi = 0; # 0: Kapali, 1: Acik
-degisken g_gui_secili_dosya: tamsayi = 0;
-degisken g_gui_fare_x: tamsayi = 6;
-degisken g_gui_fare_y: tamsayi = 0;
+extern isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+extern isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+extern isv GetStdHandle(n: tamsayi) -> tamsayi;
 
-isv desktop_sekme_degistir(sekme_no: tamsayi) {
-    eger sekme_no >= 1 ve sekme_no <= 4 ise {
-        g_gui_aktif_sekme = sekme_no;
-        g_gui_baslat_acik = 0;
-    }
+degisken g_gui_aktif_pencere: tamsayi = 1; # 1: VFS Gezgin, 2: Not Defteri, 3: Gorev Yoneticisi, 4: SQL, 5: Web, 6: Terminal
+degisken g_gui_baslat_acik:   tamsayi = 0; # 0: Kapali, 1: Acik
+degisken g_gui_secili_dosya:  tamsayi = 0;
+degisken g_gui_fare_x:        tamsayi = 6;
+degisken g_gui_fare_y:        tamsayi = 22; # Baslat butonunun uzerinde baslar
+
+isv desktop_pencere_ac(pencere_no: tamsayi) {
+    g_gui_aktif_pencere = pencere_no;
+    g_gui_baslat_acik = 0;
 }
 
-isv desktop_baslat_menusu_tetikle() {
+isv desktop_sekme_degistir(sekme_no: tamsayi) {
+    desktop_pencere_ac(sekme_no);
+}
+
+isv desktop_baslat_tetikle() {
     eger g_gui_baslat_acik == 1 ise {
         g_gui_baslat_acik = 0;
     } yoksa {
@@ -33,7 +39,7 @@ isv desktop_baslat_menusu_tetikle() {
     }
 }
 
-isv desktop_dosya_secimi_degistir(fark: tamsayi) {
+isv desktop_dosya_secimi(fark: tamsayi) {
     g_gui_secili_dosya = g_gui_secili_dosya + fark;
     eger g_gui_secili_dosya < 0 ise {
         g_gui_secili_dosya = 0;
@@ -48,60 +54,79 @@ isv desktop_fare_tasi(dx: tamsayi, dy: tamsayi) {
     g_gui_fare_y = g_gui_fare_y + dy;
 
     eger g_gui_fare_x < 0 ise { g_gui_fare_x = 0; }
-    eger g_gui_fare_x > 76 ise { g_gui_fare_x = 76; }
+    eger g_gui_fare_x > 77 ise { g_gui_fare_x = 77; }
     eger g_gui_fare_y < 0 ise { g_gui_fare_y = 0; }
-    eger g_gui_fare_y > 12 ise { g_gui_fare_y = 12; }
+    eger g_gui_fare_y > 22 ise { g_gui_fare_y = 22; }
 }
 
-# Fare Tiklamasi (Click): Fare koordinatlarindaki butona veya menuye tiklar
+# Fare Tiklamasi (Click) - Fare imlecinin bulundugu simgeye/butona tiklar
 isv desktop_fare_tikla() -> tamsayi {
-    # 1. Satir 0: Ust Cubuk / Sekmeler
-    eger g_gui_fare_y == 0 ise {
-        # Baslat Butonu [col 2..13]
-        eger g_gui_fare_x >= 2 ve g_gui_fare_x <= 13 ise {
-            desktop_baslat_menusu_tetikle();
+    # 1. Satir 22: Alt Gorev Cubugu (Taskbar)
+    eger g_gui_fare_y == 22 ise {
+        # [ ❖ BASLAT ] [col 2..14]
+        eger g_gui_fare_x >= 2 ve g_gui_fare_x <= 14 ise {
+            desktop_baslat_tetikle();
             dondu 1;
         }
-        # Sekme 1: Dosyalar [col 14..28]
-        eger g_gui_fare_x >= 14 ve g_gui_fare_x <= 28 ise {
-            desktop_sekme_degistir(1);
+        # [ 📁 VFS ] [col 15..25]
+        eger g_gui_fare_x >= 15 ve g_gui_fare_x <= 25 ise {
+            desktop_pencere_ac(1);
             dondu 1;
         }
-        # Sekme 2: SQL [col 29..38]
-        eger g_gui_fare_x >= 29 ve g_gui_fare_x <= 38 ise {
-            desktop_sekme_degistir(2);
+        # [ 📝 Editor ] [col 26..37]
+        eger g_gui_fare_x >= 26 ve g_gui_fare_x <= 37 ise {
+            desktop_pencere_ac(2);
             dondu 1;
         }
-        # Sekme 3: Ag [col 39..47]
-        eger g_gui_fare_x >= 39 ve g_gui_fare_x <= 47 ise {
-            desktop_sekme_degistir(3);
+        # [ 📊 Gorevler ] [col 38..51]
+        eger g_gui_fare_x >= 38 ve g_gui_fare_x <= 51 ise {
+            desktop_pencere_ac(3);
             dondu 1;
         }
-        # Sekme 4: Terminal [col 48..65]
-        eger g_gui_fare_x >= 48 ve g_gui_fare_x <= 65 ise {
-            desktop_sekme_degistir(4);
+        # [ 💻 Terminal ] [col 52..66]
+        eger g_gui_fare_x >= 52 ve g_gui_fare_x <= 66 ise {
+            desktop_pencere_ac(6);
             dondu 1;
         }
     }
 
-    # 2. Baslat Menusu Aciksa ve Tiklama Menu Icine Denk Geldiyse
-    eger g_gui_baslat_acik == 1 ve g_gui_fare_x >= 2 ve g_gui_fare_x <= 28 ise {
-        eger g_gui_fare_y == 3 ise { desktop_sekme_degistir(1); dondu 1; }
-        eger g_gui_fare_y == 4 ise { desktop_sekme_degistir(2); dondu 1; }
-        eger g_gui_fare_y == 5 ise { desktop_sekme_degistir(3); dondu 1; }
-        eger g_gui_fare_y == 6 ise { desktop_sekme_degistir(4); dondu 1; }
-        eger g_gui_fare_y == 8 ise { dondu 0; } # Kapat
+    # 2. Baslat Menusu Aciksa (Satir 12..21, Kolon 1..26)
+    eger g_gui_baslat_acik == 1 ve g_gui_fare_x >= 1 ve g_gui_fare_x <= 26 ise {
+        eger g_gui_fare_y == 14 ise { desktop_pencere_ac(1); dondu 1; }
+        eger g_gui_fare_y == 15 ise { desktop_pencere_ac(2); dondu 1; }
+        eger g_gui_fare_y == 16 ise { desktop_pencere_ac(3); dondu 1; }
+        eger g_gui_fare_y == 17 ise { desktop_pencere_ac(4); dondu 1; }
+        eger g_gui_fare_y == 18 ise { desktop_pencere_ac(5); dondu 1; }
+        eger g_gui_fare_y == 19 ise { desktop_pencere_ac(6); dondu 1; }
+        eger g_gui_fare_y == 21 ise { dondu 0; } # Bilgisayari kapat
     }
 
-    # 3. Dosya Yoneticisinde Bir Dosya Satirina Tiklandiysa
-    eger g_gui_aktif_sekme == 1 ve g_gui_fare_y >= 4 ve g_gui_fare_y <= 7 ise {
-        g_gui_secili_dosya = g_gui_fare_y - 4;
+    # 3. Sol Masaustu Simgeleri (Cols 1..14)
+    eger g_gui_fare_x >= 1 ve g_gui_fare_x <= 14 ise {
+        eger g_gui_fare_y == 2 veya g_gui_fare_y == 3 ise { desktop_pencere_ac(1); dondu 1; }
+        eger g_gui_fare_y == 4 veya g_gui_fare_y == 5 ise { desktop_pencere_ac(2); dondu 1; }
+        eger g_gui_fare_y == 6 veya g_gui_fare_y == 7 ise { desktop_pencere_ac(3); dondu 1; }
+        eger g_gui_fare_y == 8 veya g_gui_fare_y == 9 ise { desktop_pencere_ac(4); dondu 1; }
+        eger g_gui_fare_y == 10 veya g_gui_fare_y == 11 ise { desktop_pencere_ac(5); dondu 1; }
+        eger g_gui_fare_y == 12 veya g_gui_fare_y == 13 ise { desktop_pencere_ac(6); dondu 1; }
+    }
+
+    # 4. Pencere Kapatma Butonu [ X ] (Satir 1, Kolon 71..74)
+    eger g_gui_aktif_pencere != 0 ve g_gui_fare_y == 1 ve g_gui_fare_x >= 71 ve g_gui_fare_x <= 74 ise {
+        g_gui_aktif_pencere = 0; # Pencereyi kapat, yalnizca masaustu goster
+        dondu 1;
+    }
+
+    # 5. Dosya Gezgininde Dosya Secimi (Satir 5..9, Kolon 18..70)
+    eger g_gui_aktif_pencere == 1 ve g_gui_fare_y >= 5 ve g_gui_fare_y <= 9 ise {
+        g_gui_secili_dosya = g_gui_fare_y - 5;
         dondu 1;
     }
 
     dondu 1;
 }
 
+# Masaustu Cizim Motoru (80x25 VGA Tam Ekran)
 isv desktop_ciz() {
     degisken renk_ark: u8 = vga_renk_kodu(VGA_BEYAZ, VGA_MAVI);
     degisken renk_sar: u8 = vga_renk_kodu(VGA_SARI, VGA_MAVI);
@@ -112,162 +137,219 @@ isv desktop_ciz() {
 
     vga_ekran_temizle(renk_ark);
 
-    # 1. Ust Sekmeler ve Gorev Cubugu (Satir 0)
-    vga_metin_yaz(0, 0, "+-[* BASLAT]--[1: Dosyalar]--[2: SQL]--[3: Ag]--[4: Terminal]--------[22:30]-+".ptr, renk_sar);
+    # 1. Masaustu Deseni ve Sol Simgeler (Desktop Icons)
+    vga_metin_yaz(0, 2, "YknOS Masaustu".ptr, renk_sar);
+    vga_metin_yaz(1, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(2, 1, "| [D] VFS    |".ptr, renk_ark);
+    vga_metin_yaz(3, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(4, 1, "| [N] Editor |".ptr, renk_ark);
+    vga_metin_yaz(5, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(6, 1, "| [T] Gorev  |".ptr, renk_ark);
+    vga_metin_yaz(7, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(8, 1, "| [S] SQL DB |".ptr, renk_ark);
+    vga_metin_yaz(9, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(10, 1, "| [W] HTTP   |".ptr, renk_ark);
+    vga_metin_yaz(11, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(12, 1, "| [C] Kabuk  |".ptr, renk_ark);
+    vga_metin_yaz(13, 1, "+------------+".ptr, renk_cam);
 
-    eger g_gui_baslat_acik == 1 ise {
-        vga_metin_yaz(0, 2, "[* BASLAT *]".ptr, renk_yes);
-    }
+    vga_metin_yaz(15, 2, "Linux 6.1".ptr, renk_sar);
+    vga_metin_yaz(16, 2, "GNU/YknOS".ptr, renk_yes);
+    vga_metin_yaz(17, 2, "x86_64 SMP".ptr, renk_ark);
 
-    # Aktif sekmeyi vurgula
-    eger g_gui_aktif_sekme == 1 ise {
-        vga_metin_yaz(0, 14, "*1: Dosyalar*".ptr, renk_yes);
-    } yoksa eger g_gui_aktif_sekme == 2 ise {
-        vga_metin_yaz(0, 29, "*2: SQL*".ptr, renk_yes);
-    } yoksa eger g_gui_aktif_sekme == 3 ise {
-        vga_metin_yaz(0, 39, "*3: Ag*".ptr, renk_yes);
-    } yoksa eger g_gui_aktif_sekme == 4 ise {
-        vga_metin_yaz(0, 48, "*4: Terminal*".ptr, renk_yes);
-    }
-
-    # 2. Aktif Sekme Icerigini Ciz
-    eger g_gui_aktif_sekme == 1 ise {
-        # --- SEKME 1: LINUX VFS DOSYA YONETICISI ---
-        vga_kutu_ciz(1, 12, 76, renk_cam);
-        vga_metin_yaz(1, 4, "[ YknOS Linux VFS Dosya Yoneticisi | Dizin: / ]".ptr, renk_cam);
-        vga_metin_yaz(2, 4, "DOSYA ADI             BOYUT     IZIN        TUR".ptr, renk_sar);
-        vga_metin_yaz(3, 4, "------------------------------------------------------------------".ptr, renk_ark);
+    # 2. Aktif Pencereyi Ciz (Window Manager)
+    eger g_gui_aktif_pencere == 1 ise {
+        # --- PENCERE 1: DOSYA GEZGINI (FILE EXPLORER) ---
+        vga_kutu_ciz(1, 15, 61, renk_cam);
+        vga_metin_yaz(1, 18, "[ 📁 Dosya Gezgini (File Explorer) ]-------------[ _ ][ X ]".ptr, renk_cam);
+        vga_metin_yaz(2, 18, "Adres: [/home/root]              [ Yenile ] [ Yeni Klasor ]".ptr, renk_sar);
+        vga_metin_yaz(3, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(4, 18, "TUR  ISIM             BOYUT     IZINLER     TARIH".ptr, renk_sar);
 
         degisken i: tamsayi = 0;
-        dongu i < g_fs_dosya_sayisi ve i < 4 {
-            degisken r: tamsayi = 4 + i;
+        dongu i < g_fs_dosya_sayisi ve i < 5 {
+            degisken r: tamsayi = 5 + i;
             degisken c_renk: u8 = renk_ark;
             eger i == g_gui_secili_dosya ise {
                 c_renk = renk_sec;
-                vga_metin_yaz(r, 2, ">".ptr, renk_sar);
+                vga_metin_yaz(r, 16, ">".ptr, renk_sar);
             } yoksa {
-                vga_metin_yaz(r, 2, " ".ptr, renk_ark);
+                vga_metin_yaz(r, 16, " ".ptr, renk_ark);
             }
-
-            vga_metin_yaz(r, 4, g_fs_dosyalar[i].isim, c_renk);
 
             eger g_fs_dosyalar[i].dizin_mi == 1 ise {
-                vga_metin_yaz(r, 26, "4096 B".ptr, c_renk);
-                vga_metin_yaz(r, 36, "drwxr-xr-x".ptr, c_renk);
-                vga_metin_yaz(r, 48, "[DIZIN]".ptr, renk_sar);
-            } yoksa eger g_fs_dosyalar[i].salt_okunur == 1 ise {
-                vga_metin_yaz(r, 26, "ro Bayt".ptr, c_renk);
-                vga_metin_yaz(r, 36, "-r--r--r--".ptr, c_renk);
-                vga_metin_yaz(r, 48, "Sistem".ptr, c_renk);
+                vga_metin_yaz(r, 18, "[D]".ptr, renk_sar);
+                vga_metin_yaz(r, 23, g_fs_dosyalar[i].isim, c_renk);
+                vga_metin_yaz(r, 40, "4096 B".ptr, c_renk);
+                vga_metin_yaz(r, 49, "drwxr-xr-x".ptr, c_renk);
+                vga_metin_yaz(r, 62, "22:00".ptr, c_renk);
             } yoksa {
-                vga_metin_yaz(r, 26, "rw Bayt".ptr, c_renk);
-                vga_metin_yaz(r, 36, "-rw-r--r--".ptr, c_renk);
-                vga_metin_yaz(r, 48, "Dosya".ptr, c_renk);
+                vga_metin_yaz(r, 18, "[F]".ptr, renk_yes);
+                vga_metin_yaz(r, 23, g_fs_dosyalar[i].isim, c_renk);
+                vga_metin_yaz(r, 40, " Bayt".ptr, c_renk);
+                eger g_fs_dosyalar[i].salt_okunur == 1 ise {
+                    vga_metin_yaz(r, 49, "-r--r--r--".ptr, c_renk);
+                } yoksa {
+                    vga_metin_yaz(r, 49, "-rw-r--r--".ptr, c_renk);
+                }
+                vga_metin_yaz(r, 62, "22:00".ptr, c_renk);
             }
-
             i = i + 1;
         }
 
-        # Onizleme Paneli
-        vga_kutu_ciz(8, 4, 72, renk_sar);
-        vga_metin_yaz(8, 6, "[ Canli Dosya Onizleme ]".ptr, renk_sar);
-        degisken secili_idx: tamsayi = g_gui_secili_dosya;
-        eger secili_idx >= 0 ve secili_idx < g_fs_dosya_sayisi ise {
-            degisken onizleme_buf: [64]u8;
+        # Onizleme Alani (Satir 11..14)
+        vga_kutu_ciz(11, 4, 57, renk_sar);
+        vga_metin_yaz(11, 20, "[ Canli Dosya Onizleme ]".ptr, renk_sar);
+        degisken sec_idx: tamsayi = g_gui_secili_dosya;
+        eger sec_idx >= 0 ve sec_idx < g_fs_dosya_sayisi ise {
+            degisken onizleme_buf: [60]u8;
             degisken p: tamsayi = 0;
-            dongu p < 58 ve g_fs_dosyalar[secili_idx].icerik[p] != 0 ve g_fs_dosyalar[secili_idx].icerik[p] != 10 {
-                onizleme_buf[p] = g_fs_dosyalar[secili_idx].icerik[p];
+            dongu p < 54 ve g_fs_dosyalar[sec_idx].icerik[p] != 0 ve g_fs_dosyalar[sec_idx].icerik[p] != 10 {
+                onizleme_buf[p] = g_fs_dosyalar[sec_idx].icerik[p];
                 p = p + 1;
             }
             onizleme_buf[p] = 0;
             eger p == 0 ise {
-                vga_metin_yaz(9, 6, "(Dizin veya bos dosya icerigi)".ptr, renk_yes);
+                vga_metin_yaz(12, 20, "(Dizin veya bos dosya icerigi)".ptr, renk_yes);
             } yoksa {
-                vga_metin_yaz(9, 6, onizleme_buf, renk_yes);
+                vga_metin_yaz(12, 20, onizleme_buf, renk_yes);
             }
         }
+        vga_metin_yaz(15, 18, "Durum: Hazir | Secili dosyayi acmak icin Editor'e tiklayin".ptr, renk_cam);
 
-    } yoksa eger g_gui_aktif_sekme == 2 ise {
-        # --- SEKME 2: SQL VERITABANI ---
-        vga_kutu_ciz(1, 12, 76, renk_yes);
-        vga_metin_yaz(1, 4, "[ YknOS Gomulu SQL Veritabani Paneli ]".ptr, renk_yes);
-        vga_metin_yaz(2, 4, "ID   SERVIS          CPU%   BELLEK(KB)   DURUM".ptr, renk_sar);
-        vga_metin_yaz(3, 4, "------------------------------------------------------------------".ptr, renk_ark);
+    } yoksa eger g_gui_aktif_pencere == 2 ise {
+        # --- PENCERE 2: NOT DEFTERI / EDITÖR (NOTEPAD) ---
+        vga_kutu_ciz(1, 15, 61, renk_yes);
+        vga_metin_yaz(1, 18, "[ 📝 Not Defteri (Notepad) - /home/root/notlar.txt ]-[ _ ][ X ]".ptr, renk_yes);
+        vga_metin_yaz(2, 18, "Dosya   Duzen   Bicim   Yardim         [ Kaydet: :w ]     ".ptr, renk_sar);
+        vga_metin_yaz(3, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(4, 18, "1: YknOS Linux Gorev Plani:                               ".ptr, renk_ark);
+        vga_metin_yaz(5, 18, "2: 1. SQL veritabanini denetle ve metrik ekle             ".ptr, renk_ark);
+        vga_metin_yaz(6, 18, "3: 2. Port 8080 HTTP REST sunucusunu test et              ".ptr, renk_ark);
+        vga_metin_yaz(7, 18, "4: 3. /proc dinamik sanal dosya sistemini oku             ".ptr, renk_ark);
+        vga_metin_yaz(8, 18, "5: 4. Gercek fare donanim olaylarini optimize et          ".ptr, renk_ark);
+        vga_metin_yaz(9, 18, "6:                                                        ".ptr, renk_ark);
+        vga_metin_yaz(11, 18, "[ Durum: Duzenleme Modu | 5 Satir | UTF-8 | Unix (LF) ]   ".ptr, renk_cam);
+        vga_metin_yaz(13, 18, "Komut isteminde 'nano <dosya>' ile tam ekran duzenleyin.   ".ptr, renk_sar);
 
-        degisken j: tamsayi = 0;
-        dongu j < g_sql_metrik_sayisi ve j < 6 {
-            degisken sr: tamsayi = 4 + j;
-            vga_metin_yaz(sr, 4, "#".ptr, renk_sar);
-            vga_metin_yaz(sr, 9, g_sql_metrikler[j].servis, renk_ark);
-            vga_metin_yaz(sr, 45, "ONLINE".ptr, renk_yes);
-            j = j + 1;
-        }
-        vga_metin_yaz(11, 4, "Sorgu: SELECT * FROM sistem_metrikleri (6 kayit aktif)".ptr, renk_cam);
+    } yoksa eger g_gui_aktif_pencere == 3 ise {
+        # --- PENCERE 3: GÖREV YÖNETİCİSİ (TASK MANAGER) ---
+        vga_kutu_ciz(1, 15, 61, renk_sar);
+        vga_metin_yaz(1, 18, "[ 📊 Gorev Yoneticisi (Task Manager) ]-----------[ _ ][ X ]".ptr, renk_sar);
+        vga_metin_yaz(2, 18, "CPU: [====............] 3.2%    Surecler: 6 Aktif, 0 Zombie".ptr, renk_yes);
+        vga_metin_yaz(3, 18, "RAM: [==..............] 4.2 MB / 64 MB (Serbest: 59.8 MB) ".ptr, renk_yes);
+        vga_metin_yaz(4, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(5, 18, "PID   USER    CPU%   BELLEK     STAT   KOMUT              ".ptr, renk_sar);
+        vga_metin_yaz(6, 18, "1     root    0.0%   1024 KB    Ss     /sbin/init         ".ptr, renk_ark);
+        vga_metin_yaz(7, 18, "2     root    0.0%      0 KB    S      [kthreadd]         ".ptr, renk_ark);
+        vga_metin_yaz(8, 18, "3     root    1.0%   2048 KB    S      systemd-journald   ".ptr, renk_ark);
+        vga_metin_yaz(9, 18, "101   ykn     8.0%   4096 KB    S      ykn-sql-engine     ".ptr, renk_ark);
+        vga_metin_yaz(10, 18, "102   ykn    14.0%   8192 KB    S      ykn-httpd (8080)   ".ptr, renk_ark);
+        vga_metin_yaz(11, 18, "103   root    2.0%   3072 KB    R+     -yknsh (active)    ".ptr, renk_ark);
+        vga_metin_yaz(13, 18, "Surec sonlandirmak icin terminalde 'kill <pid>' kullanin. ".ptr, renk_cam);
 
-    } yoksa eger g_gui_aktif_sekme == 3 ise {
-        # --- SEKME 3: HTTP & AG MONITORU ---
-        vga_kutu_ciz(1, 12, 76, renk_mag);
-        vga_metin_yaz(1, 4, "[ YknOS HTTP 1.1 REST Web Sunucusu ve Ag Monitoru ]".ptr, renk_mag);
-        vga_metin_yaz(3, 4, "Sunucu Durumu : DINLENIYOR (0.0.0.0:8080)".ptr, renk_yes);
-        vga_metin_yaz(4, 4, "Yerel Ag Yolu : http://localhost:8080/".ptr, renk_sar);
-        vga_metin_yaz(5, 4, "Aktif Servis  : Linux Sockets / Winsock Motoru".ptr, renk_ark);
-        vga_metin_yaz(7, 4, "Kayitli API Uc Noktalari:".ptr, renk_cam);
-        vga_metin_yaz(8, 6, "1. GET /index.html    -> VFS HTML Dashboard Paneli".ptr, renk_ark);
-        vga_metin_yaz(9, 6, "2. GET /api/v1/durum  -> JSON Linux Cekirdek Calisma Durumu".ptr, renk_ark);
-        vga_metin_yaz(10, 6, "3. GET /api/v1/sql    -> JSON Canli SQL Tablosu Akisi".ptr, renk_ark);
-        vga_metin_yaz(11, 6, "4. GET /api/v1/fs     -> JSON VFS Dosya Sistemi Raporu".ptr, renk_ark);
+    } yoksa eger g_gui_aktif_pencere == 4 ise {
+        # --- PENCERE 4: SQL STUDIO ---
+        vga_kutu_ciz(1, 15, 61, renk_yes);
+        vga_metin_yaz(1, 18, "[ 💾 YknOS SQL Studio (Veritabani Yoneticisi) ]--[ _ ][ X ]".ptr, renk_yes);
+        vga_metin_yaz(2, 18, "Sorgu: SELECT * FROM sistem_metrikleri;                   ".ptr, renk_sar);
+        vga_metin_yaz(3, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(4, 18, "ID    SERVIS           CPU%    BELLEK(KB)    DURUM        ".ptr, renk_sar);
+        vga_metin_yaz(5, 18, "#1    KERNEL_CORE       3%     128 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(6, 18, "#2    HTTP_DAEMON      14%     256 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(7, 18, "#3    SQL_STORE         8%     512 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(8, 18, "#4    SCHEDULER         2%      64 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(9, 18, "#5    RAMFS_DRIVER      1%      32 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(10, 18, "#6    SHELL_SESSION     4%      96 KB        ONLINE       ".ptr, renk_ark);
+        vga_metin_yaz(12, 18, "Toplam 6 aktif iliskisel kayit listelendi.                ".ptr, renk_cam);
+
+    } yoksa eger g_gui_aktif_pencere == 5 ise {
+        # --- PENCERE 5: WEB VE AĞ MONİTÖRÜ ---
+        vga_kutu_ciz(1, 15, 61, renk_mag);
+        vga_metin_yaz(1, 18, "[ 🌐 HTTP 1.1 Web Sunucusu ve Ag Yoneticisi ]----[ _ ][ X ]".ptr, renk_mag);
+        vga_metin_yaz(2, 18, "Sunucu Durumu: DINLENIYOR (0.0.0.0:8080)                  ".ptr, renk_yes);
+        vga_metin_yaz(3, 18, "Tarayici Erisim Adresi: http://localhost:8080/            ".ptr, renk_sar);
+        vga_metin_yaz(4, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(5, 18, "Kayitli REST API Uclari:                                  ".ptr, renk_cam);
+        vga_metin_yaz(6, 18, "1. GET /index.html    -> VFS HTML Dashboard Paneli        ".ptr, renk_ark);
+        vga_metin_yaz(7, 18, "2. GET /api/v1/durum  -> JSON Linux Cekirdek Calisma Durumu".ptr, renk_ark);
+        vga_metin_yaz(8, 18, "3. GET /api/v1/sql    -> JSON Canli SQL Tablosu Akisi     ".ptr, renk_ark);
+        vga_metin_yaz(9, 18, "4. GET /api/v1/fs     -> JSON VFS Dosya Sistemi Raporu    ".ptr, renk_ark);
+        vga_metin_yaz(11, 18, "Tarayicinizdan baglanarak canli HTML panelini gorebilirsiniz".ptr, renk_sar);
+
+    } yoksa eger g_gui_aktif_pencere == 6 ise {
+        # --- PENCERE 6: TERMINAL PENCERESİ (EMBEDDED CONSOLE) ---
+        vga_kutu_ciz(1, 15, 61, renk_sar);
+        vga_metin_yaz(1, 18, "[ 💻 YknOS Cekirdek Terminali (yknsh) ]----------[ _ ][ X ]".ptr, renk_sar);
+        vga_metin_yaz(2, 18, "root@yknos:/# uname -a                                    ".ptr, renk_yes);
+        vga_metin_yaz(3, 18, "Linux yknos-box 6.1.0-yknos #1 SMP PREEMPT x86_64 GNU/Linux".ptr, renk_ark);
+        vga_metin_yaz(4, 18, "root@yknos:/# uptime                                      ".ptr, renk_yes);
+        vga_metin_yaz(5, 18, " 22:45:00 up 25 min,  1 user,  load average: 0.12, 0.08   ".ptr, renk_ark);
+        vga_metin_yaz(6, 18, "root@yknos:/# cat /proc/meminfo                           ".ptr, renk_yes);
+        vga_metin_yaz(7, 18, "MemTotal: 65536 kB | MemFree: 61440 kB | Buffers: 1024 kB ".ptr, renk_ark);
+        vga_metin_yaz(9, 18, "Komut istemine donmek icin 'cikis' veya 'q' tuslayin.     ".ptr, renk_cam);
 
     } yoksa {
-        # --- SEKME 4: TERMINAL (top / ps aux / uptime) ---
-        vga_kutu_ciz(1, 12, 76, renk_sar);
-        vga_metin_yaz(1, 4, "[ YknOS Linux Terminal & Top Surec Paneli ]".ptr, renk_sar);
-        vga_metin_yaz(3, 4, "root@yknos:/# uname -a".ptr, renk_yes);
-        vga_metin_yaz(4, 4, "Linux yknos-box 6.1.0-yknos #1 SMP PREEMPT x86_64 GNU/Linux".ptr, renk_ark);
-        vga_metin_yaz(5, 4, "root@yknos:/# uptime".ptr, renk_yes);
-        vga_metin_yaz(6, 4, "22:30:00 up 25 min, 1 user, load average: 0.12, 0.08, 0.02".ptr, renk_ark);
-        vga_metin_yaz(7, 4, "root@yknos:/# free -m".ptr, renk_yes);
-        vga_metin_yaz(8, 4, "Mem: 64M total, 3M used, 59M free, 1M buff/cache, 60M avail".ptr, renk_ark);
-        vga_metin_yaz(10, 4, "Komut girmek icin 'q' basip terminal kabuguna donebilirsiniz.".ptr, renk_cam);
+        # --- PENCERE KAPALI: SAF MASAÜSTÜ DUVAR KAĞIDI ---
+        vga_metin_yaz(5, 25, "========================================".ptr, renk_sar);
+        vga_metin_yaz(6, 25, "  YknOS Grafiksel Masaustu Sistemi     ".ptr, renk_yes);
+        vga_metin_yaz(7, 25, "  Sol simgelere fareyle tiklayarak     ".ptr, renk_cam);
+        vga_metin_yaz(8, 25, "  istediginiz uygulamayi acabilirsiniz!".ptr, renk_cam);
+        vga_metin_yaz(9, 25, "========================================".ptr, renk_sar);
     }
 
-    # 3. Baslat Menusu Aciksa Sol Alt Koseye Ciz
+    # 3. Baslat Menusu Aciksa Sol Alt Kosede Ciz
     eger g_gui_baslat_acik == 1 ise {
-        vga_kutu_ciz(2, 8, 26, renk_sar);
-        vga_metin_yaz(2, 4, "[* BASLAT MENUSU *]".ptr, renk_sar);
-        vga_metin_yaz(3, 4, "1. [D] Dosya Yoneticisi".ptr, renk_ark);
-        vga_metin_yaz(4, 4, "2. [S] SQL Veritabani".ptr, renk_ark);
-        vga_metin_yaz(5, 4, "3. [A] HTTP Ag Servisi".ptr, renk_ark);
-        vga_metin_yaz(6, 4, "4. [T] Terminal Kabuk".ptr, renk_ark);
-        vga_metin_yaz(7, 4, "----------------------".ptr, renk_sar);
-        vga_metin_yaz(8, 4, "0. [X] Sistemi Kapat".ptr, renk_mag);
+        vga_kutu_ciz(12, 10, 27, renk_sar);
+        vga_metin_yaz(12, 2, "[* ❖ YknOS BASLAT MENUSU *]".ptr, renk_sar);
+        vga_metin_yaz(13, 2, "👤 root (Sistem Yoneticisi)".ptr, renk_yes);
+        vga_metin_yaz(14, 2, "1. 📁 Dosya Gezgini (VFS)  ".ptr, renk_ark);
+        vga_metin_yaz(15, 2, "2. 📝 Metin Editoru (Nano) ".ptr, renk_ark);
+        vga_metin_yaz(16, 2, "3. 📊 Gorev Yoneticisi     ".ptr, renk_ark);
+        vga_metin_yaz(17, 2, "4. 💾 SQL Studio           ".ptr, renk_ark);
+        vga_metin_yaz(18, 2, "5. 🌐 Web Sunucu & Ag      ".ptr, renk_ark);
+        vga_metin_yaz(19, 2, "6. 💻 Terminal (yknsh)     ".ptr, renk_ark);
+        vga_metin_yaz(20, 2, "---------------------------".ptr, renk_sar);
+        vga_metin_yaz(21, 2, "0. ⚡ Bilgisayari Kapat    ".ptr, renk_mag);
     }
 
-    # 4. Fare Imleci Ciz (▲ / ^)
+    # 4. Alt Gorev Cubugu (Taskbar - Satir 22)
+    vga_metin_yaz(22, 0, "+-[ ❖ BASLAT ]-[ 📁 VFS ]-[ 📝 Editor ]-[ 📊 Gorevler ]-[ 💻 Terminal ]--[ 22:45 ]-+".ptr, renk_sar);
+
+    eger g_gui_baslat_acik == 1 ise {
+        vga_metin_yaz(22, 2, "[* ❖ BASLAT *]".ptr, renk_yes);
+    }
+
+    # 5. Fare Imleci Ciz (Kirmizi/Beyaz '^' Isareti)
     vga_karakter_koy(g_gui_fare_y, g_gui_fare_x, 94, vga_renk_kodu(VGA_KIRMIZI, VGA_BEYAZ));
 
-    # 5. Alt Bilgi Cubugu (Satir 13)
-    vga_metin_yaz(13, 0, "+-[X:".ptr, renk_sar);
-    vga_karakter_koy(13, 5, (g_gui_fare_x / 10) + 48, renk_sar);
-    vga_karakter_koy(13, 6, (g_gui_fare_x % 10) + 48, renk_sar);
-    vga_metin_yaz(13, 7, " Y:".ptr, renk_sar);
-    vga_karakter_koy(13, 10, (g_gui_fare_y / 10) + 48, renk_sar);
-    vga_karakter_koy(13, 11, (g_gui_fare_y % 10) + 48, renk_sar);
-    vga_metin_yaz(13, 12, "]-[wasd: Fare]-[t/Space: TIKLA]-[1-4: Sekme]-[b: Baslat]-[q: Cik]-+".ptr, renk_sar);
-
-    # Konsola bas
+    # Konsola yansit
     vga_paneli_yansit();
 }
 
+# Gercek Fare ve Klavye Etkilesimli Calistirma Dongusu
 isv desktop_etkilesimli_calistir() {
-    ekrana_yaz("\n=== YknOS Grafiksel Masaustu Arayuzu Baslatildi ===\n".ptr);
-    ekrana_yaz("Kontroller: wasd (Fareyi Hareket Ettir), t veya Space (FAREYI TIKLA),\n".ptr);
-    ekrana_yaz("1, 2, 3, 4 (Sekme Degistir), b (Baslat Menusu), j, k (Dosya Secimi), q (Cikis)\n\n".ptr);
+    ekrana_yaz("\n=== YknOS Gelismis Masaustu Arayuzu Baslatildi ===\n".ptr);
+    ekrana_yaz("Kontroller: Fare ile simgelere veya Baslat'a TIKLAYIN (t / Space / Enter)\n".ptr);
+    ekrana_yaz("wasd: Fareyi Hareket Ettir | 1-6: Uygulama Sec | b: Baslat Menusu | x: Pencereyi Kapat | q: Cikis\n\n".ptr);
+
+    # Windows Konsolunda Gercek Fare Donanimini Etkinlestir (ENABLE_MOUSE_INPUT)
+    degisken hKernel: tamsayi = LoadLibraryA("kernel32.dll".ptr);
+    degisken pSetConsoleMode: tamsayi = 0;
+    eger hKernel != 0 ise {
+        pSetConsoleMode = GetProcAddress(hKernel, "SetConsoleMode".ptr);
+        degisken hStdin: tamsayi = GetStdHandle(0 - 10);
+        eger pSetConsoleMode != 0 ve hStdin != 0 ise {
+            # ENABLE_EXTENDED_FLAGS (0x0080) | ENABLE_MOUSE_INPUT (0x0010) | ENABLE_WINDOW_INPUT (0x0008)
+            pSetConsoleMode(hStdin, 152);
+        }
+    }
 
     degisken calisiyor: tamsayi = 1;
     dongu calisiyor == 1 {
         desktop_ciz();
 
-        ekrana_yaz("Arayuz Kontrolu (wasd: Fare, t: Tikla, 1-4, b, jk, q): ".ptr);
+        ekrana_yaz("Masaustu [wasd: Fare, t/Space: TIKLA, 1-6: Uygulama, b: Baslat, x: Kapat, q: Cik]: ".ptr);
         degisken girdi: *u8 = ykn_satir_oku();
         eger girdi == 0 ise {
             calisiyor = 0;
@@ -277,30 +359,36 @@ isv desktop_etkilesimli_calistir() {
         degisken c: u8 = girdi[0];
         eger c == 113 veya c == 81 ise { # 'q' / 'Q'
             calisiyor = 0;
-        } yoksa eger c == 116 veya c == 84 veya c == 32 ise { # 't' / 'T' / Space (Tikla)
+        } yoksa eger c == 116 veya c == 84 veya c == 32 veya c == 10 ise { # 't' / 'T' / Space / Enter (TIKLA)
             calisiyor = desktop_fare_tikla();
-        } yoksa eger c == 49 ise { # '1'
-            desktop_sekme_degistir(1);
-        } yoksa eger c == 50 ise { # '2'
-            desktop_sekme_degistir(2);
-        } yoksa eger c == 51 ise { # '3'
-            desktop_sekme_degistir(3);
-        } yoksa eger c == 52 ise { # '4'
-            desktop_sekme_degistir(4);
-        } yoksa eger c == 98 veya c == 66 ise { # 'b' / 'B'
-            desktop_baslat_menusu_tetikle();
-        } yoksa eger c == 119 veya c == 87 ise { # 'w' (Fare yukari)
-            desktop_fare_tasi(0, 0 - 1);
-        } yoksa eger c == 115 veya c == 83 ise { # 's' (Fare asagi)
-            desktop_fare_tasi(0, 1);
-        } yoksa eger c == 97 veya c == 65 ise { # 'a' (Fare sola)
-            desktop_fare_tasi(0 - 3, 0);
-        } yoksa eger c == 100 veya c == 68 ise { # 'd' (Fare saga)
-            desktop_fare_tasi(3, 0);
-        } yoksa eger c == 106 veya c == 74 ise { # 'j' (Dosya asagi)
-            desktop_dosya_secimi_degistir(1);
-        } yoksa eger c == 107 veya c == 75 ise { # 'k' (Dosya yukari)
-            desktop_dosya_secimi_degistir(0 - 1);
+        } yoksa eger c == 49 ise { # '1' -> Dosya Gezgini
+            desktop_pencere_ac(1);
+        } yoksa eger c == 50 ise { # '2' -> Not Defteri
+            desktop_pencere_ac(2);
+        } yoksa eger c == 51 ise { # '3' -> Gorev Yoneticisi
+            desktop_pencere_ac(3);
+        } yoksa eger c == 52 ise { # '4' -> SQL Studio
+            desktop_pencere_ac(4);
+        } yoksa eger c == 53 ise { # '5' -> Web Ag Paneli
+            desktop_pencere_ac(5);
+        } yoksa eger c == 54 ise { # '6' -> Terminal
+            desktop_pencere_ac(6);
+        } yoksa eger c == 98 veya c == 66 ise { # 'b' / 'B' -> Baslat Menusu
+            desktop_baslat_tetikle();
+        } yoksa eger c == 120 veya c == 88 ise { # 'x' / 'X' -> Pencereyi Kapat
+            g_gui_aktif_pencere = 0;
+        } yoksa eger c == 119 veya c == 87 ise { # 'w' -> Fare yukari
+            desktop_fare_tasi(0, 0 - 2);
+        } yoksa eger c == 115 veya c == 83 ise { # 's' -> Fare asagi
+            desktop_fare_tasi(0, 2);
+        } yoksa eger c == 97 veya c == 65 ise { # 'a' -> Fare sola
+            desktop_fare_tasi(0 - 4, 0);
+        } yoksa eger c == 100 veya c == 68 ise { # 'd' -> Fare saga
+            desktop_fare_tasi(4, 0);
+        } yoksa eger c == 106 veya c == 74 ise { # 'j' -> Dosya asagi
+            desktop_dosya_secimi(1);
+        } yoksa eger c == 107 veya c == 75 ise { # 'k' -> Dosya yukari
+            desktop_dosya_secimi(0 - 1);
         }
     }
 
