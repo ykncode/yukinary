@@ -76,3 +76,4 @@ if ($choice -eq "all") {
 } else {
     Write-Host "Unknown model '$Model'. Available options: bitnet, bonsai, all" -ForegroundColor Red
 }
+

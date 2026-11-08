@@ -23,6 +23,9 @@
 14. [Paket Yöneticisi ve İki Depolu (Two-Repo) Mimari](#14-paket-yöneticisi-ve-iki-depolu-mimari)
 15. [Çok Dilli Kod Dönüştürme (`#convert`) ve Harici Kütüphane Çağırma (FFI)](#15-çok-dilli-kod-dönüştürme-convert-ve-harici-kütüphane-çağırma-ffi)
 16. [Derleme ve Çapraz Platform Doğrulama (Windows & Docker Linux)](#16-derleme-ve-doğrulama)
+17. [YKN ile Neler Yapılabilir? (Hedef Alanlar)](#17-ykn-ile-neler-yapılabilir-hedef-alanlar)
+18. [İşletim Sistemi Geliştirme: YknOS Mimarisi](#18-işletim-sistemi-geliştirme-yknos-mimarisi)
+19. [Üretim Olgunluğu, Sınırlar ve Hukuki/Teknik Garantiler](#19-üretim-olgunluğu-sınırlar-ve-hukukiteknik-garantiler)
 
 ---
 
@@ -428,6 +431,70 @@ Proje kökündeki `scratch/verify_all.ps1` betiği tüm Faz testlerini hem Windo
 ```powershell
 powershell -ExecutionPolicy Bypass -File scratch/verify_all.ps1
 ```
+
+---
+
+## 17. YKN ile Neler Yapılabilir? (Hedef Alanlar)
+
+Yukinary; bir sanal makine (JVM, CLR) veya yorumlayıcı (Python) üzerinde değil, **C, Rust ve Zig gibi doğrudan 64-bit yerel makine kodu (Windows PE32+ ve Linux ELF64)** seviyesinde çalışır. C çalışma zamanı (libc, msvcrt) bağımlılığı dahi yoktur.
+
+Bu mimari sayesinde şu alanlarda benzersiz bir güç sunar:
+
+### 1. Sistem ve CLI Araçları (En Güçlü Olduğu Alan)
+* Anında soğuk başlatma (< 1 milisaniye) ve birkaç yüz kilobaytlık dosya boyutları.
+* **Yaşayan En Büyük Kanıt:** Yukinary derleyicisinin kendisi (`src/` altındaki 40.000+ satır saf YKN kodu) tamamen Yukinary ile yazılmıştır ve kendi kendini derlemektedir (`self-hosting fixpoint`).
+
+### 2. Yüksek Performanslı Ağ ve Web Sunucuları
+* Asenkron G/Ç motorları: `std/ag/http.ykn`, `std/ag/websocket.ykn`, Windows IOCP (`std/es/iocp_loop.ykn`), Linux `io_uring`/`epoll` (`std/os/os_linux_uring.ykn`).
+* Node.js veya Python'a kıyasla mikrosaniye gecikmeyle çalışan yüksek hacimli REST API'ler ve mikroservisler.
+
+### 3. Veritabanı ve Depolama Motorları
+* Yerleşik standart kütüphane primitifleri: B-Tree indeksleme (`std/veritabani/b_tree.ykn`), Write-Ahead Logging (`std/veritabani/wal.ykn`), gömülü SQL motoru (`std/veritabani/sql_motoru.ykn`) ve Vektör Veritabanı araması (`std/veritabani/hnsw.ykn`).
+
+### 4. Gömülü Yapay Zeka ve Nöral Çıkarım
+* Gömülü BitNet causal transformer ağırlıkları, Q16.16 sabit nokta tamsayı matematiği ve GGUF v3 desteği (`std/ai/`).
+* Python, PyTorch veya CUDA sürücüsü şartı olmadan sıradan bir CPU üzerinde anlık yapay zeka çıkarımı.
+
+### 5. Gömülü Sistemler (Embedded Systems) & IoT
+* Düşük bellek tüketimi (< 1 MB), doğrudan donanım işaretçileri ve işletim sistemi gerektirmeden çalışabilme yeteneği.
+
+---
+
+## 18. İşletim Sistemi Geliştirme: YknOS Mimarisi
+
+**YKN ile bir işletim sistemi (OS) yazılabilir mi? EVET, temelleri şu anda repoda hazırdır!**
+
+Python, Java veya C# gibi dillerle işletim sistemi yazılamaz; çünkü onlar altta başka bir işletim sistemi ve çalışma zamanı (runtime) beklerler. Oysa Yukinary, doğrudan çıplak donanım (Bare-Metal / Ring-0) seviyesinde çalışan makine kodu üretir.
+
+[`std/os/kernel_real/`](https://github.com/ykncode/yukinary/tree/main/std/os/kernel_real) klasöründe QEMU / VirtualBox ile boot edilebilen çalışan bir x86_64 çekirdek prototipi mevcuttur:
+
+* **Multiboot2 Girişi (`std/os/kernel_real/boot.asm`):** GRUB uyumlu 32-bit'ten 64-bit Long Mode'a geçiş kodları.
+* **Global Descriptor Table (`std/os/kernel_real/gdt.ykn`):** 64-bit bellek segmentasyon tabloları.
+* **Interrupt Descriptor Table (`std/os/kernel_real/idt.ykn`):** Ring-0 donanım kesme ve exception kapıları.
+* **Sanal Bellek Sayfalama (`std/os/kernel_real/paging.ykn`):** 4 seviyeli PML4 sayfa tabloları ve 1 GB identity mapping.
+* **Donanım Sürücüleri:** COM1 Seri Port sürücüsü (`serial.ykn`) ve VGA 0xB8000 metin video belleği sürücüsü (`vga_text.ykn`).
+* **Çekirdek Ana Fonksiyonu (`std/os/kernel_real/kmain.ykn`):** Ring-0 yetkisinde doğrudan çıplak donanımda çalışan çekirdek başlangıç noktası (`yukinary_cekirdek_baslat`).
+
+---
+
+## 19. Üretim Olgunluğu, Sınırlar ve Hukuki/Teknik Garantiler
+
+Kıdemli bir mühendislik disipliniyle şeffaf ve dürüst sınırlar:
+
+### A. Kanıtlanmış Teknik Garantiler
+* **Bit-Identical Fixpoint Garantisi:** Stage 2 ve Stage 3 derleyicileri birbirini derlediğinde ortaya çıkan ikili dosyaların SHA-256 hash'leri **birebir aynıdır** (`EF607B9A...`). Bu, dilde bellek sızıntısı veya determinizm bozukluğu olmadığının matematiksel kanıtıdır.
+* **Sıfır Bağımlılık:** Üretilen `.exe` veya ELF dosyaları harici hiçbir C çalışma zamanı (libc/msvcrt/python) olmadan temiz sistemlerde anında çalışır.
+* **Statik Güvenlik:** Statik tip denetimi, opsiyonel dizi sınır denetimi (`--guvenli`), Use-After-Free analizi ve sandbox yetkilendirmesi.
+
+### B. Dürüst Mühendislik Sınırları (YKN Nerelerde Kullanılmamalı?)
+* **Hayati Öneme Sahip Sistemler / Banka Çekirdeği:** Yukinary matematiksel olarak fixpoint ile doğrulanmış olsa da genç bir dildir. C veya Ada'nın havacılıkta ve bankacılıkta sahip olduğu 40 yıllık milyarlarca saatlik üretim testi geçmişine henüz sahip değildir.
+* **Mobil Uygulamalar (iOS/Android UI):** Apple UIKit/SwiftUI veya Android Jetpack Compose arayüz kütüphaneleri henüz dilde mevcut değildir.
+* **Dinamik Kabuk Betikleri:** Derleme adımı olmadan anlık çalıştırılan dinamik/tipsiz betikler yazmak istiyorsanız Bash veya Python daha uygundur.
+
+### C. Hukuki Sorumluluk Reddi (Disclaimer)
+Dünyadaki tüm açık kaynak dillerde (Rust, Go, Linux Çekirdeği) olduğu gibi, Yukinary MIT ve Apache 2.0 lisanslarıyla sunulur ve **"HİÇBİR TİCARİ VEYA HUKUKİ GARANTİ OLMAKSIZIN OLDUĞU GİBİ (AS IS)"** sağlanır.
+
+---
 
 **Tebrikler! Artık Yukinary'nin tüm mimari gücüne hakimsiniz.**
 

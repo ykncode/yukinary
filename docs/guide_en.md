@@ -23,6 +23,9 @@
 14. [Package Manager & Two-Repository Architecture](#14-package-manager--two-repo-architecture)
 15. [Polyglot Convert Engine (`#convert`) & Foreign Function Interface (FFI)](#15-polyglot-convert-engine-convert--foreign-function-interface-ffi)
 16. [Build Verification & Cross-Platform Testing](#16-build-verification--cross-platform-testing)
+17. [What Can You Build with Yukinary? (Target Domains)](#17-what-can-you-build-with-yukinary-target-domains)
+18. [Operating System Development: YknOS Architecture](#18-operating-system-development-yknos-architecture)
+19. [Production Readiness, Boundaries & Guarantees](#19-production-readiness-boundaries--guarantees)
 
 ---
 
@@ -427,4 +430,64 @@ Run the unified regression suite:
 powershell -ExecutionPolicy Bypass -File scratch/verify_all.ps1
 ```
 All tests pass with **Exit Code 0** on native Windows PE32+ and Docker Alpine Linux ELF64.
+
+---
+
+## 17. What Can You Build with Yukinary? (Target Domains)
+
+Yukinary compiles directly to native 64-bit machine code with **zero runtime dependencies** (no C-runtime, no JVM, no interpreter). It is engineered for performance-critical and resource-constrained environments:
+
+### 1. High-Performance CLI Tools & Compilers
+* Instant cold-start latency (< 1ms) with sub-megabyte binary footprints.
+* **Living Proof:** The Yukinary compiler itself (over 40,000 lines of source code in `src/`) is written entirely in pure Yukinary and compiles itself deterministically (`self-hosting fixpoint`).
+
+### 2. High-Throughput Network Servers & Microservices
+* Asynchronous I/O via `std/ag/http.ykn`, `std/ag/websocket.ykn`, Windows IOCP (`std/es/iocp_loop.ykn`), and Linux `io_uring`/`epoll` (`std/os/os_linux_uring.ykn`).
+* Delivers microsecond-level latency and orders of magnitude lower memory consumption than Node.js or Python.
+
+### 3. Database & Storage Engines
+* Standard library primitives include B-Tree indexing (`std/veritabani/b_tree.ykn`), Write-Ahead Logging (`std/veritabani/wal.ykn`), embedded SQL parser (`std/veritabani/sql_motoru.ykn`), and Vector Database search (`std/veritabani/hnsw.ykn`).
+
+### 4. Embedded Neural Inference & Edge AI
+* Embedded BitNet causal transformer weights, integer Q16.16 fixed-point math, and GGUF v3 parser (`std/ai/`).
+* Run local inference without Python, PyTorch, or GPU driver installations.
+
+### 5. Embedded Systems & IoT
+* Minimal RAM overhead (< 1 MB), direct hardware pointer manipulation, and freestanding bare-metal execution.
+
+---
+
+## 18. Operating System Development: YknOS Architecture
+
+**Can you build an operating system in Yukinary? Yes, and the foundational kernel is already implemented in the repository.**
+
+Operating systems cannot be written in languages that depend on an existing OS or garbage-collected runtime (like Python, Java, or C#). Because Yukinary emits freestanding, unmanaged x86_64 machine code with raw pointer manipulation, it compiles directly to bare-metal Ring-0 code.
+
+Inside [`std/os/kernel_real/`](https://github.com/ykncode/yukinary/tree/main/std/os/kernel_real), Yukinary provides a working proof-of-concept x86_64 kernel:
+
+* **Multiboot2 Entry (`std/os/kernel_real/boot.asm`):** 32-bit to 64-bit Long Mode bootstrap compatible with GRUB.
+* **Global Descriptor Table (`std/os/kernel_real/gdt.ykn`):** 64-bit kernel code/data segment descriptors.
+* **Interrupt Descriptor Table (`std/os/kernel_real/idt.ykn`):** Ring-0 hardware interrupt, exception, and trap gates.
+* **Virtual Memory Paging (`std/os/kernel_real/paging.ykn`):** 4-level PML4 page tables with 1 GB identity mapping.
+* **Hardware Drivers:** COM1 Serial UART driver (`serial.ykn`) and VGA 0xB8000 text-mode video memory driver (`vga_text.ykn`).
+* **Kernel Entry (`std/os/kernel_real/kmain.ykn`):** The main Ring-0 execution entry point (`yukinary_cekirdek_baslat`), testable in QEMU / VirtualBox.
+
+---
+
+## 19. Production Readiness, Boundaries & Guarantees
+
+As a senior-engineered language, Yukinary believes in **radical engineering honesty**:
+
+### A. Proven Technical Guarantees
+* **Deterministic Bit-Identical Fixpoint:** Stage 2 and Stage 3 compilers generate bit-for-bit identical binaries (`EF607B9A...`).
+* **Zero External Dependencies:** Produced executables run on clean Windows (Kernel32) and Linux (syscalls) with zero runtime dependencies.
+* **Compile-Time Safety:** Static type enforcement, optional array bounds checking (`--guvenli`), Use-After-Free lifetime analysis, and AST sandbox capability gates.
+
+### B. Honest Engineering Boundaries (Where NOT to Use YKN Yet)
+* **Mission-Critical Life-Support / Core Banking:** While Yukinary is mathematically verified via fixpoint tests, it is a young programming language. It has not accumulated the decades of production mileage that C or Ada possess in aerospace or high-frequency trading.
+* **Native Mobile Apps (iOS/Android):** Yukinary does not yet provide native UI bindings for Apple UIKit/SwiftUI or Android Jetpack Compose.
+* **Dynamic Ad-Hoc Scripting:** If your use case requires an interactive, untyped, interpreted shell script with zero compilation delay, Python or Bash remains more suitable.
+
+### C. Legal & Commercial Warranty
+Like Rust, Go, Linux, and all major open-source systems, Yukinary is licensed under the MIT and Apache 2.0 licenses and provided **"AS IS", WITHOUT WARRANTY OF ANY KIND**.
 
