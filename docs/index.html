@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Yukinary (YKN) - Çok Dilli Sistem Programlama Dili</title>
-  <meta name="description" content="Harici C çalışma zamanı (libc), LLVM veya harici linker olmadan doğrudan saf x86_64 makine kodu üreten, 7 dilde doğal kodlama imkanı sunan modern sistem programlama dili.">
+  <title>Yukinary (YKN) - Multi-Lingual Systems Programming Language</title>
+  <meta name="description" content="A multi-lingual, memory-safe systems programming language that compiles directly to native x86_64 machine code (PE32+ & ELF64) without libc, LLVM, or external linkers.">
   <link rel="icon" type="image/png" href="assets/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -85,7 +85,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Container */
     .container {
       width: 100%;
       max-width: 1240px;
@@ -170,7 +169,7 @@
       color: var(--text-body);
       font-family: var(--font-sans);
       font-size: 0.88rem;
-      font-weight: 500;
+      font-weight: 600;
       padding: 7px 12px;
       border-radius: 8px;
       cursor: pointer;
@@ -262,7 +261,7 @@
     }
 
     .hero-desc {
-      font-size: 1.15rem;
+      font-size: 1.12rem;
       line-height: 1.7;
       color: var(--text-muted);
       margin-bottom: 32px;
@@ -559,7 +558,7 @@
       border: 1px solid var(--border-subtle);
     }
 
-    /* Use Cases / Deep Architecture Cards */
+    /* Use Cases Cards */
     .usecase-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
@@ -817,23 +816,6 @@
       white-space: pre-wrap;
     }
 
-    .pipe-step {
-      color: #38bdf8;
-      font-weight: 600;
-    }
-
-    .pipe-ok {
-      color: #34d399;
-    }
-
-    .pipe-warn {
-      color: #fbbf24;
-    }
-
-    .pipe-err {
-      color: #f87171;
-    }
-
     /* Documentation Table of Contents & Content */
     .docs-layout {
       display: grid;
@@ -882,12 +864,6 @@
     .docs-nav-list li a:hover {
       background: var(--primary-subtle);
       color: var(--primary);
-    }
-
-    .docs-nav-list li.active a {
-      background: var(--primary);
-      color: #ffffff;
-      font-weight: 600;
     }
 
     .docs-body {
@@ -1065,7 +1041,6 @@
       </nav>
 
       <div class="header-controls">
-        <!-- Multi-lingual Language Selector -->
         <select id="langSelect" class="select-dropdown" aria-label="Language Selector">
           <option value="tr">🇹🇷 Türkçe</option>
           <option value="en">🇬🇧 English</option>
@@ -1076,7 +1051,6 @@
           <option value="ko">🇰🇷 한국어</option>
         </select>
 
-        <!-- Theme Toggle Button -->
         <button id="themeToggleBtn" class="icon-btn" aria-label="Toggle Theme" title="Aydınlık / Karanlık Tema">
           <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
@@ -1091,7 +1065,6 @@
           </svg>
         </button>
 
-        <!-- GitHub Link -->
         <a href="https://github.com/ykncode/yukinary" target="_blank" rel="noopener" class="btn-github">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
@@ -1164,22 +1137,22 @@
             <code id="heroInstallCmd">irm https://raw.githubusercontent.com/ykncode/yukinary/main/setup.ps1 | iex</code>
             <button class="copy-btn" onclick="copyInstallCmd()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              <span id="copyFeedbackText">Kopyala</span>
+              <span id="copyFeedbackText" data-i18n="copy_btn">Kopyala</span>
             </button>
           </div>
 
           <div class="terminal-steps">
             <div class="terminal-step">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span>%USERPROFILE%\.yukinary\bin dizinine güvenli kurulum</span>
+              <span data-i18n="term_step1">%USERPROFILE%\.yukinary\bin dizinine güvenli kurulum</span>
             </div>
             <div class="terminal-step">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span>Ortam değişkeni PATH'e otomatik ekleme</span>
+              <span data-i18n="term_step2">Ortam değişkeni PATH'e otomatik ekleme</span>
             </div>
             <div class="terminal-step">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span>Doğrudan `ykn --version` ve `ykn --yardim` ile hazır</span>
+              <span data-i18n="term_step3">Doğrudan ykn --version ve ykn --yardim ile hazır</span>
             </div>
           </div>
         </div>
@@ -1187,7 +1160,7 @@
     </div>
   </section>
 
-  <!-- Key Features Pillars (Python/Rust Inspired) -->
+  <!-- Key Features Pillars -->
   <section id="features">
     <div class="container">
       <div class="section-header">
@@ -1204,7 +1177,7 @@
           </div>
           <h3 class="card-title" data-i18n="feat1_title">Doğrudan Makine Kodu</h3>
           <p class="card-text" data-i18n="feat1_desc">LLVM, GCC, MSVC veya libc bağımlılığı yoktur. Derleyici doğrudan saf x86_64 PE32+ (Windows) ve ELF64 (Linux) ikili dosyalarını milisaniyeler içinde üretir.</p>
-          <span class="card-badge">Zero Dependency Linker</span>
+          <span class="card-badge" data-i18n="feat1_badge">Zero Dependency Linker</span>
         </div>
 
         <!-- Feature 2 -->
@@ -1214,7 +1187,7 @@
           </div>
           <h3 class="card-title" data-i18n="feat2_title">7 Dilde Doğal Gramer</h3>
           <p class="card-text" data-i18n="feat2_desc">İngilizce zorunluluğu kalktı. Türkçe, İngilizce, Fransızca, Rusça, Japonca, Çince ve Korece anahtar kelimeler birinci sınıf token olarak doğrudan derlenir.</p>
-          <span class="card-badge">TR • EN • FR • RU • JA • ZH • KO</span>
+          <span class="card-badge" data-i18n="feat2_badge">TR • EN • FR • RU • JA • ZH • KO</span>
         </div>
 
         <!-- Feature 3 -->
@@ -1223,8 +1196,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
           </div>
           <h3 class="card-title" data-i18n="feat3_title">Hafıza Güvenliği (No GC)</h3>
-          <p class="card-text" data-i18n="feat3_desc">Çöp toplayıcı (Garbage Collector) duraksamaları olmadan, derleme zamanı "Hafıza Zabıtası" analiziyle Use-After-Free ve dizi sınır kontrolleri güvenceye alınır.</p>
-          <span class="card-badge">Deterministic Memory Safety</span>
+          <p class="card-text" data-i18n="feat3_desc">Çöp toplayıcı (Garbage Collector) duraksamaları olmadan, derleme zamanı Hafıza Zabıtası analiziyle Use-After-Free ve dizi sınır kontrolleri güvenceye alınır.</p>
+          <span class="card-badge" data-i18n="feat3_badge">Deterministic Memory Safety</span>
         </div>
 
         <!-- Feature 4 -->
@@ -1233,8 +1206,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
           </div>
           <h3 class="card-title" data-i18n="feat4_title">Can Simidi (Self-Healing)</h3>
-          <p class="card-text" data-i18n="feat4_desc">Unutulan noktalı virgül, kapanmamış parantez veya null erişimleri derleyiciyi düşürmez. `--self-heal` bayrağı ile kod AST seviyesinde otomatik onarılır ve denetlenir.</p>
-          <span class="card-badge">Auto-Repair & Safe Compilation</span>
+          <p class="card-text" data-i18n="feat4_desc">Unutulan noktalı virgül, kapanmamış parantez veya null erişimleri derleyiciyi düşürmez. --self-heal bayrağı ile kod AST seviyesinde otomatik onarılır.</p>
+          <span class="card-badge" data-i18n="feat4_badge">Auto-Repair & Safe Compilation</span>
         </div>
 
         <!-- Feature 5 -->
@@ -1243,8 +1216,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
           </div>
           <h3 class="card-title" data-i18n="feat5_title">Gömülü BitNet Micro-LLM</h3>
-          <p class="card-text" data-i18n="feat5_desc">16 KB yerleşik BitNet 1.58b Transformer modeli ile internet, GPU veya Python runtime gerekmeden derleme anında 0.1 ms'de kod önerisi ve akıllı optimizasyon.</p>
-          <span class="card-badge">1.58-Bit Quantized AI Engine</span>
+          <p class="card-text" data-i18n="feat5_desc">16 KB yerleşik BitNet 1.58b Transformer modeli ile internet, GPU veya Python runtime gerekmeden derleme anında 0.1 ms'de kod önerisi ve optimizasyon.</p>
+          <span class="card-badge" data-i18n="feat5_badge">1.58-Bit Quantized AI Engine</span>
         </div>
 
         <!-- Feature 6 -->
@@ -1253,14 +1226,14 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
           </div>
           <h3 class="card-title" data-i18n="feat6_title">LSP & VS Code Ekosistemi</h3>
-          <p class="card-text" data-i18n="feat6_desc">Yerleşik Language Server Protocol (`ykn --lsp`), resmi VS Code uzantısı, çift depolu modern paket yöneticisi ve kaynak içi `#config` direktifleri ile eksiksiz geliştirme ortamı.</p>
-          <span class="card-badge">LSP Server & Editor Tooling</span>
+          <p class="card-text" data-i18n="feat6_desc">Yerleşik Language Server Protocol (ykn --lsp), resmi VS Code uzantısı, çift depolu modern paket yöneticisi ve kaynak içi #config direktifleri.</p>
+          <span class="card-badge" data-i18n="feat6_badge">LSP Server & Editor Tooling</span>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- What Can You Build? (YKN ile Neler Yapılabilir?) -->
+  <!-- What Can You Build? -->
   <section id="usecases">
     <div class="container">
       <div class="section-header">
@@ -1273,16 +1246,16 @@
         <div class="usecase-card">
           <div class="usecase-header">
             <h3 class="usecase-title" data-i18n="uc1_title">1. İşletim Sistemi & Kernel (YknOS)</h3>
-            <span class="card-badge">Bare-Metal</span>
+            <span class="card-badge" data-i18n="uc1_badge">Bare-Metal</span>
           </div>
           <p class="card-text" data-i18n="uc1_desc">
-            Yukinary hiçbir harici C kütüphanesine veya libc'ye ihtiyaç duymadığı için doğrudan `std/os/kernel.ykn`, sayfalama (paging), kesmeler (IDT) ve donanım sürücüleri yazılabilir. YknOS mimarisi bu sayede saf Yukinary ile hayata geçirilebilir.
+            Yukinary hiçbir harici C kütüphanesine veya libc'ye ihtiyaç duymadığı için doğrudan std/os/kernel.ykn, sayfalama (paging), kesmeler (IDT) ve donanım sürücüleri yazılabilir. YknOS mimarisi bu sayede saf Yukinary ile hayata geçirilebilir.
           </p>
           <div class="usecase-code">
 # YknOS Mikroçekirdek Giriş Noktası
 isv kernel_main(multiboot_ptr: *u8) -> tamsayi {
     vga_temizle();
-    vga_yaz("YknOS v0.1 Baslatildi! (Saf x86_64)\\n".ptr);
+    vga_yaz("YknOS v0.1 Baslatildi! (Saf x86_64)\n".ptr);
     kesme_tablosu_kur();
     dondu 0;
 }
@@ -1292,7 +1265,7 @@ isv kernel_main(multiboot_ptr: *u8) -> tamsayi {
         <div class="usecase-card">
           <div class="usecase-header">
             <h3 class="usecase-title" data-i18n="uc2_title">2. Ultra Düşük Gecikmeli Ağ & Veritabanı</h3>
-            <span class="card-badge">High Throughput</span>
+            <span class="card-badge" data-i18n="uc2_badge">High Throughput</span>
           </div>
           <p class="card-text" data-i18n="uc2_desc">
             Standart kütüphanedeki yerleşik TCP/IP soketleri, HTTP/1.1 sunucu motoru, WebSocket ve B-Tree/WAL tabanlı gömülü SQL motoru ile saniyede yüz binlerce isteği mikrosaniyeler içinde karşılayabilirsiniz.
@@ -1310,7 +1283,7 @@ isv istek_isle(istek: *HttpIstek) -> *HttpYanit {
         <div class="usecase-card">
           <div class="usecase-header">
             <h3 class="usecase-title" data-i18n="uc3_title">3. Çevrimdışı Yapay Zeka Çıkarımı (BitNet)</h3>
-            <span class="card-badge">AI Inference</span>
+            <span class="card-badge" data-i18n="uc3_badge">AI Inference</span>
           </div>
           <p class="card-text" data-i18n="uc3_desc">
             Python, PyTorch veya gigabaytlarca bağımlılık olmadan; 1.58-bit BitNet ve GGUF modellerini doğrudan AVX2 SIMD makine talimatlarıyla saf CPU üzerinde çalıştırabilirsiniz.
@@ -1327,7 +1300,7 @@ isv akilli_analiz(giris: *u8) {
         <div class="usecase-card">
           <div class="usecase-header">
             <h3 class="usecase-title" data-i18n="uc4_title">4. Sistem Araçları & Derleyiciler</h3>
-            <span class="card-badge">1M lines/sec</span>
+            <span class="card-badge" data-i18n="uc4_badge">1M lines/sec</span>
           </div>
           <p class="card-text" data-i18n="uc4_desc">
             Saniyede bir milyon satırdan fazla kod ayrıştırabilen mimarisiyle CLI yardımcı araçları, formatlayıcılar, statik analizciler ve oyun motoru alt sistemleri (ECS, glfw, wayland) geliştirmek için biçilmiş kaftandır.
@@ -1398,11 +1371,11 @@ isv ana() -> tamsayi {
 
       <!-- Dilini Ekle Rehberi Çağrısı -->
       <div class="docs-callout" style="margin-top: 32px;">
-        <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 6px;">🌍 Senin dilin listede yok mu? Üzülme! Kendi dilini 15 dakikada ekle</h4>
-        <p style="font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px;">
-          Yukinary felsefesinde insan dili yalnızca bir sözdizim tokenidir. <code>tools/keyword_registry.json</code> ve <code>src/lexer.ykn</code> dosyalarına dilinin anahtar kelimelerini ekleyip GitHub'da bir Pull Request açarak resmi Yukinary destekçisi olabilirsin!
+        <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 6px;" data-i18n="callout_title">🌍 Senin dilin listede yok mu? Üzülme! Kendi dilini 15 dakikada ekle</h4>
+        <p style="font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px;" data-i18n="callout_desc">
+          Yukinary felsefesinde insan dili yalnızca bir sözdizim tokenidir. tools/keyword_registry.json ve src/lexer.ykn dosyalarına dilinin anahtar kelimelerini ekleyip GitHub'da bir Pull Request açarak resmi Yukinary destekçisi olabilirsin!
         </p>
-        <a href="#guide-add-lang" class="btn-secondary" style="padding: 8px 16px; font-size: 0.88rem;">Rehberi İncele (Multi-Lingual Guide) &rarr;</a>
+        <a href="#guide-add-lang" class="btn-secondary" style="padding: 8px 16px; font-size: 0.88rem;" data-i18n="callout_btn">Rehberi İncele (Multi-Lingual Guide) &rarr;</a>
       </div>
     </div>
   </section>
@@ -1414,37 +1387,37 @@ isv ana() -> tamsayi {
         <span class="section-tag" data-i18n="tag_playground">CANLI TEST ORTAMI</span>
         <h2 class="section-title" data-i18n="title_playground">Tarayıcıda Canlı Deneyimleyin</h2>
         <p class="section-subtitle" data-i18n="desc_playground">
-          Gerçek Yukinary sözdizimini (AST derleme pipeline'ı, `.ptr` dize adresleri, tip denetimi ve yapay zeka Self-Healing) doğrudan tarayıcınızda test edin.
+          Gerçek Yukinary sözdizimini (AST derleme pipeline'ı, .ptr dize adresleri, tip denetimi ve yapay zeka Self-Healing) doğrudan tarayıcınızda test edin.
         </p>
       </div>
 
       <div class="playground-container">
         <div class="playground-toolbar">
           <div class="playground-presets">
-            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-right: 4px;">Örnekler:</span>
-            <button class="preset-chip active" onclick="loadPreset('hello')">Merhaba Dünya</button>
-            <button class="preset-chip" onclick="loadPreset('fib')">Fibonacci</button>
-            <button class="preset-chip" onclick="loadPreset('math')">Yapı (Struct) & Mantık</button>
-            <button class="preset-chip" onclick="loadPreset('broken')">🩹 Hatalı Kod (Self-Heal)</button>
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-right: 4px;" data-i18n="pg_label_presets">Örnekler:</span>
+            <button class="preset-chip active" onclick="loadPreset('hello')" data-i18n="preset_hello">Merhaba Dünya</button>
+            <button class="preset-chip" onclick="loadPreset('fib')" data-i18n="preset_fib">Fibonacci</button>
+            <button class="preset-chip" onclick="loadPreset('math')" data-i18n="preset_math">Yapı & Mantık</button>
+            <button class="preset-chip" onclick="loadPreset('broken')" data-i18n="preset_broken">🩹 Hatalı Kod (Self-Heal)</button>
           </div>
 
           <div class="playground-actions">
             <button class="btn-run" onclick="runPlayground()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-              <span>Çalıştır (Run)</span>
+              <span data-i18n="btn_run">Çalıştır (Run)</span>
             </button>
             <button class="btn-heal" onclick="runSelfHeal()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-              <span>Self-Heal Onar</span>
+              <span data-i18n="btn_heal">Self-Heal Onar</span>
             </button>
-            <button class="btn-secondary" style="padding: 8px 12px; font-size: 0.85rem;" onclick="copyCode()">Kopyala</button>
+            <button class="btn-secondary" style="padding: 8px 12px; font-size: 0.85rem;" onclick="copyCode()" data-i18n="btn_copy">Kopyala</button>
           </div>
         </div>
 
         <div class="playground-grid">
           <div class="playground-editor-wrap">
             <div class="editor-header">
-              <span>KOD DÜZENLEYİCİ (main.ykn)</span>
+              <span data-i18n="editor_title">KOD DÜZENLEYİCİ (main.ykn)</span>
               <span id="editorStats">Satır: 1 | UTF-8</span>
             </div>
             <textarea id="playgroundCode" class="editor-textarea" spellcheck="false"></textarea>
@@ -1452,10 +1425,10 @@ isv ana() -> tamsayi {
 
           <div class="playground-output-wrap">
             <div class="output-header">
-              <span>DERLEME VE İCRA TERMİNALİ</span>
-              <span id="outputStatus">Hazır</span>
+              <span data-i18n="output_title">DERLEME VE İCRA TERMİNALİ</span>
+              <span id="outputStatus" data-i18n="output_ready">Hazır</span>
             </div>
-            <div id="playgroundOutput" class="output-terminal">Yukinary v1.0.0 Canlı Playground Hazır.
+            <div id="playgroundOutput" class="output-terminal" data-i18n="pg_init_msg">Yukinary v1.0.0 Canlı Playground Hazır.
 Çalıştırmak için yukarıdaki 'Çalıştır' veya 'Self-Heal Onar' düğmesine tıklayın.</div>
           </div>
         </div>
@@ -1470,7 +1443,7 @@ isv ana() -> tamsayi {
         <span class="section-tag" data-i18n="tag_docs">KAPSAMLI KILAVUZ</span>
         <h2 class="section-title" data-i18n="title_docs">Yukinary Dökümantasyonu</h2>
         <p class="section-subtitle" data-i18n="desc_docs">
-          Kurulumdan işletim sistemi geliştirmeye, `#config` direktiflerinden hukuki/teknik garantilere kadar tüm detaylar.
+          Kurulumdan işletim sistemi geliştirmeye, #config direktiflerinden güvenlik modeline kadar tüm detaylar.
         </p>
       </div>
 
@@ -1478,27 +1451,27 @@ isv ana() -> tamsayi {
         <!-- Sidebar Navigation -->
         <aside class="docs-sidebar">
           <div class="docs-nav-group">
-            <div class="docs-nav-title">Hızlı Başlangıç</div>
+            <div class="docs-nav-title" data-i18n="docs_side_quickstart">Hızlı Başlangıç</div>
             <ul class="docs-nav-list">
-              <li><a href="#doc-install">Kurulum Adımları</a></li>
-              <li><a href="#doc-cli">CLI Komutları</a></li>
-              <li><a href="#doc-config">#config Orkestratörü</a></li>
+              <li><a href="#doc-install" data-i18n="docs_nav_install">Kurulum Adımları</a></li>
+              <li><a href="#doc-cli" data-i18n="docs_nav_cli">CLI Komutları</a></li>
+              <li><a href="#doc-config" data-i18n="docs_nav_config">#config Orkestratörü</a></li>
             </ul>
           </div>
           <div class="docs-nav-group">
-            <div class="docs-nav-title">Sistem & Güvenlik</div>
+            <div class="docs-nav-title" data-i18n="docs_side_safety">Sistem & Güvenlik</div>
             <ul class="docs-nav-list">
-              <li><a href="#doc-safety">Hafıza Zabıtası & Güvenlik</a></li>
-              <li><a href="#doc-selfheal">Self-Healing Motoru</a></li>
-              <li><a href="#doc-bitnet">Yerleşik BitNet LLM</a></li>
+              <li><a href="#doc-safety" data-i18n="docs_nav_safety">Hafıza Zabıtası & Güvenlik</a></li>
+              <li><a href="#doc-selfheal" data-i18n="docs_nav_selfheal">Self-Healing Motoru</a></li>
+              <li><a href="#doc-bitnet" data-i18n="docs_nav_bitnet">Yerleşik BitNet LLM</a></li>
             </ul>
           </div>
           <div class="docs-nav-group">
-            <div class="docs-nav-title">İleri Seviye</div>
+            <div class="docs-nav-title" data-i18n="docs_side_advanced">İleri Seviye</div>
             <ul class="docs-nav-list">
-              <li><a href="#doc-yknos">YknOS & Çekirdek Geliştirme</a></li>
-              <li><a href="#doc-guide-add-lang">Kendi Dilini Ekleme</a></li>
-              <li><a href="#doc-guarantees">Garantiler & Lisans</a></li>
+              <li><a href="#doc-yknos" data-i18n="docs_nav_yknos">YknOS & Çekirdek Geliştirme</a></li>
+              <li><a href="#doc-guide-add-lang" data-i18n="docs_nav_add_lang">Kendi Dilini Ekleme</a></li>
+              <li><a href="#doc-guarantees" data-i18n="docs_nav_guarantees">Garantiler & Lisans</a></li>
             </ul>
           </div>
         </aside>
@@ -1507,72 +1480,71 @@ isv ana() -> tamsayi {
         <div class="docs-body">
           <!-- Kurulum -->
           <article class="docs-section" id="doc-install">
-            <h2 class="docs-h2">1. Kurulum ve Hızlı Başlangıç</h2>
-            <p class="docs-p">
-              Yukinary, geliştiricileri karmaşık derleyici toolchain'leriyle uğraştırmaz. 
-              <strong>Windows</strong> ve <strong>Linux</strong> için tek tıkla çalışan kurulum paketleri sunar.
+            <h2 class="docs-h2" data-i18n="doc1_title">1. Kurulum ve Hızlı Başlangıç</h2>
+            <p class="docs-p" data-i18n="doc1_desc">
+              Yukinary, geliştiricileri karmaşık derleyici toolchain'leriyle uğraştırmaz. Windows ve Linux için tek tıkla çalışan kurulum paketleri sunar.
             </p>
 
-            <h3 class="docs-h3">Windows Turnkey Kurulumu</h3>
-            <p class="docs-p">
-              1. GitHub Releases sayfasından <code>yukinary-setup-windows-x86_64.zip</code> dosyasını indirin ve dışa aktarın.<br>
-              2. Klasör içindeki <code>setup.cmd</code> dosyasına çift tıklayın.<br>
-              3. Kurulum <code>%USERPROFILE%\.yukinary\bin</code> dizinine tüm binary'leri yerleştirir ve PATH ortam değişkenini otomatik yapılandırır.
+            <h3 class="docs-h3" data-i18n="doc1_win_title">Windows Turnkey Kurulumu</h3>
+            <p class="docs-p" data-i18n="doc1_win_desc">
+              1. GitHub Releases sayfasından yukinary-setup-windows-x86_64.zip dosyasını indirin ve dışa aktarın.<br>
+              2. Klasör içindeki setup.cmd dosyasına çift tıklayın.<br>
+              3. Kurulum %USERPROFILE%\.yukinary\bin dizinine tüm binary'leri yerleştirir ve PATH ortam değişkenini otomatik yapılandırır.
             </p>
 
-            <h3 class="docs-h3">Linux & macOS 1-Line Kurulumu</h3>
+            <h3 class="docs-h3" data-i18n="doc1_lin_title">Linux & macOS 1-Line Kurulumu</h3>
             <div class="usecase-code">
 curl -fsSL https://raw.githubusercontent.com/ykncode/yukinary/main/setup.sh | bash
 source ~/.bashrc
             </div>
 
-            <h3 class="docs-h3">Doğrulama</h3>
+            <h3 class="docs-h3" data-i18n="doc1_verify_title">Doğrulama ve İlk Test</h3>
             <div class="usecase-code">
 ykn --version
-# Çıktı: Yukinary v1.0.0 (x86_64-windows-pe32+ / elf64)
+# Output: Yukinary v1.0.0 (x86_64-windows-pe32+ / elf64)
 
 ykn --yardim
-# Tüm komutlar, bayraklar ve kullanım örnekleri listelenir.
+# Lists all subcommands, flags, and usage examples.
             </div>
           </article>
 
           <!-- CLI Komutları -->
           <article class="docs-section" id="doc-cli">
-            <h2 class="docs-h2">2. CLI Komut Referansı</h2>
-            <p class="docs-p">`ykn` komut satırı arayüzü, geliştirme döngüsünün tüm ihtiyaçlarını karşılar:</p>
+            <h2 class="docs-h2" data-i18n="doc2_title">2. CLI Komut Referansı</h2>
+            <p class="docs-p" data-i18n="doc2_desc">ykn komut satırı arayüzü, geliştirme döngüsünün tüm ihtiyaçlarını karşılar:</p>
 
             <table class="docs-table">
               <thead>
                 <tr>
-                  <th>Komut</th>
-                  <th>Açıklama</th>
-                  <th>Örnek Kullanım</th>
+                  <th data-i18n="th_command">Komut</th>
+                  <th data-i18n="th_desc">Açıklama</th>
+                  <th data-i18n="th_example">Örnek Kullanım</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td><code>ykn derle [dosya]</code></td>
-                  <td>Kaynak kodu doğrudan PE32+ (.exe) veya ELF64 ikili dosyasına derler.</td>
+                  <td data-i18n="row_build">Kaynak kodu doğrudan PE32+ (.exe) veya ELF64 ikili dosyasına derler.</td>
                   <td><code>ykn derle ana.ykn -o program.exe</code></td>
                 </tr>
                 <tr>
                   <td><code>ykn calistir [dosya]</code></td>
-                  <td>Kodu derler ve bellekte anında çalıştırır.</td>
+                  <td data-i18n="row_run">Kodu derler ve bellekte anında çalıştırır.</td>
                   <td><code>ykn calistir test.ykn</code></td>
                 </tr>
                 <tr>
                   <td><code>ykn convert [dosya]</code></td>
-                  <td>Python veya C kodlarını otomatik olarak Yukinary sözdizimine dönüştürür.</td>
+                  <td data-i18n="row_convert">Python veya C kodlarını otomatik olarak Yukinary sözdizimine dönüştürür.</td>
                   <td><code>ykn convert script.py --into-file script.ykn</code></td>
                 </tr>
                 <tr>
                   <td><code>ykn --self-heal [dosya]</code></td>
-                  <td>Kod üzerindeki sözdizimsel hataları otomatik onarır ve güvenlik denetimi yapar.</td>
+                  <td data-i18n="row_heal">Kod üzerindeki sözdizimsel hataları otomatik onarır ve güvenlik denetimi yapar.</td>
                   <td><code>ykn --self-heal bozuk.ykn</code></td>
                 </tr>
                 <tr>
                   <td><code>ykn --lsp</code></td>
-                  <td>VS Code ve diğer editörler için dahili Language Server Protocol sunucusunu başlatır.</td>
+                  <td data-i18n="row_lsp">VS Code ve diğer editörler için dahili Language Server Protocol sunucusunu başlatır.</td>
                   <td><code>ykn --lsp</code></td>
                 </tr>
               </tbody>
@@ -1581,10 +1553,9 @@ ykn --yardim
 
           <!-- In-Source #config -->
           <article class="docs-section" id="doc-config">
-            <h2 class="docs-h2">3. Hiyerarşik `#config` Orkestratörü</h2>
-            <p class="docs-p">
-              Yukinary'de derleme ayarlarını terminal bayraklarına yazmak zorunda kalmazsınız. 
-              Kaynak dosyasının başına koyacağınız <code>#config</code> bloğu, projenin derleme hedefini, optimizasyon seviyesini ve yapay zeka parametrelerini taşınabilir kılar:
+            <h2 class="docs-h2" data-i18n="doc3_title">3. Hiyerarşik #config Orkestratörü</h2>
+            <p class="docs-p" data-i18n="doc3_desc">
+              Yukinary'de derleme ayarlarını terminal bayraklarına yazmak zorunda kalmazsınız. Kaynak dosyasının başına koyacağınız #config bloğu, projenin derleme hedefini, optimizasyon seviyesini ve yapay zeka parametrelerini taşınabilir kılar:
             </p>
             <div class="usecase-code">
 # config {
@@ -1604,52 +1575,48 @@ isv ana() -> tamsayi {
 
           <!-- Safety & Hafıza Zabıtası -->
           <article class="docs-section" id="doc-safety">
-            <h2 class="docs-h2">4. Hafıza Zabıtası & Güvenlik Modeli</h2>
-            <p class="docs-p">
-              Yukinary, Rust tarzı statik analiz ile C tarzı donanım kontrolünü birleştirir.
-              Çöp toplayıcı (Garbage Collector) içermez. Bunun yerine derleme zamanı <strong>Hafıza Zabıtası (Safety Gate)</strong> çalışır:
+            <h2 class="docs-h2" data-i18n="doc4_title">4. Hafıza Zabıtası & Güvenlik Modeli</h2>
+            <p class="docs-p" data-i18n="doc4_desc">
+              Yukinary, çöp toplayıcı (Garbage Collector) içermez. Bunun yerine derleme zamanı Hafıza Zabıtası (Safety Gate) çalışır:
             </p>
             <ul style="margin-left: 20px; line-height: 1.8; color: var(--text-body);">
-              <li><strong>Use-After-Free (UAF) Koruması:</strong> Serbest bırakılan işaretçilerin (pointer) yeniden okunması derleme anında tespit edilir ve engellenir.</li>
-              <li><strong>Dizi ve Bellek Sınır Kontrolü:</strong> Statik aralık çıkarımıyla sınır aşımı (buffer overflow) riskleri elenir.</li>
-              <li><strong>X-Ray Sandbox Gate:</strong> Yetkisiz sistem çağrıları (raw syscalls) sandbox seviyesinde kısıtlanabilir.</li>
+              <li data-i18n="doc4_li1"><strong>Use-After-Free (UAF) Koruması:</strong> Serbest bırakılan işaretçilerin yeniden okunması derleme anında tespit edilir ve engellenir.</li>
+              <li data-i18n="doc4_li2"><strong>Dizi ve Bellek Sınır Kontrolü:</strong> Statik aralık çıkarımıyla sınır aşımı (buffer overflow) riskleri elenir.</li>
+              <li data-i18n="doc4_li3"><strong>X-Ray Sandbox Gate:</strong> Yetkisiz sistem çağrıları sandbox seviyesinde kısıtlanabilir.</li>
             </ul>
           </article>
 
           <!-- YknOS -->
           <article class="docs-section" id="doc-yknos">
-            <h2 class="docs-h2">5. İşletim Sistemi Geliştirme (YknOS Mimarisi)</h2>
-            <p class="docs-p">
+            <h2 class="docs-h2" data-i18n="doc5_title">5. İşletim Sistemi Geliştirme (YknOS Mimarisi)</h2>
+            <p class="docs-p" data-i18n="doc5_desc1">
               Yukinary ile bir işletim sistemi çekirdeği yazılabilir mi? <strong>Kesinlikle evet.</strong>
             </p>
-            <p class="docs-p">
-              Çünkü Yukinary'nin hiçbir C çalışma zamanı (libc, msvcrt) bağımlılığı yoktur. Çıktı olarak ürettiği makine kodu doğrudan BIOS / UEFI bootloader tarafından 0x100000 adresine yüklenip icra edilebilir. 
-              <code>std/os</code> altında yer alan kesme yönetimi, sanal bellek (paging) ve VGA/Seri port sürücüleri YknOS'un yapı taşlarını oluşturur.
+            <p class="docs-p" data-i18n="doc5_desc2">
+              Çünkü Yukinary'nin hiçbir C çalışma zamanı (libc, msvcrt) bağımlılığı yoktur. Çıktı olarak ürettiği makine kodu doğrudan BIOS / UEFI bootloader tarafından 0x100000 adresine yüklenip icra edilebilir. std/os altında yer alan kesme yönetimi, sanal bellek (paging) ve VGA/Seri port sürücüleri YknOS'un yapı taşlarını oluşturur.
             </p>
           </article>
 
           <!-- Kendi Dilini Ekle -->
           <article class="docs-section" id="doc-guide-add-lang">
-            <h2 class="docs-h2">6. Kendi Dilini Ekle (Multi-Lingual Community Guide)</h2>
-            <p class="docs-p">
-              Yukinary topluluğu, dili dünyanın tüm dillerine açmayı taahhüt eder. 
-              Kendi ana dilinizi (örneğin İspanyolca, Almanca, Arapça, İtalyanca) eklemek için 3 basit adım yeterlidir:
+            <h2 class="docs-h2" data-i18n="doc6_title">6. Kendi Dilini Ekle (Multi-Lingual Community Guide)</h2>
+            <p class="docs-p" data-i18n="doc6_desc">
+              Yukinary topluluğu, dili dünyanın tüm dillerine açmayı taahhüt eder. Kendi ana dilinizi eklemek için 3 basit adım yeterlidir:
             </p>
             <ol style="margin-left: 20px; line-height: 1.8; color: var(--text-body);">
-              <li><code>tools/keyword_registry.json</code> dosyasına dil kodunuzu (örn: <code>"es"</code>) ve anahtar kelime eşlemelerini ekleyin.</li>
-              <li><code>src/lexer.ykn</code> içerisindeki anahtar kelime arama tablosuna kelimelerinizi tanımlayın.</li>
-              <li><code>ykn derle src/main.ykn</code> komutuyla derleyiciyi yeniden derleyin ve GitHub üzerinden Pull Request gönderin!</li>
+              <li data-i18n="doc6_step1">tools/keyword_registry.json dosyasına dil kodunuzu (örn: "es") ve anahtar kelime eşlemelerini ekleyin.</li>
+              <li data-i18n="doc6_step2">src/lexer.ykn içerisindeki anahtar kelime arama tablosuna kelimelerinizi tanımlayın.</li>
+              <li data-i18n="doc6_step3">ykn derle src/main.ykn komutuyla derleyiciyi yeniden derleyin ve GitHub üzerinden Pull Request gönderin!</li>
             </ol>
           </article>
 
           <!-- Garantiler ve Lisans -->
           <article class="docs-section" id="doc-guarantees">
-            <h2 class="docs-h2">7. Teknik Garantiler ve Lisans</h2>
-            <p class="docs-p">
-              Yukinary, endüstri standardı <strong>MIT ve Apache-2.0</strong> çift lisansı ile korunmaktadır. 
-              Hem ticari kapalı kaynaklı projelerde hem de akademik ve açık kaynaklı girişimlerde telif hakkı veya kısıtlama olmadan özgürce kullanılabilir.
+            <h2 class="docs-h2" data-i18n="doc7_title">7. Teknik Garantiler ve Lisans</h2>
+            <p class="docs-p" data-i18n="doc7_desc">
+              Yukinary, endüstri standardı MIT ve Apache-2.0 çift lisansı ile korunmaktadır. Hem ticari projelerde hem de açık kaynaklı girişimlerde özgürce kullanılabilir.
             </p>
-            <div class="docs-callout">
+            <div class="docs-callout" data-i18n="doc7_callout">
               <strong>Deterministik Derleme Garantisi:</strong> Aynı kaynak kod, aynı mimaride derlendiğinde her zaman bayt seviyesinde 100% birebir aynı (bit-identical) ikili dosyayı üretir.
             </div>
           </article>
@@ -1673,12 +1640,12 @@ isv ana() -> tamsayi {
           <div class="card-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
           </div>
-          <h3 class="card-title">Windows Turnkey Setup (.zip)</h3>
-          <p class="card-text">
-            İçerisinde derleyici, <code>setup.cmd</code>, <code>ykn_llm_simd.dll</code>, standart kütüphane ve VS Code eklentisi yer alır. Çift tıklamayla otomatik kurulur.
+          <h3 class="card-title" data-i18n="dl_win_title">Windows Turnkey Setup (.zip)</h3>
+          <p class="card-text" data-i18n="dl_win_desc">
+            İçerisinde derleyici, setup.cmd, ykn_llm_simd.dll, standart kütüphane ve VS Code eklentisi yer alır. Çift tıklamayla otomatik kurulur.
           </p>
           <a href="https://github.com/ykncode/yukinary/releases/download/v1.0.0/yukinary-setup-windows-x86_64.zip" class="btn-primary" style="margin-top: auto;">
-            <span>Windows Kurulumu İndir</span>
+            <span data-i18n="dl_win_btn">Windows Kurulumu İndir</span>
           </a>
         </div>
 
@@ -1687,12 +1654,12 @@ isv ana() -> tamsayi {
           <div class="card-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
           </div>
-          <h3 class="card-title">Linux x86_64 Bundle (.tar.gz)</h3>
-          <p class="card-text">
-            Sıfır glibc/musl bağımlılığına sahip statik ELF64 ikili dosyası, <code>setup.sh</code> ve tüm standart modülleri içerir.
+          <h3 class="card-title" data-i18n="dl_lin_title">Linux x86_64 Bundle (.tar.gz)</h3>
+          <p class="card-text" data-i18n="dl_lin_desc">
+            Sıfır glibc/musl bağımlılığına sahip statik ELF64 ikili dosyası, setup.sh ve tüm standart modülleri içerir.
           </p>
           <a href="https://github.com/ykncode/yukinary/releases/download/v1.0.0/yukinary-setup-linux-x86_64.tar.gz" class="btn-secondary" style="margin-top: auto;">
-            <span>Linux Paketini İndir</span>
+            <span data-i18n="dl_lin_btn">Linux Paketini İndir</span>
           </a>
         </div>
 
@@ -1701,12 +1668,12 @@ isv ana() -> tamsayi {
           <div class="card-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
           </div>
-          <h3 class="card-title">VS Code Eklentisi (.vsix)</h3>
-          <p class="card-text">
+          <h3 class="card-title" data-i18n="dl_vsix_title">VS Code Eklentisi (.vsix)</h3>
+          <p class="card-text" data-i18n="dl_vsix_desc">
             7 dilde sözdizim renklendirme, dahili LSP otomatik tamamlama, anında hata teşhisi ve kod çalıştırma desteği.
           </p>
           <a href="https://github.com/ykncode/yukinary/releases/download/v1.0.0/yukinary-lang-1.0.0.vsix" class="btn-secondary" style="margin-top: auto;">
-            <span>VSIX Eklentisini İndir</span>
+            <span data-i18n="dl_vsix_btn">VSIX Eklentisini İndir</span>
           </a>
         </div>
       </div>
@@ -1719,576 +1686,1109 @@ isv ana() -> tamsayi {
       <div class="footer-grid">
         <div>
           <div class="footer-brand-title">❄️ Yukinary Language</div>
-          <p class="footer-desc">
+          <p class="footer-desc" data-i18n="footer_desc">
             Harici C çalışma zamanı ve LLVM olmadan saf x86_64 makine kodu üreten, 7 dilde doğal sözdizimine ve gömülü BitNet yapay zekasına sahip modern sistem programlama dili.
           </p>
         </div>
 
         <div>
-          <div class="footer-col-title">Depolar</div>
+          <div class="footer-col-title" data-i18n="footer_col_repos">Depolar</div>
           <ul class="footer-links">
-            <li><a href="https://github.com/ykncode/yukinary" target="_blank">ykncode/yukinary (Çekirdek)</a></li>
-            <li><a href="https://github.com/ykncode/packages" target="_blank">ykncode/packages (Paketler)</a></li>
-            <li><a href="https://github.com/ykncode/bootstrap" target="_blank">ykncode/bootstrap (Tohum)</a></li>
-            <li><a href="https://github.com/ykncode/benchmarks" target="_blank">ykncode/benchmarks (Testler)</a></li>
+            <li><a href="https://github.com/ykncode/yukinary" target="_blank">ykncode/yukinary</a></li>
+            <li><a href="https://github.com/ykncode/packages" target="_blank">ykncode/packages</a></li>
+            <li><a href="https://github.com/ykncode/bootstrap" target="_blank">ykncode/bootstrap</a></li>
+            <li><a href="https://github.com/ykncode/benchmarks" target="_blank">ykncode/benchmarks</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="footer-col-title">Dökümanlar</div>
+          <div class="footer-col-title" data-i18n="footer_col_docs">Dökümanlar</div>
           <ul class="footer-links">
-            <li><a href="#doc-install">Kurulum Kılavuzu</a></li>
-            <li><a href="#doc-cli">CLI Referansı</a></li>
-            <li><a href="#doc-safety">Hafıza Güvenliği</a></li>
-            <li><a href="#doc-guide-add-lang">Kendi Dilini Ekle</a></li>
+            <li><a href="#doc-install" data-i18n="docs_nav_install">Kurulum Kılavuzu</a></li>
+            <li><a href="#doc-cli" data-i18n="docs_nav_cli">CLI Referansı</a></li>
+            <li><a href="#doc-safety" data-i18n="docs_nav_safety">Hafıza Güvenliği</a></li>
+            <li><a href="#doc-guide-add-lang" data-i18n="docs_nav_add_lang">Kendi Dilini Ekle</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="footer-col-title">Topluluk & Lisans</div>
+          <div class="footer-col-title" data-i18n="footer_col_community">Topluluk & Lisans</div>
           <ul class="footer-links">
             <li><a href="https://github.com/ykncode/yukinary/releases" target="_blank">Releases (v1.0.0)</a></li>
-            <li><a href="https://github.com/ykncode/yukinary/issues" target="_blank">Hata Bildir (Issues)</a></li>
-            <li><a href="#">MIT / Apache-2.0 Çift Lisans</a></li>
+            <li><a href="https://github.com/ykncode/yukinary/issues" target="_blank">GitHub Issues</a></li>
+            <li><a href="https://github.com/ykncode/yukinary/blob/main/LICENSE-MIT" target="_blank">MIT / Apache-2.0</a></li>
           </ul>
         </div>
       </div>
 
       <div class="footer-bottom">
-        <div>&copy; 2026 Yukinary Language Project. MIT / Apache-2.0 Lisanslıdır.</div>
-        <div>Tüm diller için evrensel sistem programlama.</div>
+        <div data-i18n="footer_copyright">&copy; 2026 Yukinary Language Project. MIT / Apache-2.0 Lisanslıdır.</div>
+        <div data-i18n="footer_tagline">Tüm diller için evrensel sistem programlama.</div>
       </div>
     </div>
   </footer>
 
   <!-- SCRIPT ENGINE -->
   <script>
-    // ========================================================
-    // 1. MULTI-LINGUAL UI STRINGS & TRANSLATIONS
-    // ========================================================
-    const I18N = {
-      tr: {
-        nav_overview: "Genel Bakış",
-        nav_features: "Özellikler",
-        nav_usecases: "Neler Yapılır?",
-        nav_install: "Kurulum",
-        nav_multilingual: "Çok Dilli",
-        nav_docs: "Dökümantasyon",
-        nav_playground: "Playground",
-        hero_badge: "Yukinary v1.0.0 Açık Kaynak Sürümü Yayında",
-        hero_title: "Hafıza Güvenli, Doğrudan Makine Kodu Üreten <span class=\"highlight\">Sistem Programlama Dili</span>",
-        hero_desc: "Harici C çalışma zamanı (libc), LLVM veya harici bağlayıcıya (linker) ihtiyaç duymadan doğrudan x86_64 PE32+ ve ELF64 üreten; 7 dilde doğal kodlama, yerleşik BitNet yapay zeka ve can simidi motoruna sahip kendi kendini derleyen sistem dili.",
-        btn_try_online: "Canlı Playground'da Dene",
-        btn_quick_install: "1-Tık Kurulum",
-        btn_read_docs: "Dökümantasyon",
-        meta_self_hosting: "100% Self-Hosting (Kendini Derler)",
-        meta_zero_gc: "Sıfır Çöp Toplayıcı (Zero GC)",
-        meta_dual_target: "Windows (PE32+) & Linux (ELF64)",
-        tag_pillars: "NEDEN YUKINARY?",
-        title_pillars: "Sistem Mimarisi ve Tasarım İlkeleri",
-        desc_pillars: "Doğrudan makine kodu üretimi, çok dilli sözdizimi ve bağımsız derleme yaklaşımını temel alan 6 mimari özellik.",
-        feat1_title: "Doğrudan Makine Kodu",
-        feat1_desc: "LLVM, GCC, MSVC veya libc bağımlılığı yoktur. Derleyici doğrudan saf x86_64 PE32+ (Windows) ve ELF64 (Linux) ikili dosyalarını milisaniyeler içinde üretir.",
-        feat2_title: "7 Dilde Doğal Gramer",
-        feat2_desc: "İngilizce zorunluluğu kalktı. Türkçe, İngilizce, Fransızca, Rusça, Japonca, Çince ve Korece anahtar kelimeler birinci sınıf token olarak doğrudan derlenir.",
-        feat3_title: "Hafıza Güvenliği (No GC)",
-        feat3_desc: "Çöp toplayıcı (Garbage Collector) duraksamaları olmadan, derleme zamanı Hafıza Zabıtası analiziyle Use-After-Free ve dizi sınır kontrolleri güvenceye alınır.",
-        feat4_title: "Can Simidi (Self-Healing)",
-        feat4_desc: "Unutulan noktalı virgül, kapanmamış parantez veya null erişimleri derleyiciyi düşürmez. --self-heal bayrağı ile kod AST seviyesinde otomatik onarılır.",
-        feat5_title: "Gömülü BitNet Micro-LLM",
-        feat5_desc: "16 KB yerleşik BitNet 1.58b Transformer modeli ile internet, GPU veya Python runtime gerekmeden derleme anında 0.1 ms'de kod önerisi ve optimizasyon.",
-        feat6_title: "LSP & VS Code Ekosistemi",
-        feat6_desc: "Yerleşik Language Server Protocol (ykn --lsp), resmi VS Code uzantısı, çift depolu modern paket yöneticisi ve kaynak içi #config direktifleri.",
-        tag_usecases: "UYGULAMA ALANLARI",
-        title_usecases: "Yukinary ile Neler Yapılabilir?",
-        desc_usecases: "İşletim sistemi çekirdeğinden gerçek zamanlı yapay zeka çıkarımına kadar donanımın tüm gücünü elinize alın.",
-        tag_multilingual: "EVRENSEL KODLAMA",
-        title_multilingual: "Kendi Dilinde Kod Yaz",
-        desc_multilingual: "Aynı program, 7 farklı dilde doğrudan derlenebilir. Aşağıdaki sekmelere tıklayarak sözdiziminin her dilde nasıl göründüğünü inceleyin.",
-        tag_playground: "CANLI TEST ORTAMI",
-        title_playground: "Tarayıcıda Canlı Deneyimleyin",
-        desc_playground: "Gerçek Yukinary sözdizimini (AST derleme pipeline'ı, .ptr dize adresleri, tip denetimi ve yapay zeka Self-Healing) doğrudan tarayıcınızda test edin.",
-        tag_docs: "KAPSAMLI KILAVUZ",
-        title_docs: "Yukinary Dökümantasyonu",
-        desc_docs: "Kurulumdan işletim sistemi geliştirmeye, #config direktiflerinden hukuki/teknik garantilere kadar tüm detaylar.",
-        tag_download: "İNDİR VE KUR",
-        title_download: "Yukinary v1.0.0 Kurulum Paketleri",
-        desc_download: "İhtiyacınıza uygun kurulum paketini seçin, saniyeler içinde kodlamaya başlayın."
-      },
-      en: {
-        nav_overview: "Overview",
-        nav_features: "Features",
-        nav_usecases: "What to Build?",
-        nav_install: "Installation",
-        nav_multilingual: "Multi-Lingual",
-        nav_docs: "Documentation",
-        nav_playground: "Playground",
-        hero_badge: "Yukinary v1.0.0 Open Source Release Live",
-        hero_title: "Memory-Safe, Direct Machine Code <span class=\"highlight\">Systems Programming Language</span>",
-        hero_desc: "A self-hosting systems programming language emitting raw x86_64 PE32+ and ELF64 machine code without libc, LLVM, or external linkers; supporting native syntax in 7 languages, embedded BitNet AI, and self-healing compiler engine.",
-        btn_try_online: "Try Online Playground",
-        btn_quick_install: "1-Click Setup",
-        btn_read_docs: "Documentation",
-        meta_self_hosting: "100% Self-Hosting Fixpoint",
-        meta_zero_gc: "Zero Garbage Collector (Zero GC)",
-        meta_dual_target: "Windows (PE32+) & Linux (ELF64)",
-        tag_pillars: "WHY YUKINARY?",
-        title_pillars: "System Architecture & Principles",
-        desc_pillars: "6 architectural characteristics focused on direct machine code, multi-lingual syntax, and standalone compilation.",
-        feat1_title: "Direct Machine Code",
-        feat1_desc: "Zero LLVM, GCC, MSVC, or libc dependencies. The compiler directly emits native x86_64 PE32+ (Windows) and ELF64 (Linux) binaries in milliseconds.",
-        feat2_title: "7 Native Languages",
-        feat2_desc: "English is no longer mandatory. Turkish, English, French, Russian, Japanese, Chinese, and Korean keywords are compiled as first-class tokens.",
-        feat3_title: "Memory Safety (No GC)",
-        feat3_desc: "Without Garbage Collector pauses, compile-time memory officer analysis protects against Use-After-Free and out-of-bounds array access.",
-        feat4_title: "Self-Healing Engine",
-        feat4_desc: "Missing semicolons, unmatched parentheses, or null accesses won't crash your compiler. With --self-heal, errors are auto-repaired at AST level.",
-        feat5_title: "Embedded BitNet Micro-LLM",
-        feat5_desc: "A built-in 16 KB BitNet 1.58b Transformer enables offline 0.1 ms code suggestions and intelligent optimization without GPU or Python.",
-        feat6_title: "LSP & VS Code Ecosystem",
-        feat6_desc: "Built-in Language Server Protocol (ykn --lsp), official VS Code extension, two-repo package manager, and hierarchical in-source #config directives.",
-        tag_usecases: "APPLICATIONS",
-        title_usecases: "What Can You Build With Yukinary?",
-        desc_usecases: "Harness bare-metal control from microkernel operating systems to real-time edge AI inference.",
-        tag_multilingual: "UNIVERSAL COMPUTING",
-        title_multilingual: "Code in Your Native Tongue",
-        desc_multilingual: "The same program compiles natively across 7 human languages. Click the tabs below to explore.",
-        tag_playground: "LIVE PLAYGROUND",
-        title_playground: "Experience Yukinary in the Browser",
-        desc_playground: "Test authentic Yukinary syntax, AST compilation pipeline, .ptr pointer handling, and self-healing live in your browser.",
-        tag_docs: "COMPREHENSIVE MANUAL",
-        title_docs: "Yukinary Documentation",
-        desc_docs: "From installation to OS microkernel development, #config directives, and technical guarantees.",
-        tag_download: "DOWNLOAD & INSTALL",
-        title_download: "Yukinary v1.0.0 Release Packages",
-        desc_download: "Select the setup package for your platform and start coding in seconds."
-      },
-      fr: {
-        nav_overview: "Aperçu",
-        nav_features: "Fonctionnalités",
-        nav_usecases: "Applications",
-        nav_install: "Installation",
-        nav_multilingual: "Multilingue",
-        nav_docs: "Documentation",
-        nav_playground: "Terrain de jeu",
-        hero_badge: "Yukinary v1.0.0 Version Open Source en Ligne",
-        hero_title: "Langage de Programmation Système <span class=\"highlight\">Sans Dépendance Externe</span>",
-        hero_desc: "Génère directement du code machine x86_64 PE32+ et ELF64 sans libc ni LLVM. Syntaxe native en 7 langues, IA BitNet intégrée et auto-guérison.",
-        btn_try_online: "Tester en Ligne",
-        btn_quick_install: "Installation 1-Clic",
-        btn_read_docs: "Documentation",
-        meta_self_hosting: "100% Auto-Hébergé",
-        meta_zero_gc: "Zéro Ramasse-Miettes (No GC)",
-        meta_dual_target: "Windows & Linux",
-        tag_pillars: "POURQUOI YUKINARY?",
-        title_pillars: "Architecture et Principes Système",
-        desc_pillars: "6 piliers combinant syntaxe conviviale, sécurité mémoire et performances pures.",
-        feat1_title: "Code Machine Direct",
-        feat1_desc: "Aucune dépendance LLVM, GCC ou libc. Émission directe de binaires PE32+ et ELF64 en quelques millisecondes.",
-        feat2_title: "7 Langues Humaines",
-        feat2_desc: "Français, Turc, Anglais, Russe, Japonais, Chinois et Coréen sont des jetons de premier ordre.",
-        feat3_title: "Sécurité Mémoire Sans GC",
-        feat3_desc: "Protection Use-After-Free et vérification des limites à la compilation, sans pause de ramasse-miettes.",
-        feat4_title: "Moteur d'Auto-Guérison",
-        feat4_desc: "Répare automatiquement les points-virgules et parenthèses manquants grâce au mode --self-heal.",
-        feat5_title: "IA BitNet Embarquée",
-        feat5_desc: "Modèle Transformer 1.58b de 16 Ko pour une complétion et une optimisation de code instantanées sans Python.",
-        feat6_title: "Serveur LSP & VS Code",
-        feat6_desc: "Prise en charge officielle de VS Code, autocomplétion LSP native et directives #config embarquées.",
-        tag_usecases: "DOMAINES CIBLES",
-        title_usecases: "Que Peut-On Construire Avec Yukinary?",
-        desc_usecases: "Des noyaux de systèmes d'exploitation à l'inférence IA temps réel.",
-        tag_multilingual: "SYNTAXE UNIVERSELLE",
-        title_multilingual: "Programmez Dans Votre Langue",
-        desc_multilingual: "Le même programme se compile directement en 7 langues.",
-        tag_playground: "TEST EN DIRECT",
-        title_playground: "Essayez Dans Votre Navigateur",
-        desc_playground: "Testez la syntaxe authentique de Yukinary avec notre interpréteur AST en direct.",
-        tag_docs: "DOCUMENTATION COMPLÈTE",
-        title_docs: "Guide Yukinary",
-        desc_docs: "Toutes les étapes d'installation, directives et garanties de sécurité.",
-        tag_download: "TÉLÉCHARGEMENT",
-        title_download: "Paquets Yukinary v1.0.0",
-        desc_download: "Choisissez votre installateur clé en main et commencez dès maintenant."
-      },
-      ru: {
-        nav_overview: "Обзор",
-        nav_features: "Возможности",
-        nav_usecases: "Применение",
-        nav_install: "Установка",
-        nav_multilingual: "Языки",
-        nav_docs: "Документация",
-        nav_playground: "Песочница",
-        hero_badge: "Открытый релиз Yukinary v1.0.0",
-        hero_title: "Безопасный системный язык с <span class=\"highlight\">прямым машинным кодом</span>",
-        hero_desc: "Генерирует чистый машинный код x86_64 PE32+ и ELF64 без зависимостей от libc, LLVM или компоновщика; нативная поддержка 7 языков и встроенный ИИ BitNet.",
-        btn_try_online: "Онлайн Песочница",
-        btn_quick_install: "Быстрая установка",
-        btn_read_docs: "Документация",
-        meta_self_hosting: "100% Самохостинг",
-        meta_zero_gc: "Без сборщика мусора (Zero GC)",
-        meta_dual_target: "Windows & Linux",
-        tag_pillars: "ПОЧЕМУ YUKINARY?",
-        title_pillars: "Системная архитектура и принципы",
-        desc_pillars: "Сочетание производительности на уровне железа с удобным многоязычным синтаксисом.",
-        feat1_title: "Прямой машинный код",
-        feat1_desc: "Без LLVM, GCC или libc. Мгновенная генерация бинарных файлов PE32+ и ELF64.",
-        feat2_title: "7 нативных языков",
-        feat2_desc: "Пишите на русском, английском, турецком, французском, японском, китайском или корейском.",
-        feat3_title: "Безопасность памяти",
-        feat3_desc: "Проверка Use-After-Free и границ массивов на этапе компиляции без пауз GC.",
-        feat4_title: "Самовосстановление (Self-Healing)",
-        feat4_desc: "Флаг --self-heal автоматически исправляет пропущенные скобки и точки с запятой.",
-        feat5_title: "Нейросеть BitNet 1.58b",
-        feat5_desc: "Встроенная модель 16 КБ для подсказок кода и оптимизации без Python и GPU.",
-        feat6_title: "LSP и поддержка VS Code",
-        feat6_desc: "Встроенный сервер LSP, официальное расширение VS Code и директивы #config.",
-        tag_usecases: "ОБЛАСТИ ПРИМЕНЕНИЯ",
-        title_usecases: "Что можно создать на Yukinary?",
-        desc_usecases: "От операционных систем (YknOS) до высоконагруженных сетевых сервисов и ИИ.",
-        tag_multilingual: "УНИВЕРСАЛЬНОСТЬ",
-        title_multilingual: "Код на родном языке",
-        desc_multilingual: "Одна и та же логика компилируется в идентичный машинный код на 7 языках.",
-        tag_playground: "ПЕСОЧНИЦА",
-        title_playground: "Тестируйте прямо в браузере",
-        desc_playground: "Попробуйте подлинный синтаксис Yukinary и самовосстановление кода.",
-        tag_docs: "РУКОВОДСТВО",
-        title_docs: "Документация Yukinary",
-        desc_docs: "Полное руководство по установке, синтаксису и разработке ОС.",
-        tag_download: "СКАЧАТЬ",
-        title_download: "Пакеты установки v1.0.0",
-        desc_download: "Выберите пакет для вашей системы и начните работу за секунды."
-      },
-      ja: {
-        nav_overview: "概要",
-        nav_features: "特徴",
-        nav_usecases: "活用分野",
-        nav_install: "インストール",
-        nav_multilingual: "多言語",
-        nav_docs: "ドキュメント",
-        nav_playground: "実行環境",
-        hero_badge: "Yukinary v1.0.0 オープンソース版リリース",
-        hero_title: "メモリ安全・直接マシンコード生成 <span class=\"highlight\">多言語システムプログラミング言語</span>",
-        hero_desc: "LLVMやlibc不要で純粋なx86_64 PE32+/ELF64バイナリを直接出力。日本語を含む7言語でのネイティブコーディングとBitNet AIを内蔵。",
-        btn_try_online: "オンラインで試す",
-        btn_quick_install: "簡単インストール",
-        btn_read_docs: "ドキュメント",
-        meta_self_hosting: "100% セルフホスティング",
-        meta_zero_gc: "GCなし (Zero GC)",
-        meta_dual_target: "Windows & Linux 対応",
-        tag_pillars: "YUKINARYを選ぶ理由",
-        title_pillars: "システムアーキテクチャと設計方針",
-        desc_pillars: "開発効率とハードウェアネイティブの究極のパフォーマンスを両立する6つの柱。",
-        feat1_title: "直接マシンコード出力",
-        feat1_desc: "外部リンカーやLLVMに依存せず、直接ミリ秒単位でPE32+およびELF64バイナリを生成。",
-        feat2_title: "7言語ネイティブ文法",
-        feat2_desc: "日本語、英語、トルコ語など7言語のキーワードを直接構文として受け入れます。",
-        feat3_title: "GCレスのメモリ安全性",
-        feat3_desc: "ガベージコレクションの一時停止なしで、コンパイル時にUAFと配列境界を厳密に検査。",
-        feat4_title: "自己修復エンジン",
-        feat4_desc: "セミコロン抜けや括弧の不一致を自動修復する --self-heal 機能を搭載。",
-        feat5_title: "組み込みBitNet AI",
-        feat5_desc: "PythonやGPUを必要とせず、CPU上で0.1msで動作する16KBのBitNet 1.58bニューラルモデル。",
-        feat6_title: "LSPと言語ツール",
-        feat6_desc: "公式VS Code拡張、組み込みLSPサーバー、ソース内#configディレクティブを標準装備。",
-        tag_usecases: "活用分野",
-        title_usecases: "Yukinaryで何が作れるのか？",
-        desc_usecases: "OSマイクロカーネルから超低遅延ネットワーク、エッジAIまで幅広く対応。",
-        tag_multilingual: "多言語プログラミング",
-        title_multilingual: "母国語でコードを書く",
-        desc_multilingual: "同一のロジックが7つの言語で等しくネイティブコンパイルされます。",
-        tag_playground: "プレイグラウンド",
-        title_playground: "ブラウザで今すぐ体験",
-        desc_playground: "本格的なYukinary構文と自己修復コンパイルをブラウザ上で実行。",
-        tag_docs: "公式マニュアル",
-        title_docs: "Yukinary ドキュメント",
-        desc_docs: "セットアップからOS開発、#configディレクティブまで網羅。",
-        tag_download: "ダウンロード",
-        title_download: "v1.0.0 インストーラー",
-        desc_download: "お使いの環境に最適なパッケージを選択してすぐに始められます。"
-      },
-      zh: {
-        nav_overview: "概述",
-        nav_features: "核心特性",
-        nav_usecases: "应用场景",
-        nav_install: "安装指南",
-        nav_multilingual: "多语言支持",
-        nav_docs: "文档中心",
-        nav_playground: "在线测试",
-        hero_badge: "Yukinary v1.0.0 开源版本已发布",
-        hero_title: "内存安全、直出机器码的 <span class=\"highlight\">多语言系统编程语言</span>",
-        hero_desc: "无需libc、LLVM或外部链接器，直接生成纯净的x86_64 PE32+和ELF64机器码；原生支持中文等7种人类语言，内嵌BitNet AI模型与自愈引擎。",
-        btn_try_online: "在线体验",
-        btn_quick_install: "一键安装",
-        btn_read_docs: "查看文档",
-        meta_self_hosting: "100% 自举编译 (Self-Hosting)",
-        meta_zero_gc: "无垃圾回收 (Zero GC)",
-        meta_dual_target: "Windows & Linux 双平台",
-        tag_pillars: "为何选择 YUKINARY?",
-        title_pillars: "系统架构与设计原则",
-        desc_pillars: "将开发者友好的多语言语法与硬件级极致性能完美融合的六大支柱。",
-        feat1_title: "直出纯机器码",
-        feat1_desc: "零LLVM/GCC/libc依赖。以毫秒级速度直接生成PE32+ (Windows) 与ELF64 (Linux) 二进制。",
-        feat2_title: "7种语言原生语法",
-        feat2_desc: "中文、英语、土耳其语等关键词直接作为一类Token解析，彻底摆脱单一英语限制。",
-        feat3_title: "无GC的内存安全",
-        feat3_desc: "无垃圾回收停顿，通过编译期安全卫士检测Use-After-Free与数组越界。",
-        feat4_title: "代码自愈引擎 (Self-Healing)",
-        feat4_desc: "漏写分号或括号不会导致崩溃，--self-heal 模式自动完成AST级别修复与审查。",
-        feat5_title: "内置BitNet轻量AI",
-        feat5_desc: "内置16KB BitNet 1.58b模型，在纯CPU上实现0.1ms本地代码建议与优化，无需Python。",
-        feat6_title: "LSP与VS Code支持",
-        feat6_desc: "原生语言服务协议 (ykn --lsp)、官方VS Code插件、双仓库包管理器及源码内#config指令。",
-        tag_usecases: "应用领域",
-        title_usecases: "Yukinary 能用来做什么？",
-        desc_usecases: "从操作系统内核 (YknOS) 到超低延迟微服务与边缘端AI推理全方位支持。",
-        tag_multilingual: "多语言编程",
-        title_multilingual: "用你的母语编写代码",
-        desc_multilingual: "完全相同的程序可以用7种语言书写，并编译出位级别一致的机器码。",
-        tag_playground: "在线试用",
-        title_playground: "在浏览器中立即运行",
-        desc_playground: "体验真实的Yukinary AST编译管线、指针语法与代码自愈特性。",
-        tag_docs: "开发文档",
-        title_docs: "Yukinary 官方文档",
-        desc_docs: "包含安装指南、CLI参考、#config指令及操作系统开发全流程。",
-        tag_download: "下载安装",
-        title_download: "Yukinary v1.0.0 安装包",
-        desc_download: "选择适合您平台的安装包，秒级完成环境搭建。"
-      },
-      ko: {
-        nav_overview: "개요",
-        nav_features: "핵심 기능",
-        nav_usecases: "활용 분야",
-        nav_install: "설치",
-        nav_multilingual: "다국어",
-        nav_docs: "문서",
-        nav_playground: "플레이그라운드",
-        hero_badge: "Yukinary v1.0.0 오픈소스 릴리스 출시",
-        hero_title: "메모리 안전성 및 직접 기계어 생성 <span class=\"highlight\">다국어 시스템 프로그래밍 언어</span>",
-        hero_desc: "libc나 LLVM 없이 순수 x86_64 PE32+ 및 ELF64 기계어를 직접 생성합니다. 한국어를 포함한 7개 언어 기본 지원 및 내장 BitNet AI 탑재.",
-        btn_try_online: "온라인 체험",
-        btn_quick_install: "원클릭 설치",
-        btn_read_docs: "공식 문서",
-        meta_self_hosting: "100% 자체 컴파일 (Self-Hosting)",
-        meta_zero_gc: "가비지 컬렉터 없음 (Zero GC)",
-        meta_dual_target: "Windows & Linux 지원",
-        tag_pillars: "왜 YUKINARY인가?",
-        title_pillars: "시스템 아키텍처 및 설계 원칙",
-        desc_pillars: "개발 친화적인 문법과 타협 없는 하드웨어 성능을 결합한 6대 핵심 가치.",
-        feat1_title: "직접 기계어 생성",
-        feat1_desc: "LLVM이나 libc 의존성 없이 밀리초 만에 PE32+ 및 ELF64 실행 파일을 생성합니다.",
-        feat2_title: "7개 언어 네이티브 문법",
-        feat2_desc: "한국어, 영어, 터키어 등 7개 언어의 키워드를 네이티브 토큰으로 직접 컴파일합니다.",
-        feat3_title: "GC 없는 메모리 안전성",
-        feat3_desc: "GC 정지 없이 컴파일 타임 검사를 통해 UAF 및 배열 경계 초과를 철저히 방지합니다.",
-        feat4_title: "자가 치유 엔진 (Self-Healing)",
-        feat4_desc: "누락된 세미콜론이나 괄호를 자동으로 수정하는 --self-heal 모드를 지원합니다.",
-        feat5_title: "내장 BitNet AI",
-        feat5_desc: "Python 없이 CPU에서 0.1ms 만에 동작하는 16KB 크기의 1.58b BitNet 신경망 탑재.",
-        feat6_title: "LSP 및 VS Code 확장",
-        feat6_desc: "내장 LSP 서버 (ykn --lsp), 공식 VS Code 확장 프로그램, 소스 내 #config 설정 제공.",
-        tag_usecases: "활용 분야",
-        title_usecases: "Yukinary로 무엇을 만들 수 있나요?",
-        desc_usecases: "OS 마이크로커널부터 고성능 네트워크 서버 및 엣지 AI 추론까지 완벽 지원.",
-        tag_multilingual: "다국어 문법",
-        title_multilingual: "모국어로 코딩하세요",
-        desc_multilingual: "동일한 프로그램이 7개 언어로 동일한 기계어로 컴파일됩니다.",
-        tag_playground: "플레이그라운드",
-        title_playground: "브라우저에서 직접 실행",
-        desc_playground: "실제 Yukinary 문법과 자가 치유 컴파일 파이프라인을 체험하세요.",
-        tag_docs: "공식 문서",
-        title_docs: "Yukinary 사용자 가이드",
-        desc_docs: "설치부터 CLI 사용법, 운영체제 개발 가이드까지 모든 정보를 제공합니다.",
-        tag_download: "다운로드",
-        title_download: "Yukinary v1.0.0 설치 패키지",
-        desc_download: "운영체제에 맞는 패키지를 다운로드하여 즉시 시작하세요."
-      }
-    };
+const I18N = {
+  "tr": {
+    "nav_overview": "Genel Bakış",
+    "nav_features": "Özellikler",
+    "nav_usecases": "Neler Yapılır?",
+    "nav_install": "Kurulum",
+    "nav_multilingual": "Çok Dilli",
+    "nav_docs": "Dökümantasyon",
+    "nav_playground": "Playground",
+    "hero_badge": "Yukinary v1.0.0 Açık Kaynak Sürümü Yayında",
+    "hero_title": "Hafıza Güvenli, Doğrudan Makine Kodu Üreten <span class=\"highlight\">Sistem Programlama Dili</span>",
+    "hero_desc": "Harici C çalışma zamanı (libc), LLVM veya harici bağlayıcıya (linker) ihtiyaç duymadan doğrudan x86_64 PE32+ ve ELF64 üreten; 7 dilde doğal kodlama, yerleşik BitNet yapay zeka ve can simidi motoruna sahip kendi kendini derleyen sistem dili.",
+    "btn_try_online": "Canlı Playground'da Dene",
+    "btn_quick_install": "1-Tık Kurulum",
+    "btn_read_docs": "Dökümantasyon",
+    "meta_self_hosting": "100% Self-Hosting (Kendini Derler)",
+    "meta_zero_gc": "Sıfır Çöp Toplayıcı (Zero GC)",
+    "meta_dual_target": "Windows (PE32+) & Linux (ELF64)",
+    "copy_btn": "Kopyala",
+    "term_step1": "%USERPROFILE%\\.yukinary\\bin dizinine güvenli kurulum",
+    "term_step2": "Ortam değişkeni PATH'e otomatik ekleme",
+    "term_step3": "Doğrudan ykn --version ve ykn --yardim ile hazır",
+    "tag_pillars": "NEDEN YUKINARY?",
+    "title_pillars": "Sistem Mimarisi ve Tasarım İlkeleri",
+    "desc_pillars": "Doğrudan makine kodu üretimi, çok dilli sözdizimi ve bağımsız derleme yaklaşımını temel alan 6 mimari özellik.",
+    "feat1_title": "Doğrudan Makine Kodu",
+    "feat1_desc": "LLVM, GCC, MSVC veya libc bağımlılığı yoktur. Derleyici doğrudan saf x86_64 PE32+ (Windows) ve ELF64 (Linux) ikili dosyalarını milisaniyeler içinde üretir.",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7 Dilde Doğal Gramer",
+    "feat2_desc": "İngilizce zorunluluğu kalktı. Türkçe, İngilizce, Fransızca, Rusça, Japonca, Çince ve Korece anahtar kelimeler birinci sınıf token olarak doğrudan derlenir.",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "Hafıza Güvenliği (No GC)",
+    "feat3_desc": "Çöp toplayıcı (Garbage Collector) duraksamaları olmadan, derleme zamanı Hafıza Zabıtası analiziyle Use-After-Free ve dizi sınır kontrolleri güvenceye alınır.",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "Can Simidi (Self-Healing)",
+    "feat4_desc": "Unutulan noktalı virgül, kapanmamış parantez veya null erişimleri derleyiciyi düşürmez. --self-heal bayrağı ile kod AST seviyesinde otomatik onarılır.",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "Gömülü BitNet Micro-LLM",
+    "feat5_desc": "16 KB yerleşik BitNet 1.58b Transformer modeli ile internet, GPU veya Python runtime gerekmeden derleme anında 0.1 ms'de kod önerisi ve optimizasyon.",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSP & VS Code Ekosistemi",
+    "feat6_desc": "Yerleşik Language Server Protocol (ykn --lsp), resmi VS Code uzantısı, çift depolu modern paket yöneticisi ve kaynak içi #config direktifleri.",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "UYGULAMA ALANLARI",
+    "title_usecases": "Yukinary ile Neler Yapılabilir?",
+    "desc_usecases": "İşletim sistemi çekirdeğinden gerçek zamanlı yapay zeka çıkarımına kadar donanımın tüm gücünü elinize alın.",
+    "uc1_title": "1. İşletim Sistemi & Kernel (YknOS)",
+    "uc1_desc": "Yukinary hiçbir harici C kütüphanesine veya libc'ye ihtiyaç duymadığı için doğrudan std/os/kernel.ykn, sayfalama (paging), kesmeler (IDT) ve donanım sürücüleri yazılabilir. YknOS mimarisi bu sayede saf Yukinary ile hayata geçirilebilir.",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. Ultra Düşük Gecikmeli Ağ & Veritabanı",
+    "uc2_desc": "Standart kütüphanedeki yerleşik TCP/IP soketleri, HTTP/1.1 sunucu motoru, WebSocket ve B-Tree/WAL tabanlı gömülü SQL motoru ile saniyede yüz binlerce isteği mikrosaniyeler içinde karşılayabilirsiniz.",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. Çevrimdışı Yapay Zeka Çıkarımı (BitNet)",
+    "uc3_desc": "Python, PyTorch veya gigabaytlarca bağımlılık olmadan; 1.58-bit BitNet ve GGUF modellerini doğrudan AVX2 SIMD makine talimatlarıyla saf CPU üzerinde çalıştırabilirsiniz.",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. Sistem Araçları & Derleyiciler",
+    "uc4_desc": "Saniyede bir milyon satırdan fazla kod ayrıştırabilen mimarisiyle CLI yardımcı araçları, formatlayıcılar, statik analizciler ve oyun motoru alt sistemleri (ECS, glfw, wayland) geliştirmek için biçilmiş kaftandır.",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "EVRENSEL KODLAMA",
+    "title_multilingual": "Kendi Dilinde Kod Yaz",
+    "desc_multilingual": "Aynı program, 7 farklı dilde doğrudan derlenebilir. Aşağıdaki sekmelere tıklayarak sözdiziminin her dilde nasıl göründüğünü inceleyin.",
+    "callout_title": "🌍 Senin dilin listede yok mu? Üzülme! Kendi dilini 15 dakikada ekle",
+    "callout_desc": "Yukinary felsefesinde insan dili yalnızca bir sözdizim tokenidir. tools/keyword_registry.json ve src/lexer.ykn dosyalarına dilinin anahtar kelimelerini ekleyip GitHub'da bir Pull Request açarak resmi Yukinary destekçisi olabilirsin!",
+    "callout_btn": "Rehberi İncele (Multi-Lingual Guide) →",
+    "tag_playground": "CANLI TEST ORTAMI",
+    "title_playground": "Tarayıcıda Canlı Deneyimleyin",
+    "desc_playground": "Gerçek Yukinary sözdizimini (AST derleme pipeline'ı, .ptr dize adresleri, tip denetimi ve yapay zeka Self-Healing) doğrudan tarayıcınızda test edin.",
+    "pg_label_presets": "Örnekler:",
+    "preset_hello": "Merhaba Dünya",
+    "preset_fib": "Fibonacci",
+    "preset_math": "Yapı & Mantık",
+    "preset_broken": "🩹 Hatalı Kod (Self-Heal)",
+    "btn_run": "Çalıştır (Run)",
+    "btn_heal": "Self-Heal Onar",
+    "btn_copy": "Kopyala",
+    "editor_title": "KOD DÜZENLEYİCİ (main.ykn)",
+    "output_title": "DERLEME VE İCRA TERMİNALİ",
+    "output_ready": "Hazır",
+    "pg_init_msg": "Yukinary v1.0.0 Canlı Playground Hazır.\nÇalıştırmak için yukarıdaki 'Çalıştır' veya 'Self-Heal Onar' düğmesine tıklayın.",
+    "tag_docs": "KAPSAMLI KILAVUZ",
+    "title_docs": "Yukinary Dökümantasyonu",
+    "desc_docs": "Kurulumdan işletim sistemi geliştirmeye, #config direktiflerinden güvenlik modeline kadar tüm detaylar.",
+    "docs_side_quickstart": "Hızlı Başlangıç",
+    "docs_side_safety": "Sistem & Güvenlik",
+    "docs_side_advanced": "İleri Seviye",
+    "docs_nav_install": "Kurulum Adımları",
+    "docs_nav_cli": "CLI Komutları",
+    "docs_nav_config": "#config Orkestratörü",
+    "docs_nav_safety": "Hafıza Zabıtası & Güvenlik",
+    "docs_nav_selfheal": "Self-Healing Motoru",
+    "docs_nav_bitnet": "Yerleşik BitNet LLM",
+    "docs_nav_yknos": "YknOS & Çekirdek Geliştirme",
+    "docs_nav_add_lang": "Kendi Dilini Ekleme",
+    "docs_nav_guarantees": "Garantiler & Lisans",
+    "doc1_title": "1. Kurulum ve Hızlı Başlangıç",
+    "doc1_desc": "Yukinary, geliştiricileri karmaşık derleyici toolchain'leriyle uğraştırmaz. Windows ve Linux için tek tıkla çalışan kurulum paketleri sunar.",
+    "doc1_win_title": "Windows Turnkey Kurulumu",
+    "doc1_win_desc": "1. GitHub Releases sayfasından yukinary-setup-windows-x86_64.zip dosyasını indirin ve dışa aktarın.<br>2. Klasör içindeki setup.cmd dosyasına çift tıklayın.<br>3. Kurulum %USERPROFILE%\\.yukinary\\bin dizinine tüm binary'leri yerleştirir ve PATH ortam değişkenini otomatik yapılandırır.",
+    "doc1_lin_title": "Linux & macOS 1-Line Kurulumu",
+    "doc1_verify_title": "Doğrulama ve İlk Test",
+    "doc2_title": "2. CLI Komut Referansı",
+    "doc2_desc": "ykn komut satırı arayüzü, geliştirme döngüsünün tüm ihtiyaçlarını karşılar:",
+    "th_command": "Komut",
+    "th_desc": "Açıklama",
+    "th_example": "Örnek Kullanım",
+    "row_build": "Kaynak kodu doğrudan PE32+ (.exe) veya ELF64 ikili dosyasına derler.",
+    "row_run": "Kodu derler ve bellekte anında çalıştırır.",
+    "row_convert": "Python veya C kodlarını otomatik olarak Yukinary sözdizimine dönüştürür.",
+    "row_heal": "Kod üzerindeki sözdizimsel hataları otomatik onarır ve güvenlik denetimi yapar.",
+    "row_lsp": "VS Code ve diğer editörler için dahili Language Server Protocol sunucusunu başlatır.",
+    "doc3_title": "3. Hiyerarşik #config Orkestratörü",
+    "doc3_desc": "Yukinary'de derleme ayarlarını terminal bayraklarına yazmak zorunda kalmazsınız. Kaynak dosyasının başına koyacağınız #config bloğu, projenin derleme hedefini, optimizasyon seviyesini ve yapay zeka parametrelerini taşınabilir kılar:",
+    "doc4_title": "4. Hafıza Zabıtası & Güvenlik Modeli",
+    "doc4_desc": "Yukinary, çöp toplayıcı (Garbage Collector) içermez. Bunun yerine derleme zamanı Hafıza Zabıtası (Safety Gate) çalışır:",
+    "doc4_li1": "<strong>Use-After-Free (UAF) Koruması:</strong> Serbest bırakılan işaretçilerin yeniden okunması derleme anında tespit edilir ve engellenir.",
+    "doc4_li2": "<strong>Dizi ve Bellek Sınır Kontrolü:</strong> Statik aralık çıkarımıyla sınır aşımı (buffer overflow) riskleri elenir.",
+    "doc4_li3": "<strong>X-Ray Sandbox Gate:</strong> Yetkisiz sistem çağrıları sandbox seviyesinde kısıtlanabilir.",
+    "doc5_title": "5. İşletim Sistemi Geliştirme (YknOS Mimarisi)",
+    "doc5_desc1": "Yukinary ile bir işletim sistemi çekirdeği yazılabilir mi? <strong>Kesinlikle evet.</strong>",
+    "doc5_desc2": "Çünkü Yukinary'nin hiçbir C çalışma zamanı (libc, msvcrt) bağımlılığı yoktur. Çıktı olarak ürettiği makine kodu doğrudan BIOS / UEFI bootloader tarafından 0x100000 adresine yüklenip icra edilebilir. std/os altında yer alan kesme yönetimi, sanal bellek (paging) ve VGA/Seri port sürücüleri YknOS'un yapı taşlarını oluşturur.",
+    "doc6_title": "6. Kendi Dilini Ekle (Multi-Lingual Community Guide)",
+    "doc6_desc": "Yukinary topluluğu, dili dünyanın tüm dillerine açmayı taahhüt eder. Kendi ana dilinizi eklemek için 3 basit adım yeterlidir:",
+    "doc6_step1": "tools/keyword_registry.json dosyasına dil kodunuzu (örn: \"es\") ve anahtar kelime eşlemelerini ekleyin.",
+    "doc6_step2": "src/lexer.ykn içerisindeki anahtar kelime arama tablosuna kelimelerinizi tanımlayın.",
+    "doc6_step3": "ykn derle src/main.ykn komutuyla derleyiciyi yeniden derleyin ve GitHub üzerinden Pull Request gönderin!",
+    "doc7_title": "7. Teknik Garantiler ve Lisans",
+    "doc7_desc": "Yukinary, endüstri standardı MIT ve Apache-2.0 çift lisansı ile korunmaktadır. Hem ticari projelerde hem de açık kaynaklı girişimlerde özgürce kullanılabilir.",
+    "doc7_callout": "<strong>Deterministik Derleme Garantisi:</strong> Aynı kaynak kod, aynı mimaride derlendiğinde her zaman bayt seviyesinde 100% birebir aynı (bit-identical) ikili dosyayı üretir.",
+    "tag_download": "İNDİR VE KUR",
+    "title_download": "Yukinary v1.0.0 Kurulum Paketleri",
+    "desc_download": "İhtiyacınıza uygun kurulum paketini seçin, saniyeler içinde kodlamaya başlayın.",
+    "dl_win_title": "Windows Turnkey Setup (.zip)",
+    "dl_win_desc": "İçerisinde derleyici, setup.cmd, ykn_llm_simd.dll, standart kütüphane ve VS Code eklentisi yer alır. Çift tıklamayla otomatik kurulur.",
+    "dl_win_btn": "Windows Kurulumu İndir",
+    "dl_lin_title": "Linux x86_64 Bundle (.tar.gz)",
+    "dl_lin_desc": "Sıfır glibc/musl bağımlılığına sahip statik ELF64 ikili dosyası, setup.sh ve tüm standart modülleri içerir.",
+    "dl_lin_btn": "Linux Paketini İndir",
+    "dl_vsix_title": "VS Code Eklentisi (.vsix)",
+    "dl_vsix_desc": "7 dilde sözdizim renklendirme, dahili LSP otomatik tamamlama, anında hata teşhisi ve kod çalıştırma desteği.",
+    "dl_vsix_btn": "VSIX Eklentisini İndir",
+    "footer_desc": "Harici C çalışma zamanı ve LLVM olmadan saf x86_64 makine kodu üreten, 7 dilde doğal sözdizimine ve gömülü BitNet yapay zekasına sahip modern sistem programlama dili.",
+    "footer_col_repos": "Depolar",
+    "footer_col_docs": "Dökümanlar",
+    "footer_col_community": "Topluluk & Lisans",
+    "footer_copyright": "© 2026 Yukinary Language Project. MIT / Apache-2.0 Lisanslıdır.",
+    "footer_tagline": "Tüm diller için evrensel sistem programlama."
+  },
+  "en": {
+    "nav_overview": "Overview",
+    "nav_features": "Features",
+    "nav_usecases": "What to Build?",
+    "nav_install": "Installation",
+    "nav_multilingual": "Multi-Lingual",
+    "nav_docs": "Documentation",
+    "nav_playground": "Playground",
+    "hero_badge": "Yukinary v1.0.0 Open Source Release Live",
+    "hero_title": "Memory-Safe, Direct Machine Code <span class=\"highlight\">Systems Programming Language</span>",
+    "hero_desc": "A self-hosting systems programming language emitting raw x86_64 PE32+ and ELF64 machine code without libc, LLVM, or external linkers; supporting native syntax in 7 languages, embedded BitNet AI, and self-healing compiler engine.",
+    "btn_try_online": "Try Online Playground",
+    "btn_quick_install": "1-Click Setup",
+    "btn_read_docs": "Documentation",
+    "meta_self_hosting": "100% Self-Hosting Fixpoint",
+    "meta_zero_gc": "Zero Garbage Collector (Zero GC)",
+    "meta_dual_target": "Windows (PE32+) & Linux (ELF64)",
+    "copy_btn": "Copy",
+    "term_step1": "Safe installation into %USERPROFILE%\\.yukinary\\bin",
+    "term_step2": "Automatic configuration of environment variable PATH",
+    "term_step3": "Ready with ykn --version and ykn --help",
+    "tag_pillars": "WHY YUKINARY?",
+    "title_pillars": "System Architecture & Principles",
+    "desc_pillars": "6 architectural characteristics focused on direct machine code, multi-lingual syntax, and standalone compilation.",
+    "feat1_title": "Direct Machine Code",
+    "feat1_desc": "Zero LLVM, GCC, MSVC, or libc dependencies. The compiler directly emits native x86_64 PE32+ (Windows) and ELF64 (Linux) binaries in milliseconds.",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7 Native Languages",
+    "feat2_desc": "English is no longer mandatory. Turkish, English, French, Russian, Japanese, Chinese, and Korean keywords are compiled as first-class tokens.",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "Memory Safety (No GC)",
+    "feat3_desc": "Without Garbage Collector pauses, compile-time memory officer analysis protects against Use-After-Free and out-of-bounds array access.",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "Self-Healing Engine",
+    "feat4_desc": "Missing semicolons, unmatched parentheses, or null accesses won't crash your compiler. With --self-heal, errors are auto-repaired at AST level.",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "Embedded BitNet Micro-LLM",
+    "feat5_desc": "A built-in 16 KB BitNet 1.58b Transformer enables offline 0.1 ms code suggestions and intelligent optimization without GPU or Python.",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSP & VS Code Ecosystem",
+    "feat6_desc": "Built-in Language Server Protocol (ykn --lsp), official VS Code extension, two-repo package manager, and hierarchical in-source #config directives.",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "APPLICATIONS",
+    "title_usecases": "What Can You Build With Yukinary?",
+    "desc_usecases": "Harness bare-metal control from microkernel operating systems to real-time edge AI inference.",
+    "uc1_title": "1. Operating Systems & Kernel (YknOS)",
+    "uc1_desc": "Because Yukinary has zero libc dependencies, you can write bare-metal std/os/kernel.ykn, memory paging, IDT interrupts, and device drivers natively.",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. Ultra-Low Latency Networking & DB",
+    "uc2_desc": "With standard library TCP/IP sockets, HTTP/1.1 engine, WebSocket, and embedded B-Tree/WAL SQL, handle hundreds of thousands of requests per second.",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. Offline AI Inference (BitNet)",
+    "uc3_desc": "Run 1.58-bit BitNet and GGUF transformer models directly on CPU using AVX2 SIMD without Python, PyTorch, or CUDA dependencies.",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. Systems Tools & Compilers",
+    "uc4_desc": "With a high-throughput parser capable of over 1 million lines/sec, build fast CLI tools, formatters, static analyzers, and game submodules (ECS, glfw, wayland).",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "UNIVERSAL COMPUTING",
+    "title_multilingual": "Code in Your Native Tongue",
+    "desc_multilingual": "The same program compiles natively across 7 human languages. Click the tabs below to explore.",
+    "callout_title": "🌍 Is your language not in the list? Don't worry! Add it in 15 minutes",
+    "callout_desc": "In Yukinary, human language is just a syntax token. Add your keywords to tools/keyword_registry.json and src/lexer.ykn, then open a GitHub Pull Request to become an official contributor!",
+    "callout_btn": "Read Contribution Guide →",
+    "tag_playground": "LIVE PLAYGROUND",
+    "title_playground": "Experience Yukinary in the Browser",
+    "desc_playground": "Test authentic Yukinary syntax, AST compilation pipeline, .ptr pointer handling, and self-healing live in your browser.",
+    "pg_label_presets": "Presets:",
+    "preset_hello": "Hello World",
+    "preset_fib": "Fibonacci",
+    "preset_math": "Struct & Logic",
+    "preset_broken": "🩹 Broken Code (Self-Heal)",
+    "btn_run": "Run",
+    "btn_heal": "Self-Heal Repair",
+    "btn_copy": "Copy",
+    "editor_title": "CODE EDITOR (main.ykn)",
+    "output_title": "COMPILATION & RUNTIME TERMINAL",
+    "output_ready": "Ready",
+    "pg_init_msg": "Yukinary v1.0.0 Live Playground Ready.\nClick 'Run' or 'Self-Heal Repair' above to execute code.",
+    "tag_docs": "COMPREHENSIVE MANUAL",
+    "title_docs": "Yukinary Documentation",
+    "desc_docs": "From installation to OS microkernel development, #config directives, safety models, and guarantees.",
+    "docs_side_quickstart": "Quick Start",
+    "docs_side_safety": "System & Safety",
+    "docs_side_advanced": "Advanced",
+    "docs_nav_install": "Installation Steps",
+    "docs_nav_cli": "CLI Commands",
+    "docs_nav_config": "#config Orchestrator",
+    "docs_nav_safety": "Memory Safety & Gate",
+    "docs_nav_selfheal": "Self-Healing Engine",
+    "docs_nav_bitnet": "Embedded BitNet LLM",
+    "docs_nav_yknos": "YknOS & Kernel Dev",
+    "docs_nav_add_lang": "Adding Your Language",
+    "docs_nav_guarantees": "Guarantees & License",
+    "doc1_title": "1. Installation and Quick Start",
+    "doc1_desc": "Yukinary eliminates complex toolchain setups. We provide turnkey, automated 1-click packages for Windows and Linux.",
+    "doc1_win_title": "Windows Turnkey Setup",
+    "doc1_win_desc": "1. Download and extract yukinary-setup-windows-x86_64.zip from GitHub Releases.<br>2. Double-click setup.cmd.<br>3. Installs all binaries to %USERPROFILE%\\.yukinary\\bin and automatically adds it to PATH.",
+    "doc1_lin_title": "Linux & macOS 1-Line Setup",
+    "doc1_verify_title": "Verification & First Run",
+    "doc2_title": "2. CLI Command Reference",
+    "doc2_desc": "The ykn CLI provides everything needed for the development lifecycle:",
+    "th_command": "Command",
+    "th_desc": "Description",
+    "th_example": "Example Usage",
+    "row_build": "Compiles source code directly into PE32+ (.exe) or ELF64 binary.",
+    "row_run": "Compiles code and runs it in memory immediately.",
+    "row_convert": "Automatically converts Python or C source files into native Yukinary syntax.",
+    "row_heal": "Scans code for syntax errors, auto-repairs them, and validates safety.",
+    "row_lsp": "Starts the built-in Language Server Protocol daemon for VS Code and other editors.",
+    "doc3_title": "3. In-Source #config Directives",
+    "doc3_desc": "You never need to remember complex compiler flags. The in-source #config block makes compilation targets, optimization levels, and model paths fully portable:",
+    "doc4_title": "4. Memory Safety & Security Gate",
+    "doc4_desc": "Yukinary does not use a Garbage Collector. Instead, compile-time Safety Gate analysis prevents errors before running:",
+    "doc4_li1": "<strong>Use-After-Free (UAF) Prevention:</strong> Reading freed pointers is statically detected and rejected at compile time.",
+    "doc4_li2": "<strong>Out-of-Bounds Protection:</strong> Static range inference eliminates buffer overflow risks.",
+    "doc4_li3": "<strong>X-Ray Sandbox Gate:</strong> Raw syscalls and unsafe operations can be sandboxed per module.",
+    "doc5_title": "5. Operating System Development (YknOS Architecture)",
+    "doc5_desc1": "Can you write an operating system kernel in Yukinary? <strong>Absolutely yes.</strong>",
+    "doc5_desc2": "Because Yukinary has zero libc or msvcrt dependencies, the emitted machine code can be loaded directly at 0x100000 by BIOS/UEFI bootloaders. std/os provides interrupts, virtual memory paging, and VGA/serial drivers.",
+    "doc6_title": "6. How to Add Your Native Language",
+    "doc6_desc": "Yukinary is committed to universal multi-lingual computing. Add your mother tongue in 3 simple steps:",
+    "doc6_step1": "Add your language code (e.g. \"es\") and keyword aliases in tools/keyword_registry.json.",
+    "doc6_step2": "Register your keyword mappings in src/lexer.ykn lookup tables.",
+    "doc6_step3": "Recompile with ykn derle src/main.ykn and open a Pull Request on GitHub!",
+    "doc7_title": "7. Technical Guarantees and Licensing",
+    "doc7_desc": "Yukinary is dual-licensed under MIT and Apache-2.0. It is free for both proprietary commercial projects and open source research.",
+    "doc7_callout": "<strong>Deterministic Compilation Guarantee:</strong> The same source code compiled on the same platform always emits byte-for-byte 100% identical machine code.",
+    "tag_download": "DOWNLOAD & INSTALL",
+    "title_download": "Yukinary v1.0.0 Release Packages",
+    "desc_download": "Select the setup package for your platform and start coding in seconds.",
+    "dl_win_title": "Windows Turnkey Setup (.zip)",
+    "dl_win_desc": "Includes standalone compiler, setup.cmd, ykn_llm_simd.dll, standard library, and VS Code extension.",
+    "dl_win_btn": "Download Windows Setup",
+    "dl_lin_title": "Linux x86_64 Bundle (.tar.gz)",
+    "dl_lin_desc": "Static ELF64 binary with zero glibc/musl dependencies, setup.sh, and all standard library modules.",
+    "dl_lin_btn": "Download Linux Bundle",
+    "dl_vsix_title": "VS Code Extension (.vsix)",
+    "dl_vsix_desc": "7-language syntax highlighting, built-in LSP autocompletion, diagnostics, and code runner.",
+    "dl_vsix_btn": "Download VSIX Extension",
+    "footer_desc": "A systems programming language emitting raw x86_64 machine code without libc or LLVM, featuring 7-language syntax and embedded BitNet AI.",
+    "footer_col_repos": "Repositories",
+    "footer_col_docs": "Documentation",
+    "footer_col_community": "Community & License",
+    "footer_copyright": "© 2026 Yukinary Language Project. MIT / Apache-2.0 Dual Licensed.",
+    "footer_tagline": "Universal systems programming for all human languages."
+  },
+  "fr": {
+    "nav_overview": "Aperçu",
+    "nav_features": "Fonctionnalités",
+    "nav_usecases": "Applications",
+    "nav_install": "Installation",
+    "nav_multilingual": "Multilingue",
+    "nav_docs": "Documentation",
+    "nav_playground": "Terrain de jeu",
+    "hero_badge": "Yukinary v1.0.0 Version Open Source en Ligne",
+    "hero_title": "Langage de Programmation Système <span class=\"highlight\">Sans Dépendance Externe</span>",
+    "hero_desc": "Génère directement du code machine x86_64 PE32+ et ELF64 sans libc ni LLVM. Syntaxe native en 7 langues, IA BitNet intégrée et auto-guérison.",
+    "btn_try_online": "Tester en Ligne",
+    "btn_quick_install": "Installation 1-Clic",
+    "btn_read_docs": "Documentation",
+    "meta_self_hosting": "100% Auto-Hébergé",
+    "meta_zero_gc": "Zéro Ramasse-Miettes (No GC)",
+    "meta_dual_target": "Windows & Linux",
+    "copy_btn": "Copier",
+    "term_step1": "Installation sécurisée dans %USERPROFILE%\\.yukinary\\bin",
+    "term_step2": "Configuration automatique de la variable PATH",
+    "term_step3": "Prêt avec ykn --version et ykn --help",
+    "tag_pillars": "POURQUOI YUKINARY?",
+    "title_pillars": "Architecture et Principes Système",
+    "desc_pillars": "6 caractéristiques architecturales axées sur l'émission directe de code machine et la syntaxe multilingue.",
+    "feat1_title": "Code Machine Direct",
+    "feat1_desc": "Aucune dépendance LLVM, GCC ou libc. Émission directe de binaires PE32+ et ELF64 en quelques millisecondes.",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7 Langues Humaines",
+    "feat2_desc": "Français, Turc, Anglais, Russe, Japonais, Chinois et Coréen sont des jetons de premier ordre.",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "Sécurité Mémoire Sans GC",
+    "feat3_desc": "Protection Use-After-Free et vérification des limites à la compilation, sans pause de ramasse-miettes.",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "Moteur d'Auto-Guérison",
+    "feat4_desc": "Répare automatiquement les points-virgules et parenthèses manquants grâce au mode --self-heal.",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "IA BitNet Embarquée",
+    "feat5_desc": "Modèle Transformer 1.58b de 16 Ko pour une complétion et une optimisation de code instantanées sans Python.",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "Serveur LSP & VS Code",
+    "feat6_desc": "Prise en charge officielle de VS Code, autocomplétion LSP native et directives #config embarquées.",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "DOMAINES CIBLES",
+    "title_usecases": "Que Peut-On Construire Avec Yukinary?",
+    "desc_usecases": "Des noyaux de systèmes d'exploitation à l'inférence IA temps réel.",
+    "uc1_title": "1. Systèmes d'Exploitation (YknOS)",
+    "uc1_desc": "Sans dépendance libc, écrivez du code noyau bare-metal, la pagination mémoire et les pilotes matériels en pur Yukinary.",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. Réseau & Base de Données Haute Vitesse",
+    "uc2_desc": "Sockets TCP/IP, serveur HTTP/1.1, WebSocket et moteur SQL intégré traitant des centaines de milliers de requêtes par seconde.",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. Inférence IA Hors Ligne (BitNet)",
+    "uc3_desc": "Exécutez des modèles quantifiés 1.58-bit directement sur CPU via AVX2 SIMD sans Python ni GPU.",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. Outils Système & Compilateurs",
+    "uc4_desc": "Analyseur syntaxique traitant plus d'un million de lignes/seconde pour outils CLI et sous-systèmes de jeux (ECS, wayland).",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "SYNTAXE UNIVERSELLE",
+    "title_multilingual": "Programmez Dans Votre Langue",
+    "desc_multilingual": "Le même programme se compile directement en 7 langues.",
+    "callout_title": "🌍 Votre langue n'est pas dans la liste ? Ajoutez-la en 15 minutes",
+    "callout_desc": "Dans Yukinary, la langue humaine est un simple jeton syntaxique. Ajoutez vos mots-clés et ouvrez une Pull Request !",
+    "callout_btn": "Lire le Guide de Contribution →",
+    "tag_playground": "TEST EN DIRECT",
+    "title_playground": "Essayez Dans Votre Navigateur",
+    "desc_playground": "Testez la syntaxe authentique de Yukinary avec notre interpréteur AST en direct.",
+    "pg_label_presets": "Exemples:",
+    "preset_hello": "Bonjour le Monde",
+    "preset_fib": "Fibonacci",
+    "preset_math": "Structures & Logique",
+    "preset_broken": "🩹 Code Erroné (Auto-Guérison)",
+    "btn_run": "Exécuter",
+    "btn_heal": "Auto-Réparer",
+    "btn_copy": "Copier",
+    "editor_title": "ÉDITEUR DE CODE (main.ykn)",
+    "output_title": "TERMINAL DE COMPILATION",
+    "output_ready": "Prêt",
+    "pg_init_msg": "Yukinary v1.0.0 Terrain de Jeu Prêt.\nCliquez sur 'Exécuter' ou 'Auto-Réparer' pour démarrer.",
+    "tag_docs": "DOCUMENTATION COMPLÈTE",
+    "title_docs": "Guide Yukinary",
+    "desc_docs": "Toutes les étapes d'installation, directives et garanties de sécurité.",
+    "docs_side_quickstart": "Démarrage Rapide",
+    "docs_side_safety": "Système & Sécurité",
+    "docs_side_advanced": "Avancé",
+    "docs_nav_install": "Installation",
+    "docs_nav_cli": "Commandes CLI",
+    "docs_nav_config": "Directives #config",
+    "docs_nav_safety": "Sécurité Mémoire",
+    "docs_nav_selfheal": "Auto-Guérison",
+    "docs_nav_bitnet": "IA BitNet",
+    "docs_nav_yknos": "YknOS & Noyau",
+    "docs_nav_add_lang": "Ajouter sa Langue",
+    "docs_nav_guarantees": "Garanties & Licence",
+    "doc1_title": "1. Installation et Démarrage Rapide",
+    "doc1_desc": "Yukinary simplifie l'installation avec des paquets clé en main pour Windows et Linux.",
+    "doc1_win_title": "Installation Windows",
+    "doc1_win_desc": "1. Téléchargez yukinary-setup-windows-x86_64.zip.<br>2. Double-cliquez sur setup.cmd.<br>3. Installe tout dans %USERPROFILE%\\.yukinary\\bin et configure le PATH.",
+    "doc1_lin_title": "Installation Linux & macOS",
+    "doc1_verify_title": "Vérification",
+    "doc2_title": "2. Référence des Commandes CLI",
+    "doc2_desc": "Le CLI ykn couvre toutes les étapes du cycle de développement :",
+    "th_command": "Commande",
+    "th_desc": "Description",
+    "th_example": "Exemple",
+    "row_build": "Compile directement en binaire PE32+ (.exe) ou ELF64.",
+    "row_run": "Compile et exécute en mémoire immédiatement.",
+    "row_convert": "Convertit le code Python ou C en syntaxe native Yukinary.",
+    "row_heal": "Répare automatiquement les erreurs syntaxiques et vérifie la sécurité.",
+    "row_lsp": "Lance le serveur Language Server Protocol pour VS Code.",
+    "doc3_title": "3. Directives #config Embarquées",
+    "doc3_desc": "Définissez la cible de compilation, l'optimisation et le modèle d'IA directement dans le code source.",
+    "doc4_title": "4. Sécurité Mémoire Sans Ramasse-Miettes",
+    "doc4_desc": "Yukinary analyse statiquement la mémoire à la compilation pour éliminer les fuites et dépassements :",
+    "doc4_li1": "<strong>Protection Use-After-Free :</strong> Les accès aux pointeurs libérés sont bloqués à la compilation.",
+    "doc4_li2": "<strong>Contrôle des Limites :</strong> Prévention statique des débordements de tampon.",
+    "doc4_li3": "<strong>Bac à Sable X-Ray :</strong> Isolation sécurisée des appels système non autorisés.",
+    "doc5_title": "5. Développement de Noyau (YknOS)",
+    "doc5_desc1": "Peut-on concevoir un système d'exploitation avec Yukinary ? <strong>Absolument.</strong>",
+    "doc5_desc2": "Sans dépendance C, le code produit se charge directement à l'adresse 0x100000 par les bootloaders UEFI.",
+    "doc6_title": "6. Ajouter Votre Langue Maternelle",
+    "doc6_desc": "Rejoignez le projet communautaire en ajoutant vos mots-clés dans tools/keyword_registry.json et src/lexer.ykn.",
+    "doc6_step1": "Définissez le code de langue et vos mots-clés dans tools/keyword_registry.json.",
+    "doc6_step2": "Déclarez les correspondances dans src/lexer.ykn.",
+    "doc6_step3": "Recompilez avec ykn derle src/main.ykn et ouvrez une Pull Request !",
+    "doc7_title": "7. Garanties Techniques et Licence",
+    "doc7_desc": "Yukinary est protégé par une double licence MIT et Apache-2.0 pour usage libre et commercial.",
+    "doc7_callout": "<strong>Garantie Déterministe :</strong> La même source compilée produit un code binaire 100% identique au bit près.",
+    "tag_download": "TÉLÉCHARGEMENT",
+    "title_download": "Paquets Yukinary v1.0.0",
+    "desc_download": "Choisissez votre installateur clé en main et commencez dès maintenant.",
+    "dl_win_title": "Paquet Windows Clé en Main (.zip)",
+    "dl_win_desc": "Contient le compilateur, setup.cmd, ykn_llm_simd.dll, la bibliothèque standard et l'extension VS Code.",
+    "dl_win_btn": "Télécharger pour Windows",
+    "dl_lin_title": "Paquet Linux x86_64 (.tar.gz)",
+    "dl_lin_desc": "Binaire statique ELF64 sans dépendance glibc/musl, avec setup.sh et les modules standard.",
+    "dl_lin_btn": "Télécharger pour Linux",
+    "dl_vsix_title": "Extension VS Code (.vsix)",
+    "dl_vsix_desc": "Coloration syntaxique 7 langues, autocomplétion LSP native et diagnostic immédiat.",
+    "dl_vsix_btn": "Télécharger VSIX",
+    "footer_desc": "Langage système produisant du code machine natif sans libc ni LLVM, avec syntaxe en 7 langues et IA BitNet.",
+    "footer_col_repos": "Dépôts",
+    "footer_col_docs": "Documentation",
+    "footer_col_community": "Communauté & Licence",
+    "footer_copyright": "© 2026 Projet Yukinary. Double licence MIT / Apache-2.0.",
+    "footer_tagline": "Programmation système universelle pour toutes les langues."
+  },
+  "ru": {
+    "nav_overview": "Обзор",
+    "nav_features": "Возможности",
+    "nav_usecases": "Применение",
+    "nav_install": "Установка",
+    "nav_multilingual": "Языки",
+    "nav_docs": "Документация",
+    "nav_playground": "Песочница",
+    "hero_badge": "Yukinary v1.0.0 Открытый релиз",
+    "hero_title": "Системный язык программирования с <span class=\"highlight\">прямым машинным кодом</span>",
+    "hero_desc": "Генерирует чистый машинный код x86_64 PE32+ и ELF64 без зависимостей от libc, LLVM или компоновщика; нативная поддержка 7 языков и встроенный ИИ BitNet.",
+    "btn_try_online": "Онлайн Песочница",
+    "btn_quick_install": "Быстрая установка",
+    "btn_read_docs": "Документация",
+    "meta_self_hosting": "100% Самохостинг",
+    "meta_zero_gc": "Без сборщика мусора (Zero GC)",
+    "meta_dual_target": "Windows & Linux",
+    "copy_btn": "Копировать",
+    "term_step1": "Безопасная установка в %USERPROFILE%\\.yukinary\\bin",
+    "term_step2": "Автоматическая настройка переменной PATH",
+    "term_step3": "Готов к работе: ykn --version и ykn --help",
+    "tag_pillars": "ПОЧЕМУ YUKINARY?",
+    "title_pillars": "Системная архитектура и принципы",
+    "desc_pillars": "Сочетание производительности на уровне железа с удобным многоязычным синтаксисом.",
+    "feat1_title": "Прямой машинный код",
+    "feat1_desc": "Без LLVM, GCC или libc. Мгновенная генерация бинарных файлов PE32+ и ELF64.",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7 нативных языков",
+    "feat2_desc": "Пишите на русском, английском, турецком, французском, японском, китайском или корейском.",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "Безопасность памяти",
+    "feat3_desc": "Проверка Use-After-Free и границ массивов на этапе компиляции без пауз GC.",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "Самовосстановление (Self-Healing)",
+    "feat4_desc": "Флаг --self-heal автоматически исправляет пропущенные скобки и точки с запятой.",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "Нейросеть BitNet 1.58b",
+    "feat5_desc": "Встроенная модель 16 КБ для подсказок кода и оптимизации без Python и GPU.",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSP и поддержка VS Code",
+    "feat6_desc": "Встроенный сервер LSP, официальное расширение VS Code и директивы #config.",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "ОБЛАСТИ ПРИМЕНЕНИЯ",
+    "title_usecases": "Что можно создать на Yukinary?",
+    "desc_usecases": "От операционных систем (YknOS) до высоконагруженных сетевых сервисов и ИИ.",
+    "uc1_title": "1. Операционные системы и ядро (YknOS)",
+    "uc1_desc": "Без зависимостей от libc пишите bare-metal ядро std/os/kernel.ykn, управление страницами и драйверы устройств.",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. Сетевые сервисы и СУБД",
+    "uc2_desc": "Встроенные сокеты TCP/IP, сервер HTTP/1.1, WebSocket и встроенный SQL-движок с пропускной способностью в сотни тысяч запросов.",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. Автономный ИИ (BitNet)",
+    "uc3_desc": "Запуск моделей 1.58-bit BitNet и GGUF напрямую на CPU с инструкциями AVX2 SIMD без Python и PyTorch.",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. Системные утилиты и компиляторы",
+    "uc4_desc": "Парсер с производительностью более 1 млн строк/сек для утилит командной строки и игровых движков (ECS, wayland).",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "УНИВЕРСАЛЬНОСТЬ",
+    "title_multilingual": "Код на родном языке",
+    "desc_multilingual": "Одна и та же логика компилируется в идентичный машинный код на 7 языках.",
+    "callout_title": "🌍 Вашего языка нет в списке? Добавьте его за 15 минут",
+    "callout_desc": "В Yukinary человеческий язык — это синтаксический токен. Добавьте свои ключевые слова и отправьте Pull Request!",
+    "callout_btn": "Инструкция по добавлению →",
+    "tag_playground": "ПЕСОЧНИЦА",
+    "title_playground": "Тестируйте прямо в браузере",
+    "desc_playground": "Попробуйте подлинный синтаксис Yukinary и самовосстановление кода.",
+    "pg_label_presets": "Примеры:",
+    "preset_hello": "Привет, Мир",
+    "preset_fib": "Фибоначчи",
+    "preset_math": "Структуры и логика",
+    "preset_broken": "🩹 Ошибка (Self-Heal)",
+    "btn_run": "Запустить",
+    "btn_heal": "Исправить и запустить",
+    "btn_copy": "Копировать",
+    "editor_title": "РЕДАКТОР КОДА (main.ykn)",
+    "output_title": "ТЕРМИНАЛ КОМПИЛЯЦИИ",
+    "output_ready": "Готов",
+    "pg_init_msg": "Yukinary v1.0.0 Песочница готова.\nНажмите 'Запустить' или 'Исправить и запустить' выше.",
+    "tag_docs": "РУКОВОДСТВО",
+    "title_docs": "Документация Yukinary",
+    "desc_docs": "Полное руководство по установке, синтаксису и разработке ОС.",
+    "docs_side_quickstart": "Быстрый старт",
+    "docs_side_safety": "Система и безопасность",
+    "docs_side_advanced": "Продвинутый уровень",
+    "docs_nav_install": "Установка",
+    "docs_nav_cli": "Команды CLI",
+    "docs_nav_config": "Директивы #config",
+    "docs_nav_safety": "Безопасность памяти",
+    "docs_nav_selfheal": "Самовосстановление",
+    "docs_nav_bitnet": "Нейросеть BitNet",
+    "docs_nav_yknos": "YknOS и ядро",
+    "docs_nav_add_lang": "Добавить язык",
+    "docs_nav_guarantees": "Гарантии и лицензия",
+    "doc1_title": "1. Установка и быстрый старт",
+    "doc1_desc": "Yukinary поставляется в готовых пакетах для Windows и Linux без сложных сборочных цепочек.",
+    "doc1_win_title": "Установка на Windows",
+    "doc1_win_desc": "1. Скачайте yukinary-setup-windows-x86_64.zip.<br>2. Запустите setup.cmd.<br>3. Устанавливает все файлы в %USERPROFILE%\\.yukinary\\bin и настраивает PATH.",
+    "doc1_lin_title": "Установка на Linux & macOS",
+    "doc1_verify_title": "Проверка",
+    "doc2_title": "2. Справочник команд CLI",
+    "doc2_desc": "Интерфейс командной строки ykn поддерживает все этапы разработки:",
+    "th_command": "Команда",
+    "th_desc": "Описание",
+    "th_example": "Пример",
+    "row_build": "Компилирует напрямую в PE32+ (.exe) или ELF64.",
+    "row_run": "Компилирует и сразу исполняет в памяти.",
+    "row_convert": "Конвертирует код Python или C в синтаксис Yukinary.",
+    "row_heal": "Автоматически исправляет синтаксические ошибки.",
+    "row_lsp": "Запускает сервер Language Server Protocol для VS Code.",
+    "doc3_title": "3. Директивы #config в исходном коде",
+    "doc3_desc": "Указывайте цель компиляции, уровень оптимизации и модель ИИ прямо в файле.",
+    "doc4_title": "4. Безопасность памяти без GC",
+    "doc4_desc": "Статический анализ Safety Gate предотвращает ошибки до запуска:",
+    "doc4_li1": "<strong>Защита Use-After-Free:</strong> Доступ к освобожденным указателям блокируется на этапе компиляции.",
+    "doc4_li2": "<strong>Контроль границ:</strong> Предотвращение переполнений буфера.",
+    "doc4_li3": "<strong>Песочница X-Ray:</strong> Ограничение несанкционированных системных вызовов.",
+    "doc5_title": "5. Разработка ОС (Архитектура YknOS)",
+    "doc5_desc1": "Можно ли написать ядро ОС на Yukinary? <strong>Определенно да.</strong>",
+    "doc5_desc2": "Без libc сгенерированный машинный код загружается загрузчиками BIOS/UEFI напрямую по адресу 0x100000.",
+    "doc6_title": "6. Добавление родного языка",
+    "doc6_desc": "Добавьте ключевые слова в tools/keyword_registry.json и src/lexer.ykn в 3 шага.",
+    "doc6_step1": "Укажите код языка и алиасы в tools/keyword_registry.json.",
+    "doc6_step2": "Определите сопоставления в src/lexer.ykn.",
+    "doc6_step3": "Скомпилируйте ykn derle src/main.ykn и отправьте PR!",
+    "doc7_title": "7. Технические гарантии и лицензия",
+    "doc7_desc": "Yukinary распространяется под двойной лицензией MIT и Apache-2.0.",
+    "doc7_callout": "<strong>Гарантия детерминизма:</strong> Один и тот же код компилируется в побайтово идентичный бинарный файл.",
+    "tag_download": "СКАЧАТЬ",
+    "title_download": "Пакеты установки v1.0.0",
+    "desc_download": "Выберите пакет для вашей системы и начните работу за секунды.",
+    "dl_win_title": "Windows пакет (.zip)",
+    "dl_win_desc": "Включает компилятор, setup.cmd, ykn_llm_simd.dll, стандартную библиотеку и расширение VS Code.",
+    "dl_win_btn": "Скачать для Windows",
+    "dl_lin_title": "Linux x86_64 пакет (.tar.gz)",
+    "dl_lin_desc": "Статический бинарный файл ELF64 без зависимостей, с setup.sh и стандартной библиотекой.",
+    "dl_lin_btn": "Скачать для Linux",
+    "dl_vsix_title": "Расширение VS Code (.vsix)",
+    "dl_vsix_desc": "Подсветка 7 языков, автодополнение LSP и запуск кода.",
+    "dl_vsix_btn": "Скачать VSIX",
+    "footer_desc": "Системный язык программирования без libc и LLVM, с синтаксисом на 7 языках и встроенным ИИ BitNet.",
+    "footer_col_repos": "Репозитории",
+    "footer_col_docs": "Документация",
+    "footer_col_community": "Сообщество и лицензия",
+    "footer_copyright": "© 2026 Проект Yukinary. Лицензия MIT / Apache-2.0.",
+    "footer_tagline": "Универсальное системное программирование для всех языков."
+  },
+  "ja": {
+    "nav_overview": "概要",
+    "nav_features": "特徴",
+    "nav_usecases": "活用分野",
+    "nav_install": "インストール",
+    "nav_multilingual": "多言語",
+    "nav_docs": "ドキュメント",
+    "nav_playground": "実行環境",
+    "hero_badge": "Yukinary v1.0.0 オープンソース版リリース",
+    "hero_title": "メモリ安全・直接マシンコード生成 <span class=\"highlight\">多言語システムプログラミング言語</span>",
+    "hero_desc": "LLVMやlibc不要で純粋なx86_64 PE32+/ELF64バイナリを直接出力。日本語を含む7言語でのネイティブコーディングとBitNet AIを内蔵。",
+    "btn_try_online": "オンラインで試す",
+    "btn_quick_install": "簡単インストール",
+    "btn_read_docs": "ドキュメント",
+    "meta_self_hosting": "100% セルフホスティング",
+    "meta_zero_gc": "GCなし (Zero GC)",
+    "meta_dual_target": "Windows & Linux 対応",
+    "copy_btn": "コピー",
+    "term_step1": "%USERPROFILE%\\.yukinary\\bin への安全な配置",
+    "term_step2": "環境変数PATHへの自動追加",
+    "term_step3": "ykn --version と ykn --help で即座に利用可能",
+    "tag_pillars": "YUKINARYを選ぶ理由",
+    "title_pillars": "システムアーキテクチャと設計方針",
+    "desc_pillars": "直接機械語生成、多言語ネイティブ文法、自己完結型コンパイラを軸とした6つの特徴。",
+    "feat1_title": "直接マシンコード出力",
+    "feat1_desc": "外部リンカーやLLVMに依存せず、直接ミリ秒単位でPE32+およびELF64バイナリを生成。",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7言語ネイティブ文法",
+    "feat2_desc": "日本語、英語、トルコ語など7言語のキーワードを直接構文として受け入れます。",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "GCレスのメモリ安全性",
+    "feat3_desc": "ガベージコレクションの一時停止なしで、コンパイル時にUAFと配列境界を厳密に検査。",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "自己修復エンジン",
+    "feat4_desc": "セミコロン抜けや括弧の不一致を自動修復する --self-heal 機能を搭載。",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "組み込みBitNet AI",
+    "feat5_desc": "PythonやGPUを必要とせず、CPU上で0.1msで動作する16KBのBitNet 1.58bニューラルモデル。",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSPと言語ツール",
+    "feat6_desc": "公式VS Code拡張、組み込みLSPサーバー、ソース内#configディレクティブを標準装備。",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "活用分野",
+    "title_usecases": "Yukinaryで何が作れるのか？",
+    "desc_usecases": "OSマイクロカーネルから超低遅延ネットワーク、エッジAIまで幅広く対応。",
+    "uc1_title": "1. オペレーティングシステム＆カーネル (YknOS)",
+    "uc1_desc": "libc非依存のため、std/os/kernel.ykn、メモリページング、割り込み処理をベアメタルで直接記述可能です。",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. 超低遅延ネットワーク＆DB",
+    "uc2_desc": "標準ライブラリのTCP/IPソケット、HTTP/1.1サーバー、WebSocket、内蔵B-Tree SQLエンジンで高速処理。",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. オフラインAI推論 (BitNet)",
+    "uc3_desc": "PythonやCUDA不要。AVX2 SIMD命令を用いてCPU上で1.58ビットBitNetモデルを直接実行。",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. システムツール＆コンパイラ",
+    "uc4_desc": "毎秒100万行以上の高速パーサーにより、CLIツールやゲーム基盤（ECS、glfw、wayland）の開発に最適。",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "多言語プログラミング",
+    "title_multilingual": "母国語でコードを書く",
+    "desc_multilingual": "同一のロジックが7つの言語で等しくネイティブコンパイルされます。",
+    "callout_title": "🌍 あなたの言語がありませんか？15分で追加できます",
+    "callout_desc": "Yukinaryにおいて言語は単なる構文トークンです。キーワードを追加してPRを送りましょう！",
+    "callout_btn": "コントリビューション手順 →",
+    "tag_playground": "プレイグラウンド",
+    "title_playground": "ブラウザで今すぐ体験",
+    "desc_playground": "本格的なYukinary構文と自己修復コンパイルをブラウザ上で実行。",
+    "pg_label_presets": "プリセット:",
+    "preset_hello": "Hello World",
+    "preset_fib": "フィボナッチ",
+    "preset_math": "構造体と論理",
+    "preset_broken": "🩹 エラー修復 (Self-Heal)",
+    "btn_run": "実行",
+    "btn_heal": "修復して実行",
+    "btn_copy": "コピー",
+    "editor_title": "コードエディタ (main.ykn)",
+    "output_title": "コンパイル＆実行端末",
+    "output_ready": "待機中",
+    "pg_init_msg": "Yukinary v1.0.0 実行環境の準備が完了しました。\n上の「実行」または「修復して実行」をクリックしてください。",
+    "tag_docs": "公式マニュアル",
+    "title_docs": "Yukinary ドキュメント",
+    "desc_docs": "セットアップからOS開発、#configディレクティブまで網羅。",
+    "docs_side_quickstart": "クイックスタート",
+    "docs_side_safety": "システムと安全性",
+    "docs_side_advanced": "高度な機能",
+    "docs_nav_install": "インストール手順",
+    "docs_nav_cli": "CLIコマンド一覧",
+    "docs_nav_config": "#config ディレクティブ",
+    "docs_nav_safety": "メモリ安全性",
+    "docs_nav_selfheal": "自己修復エンジン",
+    "docs_nav_bitnet": "組み込みBitNet AI",
+    "docs_nav_yknos": "YknOS＆カーネル開発",
+    "docs_nav_add_lang": "新言語の追加",
+    "docs_nav_guarantees": "保証とライセンス",
+    "doc1_title": "1. インストールとクイックスタート",
+    "doc1_desc": "複雑な環境構築は不要。ワンクリックインストーラーを提供しています。",
+    "doc1_win_title": "Windows インストール",
+    "doc1_win_desc": "1. yukinary-setup-windows-x86_64.zip を展開。<br>2. setup.cmd を実行。<br>3. %USERPROFILE%\\.yukinary\\bin に自動配置され、PATHが設定されます。",
+    "doc1_lin_title": "Linux & macOS インストール",
+    "doc1_verify_title": "動作確認",
+    "doc2_title": "2. CLIコマンドリファレンス",
+    "doc2_desc": "開発ライフサイクルに必要なすべての機能を提供します：",
+    "th_command": "コマンド",
+    "th_desc": "説明",
+    "th_example": "使用例",
+    "row_build": "PE32+ または ELF64 バイナリを直接生成。",
+    "row_run": "コンパイル後、メモリ上で即座に実行。",
+    "row_convert": "Python または C コードをネイティブYukinary構文に自動変換。",
+    "row_heal": "構文エラーを自動検知して修復。",
+    "row_lsp": "VS Code用 Language Server Protocol サーバーを起動。",
+    "doc3_title": "3. ソース内 #config ディレクティブ",
+    "doc3_desc": "コンパイル設定をソースコード内に記述して移植性を担保します。",
+    "doc4_title": "4. メモリ安全性（Safety Gate）",
+    "doc4_desc": "GCなしでコンパイル時に安全性を保証します：",
+    "doc4_li1": "<strong>Use-After-Free防止:</strong> 解放済みポインタへのアクセスを検出。",
+    "doc4_li2": "<strong>配列境界保護:</strong> 静的解析によるバッファオーバーフロー防止。",
+    "doc4_li3": "<strong>X-Ray サンドボックス:</strong> 不正なシステムコールの遮断。",
+    "doc5_title": "5. OS開発（YknOSアーキテクチャ）",
+    "doc5_desc1": "YukinaryでOSカーネルを書くことは可能か？ <strong>完全に可能です。</strong>",
+    "doc5_desc2": "libc依存がないため、出力されたバイナリはUEFIブートローダーにより0x100000番地に直接ロード可能です。",
+    "doc6_title": "6. 母国語の追加手順",
+    "doc6_desc": "3つのステップで新しい言語のキーワードを登録できます。",
+    "doc6_step1": "tools/keyword_registry.json に言語コードと単語を追加。",
+    "doc6_step2": "src/lexer.ykn にトークン対応を記述。",
+    "doc6_step3": "ykn derle src/main.ykn で再構築してPRを送信！",
+    "doc7_title": "7. 技術的保証とライセンス",
+    "doc7_desc": "MITおよびApache-2.0のデュアルライセンスで提供されています。",
+    "doc7_callout": "<strong>決定論的コンパイル保証:</strong> 同一のソースコードは常にビット単位で100%同一のバイナリを出力します。",
+    "tag_download": "ダウンロード",
+    "title_download": "Yukinary v1.0.0 配布パッケージ",
+    "desc_download": "お使いの環境に最適なパッケージを選択してすぐに始められます。",
+    "dl_win_title": "Windows インストーラー (.zip)",
+    "dl_win_desc": "コンパイラ本体、setup.cmd、ykn_llm_simd.dll、標準ライブラリ、VS Code拡張機能を同梱。",
+    "dl_win_btn": "Windows版をダウンロード",
+    "dl_lin_title": "Linux x86_64 パッケージ (.tar.gz)",
+    "dl_lin_desc": "glibc非依存の静的ELF64バイナリ、setup.sh、全標準モジュールを収録。",
+    "dl_lin_btn": "Linux版をダウンロード",
+    "dl_vsix_title": "VS Code 拡張機能 (.vsix)",
+    "dl_vsix_desc": "7言語の構文ハイライト、LSP自動補完、エラー診断をサポート。",
+    "dl_vsix_btn": "VSIXをダウンロード",
+    "footer_desc": "libcやLLVM不要でネイティブ機械語を出力する、7言語対応のシステムプログラミング言語。",
+    "footer_col_repos": "リポジトリ",
+    "footer_col_docs": "ドキュメント",
+    "footer_col_community": "コミュニティと規約",
+    "footer_copyright": "© 2026 Yukinary Language Project. MIT / Apache-2.0 ライセンス。",
+    "footer_tagline": "すべての言語のためのユニバーサルシステムプログラミング。"
+  },
+  "zh": {
+    "nav_overview": "概述",
+    "nav_features": "核心特性",
+    "nav_usecases": "应用场景",
+    "nav_install": "安装指南",
+    "nav_multilingual": "多语言支持",
+    "nav_docs": "文档中心",
+    "nav_playground": "在线测试",
+    "hero_badge": "Yukinary v1.0.0 开源版本已发布",
+    "hero_title": "内存安全、直出机器码的 <span class=\"highlight\">多语言系统编程语言</span>",
+    "hero_desc": "无需libc、LLVM或外部链接器，直接生成纯净的x86_64 PE32+和ELF64机器码；原生支持中文等7种人类语言，内嵌BitNet AI模型与自愈引擎。",
+    "btn_try_online": "在线体验",
+    "btn_quick_install": "一键安装",
+    "btn_read_docs": "查看文档",
+    "meta_self_hosting": "100% 自举编译 (Self-Hosting)",
+    "meta_zero_gc": "无垃圾回收 (Zero GC)",
+    "meta_dual_target": "Windows & Linux 双平台",
+    "copy_btn": "复制",
+    "term_step1": "安全安装至 %USERPROFILE%\\.yukinary\\bin",
+    "term_step2": "自动配置环境变量 PATH",
+    "term_step3": "输入 ykn --version 和 ykn --help 即刻使用",
+    "tag_pillars": "为何选择 YUKINARY?",
+    "title_pillars": "系统架构与设计原则",
+    "desc_pillars": "以直接机器码生成、多语言原生语法与自包含编译器为核心的六大技术特性。",
+    "feat1_title": "直出纯机器码",
+    "feat1_desc": "零LLVM/GCC/libc依赖。以毫秒级速度直接生成PE32+ (Windows) 与ELF64 (Linux) 二进制。",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7种语言原生语法",
+    "feat2_desc": "中文、英语、土耳其语等关键词直接作为一类Token解析，彻底摆脱单一英语限制。",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "无GC的内存安全",
+    "feat3_desc": "无垃圾回收停顿，通过编译期安全卫士检测Use-After-Free与数组越界。",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "代码自愈引擎 (Self-Healing)",
+    "feat4_desc": "漏写分号或括号不会导致崩溃，--self-heal 模式自动完成AST级别修复与审查。",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "内置BitNet轻量AI",
+    "feat5_desc": "内置16KB BitNet 1.58b模型，在纯CPU上实现0.1ms本地代码建议与优化，无需Python。",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSP与VS Code支持",
+    "feat6_desc": "原生语言服务协议 (ykn --lsp)、官方VS Code插件、双仓库包管理器及源码内#config指令。",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "应用领域",
+    "title_usecases": "Yukinary 能用来做什么？",
+    "desc_usecases": "从操作系统内核 (YknOS) 到超低延迟微服务与边缘端AI推理全方位支持。",
+    "uc1_title": "1. 操作系统与内核开发 (YknOS)",
+    "uc1_desc": "由于零C运行时依赖，可直接编写裸机 std/os/kernel.ykn、分页机制、中断向量表和硬件驱动。",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. 超低延迟网络与数据库",
+    "uc2_desc": "标准库内置TCP/IP套接字、HTTP/1.1服务器、WebSocket与B-Tree SQL引擎，轻松应对高并发。",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. 离线AI推理 (BitNet)",
+    "uc3_desc": "无需Python或CUDA，在纯CPU上利用AVX2 SIMD指令直接运行1.58位BitNet量化模型。",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. 系统工具与编译器",
+    "uc4_desc": "解析速度超过100万行/秒，非常适合开发高速CLI工具、代码格式化器及游戏引擎子系统。",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "多语言编程",
+    "title_multilingual": "用你的母语编写代码",
+    "desc_multilingual": "完全相同的程序可以用7种语言书写，并编译出位级别一致的机器码。",
+    "callout_title": "🌍 列表中没有你的母语？15分钟即可添加",
+    "callout_desc": "在Yukinary中，人类自然语言仅仅是语法词元。只需登记关键字并提交PR即可！",
+    "callout_btn": "查看贡献指南 →",
+    "tag_playground": "在线试用",
+    "title_playground": "在浏览器中立即运行",
+    "desc_playground": "体验真实的Yukinary AST编译管线、指针语法与代码自愈特性。",
+    "pg_label_presets": "预设范例:",
+    "preset_hello": "你好世界",
+    "preset_fib": "斐波那契",
+    "preset_math": "结构体与逻辑",
+    "preset_broken": "🩹 错误自愈 (Self-Heal)",
+    "btn_run": "运行",
+    "btn_heal": "自愈并运行",
+    "btn_copy": "复制",
+    "editor_title": "代码编辑器 (main.ykn)",
+    "output_title": "编译与运行终端",
+    "output_ready": "就绪",
+    "pg_init_msg": "Yukinary v1.0.0 在线环境已就绪。\n点击上方的“运行”或“自愈并运行”开始测试。",
+    "tag_docs": "开发文档",
+    "title_docs": "Yukinary 官方文档",
+    "desc_docs": "包含安装指南、CLI参考、#config指令及操作系统开发全流程。",
+    "docs_side_quickstart": "快速入门",
+    "docs_side_safety": "系统与安全性",
+    "docs_side_advanced": "进阶指南",
+    "docs_nav_install": "安装说明",
+    "docs_nav_cli": "CLI命令列表",
+    "docs_nav_config": "#config 指令",
+    "docs_nav_safety": "内存安全",
+    "docs_nav_selfheal": "自愈引擎",
+    "docs_nav_bitnet": "内置BitNet AI",
+    "docs_nav_yknos": "YknOS与内核",
+    "docs_nav_add_lang": "添加新语言",
+    "docs_nav_guarantees": "技术保证与许可",
+    "doc1_title": "1. 安装与快速上手",
+    "doc1_desc": "告别繁重的工具链配置，Yukinary提供开箱即用的自动化安装包。",
+    "doc1_win_title": "Windows 安装",
+    "doc1_win_desc": "1. 解压 yukinary-setup-windows-x86_64.zip。<br>2. 双击 setup.cmd。<br>3. 自动安装至 %USERPROFILE%\\.yukinary\\bin 并添加至 PATH。",
+    "doc1_lin_title": "Linux & macOS 安装",
+    "doc1_verify_title": "环境验证",
+    "doc2_title": "2. CLI 命令行参考",
+    "doc2_desc": "ykn 提供了涵盖完整生命周期的命令：",
+    "th_command": "命令",
+    "th_desc": "说明",
+    "th_example": "示例",
+    "row_build": "直接编译为 PE32+ 或 ELF64 二进制文件。",
+    "row_run": "在内存中即时编译并运行程序。",
+    "row_convert": "将 Python 或 C 源代码自动转译为 Yukinary 语法。",
+    "row_heal": "自动修复语法错误并验证安全性。",
+    "row_lsp": "启动供 VS Code 使用的语言服务协议。",
+    "doc3_title": "3. 源码内 #config 指令",
+    "doc3_desc": "将编译目标、优化级别和模型路径直接写在代码文件头部，保证项目可移植性。",
+    "doc4_title": "4. 无GC的内存安全机制",
+    "doc4_desc": "无需运行时垃圾回收，依靠编译期 Safety Gate 预防缺陷：",
+    "doc4_li1": "<strong>Use-After-Free 防护:</strong> 在编译阶段静态识别并阻断已释放指针的读取。",
+    "doc4_li2": "<strong>边界检查:</strong> 静态范围推断杜绝缓冲区溢出。",
+    "doc4_li3": "<strong>X-Ray 沙箱门禁:</strong> 严格控制未授权系统调用。",
+    "doc5_title": "5. 操作系统内核开发 (YknOS)",
+    "doc5_desc1": "能否用 Yukinary 编写系统内核？ <strong>完全可以。</strong>",
+    "doc5_desc2": "零libc依赖让生成的机器码可直接由引导器加载至物理内存 0x100000 处执行。",
+    "doc6_title": "6. 贡献你的母语语法",
+    "doc6_desc": "只需三步即可在 tools/keyword_registry.json 与 src/lexer.ykn 中完成注册。",
+    "doc6_step1": "在 tools/keyword_registry.json 中登记语言代码与关键词别名。",
+    "doc6_step2": "在 src/lexer.ykn 查找表中配置词元映射。",
+    "doc6_step3": "执行 ykn derle src/main.ykn 完成自举并提交 Pull Request！",
+    "doc7_title": "7. 技术保证与开源协议",
+    "doc7_desc": "采用 MIT 与 Apache-2.0 双协议，无论是闭源商业软件还是开源项目均可自由使用。",
+    "doc7_callout": "<strong>确定性构建保证:</strong> 相同源码在同一平台构建始终产生逐位完全一致 (bit-identical) 的二进制。",
+    "tag_download": "下载安装",
+    "title_download": "Yukinary v1.0.0 安装包",
+    "desc_download": "选择适合您平台的安装包，秒级完成环境搭建。",
+    "dl_win_title": "Windows 安装包 (.zip)",
+    "dl_win_desc": "包含编译器、setup.cmd、ykn_llm_simd.dll、标准库与 VS Code 插件。",
+    "dl_win_btn": "下载 Windows 版本",
+    "dl_lin_title": "Linux x86_64 安装包 (.tar.gz)",
+    "dl_lin_desc": "零glibc依赖的静态ELF64二进制，包含setup.sh和全部标准库。",
+    "dl_lin_btn": "下载 Linux 版本",
+    "dl_vsix_title": "VS Code 插件 (.vsix)",
+    "dl_vsix_desc": "支持7种语言的高亮、LSP自动补全与错误诊断。",
+    "dl_vsix_btn": "下载 VSIX 插件",
+    "footer_desc": "无需libc与LLVM、直出机器码的多语言系统编程语言，内嵌BitNet AI。",
+    "footer_col_repos": "仓库列表",
+    "footer_col_docs": "文档导航",
+    "footer_col_community": "社区与许可",
+    "footer_copyright": "© 2026 Yukinary Language Project. MIT / Apache-2.0 双协议授权。",
+    "footer_tagline": "面向所有人类语言的通用系统编程。"
+  },
+  "ko": {
+    "nav_overview": "개요",
+    "nav_features": "핵심 기능",
+    "nav_usecases": "활용 분야",
+    "nav_install": "설치",
+    "nav_multilingual": "다국어",
+    "nav_docs": "문서",
+    "nav_playground": "플레이그라운드",
+    "hero_badge": "Yukinary v1.0.0 오픈소스 릴리스 출시",
+    "hero_title": "메모리 안전성 및 직접 기계어 생성 <span class=\"highlight\">다국어 시스템 프로그래밍 언어</span>",
+    "hero_desc": "libc나 LLVM 없이 순수 x86_64 PE32+ 및 ELF64 기계어를 직접 생성합니다. 한국어를 포함한 7개 언어 기본 지원 및 내장 BitNet AI 탑재.",
+    "btn_try_online": "온라인 체험",
+    "btn_quick_install": "원클릭 설치",
+    "btn_read_docs": "공식 문서",
+    "meta_self_hosting": "100% 자체 컴파일 (Self-Hosting)",
+    "meta_zero_gc": "가비지 컬렉터 없음 (Zero GC)",
+    "meta_dual_target": "Windows & Linux 지원",
+    "copy_btn": "복사",
+    "term_step1": "%USERPROFILE%\\.yukinary\\bin 디렉터리에 안전하게 설치",
+    "term_step2": "환경 변수 PATH에 자동 등록",
+    "term_step3": "ykn --version 및 ykn --help 명령어로 즉시 사용 가능",
+    "tag_pillars": "왜 YUKINARY인가?",
+    "title_pillars": "시스템 아키텍처 및 설계 원칙",
+    "desc_pillars": "직접 기계어 생성, 다국어 네이티브 문법 및 독립형 컴파일러에 기반한 6가지 핵심 특성.",
+    "feat1_title": "직접 기계어 생성",
+    "feat1_desc": "LLVM이나 libc 의존성 없이 밀리초 만에 PE32+ 및 ELF64 실행 파일을 생성합니다.",
+    "feat1_badge": "Zero Dependency Linker",
+    "feat2_title": "7개 언어 네이티브 문법",
+    "feat2_desc": "한국어, 영어, 터키어 등 7개 언어의 키워드를 네이티브 토큰으로 직접 컴파일합니다.",
+    "feat2_badge": "TR • EN • FR • RU • JA • ZH • KO",
+    "feat3_title": "GC 없는 메모리 안전성",
+    "feat3_desc": "GC 정지 없이 컴파일 타임 검사를 통해 UAF 및 배열 경계 초과를 철저히 방지합니다.",
+    "feat3_badge": "Deterministic Memory Safety",
+    "feat4_title": "자가 치유 엔진 (Self-Healing)",
+    "feat4_desc": "누락된 세미콜론이나 괄호를 자동으로 수정하는 --self-heal 모드를 지원합니다.",
+    "feat4_badge": "Auto-Repair & Safe Compilation",
+    "feat5_title": "내장 BitNet AI",
+    "feat5_desc": "Python 없이 CPU에서 0.1ms 만에 동작하는 16KB 크기의 1.58b BitNet 신경망 탑재.",
+    "feat5_badge": "1.58-Bit Quantized AI Engine",
+    "feat6_title": "LSP 및 VS Code 확장",
+    "feat6_desc": "내장 LSP 서버 (ykn --lsp), 공식 VS Code 확장 프로그램, 소스 내 #config 설정 제공.",
+    "feat6_badge": "LSP Server & Editor Tooling",
+    "tag_usecases": "활용 분야",
+    "title_usecases": "Yukinary로 무엇을 만들 수 있나요?",
+    "desc_usecases": "OS 마이크로커널부터 고성능 네트워크 서버 및 엣지 AI 추론까지 완벽 지원.",
+    "uc1_title": "1. 운영체제 및 커널 개발 (YknOS)",
+    "uc1_desc": "libc 의존성이 없으므로 베어메탈 std/os/kernel.ykn, 페이징, 인터럽트 핸들러를 순수 코드로 작성할 수 있습니다.",
+    "uc1_badge": "Bare-Metal",
+    "uc2_title": "2. 초저지연 네트워크 및 데이터베이스",
+    "uc2_desc": "표준 라이브러리 TCP/IP 소켓, HTTP/1.1 서버, WebSocket 및 내장 B-Tree SQL 엔진 탑재.",
+    "uc2_badge": "High Throughput",
+    "uc3_title": "3. 오프라인 AI 추론 (BitNet)",
+    "uc3_desc": "Python이나 CUDA 없이 AVX2 SIMD 명령어를 사용하여 CPU에서 1.58비트 양자화 모델을 직접 실행.",
+    "uc3_badge": "AI Inference",
+    "uc4_title": "4. 시스템 도구 및 컴파일러",
+    "uc4_desc": "초당 100만 줄 이상의 고속 파서로 CLI 유틸리티 및 게임 서브모듈(ECS, wayland) 개발에 최적화.",
+    "uc4_badge": "1M lines/sec",
+    "tag_multilingual": "다국어 문법",
+    "title_multilingual": "모국어로 코딩하세요",
+    "desc_multilingual": "동일한 프로그램이 7개 언어로 동일한 기계어로 컴파일됩니다.",
+    "callout_title": "🌍 당신의 모국어가 없나요? 15분 만에 추가할 수 있습니다",
+    "callout_desc": "Yukinary에서 인간의 언어는 단순한 구문 토큰입니다. 키워드를 등록하고 PR을 보내보세요!",
+    "callout_btn": "기여 가이드 읽기 →",
+    "tag_playground": "플레이그라운드",
+    "title_playground": "브라우저에서 직접 실행",
+    "desc_playground": "실제 Yukinary 문법과 자가 치유 컴파일 파이프라인을 체험하세요.",
+    "pg_label_presets": "프리셋:",
+    "preset_hello": "Hello World",
+    "preset_fib": "피보나치",
+    "preset_math": "구조체 및 논리",
+    "preset_broken": "🩹 오류 치유 (Self-Heal)",
+    "btn_run": "실행",
+    "btn_heal": "치유 후 실행",
+    "btn_copy": "복사",
+    "editor_title": "코드 에디터 (main.ykn)",
+    "output_title": "컴파일 및 실행 터미널",
+    "output_ready": "준비됨",
+    "pg_init_msg": "Yukinary v1.0.0 실행 환경 준비 완료.\n상단의 '실행' 또는 '치유 후 실행'을 클릭하세요.",
+    "tag_docs": "공식 문서",
+    "title_docs": "Yukinary 사용자 가이드",
+    "desc_docs": "설치부터 CLI 사용법, 운영체제 개발 가이드까지 모든 정보를 제공합니다.",
+    "docs_side_quickstart": "빠른 시작",
+    "docs_side_safety": "시스템 및 안전성",
+    "docs_side_advanced": "고급 기능",
+    "docs_nav_install": "설치 단계",
+    "docs_nav_cli": "CLI 명령어",
+    "docs_nav_config": "#config 설정",
+    "docs_nav_safety": "메모리 안전성",
+    "docs_nav_selfheal": "자가 치유 엔진",
+    "docs_nav_bitnet": "내장 BitNet AI",
+    "docs_nav_yknos": "YknOS 및 커널 개발",
+    "docs_nav_add_lang": "모국어 추가",
+    "docs_nav_guarantees": "기술 보증 및 라이선스",
+    "doc1_title": "1. 설치 및 빠른 시작",
+    "doc1_desc": "복잡한 툴체인 설정 없이 원클릭 자동 설치 패키지를 제공합니다.",
+    "doc1_win_title": "Windows 설치",
+    "doc1_win_desc": "1. yukinary-setup-windows-x86_64.zip 압축 해제.<br>2. setup.cmd 더블 클릭.<br>3. %USERPROFILE%\\.yukinary\\bin 디렉터리에 설치 및 PATH 등록.",
+    "doc1_lin_title": "Linux & macOS 설치",
+    "doc1_verify_title": "설치 확인",
+    "doc2_title": "2. CLI 명령어 레퍼런스",
+    "doc2_desc": "개발 수명 주기에 필요한 모든 명령어를 제공합니다:",
+    "th_command": "명령어",
+    "th_desc": "설명",
+    "th_example": "사용 예시",
+    "row_build": "PE32+ 또는 ELF64 바이너리로 직접 컴파일합니다.",
+    "row_run": "메모리에서 즉시 컴파일하고 실행합니다.",
+    "row_convert": "Python 또는 C 코드를 Yukinary 문법으로 변환합니다.",
+    "row_heal": "구문 오류를 자동으로 치유하고 안전성을 검증합니다.",
+    "row_lsp": "VS Code를 위한 Language Server Protocol 데몬을 시작합니다.",
+    "doc3_title": "3. 소스 내 #config 설정",
+    "doc3_desc": "컴파일 대상과 최적화 옵션을 소스 코드 상단에 직접 명시할 수 있습니다.",
+    "doc4_title": "4. GC 없는 메모리 안전성 모델",
+    "doc4_desc": "컴파일 타임 Safety Gate 정적 분석을 통해 런타임 오류를 방지합니다:",
+    "doc4_li1": "<strong>Use-After-Free 방지:</strong> 해제된 포인터 접근을 컴파일 단계에서 차단.",
+    "doc4_li2": "<strong>배열 경계 검사:</strong> 버퍼 오버플로우 위험 제거.",
+    "doc4_li3": "<strong>X-Ray 샌드박스:</strong> 비인가 시스템 호출 격리.",
+    "doc5_title": "5. 운영체제 커널 개발 (YknOS)",
+    "doc5_desc1": "Yukinary로 OS 커널을 개발할 수 있나요? <strong>물론입니다.</strong>",
+    "doc5_desc2": "libc 의존성이 없어 부트로더에 의해 0x100000 번지에 직접 로드되어 실행될 수 있습니다.",
+    "doc6_title": "6. 모국어 키워드 추가하기",
+    "doc6_desc": "3단계만으로 새로운 언어의 키워드를 등록할 수 있습니다.",
+    "doc6_step1": "tools/keyword_registry.json에 언어 코드와 키워드 추가.",
+    "doc6_step2": "src/lexer.ykn 룩업 테이블에 토큰 매핑 등록.",
+    "doc6_step3": "ykn derle src/main.ykn으로 컴파일 후 Pull Request 제출!",
+    "doc7_title": "7. 기술적 보증 및 라이선스",
+    "doc7_desc": "MIT 및 Apache-2.0 듀얼 라이선스로 보호되며 상업적 이용이 완전히 자유롭습니다.",
+    "doc7_callout": "<strong>결정론적 빌드 보증:</strong> 동일한 소스 코드는 항상 비트 단위로 100% 동일한 바이너리를 생성합니다.",
+    "tag_download": "다운로드",
+    "title_download": "Yukinary v1.0.0 설치 패키지",
+    "desc_download": "운영체제에 맞는 패키지를 다운로드하여 즉시 시작하세요.",
+    "dl_win_title": "Windows 설치 패키지 (.zip)",
+    "dl_win_desc": "컴파일러, setup.cmd, ykn_llm_simd.dll, 표준 라이브러리 및 VS Code 확장 포함.",
+    "dl_win_btn": "Windows 설치 파일 다운로드",
+    "dl_lin_title": "Linux x86_64 패키지 (.tar.gz)",
+    "dl_lin_desc": "glibc 의존성이 없는 정적 ELF64 바이너리 및 표준 모듈 전체 포함.",
+    "dl_lin_btn": "Linux 패키지 다운로드",
+    "dl_vsix_title": "VS Code 확장 프로그램 (.vsix)",
+    "dl_vsix_desc": "7개 언어 구문 강조, 내장 LSP 자동 완성 및 오류 진단 지원.",
+    "dl_vsix_btn": "VSIX 다운로드",
+    "footer_desc": "libc와 LLVM 없이 직접 기계어를 생성하는 7개 언어 지원 시스템 프로그래밍 언어.",
+    "footer_col_repos": "저장소",
+    "footer_col_docs": "문서",
+    "footer_col_community": "커뮤니티 및 라이선스",
+    "footer_copyright": "© 2026 Yukinary Language Project. MIT / Apache-2.0 듀얼 라이선스.",
+    "footer_tagline": "모든 인류의 언어를 위한 유니버설 시스템 프로그래밍."
+  }
+};
 
-    // ========================================================
+
     // 2. MULTI-LINGUAL CODE SHOWCASE SNIPPETS
-    // ========================================================
     const SHOWCASE_SNIPPETS = {
       tr: {
         title: "🇹🇷 Türkçe Doğal Gramer",
-        code: `# Türkçe Doğal Sözdizimi
-yapi Nokta {
-    x: tamsayi;
-    y: tamsayi;
-}
-
-isv fib(n: tamsayi) -> tamsayi {
-    eger (n <= 1) ise {
-        dondu n;
-    }
-    dondu fib(n - 1) + fib(n - 2);
-}
-
-isv ana() -> tamsayi {
-    degisken p: Nokta;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("Sonuc: ".ptr);
-    sayiyi_ekrana_yaz(fib(7));
-    ekrana_yaz("\\n".ptr);
-    dondu 0;
-}`
+        code: `# Türkçe Doğal Sözdizimi\nyapi Nokta {\n    x: tamsayi;\n    y: tamsayi;\n}\n\nisv fib(n: tamsayi) -> tamsayi {\n    eger (n <= 1) ise {\n        dondu n;\n    }\n    dondu fib(n - 1) + fib(n - 2);\n}\n\nisv ana() -> tamsayi {\n    degisken p: Nokta;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("Sonuc: ".ptr);\n    sayiyi_ekrana_yaz(fib(7));\n    ekrana_yaz("\\n".ptr);\n    dondu 0;\n}`
       },
       en: {
         title: "🇬🇧 English Native Grammar",
-        code: `# English Native Syntax
-struct Point {
-    x: int;
-    y: int;
-}
-
-fn fib(n: int) -> int {
-    if (n <= 1) then {
-        return n;
-    }
-    return fib(n - 1) + fib(n - 2);
-}
-
-fn main() -> int {
-    let p: Point;
-    p.x = 10;
-    p.y = 20;
-    print("Result: ".ptr);
-    sayiyi_ekrana_yaz(fib(7));
-    print("\\n".ptr);
-    return 0;
-}`
+        code: `# English Native Syntax\nstruct Point {\n    x: int;\n    y: int;\n}\n\nfn fib(n: int) -> int {\n    if (n <= 1) then {\n        return n;\n    }\n    return fib(n - 1) + fib(n - 2);\n}\n\nfn main() -> int {\n    let p: Point;\n    p.x = 10;\n    p.y = 20;\n    print("Result: ".ptr);\n    sayiyi_ekrana_yaz(fib(7));\n    print("\\n".ptr);\n    return 0;\n}`
       },
       fr: {
         title: "🇫🇷 Syntaxe Naturelle Française",
-        code: `# Syntaxe Française
-structure Point {
-    x: entier;
-    y: entier;
-}
-
-fonction fib(n: entier) -> entier {
-    si (n <= 1) alors {
-        retour n;
-    }
-    retour fib(n - 1) + fib(n - 2);
-}
-
-fonction principale() -> entier {
-    soit p: Point;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("Resultat: ".ptr);
-    sayiyi_ekrana_yaz(fib(7));
-    ekrana_yaz("\\n".ptr);
-    retour 0;
-}`
+        code: `# Syntaxe Française\nstructure Point {\n    x: entier;\n    y: entier;\n}\n\nfonction fib(n: entier) -> entier {\n    si (n <= 1) alors {\n        retour n;\n    }\n    retour fib(n - 1) + fib(n - 2);\n}\n\nfonction principale() -> entier {\n    soit p: Point;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("Resultat: ".ptr);\n    sayiyi_ekrana_yaz(fib(7));\n    ekrana_yaz("\\n".ptr);\n    retour 0;\n}`
       },
       ru: {
         title: "🇷🇺 Русский Естественный Синтаксис",
-        code: `# Русский синтаксис
-структура Точка {
-    x: целое;
-    y: целое;
-}
-
-функция фиб(n: целое) -> целое {
-    если (n <= 1) то {
-        вернуть n;
-    }
-    вернуть фиб(n - 1) + фиб(n - 2);
-}
-
-функция главная() -> целое {
-    переменная p: Точка;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("Результат: ".ptr);
-    sayiyi_ekrana_yaz(фиб(7));
-    ekrana_yaz("\\n".ptr);
-    вернуть 0;
-}`
+        code: `# Русский синтаксис\nструктура Точка {\n    x: целое;\n    y: целое;\n}\n\nфункция фиб(n: целое) -> целое {\n    если (n <= 1) то {\n        вернуть n;\n    }\n    вернуть фиб(n - 1) + фиб(n - 2);\n}\n\nфункция главная() -> целое {\n    переменная p: Точка;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("Результат: ".ptr);\n    sayiyi_ekrana_yaz(фиб(7));\n    ekrana_yaz("\\n".ptr);\n    вернуть 0;\n}`
       },
       ja: {
         title: "🇯🇵 日本語 ネイティブ構文",
-        code: `# 日本語ネイティブ構文
-構造体 座標 {
-    x: 整数;
-    y: 整数;
-}
-
-関数 フィボ(n: 整数) -> 整数 {
-    もし (n <= 1) なら {
-        返す n;
-    }
-    返す フィボ(n - 1) + フィボ(n - 2);
-}
-
-関数 メイン() -> 整数 {
-    変数 p: 座標;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("結果: ".ptr);
-    sayiyi_ekrana_yaz(フィボ(7));
-    ekrana_yaz("\\n".ptr);
-    返す 0;
-}`
+        code: `# 日本語ネイティブ構文\n構造体 座標 {\n    x: 整数;\n    y: 整数;\n}\n\n関数 フィボ(n: 整数) -> 整数 {\n    もし (n <= 1) なら {\n        返す n;\n    }\n    返す フィボ(n - 1) + フィボ(n - 2);\n}\n\n関数 メイン() -> 整数 {\n    変数 p: 座標;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("結果: ".ptr);\n    sayiyi_ekrana_yaz(フィボ(7));\n    ekrana_yaz("\\n".ptr);\n    返す 0;\n}`
       },
       zh: {
         title: "🇨🇳 中文 原生语法",
-        code: `# 中文原生语法
-结构体 点 {
-    x: 整数;
-    y: 整数;
-}
-
-函数 斐波(n: 整数) -> 整数 {
-    如果 (n <= 1) 则 {
-        返回 n;
-    }
-    返回 斐波(n - 1) + 斐波(n - 2);
-}
-
-函数 主函数() -> 整数 {
-    变量 p: 点;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("结果: ".ptr);
-    sayiyi_ekrana_yaz(斐波(7));
-    ekrana_yaz("\\n".ptr);
-    返回 0;
-}`
+        code: `# 中文原生语法\n结构体 点 {\n    x: 整数;\n    y: 整数;\n}\n\n函数 斐波(n: 整数) -> 整数 {\n    如果 (n <= 1) 则 {\n        返回 n;\n    }\n    返回 斐波(n - 1) + 斐波(n - 2);\n}\n\n函数 主函数() -> 整数 {\n    变量 p: 点;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("结果: ".ptr);\n    sayiyi_ekrana_yaz(斐波(7));\n    ekrana_yaz("\\n".ptr);\n    返回 0;\n}`
       },
       ko: {
         title: "🇰🇷 한국어 네이티브 문법",
-        code: `# 한국어 네이티브 문법
-구조체 좌표 {
-    x: 정수;
-    y: 정수;
-}
-
-함수 피보(n: 정수) -> 정수 {
-    만약 (n <= 1) 라면 {
-        반환 n;
-    }
-    반환 피보(n - 1) + 피보(n - 2);
-}
-
-함수 메인() -> 정수 {
-    변수 p: 좌표;
-    p.x = 10;
-    p.y = 20;
-    ekrana_yaz("결과: ".ptr);
-    sayiyi_ekrana_yaz(피보(7));
-    ekrana_yaz("\\n".ptr);
-    반환 0;
-}`
+        code: `# 한국어 네이티브 문법\n구조체 좌표 {\n    x: 정수;\n    y: 정수;\n}\n\n함수 피보(n: 정수) -> 정수 {\n    만약 (n <= 1) 라면 {\n        반환 n;\n    }\n    반환 피보(n - 1) + 피보(n - 2);\n}\n\n함수 메인() -> 정수 {\n    변수 p: 좌표;\n    p.x = 10;\n    p.y = 20;\n    ekrana_yaz("결과: ".ptr);\n    sayiyi_ekrana_yaz(피보(7));\n    ekrana_yaz("\\n".ptr);\n    반환 0;\n}`
       }
     };
 
-    // ========================================================
     // 3. PLAYGROUND PRESETS (ALL 7 LANGUAGES)
-    // ========================================================
     const PLAYGROUND_PRESETS = {
       tr: {
         hello: `# Yukinary - Merhaba Dunya ve Dongu Ornegi\nisv ana() -> tamsayi {\n    degisken baslik: *u8 = "=== Yukinary v1.0 Calisma Zamani ===\\n".ptr;\n    ekrana_yaz(baslik);\n    \n    degisken sayac: tamsayi = 1;\n    dongu (sayac <= 5) {\n        ekrana_yaz("Adim: ".ptr);\n        sayiyi_ekrana_yaz(sayac);\n        ekrana_yaz(" | x86_64 PE32+ yerel makine kodu aktif.\\n".ptr);\n        sayac = sayac + 1;\n    }\n    \n    ekrana_yaz("Tebrikler! Kod basariyla tamamlandi.\\n".ptr);\n    dondu 0;\n}`,
@@ -2334,27 +2834,17 @@ fonction principale() -> entier {
       }
     };
 
-    // ========================================================
-    // 4. AUTHENTIC PARSER & RUNTIME ENGINE (YUKINARY AST)
-    // ========================================================
+    // 4. PARSER & RUNTIME ENGINE
     const KEYWORDS = {
-      // Functions
       'isv': 'FN', 'islev': 'FN', 'fn': 'FN', 'function': 'FN', 'fonction': 'FN', 'функция': 'FN', '関数': 'FN', '函数': 'FN', '함수': 'FN',
-      // Variables
       'degisken': 'LET', 'let': 'LET', 'var': 'LET', 'mut': 'LET', 'variable': 'LET', 'soit': 'LET', 'переменная': 'LET', 'пусть': 'LET', '変数': 'LET', '变量': 'LET', '변수': 'LET',
-      // Constants
       'sabit': 'CONST', 'const': 'CONST', 'константа': 'CONST', '定数': 'CONST', '常量': 'CONST', '상수': 'CONST',
-      // Conditionals
       'eger': 'IF', 'if': 'IF', 'si': 'IF', 'если': 'IF', 'もし': 'IF', '如果': 'IF', '만약': 'IF',
       'ise': 'THEN', 'then': 'THEN', 'alors': 'THEN', 'то': 'THEN', 'なら': 'THEN', '则': 'THEN', '라면': 'THEN',
       'yoksa': 'ELSE', 'else': 'ELSE', 'sinon': 'ELSE', 'иначе': 'ELSE', 'それ以外': 'ELSE', '否则': 'ELSE', '아니면': 'ELSE',
-      // Loops
       'dongu': 'LOOP', 'loop': 'LOOP', 'while': 'LOOP', 'boucle': 'LOOP', 'цикл': 'LOOP', 'ループ': 'LOOP', '循环': 'LOOP', '반복': 'LOOP',
-      // Return
       'dondu': 'RETURN', 'return': 'RETURN', 'retour': 'RETURN', 'вернуть': 'RETURN', '返す': 'RETURN', '返回': 'RETURN', '반환': 'RETURN',
-      // Structs
       'yapi': 'STRUCT', 'struct': 'STRUCT', 'structure': 'STRUCT', 'структура': 'STRUCT', '構造体': 'STRUCT', '结构体': 'STRUCT', '구조체': 'STRUCT',
-      // Types
       'tamsayi': 'TYPE', 'gercek': 'TYPE', 'metin': 'TYPE', 'int': 'TYPE', 'float': 'TYPE', 'string': 'TYPE', 'entier': 'TYPE', 'целое': 'TYPE', '整数': 'TYPE', '정수': 'TYPE', 'u8': 'TYPE'
     };
 
@@ -2365,12 +2855,10 @@ fonction principale() -> entier {
         const c = src[i];
         if (c === '\n') { line++; i++; continue; }
         if (/\s/.test(c)) { i++; continue; }
-        // Comments (# or //)
         if (c === '#' || (c === '/' && src[i + 1] === '/')) {
           while (i < src.length && src[i] !== '\n') i++;
           continue;
         }
-        // Operators & Punctuators
         if (c === '-' && src[i + 1] === '>') { tokens.push({ type: 'ARROW', val: '->', line }); i += 2; continue; }
         if (c === '<' && src[i + 1] === '=') { tokens.push({ type: 'LE', val: '<=', line }); i += 2; continue; }
         if (c === '>' && src[i + 1] === '=') { tokens.push({ type: 'GE', val: '>=', line }); i += 2; continue; }
@@ -2391,7 +2879,6 @@ fonction principale() -> entier {
           i++;
           continue;
         }
-        // Strings
         if (c === '"') {
           let s = '', startLine = line;
           i++;
@@ -2408,18 +2895,16 @@ fonction principale() -> entier {
             }
             i++;
           }
-          i++; // skip closing quote
+          i++;
           tokens.push({ type: 'STRING', val: s, line: startLine });
           continue;
         }
-        // Numbers
         if (/[0-9]/.test(c)) {
           let numStr = '';
           while (i < src.length && /[0-9]/.test(src[i])) { numStr += src[i]; i++; }
           tokens.push({ type: 'NUMBER', val: parseInt(numStr, 10), line });
           continue;
         }
-        // Identifiers and Keywords
         if (/[\p{L}_]/u.test(c)) {
           let idStr = '';
           while (i < src.length && /[\p{L}0-9_]/u.test(src[i])) { idStr += src[i]; i++; }
@@ -2449,16 +2934,12 @@ fonction principale() -> entier {
         return t;
       }
       match(type) {
-        if (this.peek().type === type) {
-          return this.consume();
-        }
+        if (this.peek().type === type) return this.consume();
         return null;
       }
       parse() {
         const stmts = [];
-        while (this.peek().type !== 'EOF') {
-          stmts.push(this.parseTopLevel());
-        }
+        while (this.peek().type !== 'EOF') stmts.push(this.parseTopLevel());
         return { type: 'Program', body: stmts };
       }
       parseTopLevel() {
@@ -2497,9 +2978,7 @@ fonction principale() -> entier {
           }
         }
         this.consume(')');
-        if (this.match('ARROW')) {
-          this.parseType();
-        }
+        if (this.match('ARROW')) this.parseType();
         const body = this.parseBlock();
         return { type: 'FunctionDecl', name, params, body };
       }
@@ -2510,9 +2989,7 @@ fonction principale() -> entier {
       parseBlock() {
         this.consume('{');
         const stmts = [];
-        while (this.peek().type !== '}' && this.peek().type !== 'EOF') {
-          stmts.push(this.parseStatement());
-        }
+        while (this.peek().type !== '}' && this.peek().type !== 'EOF') stmts.push(this.parseStatement());
         this.consume('}');
         return { type: 'Block', stmts };
       }
@@ -2521,22 +2998,16 @@ fonction principale() -> entier {
         if (t.type === 'LET' || t.type === 'CONST') {
           this.consume();
           const name = this.consume('IDENT').val;
-          if (this.match(':')) {
-            this.parseType();
-          }
+          if (this.match(':')) this.parseType();
           let init = null;
-          if (this.match('=')) {
-            init = this.parseExpr();
-          }
+          if (this.match('=')) init = this.parseExpr();
           this.match(';');
           return { type: 'VarDecl', name, init };
         }
         if (t.type === 'RETURN') {
           this.consume();
           let expr = null;
-          if (this.peek().type !== ';') {
-            expr = this.parseExpr();
-          }
+          if (this.peek().type !== ';') expr = this.parseExpr();
           this.match(';');
           return { type: 'Return', expr };
         }
@@ -2546,9 +3017,7 @@ fonction principale() -> entier {
           this.match('THEN');
           const thenBranch = this.parseBlock();
           let elseBranch = null;
-          if (this.match('ELSE')) {
-            elseBranch = this.parseBlock();
-          }
+          if (this.match('ELSE')) elseBranch = this.parseBlock();
           return { type: 'If', cond, thenBranch, elseBranch };
         }
         if (t.type === 'LOOP') {
@@ -2557,7 +3026,6 @@ fonction principale() -> entier {
           const body = this.parseBlock();
           return { type: 'Loop', cond, body };
         }
-        // Expression statement or assignment
         const expr = this.parseExpr();
         if (this.match('=')) {
           const val = this.parseExpr();
@@ -2567,9 +3035,7 @@ fonction principale() -> entier {
         this.match(';');
         return { type: 'ExprStmt', expr };
       }
-      parseExpr() {
-        return this.parseComparison();
-      }
+      parseExpr() { return this.parseComparison(); }
       parseComparison() {
         let left = this.parseAddSub();
         while (['<', '<=', '>', '>=', '==', '!=', 'LE', 'GE', 'EQ', 'NE'].includes(this.peek().type)) {
@@ -2630,15 +3096,9 @@ fonction principale() -> entier {
       }
       parsePrimary() {
         const t = this.peek();
-        if (t.type === 'NUMBER') {
-          return { type: 'Number', val: this.consume().val };
-        }
-        if (t.type === 'STRING') {
-          return { type: 'String', val: this.consume().val };
-        }
-        if (t.type === 'IDENT') {
-          return { type: 'Ident', name: this.consume().val };
-        }
+        if (t.type === 'NUMBER') return { type: 'Number', val: this.consume().val };
+        if (t.type === 'STRING') return { type: 'String', val: this.consume().val };
+        if (t.type === 'IDENT') return { type: 'Ident', name: this.consume().val };
         if (this.match('(')) {
           const expr = this.parseExpr();
           this.consume(')');
@@ -2656,23 +3116,16 @@ fonction principale() -> entier {
       }
       exec(program) {
         for (const stmt of program.body) {
-          if (stmt.type === 'FunctionDecl') {
-            this.globalFunctions[stmt.name] = stmt;
-          } else if (stmt.type === 'StructDecl') {
-            this.structTypes[stmt.name] = stmt;
-          }
+          if (stmt.type === 'FunctionDecl') this.globalFunctions[stmt.name] = stmt;
+          else if (stmt.type === 'StructDecl') this.structTypes[stmt.name] = stmt;
         }
         const mainFn = this.globalFunctions['ana'] || this.globalFunctions['main'] || this.globalFunctions['principale'] || this.globalFunctions['главная'] || this.globalFunctions['メイン'] || this.globalFunctions['主函数'] || this.globalFunctions['메인'];
-        if (!mainFn) {
-          throw new Error("Giris noktasi bulunamadi! 'isv ana()' veya 'fn main()' tanimlanmalidir.");
-        }
+        if (!mainFn) throw new Error("Giris noktasi bulunamadi! 'isv ana()' veya 'fn main()' tanimlanmalidir.");
         return this.callFunction(mainFn, [], {});
       }
       callFunction(fnNode, argValues, parentScope) {
         const localScope = Object.assign({}, parentScope);
-        for (let i = 0; i < fnNode.params.length; i++) {
-          localScope[fnNode.params[i]] = argValues[i];
-        }
+        for (let i = 0; i < fnNode.params.length; i++) localScope[fnNode.params[i]] = argValues[i];
         return this.execBlock(fnNode.body, localScope);
       }
       execBlock(blockNode, scope) {
@@ -2693,9 +3146,8 @@ fonction principale() -> entier {
           }
           case 'Assign': {
             const val = this.evalExpr(stmt.val, scope);
-            if (stmt.target.type === 'Ident') {
-              scope[stmt.target.name] = val;
-            } else if (stmt.target.type === 'MemberAccess') {
+            if (stmt.target.type === 'Ident') scope[stmt.target.name] = val;
+            else if (stmt.target.type === 'MemberAccess') {
               const obj = this.evalExpr(stmt.target.target, scope);
               if (typeof obj === 'object') obj[stmt.target.member] = val;
             }
@@ -2736,10 +3188,7 @@ fonction principale() -> entier {
         switch (expr.type) {
           case 'Number': return expr.val;
           case 'String': return expr.val;
-          case 'Ident': {
-            if (scope[expr.name] !== undefined) return scope[expr.name];
-            return 0;
-          }
+          case 'Ident': return scope[expr.name] !== undefined ? scope[expr.name] : 0;
           case 'Unary': {
             const val = this.evalExpr(expr.expr, scope);
             if (expr.op === '-') return -val;
@@ -2790,9 +3239,7 @@ fonction principale() -> entier {
       }
     }
 
-    // ========================================================
-    // 5. APPLICATION STATE & CONTROLLER
-    // ========================================================
+    // 5. APPLICATION STATE & LOCALIZATION CONTROLLER
     let currentLang = 'tr';
     let currentPreset = 'hello';
     let currentInstallTab = 'ps';
@@ -2804,10 +3251,10 @@ fonction principale() -> entier {
       document.getElementById('langSelect').value = lang;
       localStorage.setItem('ykn_lang', lang);
 
-      // Update all elements with data-i18n
+      // 100% Comprehensive Translation Update across DOM
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
-        if (I18N[lang] && I18N[lang][key]) {
+        if (I18N[lang] && I18N[lang][key] !== undefined) {
           el.innerHTML = I18N[lang][key];
         }
       });
@@ -2858,8 +3305,9 @@ fonction principale() -> entier {
       const text = document.getElementById('heroInstallCmd').innerText;
       navigator.clipboard.writeText(text).then(() => {
         const btnText = document.getElementById('copyFeedbackText');
-        btnText.innerText = "Kopyalandı!";
-        setTimeout(() => btnText.innerText = "Kopyala", 2000);
+        const originalText = btnText.innerText;
+        btnText.innerText = (currentLang === 'tr') ? "Kopyalandı!" : "Copied!";
+        setTimeout(() => btnText.innerText = originalText, 2000);
       });
     }
 
@@ -2888,13 +3336,15 @@ fonction principale() -> entier {
     function updateEditorStats() {
       const text = document.getElementById('playgroundCode').value;
       const lines = text.split('\n').length;
-      document.getElementById('editorStats').innerText = `Satır: ${lines} | UTF-8`;
+      const label = (currentLang === 'tr') ? `Satır: ${lines} | UTF-8` : `Lines: ${lines} | UTF-8`;
+      document.getElementById('editorStats').innerText = label;
     }
 
     function copyCode() {
       const code = document.getElementById('playgroundCode').value;
       navigator.clipboard.writeText(code).then(() => {
-        alert("Kod panoya kopyalandı!");
+        const msg = (currentLang === 'tr') ? "Kod panoya kopyalandı!" : "Code copied to clipboard!";
+        alert(msg);
       });
     }
 
@@ -2903,21 +3353,21 @@ fonction principale() -> entier {
       const term = document.getElementById('playgroundOutput');
       const status = document.getElementById('outputStatus');
       term.innerHTML = '';
-      status.innerText = "Derleniyor...";
+      status.innerText = (currentLang === 'tr') ? "Derleniyor..." : "Compiling...";
 
       let buf = [];
       const log = (msg) => buf.push(msg);
 
-      log("[1/6] \x1b Sözcüksel Analiz (Lexer): Token akisi olusturuldu.");
+      log("[1/6] Sözcüksel Analiz (Lexer): Token akisi olusturuldu.");
       try {
         const tokens = tokenize(src);
-        log(`[2/6] \x1b Sozdizim Agaci (AST Parser): ${tokens.length} token basariyla ayristirildi.`);
+        log(`[2/6] Sozdizim Agaci (AST Parser): ${tokens.length} token basariyla ayristirildi.`);
         
         const parser = new Parser(tokens);
         const ast = parser.parse();
-        log("[3/6] \x1b Statik Tip ve Guvenlik Denetimi: 0 hata, Hafiza Zabıtasi onayladi.");
-        log("[4/6] \x1b Makine Kodu Uretimi: PE32+ (x86_64) Native Image hazirlandi.");
-        log("[5/6] \x1b Icra Edildi (Exit Code: 0)\n----------------------------------------");
+        log("[3/6] Statik Tip ve Guvenlik Denetimi: 0 hata, Hafiza Zabıtasi onayladi.");
+        log("[4/6] Makine Kodu Uretimi: PE32+ (x86_64) Native Image hazirlandi.");
+        log("[5/6] Icra Edildi (Exit Code: 0)\n----------------------------------------");
 
         let outputLines = [];
         const interp = new Interpreter((txt) => outputLines.push(txt));
@@ -2925,15 +3375,15 @@ fonction principale() -> entier {
 
         const runtimeText = outputLines.join('');
         buf.push(runtimeText);
-        buf.push("----------------------------------------\n[Yukinary v1.0 Calisma Zamani: Basariyla Sonlandi]");
+        buf.push("----------------------------------------\n[Yukinary Calisma Zamani: Basariyla Sonlandi]");
 
         term.innerText = buf.join('\n');
-        status.innerText = "Tamamlandı (0)";
+        status.innerText = (currentLang === 'tr') ? "Tamamlandı (0)" : "Success (0)";
       } catch (err) {
         log(`\n[HATA] ${err.message}`);
         log("[Derleme Basarisiz: Kodda sozdizim veya mantik hatasi tespit edildi]");
         term.innerText = buf.join('\n');
-        status.innerText = "Hata!";
+        status.innerText = (currentLang === 'tr') ? "Hata!" : "Error!";
       }
     }
 
@@ -2943,13 +3393,12 @@ fonction principale() -> entier {
       const status = document.getElementById('outputStatus');
       let src = codeArea.value;
 
-      term.innerHTML = "[Self-Healing Denetimi]: Kod taranıyor...\n";
-      status.innerText = "Onarılıyor...";
+      term.innerHTML = (currentLang === 'tr') ? "[Self-Healing Denetimi]: Kod taranıyor...\n" : "[Self-Healing Audit]: Scanning source code...\n";
+      status.innerText = (currentLang === 'tr') ? "Onarılıyor..." : "Healing...";
 
       let healed = src;
       let fixCount = 0;
 
-      // Rule 1: Fix unclosed parentheses in lines
       const lines = healed.split('\n');
       for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
@@ -2960,7 +3409,6 @@ fonction principale() -> entier {
           fixCount++;
           term.innerHTML += `> [Onarildi]: Satır ${i + 1}'de kapanmamış '(' parantezi tamamlandı.\n`;
         }
-        // Rule 2: Fix missing semicolon in variable declarations
         if (/^\s*(degisken|let|soit|var|mut|переменная|変数|变量|변수)\s+[a-zA-Z0-9_\p{L}]+.*=[^;]+$/u.test(lines[i])) {
           lines[i] = lines[i] + ';';
           fixCount++;
@@ -2976,16 +3424,11 @@ fonction principale() -> entier {
       setTimeout(runPlayground, 400);
     }
 
-    // ========================================================
-    // 6. INITIALIZATION
-    // ========================================================
     window.addEventListener('DOMContentLoaded', () => {
-      // Restore Theme
       const savedTheme = localStorage.getItem('ykn_theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', savedTheme);
       updateThemeIcon(savedTheme);
 
-      // Restore Language
       const savedLang = localStorage.getItem('ykn_lang') || 'tr';
       document.getElementById('langSelect').addEventListener('change', (e) => setLanguage(e.target.value));
       document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
@@ -2993,6 +3436,7 @@ fonction principale() -> entier {
 
       setLanguage(savedLang);
     });
+
   </script>
 </body>
 </html>
