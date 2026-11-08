@@ -31,6 +31,8 @@ __pycache__/
 
 # Distribution packages & release archives
 /dist/
+/dist_release/
+node_modules/
 *.zip
 *.tar.gz
 
@@ -42,6 +44,7 @@ __pycache__/
 /app.exe
 /app_full.exe
 /yukinary.exe
+/ykn_linux
 
 # Generated test reports (canonical reports live under build/reports)
 /test_results.json

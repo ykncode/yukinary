@@ -34,22 +34,37 @@
 
 You **do not need** a C++ compiler or external toolchain to run Yukinary. Standalone, single-file native binaries are pre-compiled and ready to download:
 
-### 1. Download Standalone Compiler
+### 1. Download & 1-Click Automated Setup
 👉 [**Download Yukinary from GitHub Releases**](https://github.com/ykncode/yukinary/releases)
 
+#### 🪟 Windows (1-Click Turnkey Setup)
+1. Download **`yukinary-setup-windows-x86_64.zip`** from Releases and extract it.
+2. Double-click **`setup.cmd`** (or run `powershell -ExecutionPolicy Bypass -File setup.ps1`).
+
+> **What the installer does automatically:**
+> * Installs `ykn.exe`, `ykn_lsp.exe`, and `ykn.cmd` into `%USERPROFILE%\.yukinary\bin`.
+> * Installs the complete Yukinary Standard Library (`std/`) into `%USERPROFILE%\.yukinary\std`.
+> * Safely configures User `PATH` and broadcasts `WM_SETTINGCHANGE` so all new terminals immediately recognize `ykn`.
+> * Automatically detects and installs the **Yukinary Visual Studio Code Extension** (`.vsix`) with full syntax highlighting & LSP support.
+
+#### 🐧 Linux & macOS (1-Line Setup)
+1. Download **`yukinary-setup-linux-x86_64.tar.gz`** and extract it (`tar -xzf yukinary-setup-linux-x86_64.tar.gz`).
+2. Run **`./setup.sh`**.
+
+> Automatically installs `ykn` and `std/` into `~/.yukinary/`, patches `PATH` in `~/.bashrc` / `~/.zshrc`, and configures the VS Code extension.
+
+#### 🧩 Visual Studio Code Extension (Standalone `.vsix`)
+* Download `yukinary-lang-1.0.0.vsix` and run:
+  ```bash
+  code --install-extension yukinary-lang-1.0.0.vsix
+  ```
+
+---
+
+### 2. Standalone Single-File Binaries
+If you only need standalone compiler binaries without running the installer:
 * **Windows:** Download `ykn.exe` (Standalone PE32+ binary)
-* **Linux:** Download `ykn` (Standalone ELF64 binary, `chmod +x ykn`)
-
-### 2. Global CLI Setup (Run `ykn` Anywhere Without `.exe`)
-To run `ykn` directly from any directory without typing `.exe` or `.\`:
-
-```powershell
-# Windows: Installs to %USERPROFILE%\.yukinary\bin and adds to PATH permanently
-powershell -File tools/install.ps1
-
-# Linux / macOS: Installs to ~/.yukinary/bin and adds to PATH in ~/.bashrc / ~/.zshrc
-sh tools/install.sh
-```
+* **Linux:** Download `ykn_linux` (Standalone ELF64 binary, `chmod +x ykn_linux`)
 
 ### 3. Write Your First Program (`hello.ykn`)
 ```ykn

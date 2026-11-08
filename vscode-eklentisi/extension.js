@@ -1,36 +1,52 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const { LanguageClient, TransportKind } = require('vscode-languageclient');
+const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
 let client = null;
 
 /**
  * Calistirilabilir YKN derleyici binary'sini bul:
  *  1. Kullanici ayarlarinda yukinary.lspExecutable tanimliysa onu kullan
- *  2. Workspace kokunde out.exe / app.exe / yukic.exe / yukinary.exe ara
- *  3. PATH uzerinde yukic / yukinary ara
+ *  2. ~/.yukinary/bin/ykn(.exe) otomatik kurulum dizininde ara
+ *  3. Workspace kokunde ykn.exe / ykn / out.exe / app.exe ara
+ *  4. PATH uzerinde 'ykn' ara
  */
 function findCompilerExecutable() {
-    // 1. Ayarlar
+    // 1. Kullanici ayarlari
     const config = vscode.workspace.getConfiguration('yukinary');
     const custom = config.get('lspExecutable', '');
     if (custom && fs.existsSync(custom)) {
         return custom;
     }
 
-    // 2. Workspace kokunde ara
+    // 2. ~/.yukinary/bin/ otomatik kurulum konumu
+    const homeDir = process.env.USERPROFILE || process.env.HOME || '';
+    if (homeDir) {
+        const isWin = process.platform === 'win32';
+        const userYknExe = path.join(homeDir, '.yukinary', 'bin', isWin ? 'ykn.exe' : 'ykn');
+        if (fs.existsSync(userYknExe)) {
+            return userYknExe;
+        }
+        const userYknCmd = path.join(homeDir, '.yukinary', 'bin', 'ykn.cmd');
+        if (isWin && fs.existsSync(userYknCmd)) {
+            return userYknCmd;
+        }
+    }
+
+    // 3. Workspace kokunde ara
     const folders = vscode.workspace.workspaceFolders;
     if (folders && folders.length > 0) {
         const root = folders[0].uri.fsPath;
         const adaylar = [
+            'ykn.exe',
+            'ykn',
+            'ykn_lsp.exe',
             'out.exe',
             'app.exe',
             'app_full.exe',
             'yukic.exe',
-            'yukinary.exe',
-            'stage1.exe',
-            'stage2.exe'
+            'yukinary.exe'
         ];
         for (const ad of adaylar) {
             const p = path.join(root, ad);
@@ -38,13 +54,12 @@ function findCompilerExecutable() {
                 return p;
             }
         }
-        // src/stage0/ icinde ara
         const stage0 = path.join(root, 'src', 'stage0', 'app.exe');
         if (fs.existsSync(stage0)) return stage0;
     }
 
-    // 3. PATH uzerinde (isletim sistemi bulsun)
-    return 'yukic';
+    // 4. PATH uzerinde ykn
+    return process.platform === 'win32' ? 'ykn.exe' : 'ykn';
 }
 
 /**
@@ -52,7 +67,7 @@ function findCompilerExecutable() {
  */
 function activate(context) {
     // ================================
-    // Run YKN File komutu (eski, korunuyor)
+    // Run YKN File komutu
     // ================================
     let terminal = null;
     let disposable = vscode.commands.registerCommand('yukinary.run', function () {
@@ -72,18 +87,12 @@ function activate(context) {
             }
             terminal.show();
             const filePath = document.fileName;
-            const workspaceFolders = vscode.workspace.workspaceFolders;
+            const exePath = findCompilerExecutable();
             let runCmd = '';
-            if (workspaceFolders && workspaceFolders.length > 0) {
-                const rootPath = workspaceFolders[0].uri.fsPath;
-                const exePath = findCompilerExecutable();
-                if (fs.existsSync(exePath)) {
-                    runCmd = `& "${exePath}" "${filePath}"`;
-                } else {
-                    runCmd = `yukic "${filePath}"`;
-                }
+            if (process.platform === 'win32') {
+                runCmd = fs.existsSync(exePath) ? `& "${exePath}" "${filePath}"` : `ykn "${filePath}"`;
             } else {
-                runCmd = `yukic "${filePath}"`;
+                runCmd = fs.existsSync(exePath) ? `"${exePath}" "${filePath}"` : `ykn "${filePath}"`;
             }
             terminal.sendText(runCmd);
         });
@@ -105,13 +114,11 @@ function activate(context) {
             options: {
                 shell: false,
                 env: Object.assign({}, process.env, {
-                    // stdout karismamasi icin konsol ayarlarini standartlastir
                     PYTHONUNBUFFERED: '1'
                 })
             }
         };
 
-        // Client secenekleri
         const clientOptions = {
             documentSelector: [
                 { scheme: 'file', language: 'yukinary' },
@@ -121,7 +128,7 @@ function activate(context) {
                 fileEvents: vscode.workspace.createFileSystemWatcher('**/*.ykn')
             },
             outputChannelName: 'Yukinary LSP',
-            revealOutputChannelOn: 4  // Error'da goster
+            revealOutputChannelOn: 4 // Hata durumunda goster
         };
 
         client = new LanguageClient(
@@ -132,16 +139,15 @@ function activate(context) {
         );
 
         client.start().then(() => {
-            vscode.window.showInformationMessage(`Yukinary LSP başlatıldı: ${exe} ${args.join(' ')}`);
+            // Sessiz veya basarili baslatma
         }).catch(err => {
             vscode.window.showWarningMessage(
-                `Yukinary LSP başlatılamadı: ${err}. Syntax highlighting çalışmaya devam edecek. ` +
-                `LSP için out.exe veya app.exe üretin: g++ app_full.cpp -O3 -o app.exe, sonra app.exe src/main.ykn out.exe`
+                `Yukinary LSP başlatılamadı: ${err}. Syntax highlighting çalışmaya devam edecek.`
             );
         });
     } catch (e) {
         vscode.window.showWarningMessage(
-            `LSP kurulum hatası: ${e.message}. Extension syntax highlighting ile devam ediyor.`
+            `Yukinary LSP kurulum uyarısı: ${e.message}. Syntax highlighting aktif.`
         );
     }
 }
@@ -156,4 +162,4 @@ function deactivate() {
 module.exports = {
     activate,
     deactivate
-}
+};

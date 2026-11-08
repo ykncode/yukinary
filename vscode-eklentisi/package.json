@@ -1,9 +1,13 @@
 {
   "name": "yukinary-lang",
-  "displayName": "Yukinary",
-  "description": "Syntax highlighting and IDE features for Yukinary Language (.ykn)",
-  "version": "0.3.0",
+  "displayName": "Yukinary Language",
+  "description": "Syntax highlighting, multi-lingual grammar and LSP support for Yukinary (.ykn)",
+  "version": "1.0.0",
   "publisher": "yuki",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ykncode/yukinary"
+  },
   "icon": "logo.png",
   "engines": {
     "vscode": "^1.60.0"
@@ -12,7 +16,11 @@
     "Programming Languages",
     "Snippets"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "npx esbuild extension.js --bundle --external:vscode --format=cjs --platform=node --outfile=dist/extension.js --minify",
+    "package": "npm run build && npx @vscode/vsce package --no-dependencies"
+  },
   "activationEvents": [
     "onLanguage:yukinary"
   ],
@@ -68,7 +76,7 @@
         "yukinary.lspExecutable": {
           "type": "string",
           "default": "",
-          "description": "Yukinary LSP sunucusu calistirilabilir dosyasinin tam yolu (bos ise workspace icinden app.exe / out.exe denenir)"
+          "description": "Yukinary LSP executable path (if empty, ~/.yukinary/bin/ykn.exe or workspace ykn.exe is used)"
         },
         "yukinary.lspArgs": {
           "type": "array",
@@ -78,7 +86,7 @@
           "default": [
             "--lsp"
           ],
-          "description": "LSP sunucusuna gonderilecek argumanlar"
+          "description": "Arguments passed to Yukinary compiler for LSP mode (default: ['--lsp'])"
         }
       }
     }
