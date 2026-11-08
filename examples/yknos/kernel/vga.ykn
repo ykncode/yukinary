@@ -1,0 +1,105 @@
+# ============================================================
+# YknOS VGA 80x25 Metin Modu Surucusu
+# 0xB8000 Fiziksel Video Bellek Erisimi ve Konsol Simulatörü
+# ============================================================
+
+ice_aktar "utils.ykn";
+
+# Renk Tanimlari
+degisken VGA_SIYAH: u8 = 0;
+degisken VGA_MAVI: u8 = 1;
+degisken VGA_YESIL: u8 = 2;
+degisken VGA_CAMGOBEGI: u8 = 3;
+degisken VGA_KIRMIZI: u8 = 4;
+degisken VGA_MAGENTA: u8 = 5;
+degisken VGA_KAHVERENGI: u8 = 6;
+degisken VGA_ACIK_GRI: u8 = 7;
+degisken VGA_KOYU_GRI: u8 = 8;
+degisken VGA_ACIK_MAVI: u8 = 9;
+degisken VGA_ACIK_YESIL: u8 = 10;
+degisken VGA_ACIK_CAMGOBEGI: u8 = 11;
+degisken VGA_ACIK_KIRMIZI: u8 = 12;
+degisken VGA_ACIK_MAGENTA: u8 = 13;
+degisken VGA_SARI: u8 = 14;
+degisken VGA_BEYAZ: u8 = 15;
+
+# 80x25 VGA Bellek Tamponu (4000 bayt)
+degisken g_vga_tampon: [4000]u8;
+degisken g_vga_satir_tampon: [80]u8;
+
+isv vga_renk_kodu(on: u8, arka: u8) -> u8 {
+    dondu on | (arka << 4);
+}
+
+isv vga_ekran_temizle(renk: u8) {
+    degisken i: tamsayi = 0;
+    dongu i < 2000 {
+        degisken ofset: tamsayi = i * 2;
+        g_vga_tampon[ofset] = 32;       # ' ' (bosluk)
+        g_vga_tampon[ofset + 1] = renk; # Nitelik bayti
+        i = i + 1;
+    }
+}
+
+isv vga_karakter_koy(satir: tamsayi, sutun: tamsayi, c: u8, renk: u8) {
+    eger satir < 0 veya satir >= 25 veya sutun < 0 veya sutun >= 80 ise {
+        dondu;
+    }
+    degisken ofset: tamsayi = (satir * 80 + sutun) * 2;
+    g_vga_tampon[ofset] = c;
+    g_vga_tampon[ofset + 1] = renk;
+}
+
+isv vga_metin_yaz(satir: tamsayi, sutun: tamsayi, metin: *u8, renk: u8) -> tamsayi {
+    eger satir < 0 veya satir >= 25 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    degisken col: tamsayi = sutun;
+    dongu metin[i] != 0 ve col < 79 {
+        vga_karakter_koy(satir, col, metin[i], renk);
+        col = col + 1;
+        i = i + 1;
+    }
+    dondu i;
+}
+
+isv vga_kutu_ciz(satir: tamsayi, yukseklik: tamsayi, genislik: tamsayi, renk: u8) {
+    degisken r2: tamsayi = satir + yukseklik - 1;
+    degisken c: tamsayi = 0;
+    dongu c < genislik {
+        vga_karakter_koy(satir, c, 45, renk); # '-'
+        vga_karakter_koy(r2, c, 45, renk);    # '-'
+        c = c + 1;
+    }
+    degisken r: tamsayi = satir;
+    dongu r <= r2 {
+        vga_karakter_koy(r, 0, 124, renk);               # '|'
+        vga_karakter_koy(r, genislik - 1, 124, renk);     # '|'
+        r = r + 1;
+    }
+    vga_karakter_koy(satir, 0, 43, renk);
+    vga_karakter_koy(satir, genislik - 1, 43, renk);
+    vga_karakter_koy(r2, 0, 43, renk);
+    vga_karakter_koy(r2, genislik - 1, 43, renk);
+}
+
+isv vga_paneli_yansit() {
+    ekrana_yaz("\n+==============================================================================+\n".ptr);
+    ekrana_yaz("|                  [ YKN-OS VGA 80x25 CANLI EKRAN TAMPONU ]                    |\n".ptr);
+    ekrana_yaz("+==============================================================================+\n".ptr);
+
+    degisken r: tamsayi = 0;
+    dongu r < 14 {
+        degisken c: tamsayi = 0;
+        dongu c < 76 {
+            g_vga_satir_tampon[c] = g_vga_tampon[(r * 80 + c) * 2];
+            c = c + 1;
+        }
+        g_vga_satir_tampon[76] = 0;
+
+        ekrana_yaz("| ".ptr);
+        ekrana_yaz(g_vga_satir_tampon);
+        ekrana_yaz(" |\n".ptr);
+        r = r + 1;
+    }
+    ekrana_yaz("+==============================================================================+\n".ptr);
+}

@@ -1,0 +1,196 @@
+# ============================================================
+# YknOS Gomulu SQL Veritabani Motoru (In-Memory SQL Engine)
+# Iliskisel Tablolar, SELECT WHERE, COUNT/AVG Ozetleri ve JSON Ciktisi
+# ============================================================
+
+ice_aktar "../kernel/utils.ykn";
+ice_aktar "../kernel/serial.ykn";
+
+yapi SqlSistemMetrigi {
+    id:          tamsayi;
+    servis:      [24]u8;
+    cpu_yuzde:   tamsayi;
+    bellek_kb:   tamsayi;
+    hata_sayisi: tamsayi;
+}
+
+yapi SqlKullanici {
+    id:          tamsayi;
+    ad:          [24]u8;
+    rol:         [16]u8;
+    seviye:      tamsayi; # 1: Misafir, 5: Gelistirici, 8: Operator, 10: Ring-0 Root
+}
+
+degisken g_sql_metrikler: [16]SqlSistemMetrigi;
+degisken g_sql_metrik_sayisi: tamsayi = 0;
+
+degisken g_sql_kullanicilar: [8]SqlKullanici;
+degisken g_sql_kullanici_sayisi: tamsayi = 0;
+
+isv sql_motoru_baslat() {
+    g_sql_metrik_sayisi = 0;
+    g_sql_kullanici_sayisi = 0;
+
+    # Sistem tablolarini ve varsayilan kayitlari olustur
+    sql_metrik_ekle("KERNEL_CORE".ptr, 3, 128, 0);
+    sql_metrik_ekle("VGA_DRIVER".ptr, 1, 64, 0);
+    sql_metrik_ekle("SERIAL_UART".ptr, 2, 32, 0);
+    sql_metrik_ekle("MMU_PAGING".ptr, 4, 256, 0);
+    sql_metrik_ekle("HTTP_DAEMON".ptr, 14, 512, 0);
+    sql_metrik_ekle("SQL_ENGINE".ptr, 8, 384, 0);
+
+    sql_kullanici_ekle("root".ptr, "ring0_admin".ptr, 10);
+    sql_kullanici_ekle("operator".ptr, "sysadmin".ptr, 8);
+    sql_kullanici_ekle("gelistirici".ptr, "developer".ptr, 5);
+    sql_kullanici_ekle("misafir".ptr, "guest".ptr, 1);
+
+    seri_gunluk_yaz("SQL".ptr, "Gomulu SQL motoru baslatildi (2 tablo, 10 kayit yuklendi)".ptr);
+}
+
+isv sql_metrik_ekle(servis_adi: *u8, cpu: tamsayi, bellek: tamsayi, hata: tamsayi) {
+    eger g_sql_metrik_sayisi >= 16 ise { dondu; }
+    degisken idx: tamsayi = g_sql_metrik_sayisi;
+
+    g_sql_metrikler[idx].id = idx + 1;
+    g_sql_metrikler[idx].cpu_yuzde = cpu;
+    g_sql_metrikler[idx].bellek_kb = bellek;
+    g_sql_metrikler[idx].hata_sayisi = hata;
+
+    degisken i: tamsayi = 0;
+    dongu servis_adi[i] != 0 ve i < 23 {
+        g_sql_metrikler[idx].servis[i] = servis_adi[i];
+        i = i + 1;
+    }
+    g_sql_metrikler[idx].servis[i] = 0;
+
+    g_sql_metrik_sayisi = g_sql_metrik_sayisi + 1;
+}
+
+isv sql_kullanici_ekle(ad: *u8, rol: *u8, seviye: tamsayi) {
+    eger g_sql_kullanici_sayisi >= 8 ise { dondu; }
+    degisken idx: tamsayi = g_sql_kullanici_sayisi;
+
+    g_sql_kullanicilar[idx].id = idx + 1;
+    g_sql_kullanicilar[idx].seviye = seviye;
+
+    degisken i: tamsayi = 0;
+    dongu ad[i] != 0 ve i < 23 {
+        g_sql_kullanicilar[idx].ad[i] = ad[i];
+        i = i + 1;
+    }
+    g_sql_kullanicilar[idx].ad[i] = 0;
+
+    degisken j: tamsayi = 0;
+    dongu rol[j] != 0 ve j < 15 {
+        g_sql_kullanicilar[idx].rol[j] = rol[j];
+        j = j + 1;
+    }
+    g_sql_kullanicilar[idx].rol[j] = 0;
+
+    g_sql_kullanici_sayisi = g_sql_kullanici_sayisi + 1;
+}
+
+isv sql_sorgula_metrikler_tumu() {
+    ekrana_yaz("\n[SQL SORGUSU] SELECT * FROM sistem_metrikleri;\n".ptr);
+    ekrana_yaz("ID\tSERVIS\t\t\tCPU%\tBELLEK(KB)\tHATA\n".ptr);
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+
+    degisken i: tamsayi = 0;
+    dongu i < g_sql_metrik_sayisi {
+        ykn_sayi_yaz(g_sql_metrikler[i].id);
+        ekrana_yaz("\t".ptr);
+        ekrana_yaz(g_sql_metrikler[i].servis);
+        ekrana_yaz("\t\t".ptr);
+        ykn_sayi_yaz(g_sql_metrikler[i].cpu_yuzde);
+        ekrana_yaz("%\t".ptr);
+        ykn_sayi_yaz(g_sql_metrikler[i].bellek_kb);
+        ekrana_yaz(" KB\t\t".ptr);
+        ykn_sayi_yaz(g_sql_metrikler[i].hata_sayisi);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+    ekrana_yaz("Toplam kayit: ".ptr);
+    ykn_sayi_yaz(g_sql_metrik_sayisi);
+    ekrana_yaz(" satir donduruldu.\n".ptr);
+}
+
+isv sql_sorgula_metrikler_cpu_filtre(min_cpu: tamsayi) {
+    ekrana_yaz("\n[SQL SORGUSU] SELECT * FROM sistem_metrikleri WHERE cpu_yuzde >= ".ptr);
+    ykn_sayi_yaz(min_cpu);
+    ekrana_yaz(";\n".ptr);
+    ekrana_yaz("ID\tSERVIS\t\t\tCPU%\tBELLEK(KB)\tHATA\n".ptr);
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+
+    degisken i: tamsayi = 0;
+    degisken eslesen: tamsayi = 0;
+    dongu i < g_sql_metrik_sayisi {
+        eger g_sql_metrikler[i].cpu_yuzde >= min_cpu ise {
+            ykn_sayi_yaz(g_sql_metrikler[i].id);
+            ekrana_yaz("\t".ptr);
+            ekrana_yaz(g_sql_metrikler[i].servis);
+            ekrana_yaz("\t\t".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].cpu_yuzde);
+            ekrana_yaz("%\t".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].bellek_kb);
+            ekrana_yaz(" KB\t\t".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].hata_sayisi);
+            ekrana_yaz("\n".ptr);
+            eslesen = eslesen + 1;
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+    ekrana_yaz("Eslesen kayit: ".ptr);
+    ykn_sayi_yaz(eslesen);
+    ekrana_yaz(" satir donduruldu.\n".ptr);
+}
+
+isv sql_sorgula_metrikler_ozet() {
+    ekrana_yaz("\n[SQL AGGREGATE] SELECT COUNT(*), SUM(cpu_yuzde), AVG(cpu_yuzde), SUM(bellek_kb) FROM sistem_metrikleri;\n".ptr);
+
+    degisken toplam_cpu: tamsayi = 0;
+    degisken toplam_bellek: tamsayi = 0;
+    degisken i: tamsayi = 0;
+
+    dongu i < g_sql_metrik_sayisi {
+        toplam_cpu = toplam_cpu + g_sql_metrikler[i].cpu_yuzde;
+        toplam_bellek = toplam_bellek + g_sql_metrikler[i].bellek_kb;
+        i = i + 1;
+    }
+
+    degisken ortalama_cpu: tamsayi = 0;
+    eger g_sql_metrik_sayisi > 0 ise {
+        ortalama_cpu = toplam_cpu / g_sql_metrik_sayisi;
+    }
+
+    ekrana_yaz("COUNT(*)        : ".ptr);
+    ykn_sayi_yaz(g_sql_metrik_sayisi);
+    ekrana_yaz("\nSUM(cpu_yuzde)  : ".ptr);
+    ykn_sayi_yaz(toplam_cpu);
+    ekrana_yaz("%\nAVG(cpu_yuzde)  : ".ptr);
+    ykn_sayi_yaz(ortalama_cpu);
+    ekrana_yaz("%\nSUM(bellek_kb)  : ".ptr);
+    ykn_sayi_yaz(toplam_bellek);
+    ekrana_yaz(" KB\n".ptr);
+}
+
+isv sql_sorgula_kullanicilar_tumu() {
+    ekrana_yaz("\n[SQL SORGUSU] SELECT id, ad, rol, seviye FROM kullanicilar;\n".ptr);
+    ekrana_yaz("ID\tKULLANICI\t\tROL\t\tSEVIYE\n".ptr);
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+
+    degisken i: tamsayi = 0;
+    dongu i < g_sql_kullanici_sayisi {
+        ykn_sayi_yaz(g_sql_kullanicilar[i].id);
+        ekrana_yaz("\t".ptr);
+        ekrana_yaz(g_sql_kullanicilar[i].ad);
+        ekrana_yaz("\t\t".ptr);
+        ekrana_yaz(g_sql_kullanicilar[i].rol);
+        ekrana_yaz("\t\t".ptr);
+        ykn_sayi_yaz(g_sql_kullanicilar[i].seviye);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+}

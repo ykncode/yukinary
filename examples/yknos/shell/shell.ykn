@@ -1,0 +1,164 @@
+# ============================================================
+# YknOS Cekirdek Etkilesimli Kabuk (Kernel Interactive Shell)
+# Komut Yorumlayici, Servis Yonetimi ve Sistem Komutlari
+# ============================================================
+
+ice_aktar "../kernel/utils.ykn";
+ice_aktar "../kernel/vga.ykn";
+ice_aktar "../kernel/serial.ykn";
+ice_aktar "../kernel/memory.ykn";
+ice_aktar "../kernel/scheduler.ykn";
+ice_aktar "../services/sql_engine.ykn";
+ice_aktar "../services/http_engine.ykn";
+
+isv kabuk_yardim_yaz() {
+    ekrana_yaz("\n=== YknOS Cekirdek Kabuk Komut Kilavuzu ===\n".ptr);
+    ekrana_yaz("  yardim             : Bu yardim mesajini listeler\n".ptr);
+    ekrana_yaz("  bilgi              : Cekirdek, mimari ve derleme bilgilerini gosterir\n".ptr);
+    ekrana_yaz("  bellek             : Fiziksel sayfa (4KB) ve yigin bellek raporunu basar\n".ptr);
+    ekrana_yaz("  gorevler           : PCB zamanlayici ve calisan surecleri listeler (ps)\n".ptr);
+    ekrana_yaz("  sql hepsi          : SELECT * FROM sistem_metrikleri (Tum tablolari doker)\n".ptr);
+    ekrana_yaz("  sql filtre         : SELECT * WHERE cpu_yuzde >= 4 (Filtreli SQL sorgusu)\n".ptr);
+    ekrana_yaz("  sql ozet           : COUNT, AVG ve SUM ozet agregasyon sorgulari\n".ptr);
+    ekrana_yaz("  sql kullanici      : SELECT * FROM kullanicilar tablosunu listeler\n".ptr);
+    ekrana_yaz("  http durum         : GET /api/v1/durum HTTP istegi gonderir ve JSON doner\n".ptr);
+    ekrana_yaz("  http sql           : GET /api/v1/sql (HTTP uzerinden canli SQL JSON akisi)\n".ptr);
+    ekrana_yaz("  http test          : Tum HTTP ag yigini uc noktalarini otomatik test eder\n".ptr);
+    ekrana_yaz("  vga                : 80x25 VGA metin bellegi durumunu ekrana yansitir\n".ptr);
+    ekrana_yaz("  dmesg              : COM1 UART 16550 seri port gunluk halkasini listeler\n".ptr);
+    ekrana_yaz("  demo               : Tum isletim sistemi yeteneklerini sirasiyla gosterir\n".ptr);
+    ekrana_yaz("  kapat              : YknOS oturumunu guvenli sekilde sonlandirir\n".ptr);
+    ekrana_yaz("==========================================\n".ptr);
+}
+
+isv kabuk_bilgi_yaz() {
+    ekrana_yaz("\n=== YknOS Isletim Sistemi Bilgileri ===\n".ptr);
+    ekrana_yaz("Isletim Sistemi : YknOS (Yukinary Native Operating System)\n".ptr);
+    ekrana_yaz("Cekirdek Tipi   : Monolitik Hibrit / Micro-Kernel Servis Modeli\n".ptr);
+    ekrana_yaz("Hedef Mimari    : x86_64 Long Mode (Multiboot 1 / Multiboot 2 Uyumlu)\n".ptr);
+    ekrana_yaz("Dil             : %100 Saf Yukinary (C, Rust veya C++ bagimliligi yok)\n".ptr);
+    ekrana_yaz("Gomulu SQL      : Aktif (In-Memory B-Tree ve Iliskisel Tablolar)\n".ptr);
+    ekrana_yaz("Gomulu HTTP     : Aktif (Port 8080 Dinlemede, REST JSON Yonlendirici)\n".ptr);
+    ekrana_yaz("Surum           : 0.1.0-alpha (Build 20261108)\n".ptr);
+    ekrana_yaz("=======================================\n".ptr);
+}
+
+isv kabuk_vga_guncelle() {
+    degisken renk_ark: u8 = vga_renk_kodu(VGA_BEYAZ, VGA_MAVI);
+    degisken renk_sar: u8 = vga_renk_kodu(VGA_SARI, VGA_MAVI);
+    degisken renk_yes: u8 = vga_renk_kodu(VGA_ACIK_YESIL, VGA_MAVI);
+    degisken renk_cam: u8 = vga_renk_kodu(VGA_ACIK_CAMGOBEGI, VGA_MAVI);
+    degisken renk_mag: u8 = vga_renk_kodu(VGA_ACIK_MAGENTA, VGA_MAVI);
+
+    vga_ekran_temizle(renk_ark);
+    vga_kutu_ciz(0, 14, 76, renk_sar);
+    vga_metin_yaz(0, 20, "[ YknOS Kernel v0.1.0-alpha - ONLINE ]".ptr, renk_sar);
+    vga_metin_yaz(2, 4, "Mimari : x86_64 Bare-Metal / Ring-0 Kernel".ptr, renk_ark);
+    vga_metin_yaz(4, 4, "Bellek : 64 MB Toplam RAM, 512 Sayfa Tahsisli (4 KB Paging)".ptr, renk_yes);
+    vga_metin_yaz(6, 4, "Gomulu SQL : 2 Tablo, SELECT WHERE ve JSON Agregasyonu Hazir".ptr, renk_cam);
+    vga_metin_yaz(8, 4, "Gomulu HTTP: Port 8080 Dinleniyor (REST API /api/v1/durum)".ptr, renk_mag);
+    vga_metin_yaz(10, 4, "Durum      : Tum alt sistemler saglikli ve senkronize.".ptr, renk_ark);
+    vga_paneli_yansit();
+}
+
+isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
+    seri_gunluk_yaz("SHELL".ptr, komut);
+
+    eger ykn_metin_esit_mi(komut, "yardim".ptr) == 1 ise {
+        kabuk_yardim_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 ise {
+        kabuk_bilgi_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "bellek".ptr) == 1 ise {
+        bellek_raporu_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "gorevler".ptr) == 1 ise {
+        gorev_listesi_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "sql hepsi".ptr) == 1 ise {
+        sql_sorgula_metrikler_tumu();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "sql filtre".ptr) == 1 ise {
+        sql_sorgula_metrikler_cpu_filtre(4);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "sql ozet".ptr) == 1 ise {
+        sql_sorgula_metrikler_ozet();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "sql kullanici".ptr) == 1 ise {
+        sql_sorgula_kullanicilar_tumu();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "http durum".ptr) == 1 ise {
+        http_istek_isle("/api/v1/durum".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "http sql".ptr) == 1 ise {
+        http_istek_isle("/api/v1/sql".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "http test".ptr) == 1 ise {
+        http_ornek_istekleri_calistir();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "vga".ptr) == 1 ise {
+        kabuk_vga_guncelle();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "dmesg".ptr) == 1 ise {
+        seri_gunluk_dmesg_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "demo".ptr) == 1 ise {
+        kabuk_tam_demo_calistir();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "kapat".ptr) == 1 veya ykn_metin_esit_mi(komut, "cikis".ptr) == 1 ise {
+        ekrana_yaz("\n[YknOS] Cekirdek kapatiliyor... Tum servisler durduruldu.\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz("Bilinmeyen komut: '".ptr);
+    ekrana_yaz(komut);
+    ekrana_yaz("'. Komut listesi icin 'yardim' yazin.\n".ptr);
+    dondu 1;
+}
+
+isv kabuk_tam_demo_calistir() {
+    ekrana_yaz("\n################################################################\n".ptr);
+    ekrana_yaz("#           YknOS KAPSAMLI SISTEM CANLI DEMO SENARYOSU         #\n".ptr);
+    ekrana_yaz("################################################################\n".ptr);
+
+    ekrana_yaz("\n>>> ADIM 1: Donanim ve Cekirdek Bilgisi (bilgi)\n".ptr);
+    kabuk_bilgi_yaz();
+
+    ekrana_yaz("\n>>> ADIM 2: VGA 80x25 Canli Ekran Cizimi (vga)\n".ptr);
+    kabuk_vga_guncelle();
+
+    ekrana_yaz("\n>>> ADIM 3: Fiziksel Bellek ve Sayfalama (bellek)\n".ptr);
+    bellek_raporu_yaz();
+
+    ekrana_yaz("\n>>> ADIM 4: PCB Zamanlayici Surec Tablosu (gorevler)\n".ptr);
+    gorev_listesi_yaz();
+
+    ekrana_yaz("\n>>> ADIM 5: Gomulu SQL Veritabani Sorgulari (sql)\n".ptr);
+    sql_sorgula_metrikler_tumu();
+    sql_sorgula_metrikler_cpu_filtre(4);
+    sql_sorgula_metrikler_ozet();
+    sql_sorgula_kullanicilar_tumu();
+
+    ekrana_yaz("\n>>> ADIM 6: Gomulu HTTP 1.1 REST API ve SQL JSON Koprusu (http)\n".ptr);
+    http_ornek_istekleri_calistir();
+
+    ekrana_yaz("\n>>> ADIM 7: COM1 Seri Port Gunluk Halka Tamponu (dmesg)\n".ptr);
+    seri_gunluk_dmesg_yaz();
+
+    ekrana_yaz("\n[DEMO TAMAMLANDI] YknOS basariyla test edildi!\n".ptr);
+}

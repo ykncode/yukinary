@@ -1,0 +1,79 @@
+# ============================================================
+# YknOS Isbirlikli Coklu Gorev Zamanlayicisi (Scheduler)
+# Process Control Block (PCB) Yonetimi ve Gorev Durumlari
+# ============================================================
+
+ice_aktar "utils.ykn";
+ice_aktar "serial.ykn";
+
+yapi GorevKontrolBlogu {
+    pid:            tamsayi;
+    isim:           [24]u8;
+    durum:          tamsayi; # 0: BOSTA, 1: HAZIR, 2: CALISIYOR, 3: BEKLEMEDE
+    oncelik:        tamsayi; # 1 (dusuk) - 10 (kritik)
+    calisma_tick:   tamsayi;
+}
+
+degisken g_gorevler: [8]GorevKontrolBlogu;
+degisken g_aktif_gorev_sayisi: tamsayi = 0;
+degisken g_su_anki_pid: tamsayi = 0;
+
+isv zamanlayici_baslat() {
+    g_aktif_gorev_sayisi = 0;
+    g_su_anki_pid = 0;
+
+    gorev_kaydet(0, "cekirdek_idle".ptr, 1, 2);
+    gorev_kaydet(1, "sql_servisi".ptr, 8, 1);
+    gorev_kaydet(2, "http_ag_servisi".ptr, 8, 1);
+    gorev_kaydet(3, "ykn_kabuk".ptr, 10, 2);
+
+    seri_gunluk_yaz("SCHED".ptr, "Isbirlikli gorev zamanlayici baslatildi (4 PCB hazir)".ptr);
+}
+
+isv gorev_kaydet(pid: tamsayi, isim: *u8, oncelik: tamsayi, ilk_durum: tamsayi) {
+    eger g_aktif_gorev_sayisi >= 8 ise { dondu; }
+    degisken idx: tamsayi = g_aktif_gorev_sayisi;
+
+    g_gorevler[idx].pid = pid;
+    g_gorevler[idx].oncelik = oncelik;
+    g_gorevler[idx].durum = ilk_durum;
+    g_gorevler[idx].calisma_tick = 5;
+
+    degisken i: tamsayi = 0;
+    dongu isim[i] != 0 ve i < 23 {
+        g_gorevler[idx].isim[i] = isim[i];
+        i = i + 1;
+    }
+    g_gorevler[idx].isim[i] = 0;
+
+    g_aktif_gorev_sayisi = g_aktif_gorev_sayisi + 1;
+}
+
+isv gorev_durum_metni(durum: tamsayi) -> *u8 {
+    eger durum == 1 ise { dondu "HAZIR".ptr; }
+    eger durum == 2 ise { dondu "CALISIYOR".ptr; }
+    eger durum == 3 ise { dondu "BEKLEMEDE".ptr; }
+    dondu "BOSTA".ptr;
+}
+
+isv gorev_listesi_yaz() {
+    ekrana_yaz("=== YknOS Calisan Surecler ve Gorev Tablosu (ps) ===\n".ptr);
+    ekrana_yaz("PID\tISIM\t\t\tONCELIK\tDURUM\t\tTICK\n".ptr);
+    ekrana_yaz("----------------------------------------------------------------\n".ptr);
+
+    degisken i: tamsayi = 0;
+    dongu i < g_aktif_gorev_sayisi {
+        ykn_sayi_yaz(g_gorevler[i].pid);
+        ekrana_yaz("\t".ptr);
+        ekrana_yaz(g_gorevler[i].isim);
+        ekrana_yaz("\t\t".ptr);
+        ykn_sayi_yaz(g_gorevler[i].oncelik);
+        ekrana_yaz("\t".ptr);
+        ekrana_yaz(gorev_durum_metni(g_gorevler[i].durum));
+        ekrana_yaz("\t".ptr);
+        ykn_sayi_yaz(g_gorevler[i].calisma_tick);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("================================================================\n".ptr);
+}

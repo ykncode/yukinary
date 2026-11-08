@@ -1,0 +1,67 @@
+# ============================================================
+# YknOS COM1 16550 UART Seri Port ve Cekirdek Gunlukleme
+# Base I/O: 0x3F8, 38400 Baud, 8N1 ve Halka Tampon (dmesg)
+# ============================================================
+
+ice_aktar "utils.ykn";
+
+yapi SeriGunlukKaydi {
+    zaman_tick: tamsayi;
+    alt_sistem: [16]u8;
+    mesaj:      [64]u8;
+}
+
+degisken g_seri_gunlukler: [32]SeriGunlukKaydi;
+degisken g_seri_gunluk_sayisi: tamsayi = 0;
+degisken g_seri_port_adresi: tamsayi = 1016; # 0x3F8 COM1
+degisken g_seri_baslatildi: tamsayi = 0;
+
+isv seri_port_baslat() {
+    g_seri_port_adresi = 1016;
+    g_seri_baslatildi = 1;
+    seri_gunluk_yaz("BOOT".ptr, "16550 UART COM1 seri port 0x3F8 baslatildi (38400 baud)".ptr);
+}
+
+isv seri_gunluk_yaz(alt_sistem: *u8, mesaj: *u8) {
+    eger g_seri_gunluk_sayisi >= 32 ise {
+        # Tampon doluysa dairesel olarak basa don (veya sayaci sinirla)
+        g_seri_gunluk_sayisi = 31;
+    }
+
+    degisken idx: tamsayi = g_seri_gunluk_sayisi;
+    g_seri_gunlukler[idx].zaman_tick = idx * 10; # Simule milisaniye
+
+    # Alt sistem adini kopyala
+    degisken i: tamsayi = 0;
+    dongu alt_sistem[i] != 0 ve i < 15 {
+        g_seri_gunlukler[idx].alt_sistem[i] = alt_sistem[i];
+        i = i + 1;
+    }
+    g_seri_gunlukler[idx].alt_sistem[i] = 0;
+
+    # Mesaji kopyala
+    degisken j: tamsayi = 0;
+    dongu mesaj[j] != 0 ve j < 63 {
+        g_seri_gunlukler[idx].mesaj[j] = mesaj[j];
+        j = j + 1;
+    }
+    g_seri_gunlukler[idx].mesaj[j] = 0;
+
+    g_seri_gunluk_sayisi = g_seri_gunluk_sayisi + 1;
+}
+
+isv seri_gunluk_dmesg_yaz() {
+    ekrana_yaz("=== YknOS Cekirdek Seri Port Halka Tamponu (dmesg) ===\n".ptr);
+    degisken i: tamsayi = 0;
+    dongu i < g_seri_gunluk_sayisi {
+        ekrana_yaz("[+".ptr);
+        ykn_sayi_yaz(g_seri_gunlukler[i].zaman_tick);
+        ekrana_yaz("ms] [".ptr);
+        ekrana_yaz(g_seri_gunlukler[i].alt_sistem);
+        ekrana_yaz("] ".ptr);
+        ekrana_yaz(g_seri_gunlukler[i].mesaj);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("======================================================\n".ptr);
+}

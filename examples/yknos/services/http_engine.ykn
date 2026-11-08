@@ -1,0 +1,136 @@
+# ============================================================
+# YknOS Gomulu HTTP 1.1 Web Sunucusu ve Ag Paketi Ayristirici
+# REST API Yonlendirici, JSON Uretici ve SQL Servis Entegrasyonu
+# ============================================================
+
+ice_aktar "../kernel/utils.ykn";
+ice_aktar "../kernel/serial.ykn";
+ice_aktar "sql_engine.ykn";
+
+degisken g_http_port: tamsayi = 8080;
+degisken g_http_toplam_istek: tamsayi = 0;
+
+isv http_servisi_baslat(port: tamsayi) {
+    g_http_port = port;
+    g_http_toplam_istek = 0;
+    seri_gunluk_yaz("NET".ptr, "Gomulu HTTP/1.1 ag servisi 0.0.0.0:8080 uzerinde hazir".ptr);
+}
+
+isv http_yanit_basligi_yaz(durum_kodu: tamsayi, durum_metni: *u8, icerik_tipi: *u8, uzunluk: tamsayi) {
+    ekrana_yaz("HTTP/1.1 ".ptr);
+    ykn_sayi_yaz(durum_kodu);
+    ekrana_yaz(" ".ptr);
+    ekrana_yaz(durum_metni);
+    ekrana_yaz("\r\nServer: YknOS-Embedded-HTTP/0.1.0 (Yukinary-x86_64)\r\n".ptr);
+    ekrana_yaz("Content-Type: ".ptr);
+    ekrana_yaz(icerik_tipi);
+    ekrana_yaz("\r\nConnection: close\r\n".ptr);
+    ekrana_yaz("Content-Length: ".ptr);
+    ykn_sayi_yaz(uzunluk);
+    ekrana_yaz("\r\n\r\n".ptr);
+}
+
+# Verilen HTTP istek dizesini ayristirir ve ilgili servis uc noktasina yonlendirir
+isv http_istek_isle(istek_yolu: *u8) -> tamsayi {
+    g_http_toplam_istek = g_http_toplam_istek + 1;
+
+    ekrana_yaz("\n>>> [AG YIGINI] Gelen HTTP/1.1 Istegi: GET ".ptr);
+    ekrana_yaz(istek_yolu);
+    ekrana_yaz(" <<<\n".ptr);
+
+    # 1. Kok Dizin: /
+    eger ykn_metin_esit_mi(istek_yolu, "/".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET / -> 200 OK (text/plain)".ptr);
+        degisken govde: *u8 = "YknOS Cekirdek HTTP Servisi Aktif. Yukinary ile bare-metal ve gomulu calisir.\n".ptr;
+        degisken len: tamsayi = ykn_metin_uzunluk(govde);
+
+        http_yanit_basligi_yaz(200, "OK".ptr, "text/plain; charset=utf-8".ptr, len);
+        ekrana_yaz(govde);
+        dondu 200;
+    }
+
+    # 2. Sistem Durum API'si: /api/v1/durum
+    eger ykn_metin_esit_mi(istek_yolu, "/api/v1/durum".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/durum -> 200 OK (application/json)".ptr);
+        degisken json_govde: *u8 = "{\"os\":\"YknOS\",\"surum\":\"0.1.0-alpha\",\"mimari\":\"x86_64\",\"durum\":\"ONLINE\",\"uptime_saniye\":120}\n".ptr;
+        degisken len2: tamsayi = ykn_metin_uzunluk(json_govde);
+
+        http_yanit_basligi_yaz(200, "OK".ptr, "application/json; charset=utf-8".ptr, len2);
+        ekrana_yaz(json_govde);
+        dondu 200;
+    }
+
+    # 3. SQL Veritabani API'si: /api/v1/sql
+    eger ykn_metin_esit_mi(istek_yolu, "/api/v1/sql".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/sql -> 200 OK (JSON serialization)".ptr);
+
+        # SQL sonuclarini dinamik JSON dizisi olarak olustur
+        ekrana_yaz("HTTP/1.1 200 OK\r\n".ptr);
+        ekrana_yaz("Server: YknOS-Embedded-HTTP/0.1.0\r\n".ptr);
+        ekrana_yaz("Content-Type: application/json; charset=utf-8\r\n\r\n".ptr);
+
+        ekrana_yaz("{\"tablo\":\"sistem_metrikleri\",\"toplam_kayit\":".ptr);
+        ykn_sayi_yaz(g_sql_metrik_sayisi);
+        ekrana_yaz(",\"satirlar\":[\n".ptr);
+
+        degisken i: tamsayi = 0;
+        dongu i < g_sql_metrik_sayisi {
+            ekrana_yaz("  {\"id\":".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].id);
+            ekrana_yaz(",\"servis\":\"".ptr);
+            ekrana_yaz(g_sql_metrikler[i].servis);
+            ekrana_yaz("\",\"cpu\":".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].cpu_yuzde);
+            ekrana_yaz(",\"bellek_kb\":".ptr);
+            ykn_sayi_yaz(g_sql_metrikler[i].bellek_kb);
+            ekrana_yaz("}".ptr);
+
+            eger i + 1 < g_sql_metrik_sayisi ise {
+                ekrana_yaz(",\n".ptr);
+            } yoksa {
+                ekrana_yaz("\n".ptr);
+            }
+            i = i + 1;
+        }
+        ekrana_yaz("]}\n".ptr);
+        dondu 200;
+    }
+
+    # 4. Gorevler API'si: /api/v1/gorevler
+    eger ykn_metin_esit_mi(istek_yolu, "/api/v1/gorevler".ptr) == 1 ise {
+        seri_gunluk_yaz("HTTP".ptr, "GET /api/v1/gorevler -> 200 OK".ptr);
+        degisken gorev_json: *u8 = "{\"aktif_surecler\":4,\"zamanlayici\":\"cooperative_pcb\",\"kuantum_ms\":10}\n".ptr;
+        degisken len3: tamsayi = ykn_metin_uzunluk(gorev_json);
+
+        http_yanit_basligi_yaz(200, "OK".ptr, "application/json; charset=utf-8".ptr, len3);
+        ekrana_yaz(gorev_json);
+        dondu 200;
+    }
+
+    # 5. Bulunamadi: 404 Not Found
+    seri_gunluk_yaz("HTTP_404".ptr, "Bilinmeyen HTTP uc noktasi istendi".ptr);
+    degisken hata_govde: *u8 = "{\"hata\":\"404 Kaynak Bulunamadi\",\"os\":\"YknOS\"}\n".ptr;
+    degisken len4: tamsayi = ykn_metin_uzunluk(hata_govde);
+
+    http_yanit_basligi_yaz(404, "Not Found".ptr, "application/json; charset=utf-8".ptr, len4);
+    ekrana_yaz(hata_govde);
+    dondu 404;
+}
+
+isv http_ornek_istekleri_calistir() {
+    ekrana_yaz("\n=== YknOS Gomulu HTTP ve SQL Entegrasyon Testi ===\n".ptr);
+
+    # Test 1: Kok istek
+    http_istek_isle("/".ptr);
+
+    # Test 2: Sistem durumu API'si
+    http_istek_isle("/api/v1/durum".ptr);
+
+    # Test 3: SQL sorgu API'si (HTTP uzerinden JSON formatinda canli SQL tablosu cekme)
+    http_istek_isle("/api/v1/sql".ptr);
+
+    # Test 4: Gecersiz yol (404 kontrolu)
+    http_istek_isle("/api/v1/bilinmeyen".ptr);
+
+    ekrana_yaz("==================================================\n".ptr);
+}

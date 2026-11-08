@@ -1,0 +1,82 @@
+# ============================================================
+# YknOS Cekirdek Yardimci Fonksiyonlari
+# Saf Yukinary, sifir harici bagimlilik
+# ============================================================
+
+isv ykn_sayi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise {
+        ekrana_yaz("0".ptr);
+        dondu;
+    }
+    eger n < 0 ise {
+        ekrana_yaz("-".ptr);
+        n = 0 - n;
+    }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ykn_karakter_yaz(c: u8) {
+    degisken tek: [2]u8;
+    tek[0] = c;
+    tek[1] = 0;
+    ekrana_yaz(tek);
+}
+
+isv ykn_metin_uzunluk(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        i = i + 1;
+    }
+    dondu i;
+}
+
+isv ykn_metin_esit_mi(a: *u8, b: *u8) -> tamsayi {
+    eger a == 0 veya b == 0 ise {
+        eger a == b ise { dondu 1; }
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu a[i] != 0 ve b[i] != 0 {
+        eger a[i] != b[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    eger a[i] == 0 ve b[i] == 0 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv ykn_metin_kopyala(hedef: *u8, kaynak: *u8) {
+    eger hedef == 0 veya kaynak == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu kaynak[i] != 0 {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[i] = 0;
+}
+
+isv ykn_bellek_sifirla(hedef: *u8, boyut: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        hedef[i] = 0;
+        i = i + 1;
+    }
+}

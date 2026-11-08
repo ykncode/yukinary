@@ -1,0 +1,52 @@
+# ============================================================
+# YknOS: Yukinary Isletim Sistemi Cekirdek ve Calisma Zamani
+# %100 Saf Yukinary ile Yazilmis Gomulu SQL ve HTTP Destekli OS
+# ============================================================
+
+ice_aktar "kernel/utils.ykn";
+ice_aktar "kernel/vga.ykn";
+ice_aktar "kernel/serial.ykn";
+ice_aktar "kernel/memory.ykn";
+ice_aktar "kernel/scheduler.ykn";
+ice_aktar "services/sql_engine.ykn";
+ice_aktar "services/http_engine.ykn";
+ice_aktar "shell/shell.ykn";
+
+isv cekirdek_onyukleme() {
+    ekrana_yaz("================================================================\n".ptr);
+    ekrana_yaz("        YknOS: Yukinary Native Bare-Metal Operating System      \n".ptr);
+    ekrana_yaz("        Sifir Harici C/C++ Bagimliligi - Saf Makine Kodu        \n".ptr);
+    ekrana_yaz("================================================================\n".ptr);
+
+    ekrana_yaz("[0.00s] [BOOT] x86_64 Long Mode cekirdek baslatiliyor...\n".ptr);
+    seri_port_baslat();
+
+    ekrana_yaz("[0.01s] [VGA]  80x25 Metin modu surucusu ve VRAM (0xB8000) hazir.\n".ptr);
+    vga_ekran_temizle(vga_renk_kodu(VGA_BEYAZ, VGA_MAVI));
+
+    ekrana_yaz("[0.02s] [MMU]  Sayfalama ve 64 MB fiziksel bellek yoneticisi aktif.\n".ptr);
+    bellek_yoneticisi_baslat(64);
+
+    ekrana_yaz("[0.03s] [TASK] Isbirlikli gorev zamanlayicisi baslatildi (4 process).\n".ptr);
+    zamanlayici_baslat();
+
+    ekrana_yaz("[0.04s] [SQL]  Gomulu iliskisel veritabani motoru yuklendi.\n".ptr);
+    sql_motoru_baslat();
+
+    ekrana_yaz("[0.05s] [NET]  Gomulu HTTP 1.1 mikroservisi 0.0.0.0:8080 baslatildi.\n".ptr);
+    http_servisi_baslat(8080);
+
+    ekrana_yaz("[0.06s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    # 1. Cekirdek Onyukleme Baslat
+    cekirdek_onyukleme();
+
+    # 2. Otomatik Demo Senaryosunu Calistir (VGA + Bellek + Surecler + SQL + HTTP + Dmesg)
+    kabuk_tam_demo_calistir();
+
+    # 3. Kapanis
+    ekrana_yaz("\n[YknOS] Sistem saglikli sekilde tamamlandi.\n".ptr);
+    dondu 0;
+}
