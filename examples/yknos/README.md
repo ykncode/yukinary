@@ -13,15 +13,21 @@ YknOS, iki farklı çalışma hedefini (Target) aynı çatı altında birleştir
 
 1. **Bare-Metal QEMU Hedefi (Ring-0 Multiboot1 Kernel)**:
    - Doğrudan QEMU sanal makinesinde sıfırdan önyüklenir (altında Windows veya Linux ana işletim sistemi yoktur).
+   - **Donanım Kesmeleri (Hardware Interrupts & IDT - Faz 2)**: 8259 PIC yeniden haritalanmış, 256-girdili IDT (Interrupt Descriptor Table) kurulmuş ve 8253/8254 PIT (Programmable Interval Timer) 100 Hz frekansa ayarlanarak çekirdek içi zamanlayıcı kesmeleri (`uptime`) donanım düzeyinde çalıştırılmıştır.
    - Gerçek fiziksel `0xB8000` VGA video belleğine grafiksel masaüstü pencere yöneticisi (Desktop GUI) çizer.
-   - **Masaüstü Simgeleri (Desktop Icons)**: `[D] VFS Gezgin`, `[N] Editor`, `[T] Gorev Yoneticisi`, `[S] SQL Studio`, `[W] HTTP Ag`, `[C] Kabuk`.
-   - **Pencere Modeli (Window Manager)**: Başlık çubuğu `[ _ ][ X ]`, menü çubuğu, araçlar ve durum çubuğu ile gerçek pencereler.
+   - **Masaüstü Simgeleri (Desktop Icons)**: `[D] VFS Gezgin`, `[N] Editor`, `[T] Gorev Yoneticisi`, `[S] SQL Studio`, `[W] HTTP Ag`, `[C] Kabuk`, `[A] YknAI Asistani`.
+   - **Pencere Modeli (Window Manager)**: Başlık çubuğu `[ _ ][ X ]`, menü çubuğu, araçlar ve durum çubuğu ile gerçek pencereler (Pencere 7: `[ 🤖 YknAI Asistani ]`).
    - **Tıklanabilir Fare İmleci**: `Space` veya `t` tuşu ile ekrandaki simgelere, pencerelere ve butonlara tıklama.
-   - 16550 UART COM1 (`0x3F8`) donanım seri portu üzerinden terminale çekirdek günlükleri (`dmesg`) akıtır.
+   - 16550 UART COM1 (`0x3F8`) donanım seri portu üzerinden çift yönlü (TX/RX) konsol ve günlük iletişimi.
    - PS/2 Klavye Denetleyicisi (Port `0x64` ve `0x60`) donanım seviyesinde tuş tarama kodlarını okur. `TAB` tuşuna basarak GUI Pencere Modu ile `root@yknos:/# ` komut satırı arasında geçiş yapılabilir.
 
 2. **Host Yerel Etkileşimli Kabuk Hedefi (Native Windows / Linux PE & ELF)**:
    - Doğrudan `ykn.exe` ile 64-bit yerel ikiliye dönüştürülür (`yknos.exe`).
+   - **Gömülü Nöral Yapay Zeka (Mikro-LLM & Bonsai-8B)**:
+     - **Mikro-LLM**: 16,384 parametreli BitNet 1.58b Causal Transformer (Ternary {-1, 0, +1} ağırlıklar, Q16.16 sabit nokta, 28 KB RAM ayak izi, sıfır-çarpma ALU).
+     - **Prism ML Bonsai-8B**: 399 tensörlü, 36 katmanlı, 1.15 GB GGUF v3 modeli diskten doğrudan eşlenir (`models/bonsai-8b/Bonsai-8B.gguf`).
+     - Kabuktan `ai <soru>`, `bonsai <soru>`, `llm <soru>`, `ai stats` ile anında sorgulanır.
+     - Masaüstünde Pencere 7 (`[ 🤖 YknAI Asistani ]`) canlı model telemetrisi ve yanıt gösterimi sunar.
    - **Gerçek Donanım Faresi Desteği**: Windows Konsolunda `ENABLE_MOUSE_INPUT` ve `ENABLE_EXTENDED_FLAGS` etkinleştirilerek fiziksel fare hareketleri ve sol/sağ tıklamalar doğrudan masaüstüne aktarılır.
    - Gerçek Linux dosya ağacı hiyerarşisi (`/bin`, `/etc`, `/proc`, `/dev`, `/home/root`, `/var/log`).
    - Dinamik sanal `/proc` dosya sistemi (`cat /proc/cpuinfo`, `cat /proc/meminfo`, `cat /proc/version`, `cat /proc/uptime`).

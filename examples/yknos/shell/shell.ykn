@@ -13,6 +13,7 @@ ice_aktar "../kernel/env.ykn";
 ice_aktar "../kernel/editor.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
+ice_aktar "../services/ai_engine.ykn";
 ice_aktar "../kernel/desktop.ykn";
 
 yapi GecmisKomut {
@@ -50,6 +51,7 @@ isv kabuk_yardim_yaz() {
     ekrana_yaz("  Surecler (PCB):  ps, ps aux, top, spawn <komut>, kill <pid>\n".ptr);
     ekrana_yaz("  Ortam & Gunluk:  env, export KEY=VAL, history, dmesg\n".ptr);
     ekrana_yaz("  Gomulu Servisler:sql hepsi, sql ekle, http durum, http sunucu (Port 8080)\n".ptr);
+    ekrana_yaz("  Yapay Zeka & LLM:ai <soru>, bonsai <soru>, llm <soru>, ai stats, ai model <1|2>\n".ptr);
     ekrana_yaz("  Masaustu Arayuz: masaustu / gui, dosyalar / fm (Sekmeler ve Fare Imleci)\n".ptr);
     ekrana_yaz("  Cikis & Oturum:  clear, exit, shutdown, reboot, kapat\n".ptr);
     ekrana_yaz("=================================================================\n".ptr);
@@ -326,7 +328,47 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         dondu 1;
     }
 
-    # 7. Masaustu GUI
+    # 7. Yapay Zeka ve LLM Servisleri (Mikro-LLM & Bonsai-8B)
+    eger ykn_metin_esit_mi(komut, "ai".ptr) == 1 veya ykn_metin_esit_mi(komut, "ai stats".ptr) == 1 veya ykn_metin_esit_mi(komut, "ai telemetri".ptr) == 1 ise {
+        ai_telemetri_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "ai model 1".ptr) == 1 veya ykn_metin_esit_mi(komut, "ai mikro".ptr) == 1 veya ykn_metin_esit_mi(komut, "ai bitnet".ptr) == 1 ise {
+        ai_model_sec(AI_MODEL_MIKRO);
+        ekrana_yaz("[AI] Aktif model: Mikro-LLM BitNet 1.58b (Gomulu) olarak secildi.\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "ai model 2".ptr) == 1 veya ykn_metin_esit_mi(komut, "ai bonsai".ptr) == 1 ise {
+        ai_model_sec(AI_MODEL_BONSAI);
+        ekrana_yaz("[AI] Aktif model: Prism ML Bonsai-8B (Qwen / GGUF) olarak secildi.\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "bonsai".ptr) == 1 veya ykn_metin_esit_mi(komut, "bonsai info".ptr) == 1 ise {
+        ai_model_sec(AI_MODEL_BONSAI);
+        ai_telemetri_yaz();
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "bonsai ".ptr) == 1 ise {
+        ai_model_sec(AI_MODEL_BONSAI);
+        ai_sorgu_isle(komut + 7, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "ai ".ptr) == 1 ise {
+        ai_sorgu_isle(komut + 3, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "llm ".ptr) == 1 ise {
+        ai_sorgu_isle(komut + 4, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # 8. Masaustu GUI
     eger ykn_metin_esit_mi(komut, "masaustu".ptr) == 1 veya ykn_metin_esit_mi(komut, "gui".ptr) == 1 ise {
         desktop_etkilesimli_calistir();
         dondu 1;

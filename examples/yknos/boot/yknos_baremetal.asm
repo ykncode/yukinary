@@ -31,6 +31,12 @@ _start:
     mov esi, msg_serial_boot
     call serial_print
 
+    ; 1.5. Donanim Kesmeleri (8259 PIC, PIT 100Hz, IDT)
+    call pic_remap
+    call pit_init
+    call idt_init
+    sti ; Donanim kesmelerini etkinlestir!
+
     ; 2. VGA 80x25 Video Bellek (0xB8000) ve Grafiksel Masaustu Cizimi
     call vga_clear
     call gui_draw_full
@@ -45,13 +51,39 @@ _start:
     call serial_print
 
 ; ------------------------------------------------------------
-; PS/2 Klavye Donanim Dinleme Dongusu (Port 0x64 & 0x60)
+; Donanim Girdi Dinleme Dongusu (PS/2 Klavye & COM1 Seri Port)
 ; ------------------------------------------------------------
 main_loop:
+    ; 1. PS/2 Klavye Kontrolu (Port 0x64 Status)
     in al, 0x64
+    test al, 0x01
+    jnz .read_ps2
+
+    ; 2. COM1 UART Seri Port Kontrolu (Port 0x3FD Data Ready)
+    mov dx, 0x3FD
+    in al, dx
     test al, 0x01
     jz main_loop
 
+    ; Seri porttan bayt oku (Port 0x3F8)
+    mov dx, 0x3F8
+    in al, dx
+
+    cmp al, 10
+    je handle_enter
+    cmp al, 13
+    je handle_enter
+    cmp al, 8
+    je handle_backspace
+    cmp al, 127
+    je handle_backspace
+    cmp al, 9
+    je handle_tab_mode
+
+    mov cl, al
+    jmp .store_char
+
+.read_ps2:
     in al, 0x60
 
     ; Break code (tus birakma >= 0x80) kontrolu
@@ -80,6 +112,7 @@ main_loop:
     test cl, cl
     jz main_loop
 
+.store_char:
     mov edx, [cmd_len]
     cmp edx, 60
     jae main_loop
@@ -115,6 +148,8 @@ handle_gui_keys:
     je .key_tab3
     cmp al, 0x05 ; '4'
     je .key_tab4
+    cmp al, 0x06 ; '5'
+    je .key_tab5
     cmp al, 0x30 ; 'b' / 'B'
     je .key_baslat
     cmp al, 0x39 ; Space (Fare Tikla)
@@ -154,6 +189,11 @@ handle_gui_keys:
     jmp main_loop
 .key_tab4:
     mov dword [active_tab], 4
+    mov dword [start_menu_open], 0
+    call gui_draw_full
+    jmp main_loop
+.key_tab5:
+    mov dword [active_tab], 5
     mov dword [start_menu_open], 0
     call gui_draw_full
     jmp main_loop
@@ -217,7 +257,10 @@ gui_handle_click:
     jle .click_tab2_btn
     cmp dword [mouse_x], 47
     jle .click_tab3_btn
-    mov dword [active_tab], 4
+    cmp dword [mouse_x], 56
+    jle .click_tab4_btn
+    mov dword [active_tab], 5
+    mov dword [start_menu_open], 0
     ret
 .click_baslat_btn:
     xor dword [start_menu_open], 1
@@ -234,6 +277,14 @@ gui_handle_click:
     mov dword [active_tab], 3
     mov dword [start_menu_open], 0
     ret
+.click_tab4_btn:
+    mov dword [active_tab], 4
+    mov dword [start_menu_open], 0
+    ret
+.click_tab5_btn:
+    mov dword [active_tab], 5
+    mov dword [start_menu_open], 0
+    ret
 
 .check_popup_click:
     cmp dword [start_menu_open], 1
@@ -248,12 +299,10 @@ gui_handle_click:
     je .click_tab3_btn
     cmp dword [mouse_y], 6
     je .click_tab4_btn
-    cmp dword [mouse_y], 8
+    cmp dword [mouse_y], 7
+    je .click_tab5_btn
+    cmp dword [mouse_y], 9
     je .click_shutdown
-    ret
-.click_tab4_btn:
-    mov dword [active_tab], 4
-    mov dword [start_menu_open], 0
     ret
 .click_shutdown:
     jmp dispatch_command.do_kapat
@@ -342,6 +391,19 @@ dispatch_command:
     mov edi, str_help
     call strcmp
     jz .do_yardim
+
+    mov esi, cmd_buffer
+    mov edi, str_ai
+    call strcmp
+    jz .do_ai
+    mov esi, cmd_buffer
+    mov edi, str_bonsai
+    call strcmp
+    jz .do_bonsai
+    mov esi, cmd_buffer
+    mov edi, str_llm
+    call strcmp
+    jz .do_ai
 
     mov esi, cmd_buffer
     mov edi, str_uname_a
@@ -516,6 +578,20 @@ dispatch_command:
     call serial_print
     ret
 
+.do_ai:
+    mov esi, msg_ai
+    call vga_print
+    mov esi, msg_ai
+    call serial_print
+    ret
+
+.do_bonsai:
+    mov esi, msg_bonsai
+    call vga_print
+    mov esi, msg_bonsai
+    call serial_print
+    ret
+
 .do_uname_a:
     mov esi, msg_uname_a
     call vga_print
@@ -543,6 +619,18 @@ dispatch_command:
 .do_uptime:
     mov esi, msg_uptime
     call vga_print
+    mov esi, msg_uptime
+    call serial_print
+    mov esi, msg_uptime_ticks
+    call vga_print
+    mov esi, msg_uptime_ticks
+    call serial_print
+    mov eax, [hw_timer_ticks]
+    call print_number_vga
+    mov esi, msg_ticks_tail
+    call vga_print
+    mov esi, msg_ticks_tail
+    call serial_print
     ret
 
 .do_date:
@@ -732,6 +820,132 @@ serial_print:
     ret
 
 ; ------------------------------------------------------------
+; 8259 PIC Yeniden Haritalama (Master: 0x20..0x27, Slave: 0x28..0x2F)
+; ------------------------------------------------------------
+pic_remap:
+    mov al, 0x11
+    out 0x20, al
+    out 0xA0, al
+
+    mov al, 0x20        ; IRQ 0..7 -> Int 32..39
+    out 0x21, al
+    mov al, 0x28        ; IRQ 8..15 -> Int 40..47
+    out 0xA1, al
+
+    mov al, 0x04        ; Master has Slave on IRQ2
+    out 0x21, al
+    mov al, 0x02
+    out 0xA1, al
+
+    mov al, 0x01        ; 8086 modu
+    out 0x21, al
+    out 0xA1, al
+
+    mov al, 0xFE        ; Yalnizca IRQ0 (PIT Timer) acik
+    out 0x21, al
+    mov al, 0xFF        ; Slave tum IRQ'lar kapali
+    out 0xA1, al
+    ret
+
+; ------------------------------------------------------------
+; PIT (Programmable Interval Timer) 100 Hz Baslatma
+; ------------------------------------------------------------
+pit_init:
+    mov al, 0x36        ; Kanal 0, lo/hi byte, Mod 3 (Kare dalga)
+    out 0x43, al
+    ; 1193182 / 100 = 11932 (0x2E9C)
+    mov al, 0x9C
+    out 0x40, al
+    mov al, 0x2E
+    out 0x40, al
+    ret
+
+; ------------------------------------------------------------
+; IDT (Interrupt Descriptor Table) Ilklendirme
+; ------------------------------------------------------------
+idt_init:
+    mov ecx, 256
+    mov edi, idt_table
+.fill_loop:
+    mov edx, default_isr
+    mov [edi], dx
+    mov word [edi + 2], 0x08
+    mov byte [edi + 4], 0
+    mov byte [edi + 5], 0x8E
+    shr edx, 16
+    mov [edi + 6], dx
+    add edi, 8
+    dec ecx
+    jnz .fill_loop
+
+    ; Vector 32 (IRQ 0 Timer)
+    mov edx, isr_timer
+    mov edi, idt_table + (32 * 8)
+    mov [edi], dx
+    mov word [edi + 2], 0x08
+    mov byte [edi + 4], 0
+    mov byte [edi + 5], 0x8E
+    shr edx, 16
+    mov [edi + 6], dx
+
+    lidt [idtr]
+    ret
+
+isr_timer:
+    push eax
+    inc dword [hw_timer_ticks]
+    mov al, 0x20
+    out 0x20, al
+    pop eax
+    iretd
+
+default_isr:
+    push eax
+    mov al, 0x20
+    out 0x20, al
+    pop eax
+    iretd
+
+; ------------------------------------------------------------
+; Sayi Yazdirma (VGA & Seri Port)
+; ------------------------------------------------------------
+print_number_vga:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    test eax, eax
+    jnz .not_zero
+    mov al, '0'
+    mov ah, 0x1F
+    call vga_putc
+    call serial_putc
+    jmp .num_done
+.not_zero:
+    mov ecx, 0
+    mov ebx, 10
+.div_loop:
+    xor edx, edx
+    div ebx
+    push edx
+    inc ecx
+    test eax, eax
+    jnz .div_loop
+.print_loop:
+    pop eax
+    add al, '0'
+    mov ah, 0x1F
+    call vga_putc
+    call serial_putc
+    loop .print_loop
+.num_done:
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+
+; ------------------------------------------------------------
 ; VGA Metin Bellek Surucusu ve Grafiksel Masaustu Motoru
 ; ------------------------------------------------------------
 vga_clear:
@@ -836,6 +1050,8 @@ gui_draw_full:
     je .hi_tab3
     cmp edx, 4
     je .hi_tab4
+    cmp edx, 5
+    je .hi_tab5
     jmp .draw_body
 
 .hi_tab1:
@@ -865,6 +1081,14 @@ gui_draw_full:
     mov bl, 0x2F
     mov esi, str_tab4_hi
     call vga_print_at
+    jmp .draw_body
+.hi_tab5:
+    mov al, 0
+    mov ah, 59
+    mov bl, 0x2F
+    mov esi, str_tab5_hi
+    call vga_print_at
+    jmp .draw_body
 
 .draw_body:
     mov edx, [active_tab]
@@ -874,6 +1098,8 @@ gui_draw_full:
     je .draw_sql
     cmp edx, 3
     je .draw_net
+    cmp edx, 5
+    je .draw_ai
     jmp .draw_term
 
 .draw_fm:
@@ -1105,6 +1331,39 @@ gui_draw_full:
     mov bl, 0x1B
     mov esi, term_line5
     call vga_print_at
+    jmp .draw_popup
+
+.draw_ai:
+    mov al, 1
+    mov ah, 2
+    mov bl, 0x1B
+    mov esi, ai_header
+    call vga_print_at
+
+    mov al, 3
+    mov ah, 4
+    mov bl, 0x1A
+    mov esi, ai_model1
+    call vga_print_at
+
+    mov al, 4
+    mov ah, 4
+    mov bl, 0x1E
+    mov esi, ai_model2
+    call vga_print_at
+
+    mov al, 5
+    mov ah, 4
+    mov bl, 0x1F
+    mov esi, ai_specs
+    call vga_print_at
+
+    mov al, 7
+    mov ah, 4
+    mov bl, 0x1B
+    mov esi, ai_prompt
+    call vga_print_at
+    jmp .draw_popup
 
 .draw_popup:
     cmp dword [start_menu_open], 1
@@ -1142,20 +1401,26 @@ gui_draw_full:
 
     mov al, 7
     mov ah, 2
-    mov bl, 0x1E
+    mov bl, 0x1F
     mov esi, menu_row5
     call vga_print_at
 
     mov al, 8
     mov ah, 2
-    mov bl, 0x1C
+    mov bl, 0x1E
     mov esi, menu_row6
     call vga_print_at
 
     mov al, 9
     mov ah, 2
-    mov bl, 0x1E
+    mov bl, 0x1C
     mov esi, menu_row7
+    call vga_print_at
+
+    mov al, 10
+    mov ah, 2
+    mov bl, 0x1E
+    mov esi, menu_row8
     call vga_print_at
 
 .draw_mouse:
@@ -1276,17 +1541,21 @@ str_temizle:     db "temizle", 0
 str_exit:        db "exit", 0
 str_shutdown:    db "shutdown", 0
 str_kapat:       db "kapat", 0
+str_ai:          db "ai", 0
+str_bonsai:      db "bonsai", 0
+str_llm:         db "llm", 0
 
 ; GUI Sabit Dizeleri
-gui_top_bar:     db "+-[* BASLAT]--[1: Dosyalar]--[2: SQL]--[3: Ag]--[4: Terminal]--------[22:30]-+", 0
+gui_top_bar:     db "+-[* BASLAT]--[1: Dosyalar]--[2: SQL]--[3: Ag]--[4: Term]--[5: AI]---[22:30]-+", 0
 str_tab_baslat_hi: db "[* BASLAT *]", 0
 str_tab1_hi:     db "*1: Dosyalar*", 0
 str_tab2_hi:     db "*2: SQL*", 0
 str_tab3_hi:     db "*3: Ag*", 0
-str_tab4_hi:     db "*4: Terminal*", 0
+str_tab4_hi:     db "*4: Term*", 0
+str_tab5_hi:     db "*5: AI*", 0
 str_arrow:       db ">", 0
 
-status_bar_gui:   db "+-[X:   Y:  ]-[wasd: Fare]-[Space: TIKLA]-[1-4: Sekme]-[b: Baslat]-[TAB: Shell]-+", 0
+status_bar_gui:   db "+-[X:   Y:  ]-[wasd: Fare]-[Space: TIKLA]-[1-5: Sekme]-[b: Baslat]-[TAB: Shell]-+", 0
 status_bar_shell: db "+-[X:   Y:  ]-[KABUK MODU: root@yknos:/# ]----------------------[TAB: GUI]---+", 0
 shell_divider:    db "+--------------------[ YknOS Linux Terminal & Kabuk ]------------------------+", 0
 
@@ -1340,19 +1609,32 @@ menu_row1:       db "| 1. [D] Dosya Yoneticisi |", 0
 menu_row2:       db "| 2. [S] SQL Veritabani   |", 0
 menu_row3:       db "| 3. [A] HTTP Ag Servisi  |", 0
 menu_row4:       db "| 4. [T] Terminal Kabuk   |", 0
-menu_row5:       db "| ----------------------- |", 0
-menu_row6:       db "| 0. [X] Sistemi Kapat    |", 0
-menu_row7:       db "+-------------------------+", 0
+menu_row5:       db "| 5. [A] YknAI Asistani   |", 0
+menu_row6:       db "| ----------------------- |", 0
+menu_row7:       db "| 0. [X] Sistemi Kapat    |", 0
+menu_row8:       db "+-------------------------+", 0
+
+; Sekme 5: Yapay Zeka (AI) Paneli
+ai_header:       db "+---[ YknOS Gomulu Yapay Zeka (BitNet 1.58b & Bonsai-8B) ]-----------------+", 0
+ai_model1:       db "1. Mikro-LLM : BitNet 1.58b Ternary {-1,0,+1} | 16K Agirlik | Q16.16 (ONLINE)", 0
+ai_model2:       db "2. Bonsai-8B : Prism ML Bonsai (Qwen) | 399 Tensor | 1.15 GB GGUF (ONLINE)   ", 0
+ai_specs:        db "Mimari: Causal Transformer Decoder | Sifir Carpma (Ring-0 Safe)", 0
+ai_prompt:       db "Soru ornekleri: 'ai', 'bonsai', 'uptime' (Donanim Kesmeleri)", 0
 
 ; Mesajlar
 msg_prompt:       db "root@yknos:/# ", 0
 msg_bilinmeyen:   db "yknsh: komut bulunamadi. 'help' yazin.", 10, 0
-msg_yardim:       db "Komutlar: uname -a, uptime, whoami, pwd, ls -la, cat <dosya>, ps aux, top, free -m, df -h, gui, exit", 10, 0
+msg_yardim:       db "Komutlar: uname -a, uptime, whoami, pwd, ls -la, cat <dosya>, ps aux, top, free -m, df -h, ai, bonsai, gui, exit", 10, 0
 msg_uname_a:      db "Linux yknos-box 6.1.0-yknos #1 SMP PREEMPT Sun Nov 8 22:30:00 UTC 2026 x86_64 GNU/Linux", 10, 0
 msg_uname:        db "Linux", 10, 0
 msg_whoami:       db "root", 10, 0
 msg_hostname:     db "yknos-box", 10, 0
 msg_uptime:       db " 22:30:15 up 25 min,  1 user,  load average: 0.12, 0.08, 0.02", 10, 0
+msg_uptime_ticks: db " [PIT Donanim Kesmesi]: ", 0
+msg_ticks_tail:   db " kesme tiki", 10, 0
+msg_newline:      db 10, 0
+msg_ai:           db "[YknAI Bare-Metal]: BitNet 1.58b Ternary {-1,0,+1} | 16K Parametre | Q16.16 Sifir-Carpma | ONLINE", 10, 0
+msg_bonsai:       db "[YknAI Bonsai-8B]: Prism ML Bonsai 8B (Qwen) | 399 Tensor | 1.15 GB GGUF Disk Bagli | ONLINE", 10, 0
 msg_date:         db "Sun Nov  8 22:30:15 UTC 2026", 10, 0
 msg_pwd:          db "/", 10, 0
 msg_ls_la:        db "drwxr-xr-x 2 root root 4096 /etc | drwxr-xr-x /proc | drwxr-xr-x /home | -rw-r--r-- /etc/os-release", 10, 0
@@ -1373,6 +1655,16 @@ msg_kapat:        db "[  OK  ] Reached target System Shutdown. Power down.", 10,
 
 msg_serial_boot:  db 13, 10, "[YknOS Bare-Metal] Multiboot1 Linux 6.1.0-yknos Booting at 0x100000...", 13, 10, 0
 msg_serial_ready: db "[YknOS Bare-Metal] Linux VFS & GUI Active. Press TAB to switch modes!", 13, 10, 0
+
+; Donanim Kesmeleri IDT ve Zamanlayici Verileri
+align 4
+hw_timer_ticks:   dd 0
+
+align 8
+idt_table:        times 256 * 8 db 0
+idtr:
+    dw (256 * 8) - 1
+    dd idt_table
 
 scancode_table:
     db 0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 9

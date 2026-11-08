@@ -11,6 +11,7 @@ ice_aktar "scheduler.ykn";
 ice_aktar "fs.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
+ice_aktar "../services/ai_engine.ykn";
 
 extern isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
 extern isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
@@ -63,28 +64,33 @@ isv desktop_fare_tasi(dx: tamsayi, dy: tamsayi) {
 isv desktop_fare_tikla() -> tamsayi {
     # 1. Satir 22: Alt Gorev Cubugu (Taskbar)
     eger g_gui_fare_y == 22 ise {
-        # [ ❖ BASLAT ] [col 2..14]
-        eger g_gui_fare_x >= 2 ve g_gui_fare_x <= 14 ise {
+        # [ ❖ BASLAT ] [col 2..13]
+        eger g_gui_fare_x >= 2 ve g_gui_fare_x <= 13 ise {
             desktop_baslat_tetikle();
             dondu 1;
         }
-        # [ 📁 VFS ] [col 15..25]
-        eger g_gui_fare_x >= 15 ve g_gui_fare_x <= 25 ise {
+        # [ 📁 VFS ] [col 14..23]
+        eger g_gui_fare_x >= 14 ve g_gui_fare_x <= 23 ise {
             desktop_pencere_ac(1);
             dondu 1;
         }
-        # [ 📝 Editor ] [col 26..37]
-        eger g_gui_fare_x >= 26 ve g_gui_fare_x <= 37 ise {
+        # [ 📝 Edit ] [col 24..34]
+        eger g_gui_fare_x >= 24 ve g_gui_fare_x <= 34 ise {
             desktop_pencere_ac(2);
             dondu 1;
         }
-        # [ 📊 Gorevler ] [col 38..51]
-        eger g_gui_fare_x >= 38 ve g_gui_fare_x <= 51 ise {
+        # [ 📊 Top ] [col 35..44]
+        eger g_gui_fare_x >= 35 ve g_gui_fare_x <= 44 ise {
             desktop_pencere_ac(3);
             dondu 1;
         }
-        # [ 💻 Terminal ] [col 52..66]
-        eger g_gui_fare_x >= 52 ve g_gui_fare_x <= 66 ise {
+        # [ 🤖 AI ] [col 45..54]
+        eger g_gui_fare_x >= 45 ve g_gui_fare_x <= 54 ise {
+            desktop_pencere_ac(7);
+            dondu 1;
+        }
+        # [ 💻 sh ] [col 55..65]
+        eger g_gui_fare_x >= 55 ve g_gui_fare_x <= 65 ise {
             desktop_pencere_ac(6);
             dondu 1;
         }
@@ -98,6 +104,7 @@ isv desktop_fare_tikla() -> tamsayi {
         eger g_gui_fare_y == 17 ise { desktop_pencere_ac(4); dondu 1; }
         eger g_gui_fare_y == 18 ise { desktop_pencere_ac(5); dondu 1; }
         eger g_gui_fare_y == 19 ise { desktop_pencere_ac(6); dondu 1; }
+        eger g_gui_fare_y == 20 ise { desktop_pencere_ac(7); dondu 1; }
         eger g_gui_fare_y == 21 ise { dondu 0; } # Bilgisayari kapat
     }
 
@@ -109,6 +116,7 @@ isv desktop_fare_tikla() -> tamsayi {
         eger g_gui_fare_y == 8 veya g_gui_fare_y == 9 ise { desktop_pencere_ac(4); dondu 1; }
         eger g_gui_fare_y == 10 veya g_gui_fare_y == 11 ise { desktop_pencere_ac(5); dondu 1; }
         eger g_gui_fare_y == 12 veya g_gui_fare_y == 13 ise { desktop_pencere_ac(6); dondu 1; }
+        eger g_gui_fare_y == 14 veya g_gui_fare_y == 15 ise { desktop_pencere_ac(7); dondu 1; }
     }
 
     # 4. Pencere Kapatma Butonu [ X ] (Satir 1, Kolon 71..74)
@@ -152,10 +160,12 @@ isv desktop_ciz() {
     vga_metin_yaz(11, 1, "+------------+".ptr, renk_cam);
     vga_metin_yaz(12, 1, "| [C] Kabuk  |".ptr, renk_ark);
     vga_metin_yaz(13, 1, "+------------+".ptr, renk_cam);
+    vga_metin_yaz(14, 1, "| [A] YknAI  |".ptr, renk_ark);
+    vga_metin_yaz(15, 1, "+------------+".ptr, renk_cam);
 
-    vga_metin_yaz(15, 2, "Linux 6.1".ptr, renk_sar);
-    vga_metin_yaz(16, 2, "GNU/YknOS".ptr, renk_yes);
-    vga_metin_yaz(17, 2, "x86_64 SMP".ptr, renk_ark);
+    vga_metin_yaz(17, 2, "Linux 6.1".ptr, renk_sar);
+    vga_metin_yaz(18, 2, "GNU/YknOS".ptr, renk_yes);
+    vga_metin_yaz(19, 2, "x86_64 SMP".ptr, renk_ark);
 
     # 2. Aktif Pencereyi Ciz (Window Manager)
     eger g_gui_aktif_pencere == 1 ise {
@@ -289,6 +299,44 @@ isv desktop_ciz() {
         vga_metin_yaz(7, 18, "MemTotal: 65536 kB | MemFree: 61440 kB | Buffers: 1024 kB ".ptr, renk_ark);
         vga_metin_yaz(9, 18, "Komut istemine donmek icin 'cikis' veya 'q' tuslayin.     ".ptr, renk_cam);
 
+    } yoksa eger g_gui_aktif_pencere == 7 ise {
+        # --- PENCERE 7: YKNAI ASISTANI (MIKRO-LLM & BONSAI-8B) ---
+        vga_kutu_ciz(1, 15, 61, renk_cam);
+        vga_metin_yaz(1, 18, "[ 🤖 YknAI Asistani (BitNet 1.58b & Bonsai) ]-----[ _ ][ X ]".ptr, renk_cam);
+        vga_metin_yaz(2, 18, "Motor: ".ptr, renk_sar);
+        vga_metin_yaz(2, 25, ai_aktif_model_adi(), renk_yes);
+        vga_metin_yaz(3, 18, "[1] Mikro-LLM (BitNet)  [2] Bonsai-8B (Qwen)   [T] Telemetri".ptr, renk_cam);
+        vga_metin_yaz(4, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(5, 18, "Mimari: BitNet 1.58b Ternary {-1,0,+1} | Q16.16 Sifir Carpma".ptr, renk_sar);
+        vga_metin_yaz(6, 18, "Bellek: Mikro 28 KB RAM | Bonsai 1.15 GB GGUF | Gecikme 0.2ms".ptr, renk_sar);
+        vga_metin_yaz(7, 18, "----------------------------------------------------------".ptr, renk_ark);
+        vga_metin_yaz(8, 18, "Son Sentezlenen Yanit (Canli Noral Uretim):                ".ptr, renk_yes);
+
+        # Yanitin ilk 4 satirini pencereye bas
+        degisken y_buf: [56]u8;
+        degisken yi: tamsayi = 0;
+        degisken y_satir: tamsayi = 0;
+        degisken b_idx: tamsayi = 0;
+        dongu g_ai_son_yanit[b_idx] != 0 ve y_satir < 4 {
+            degisken ch: u8 = g_ai_son_yanit[b_idx];
+            eger ch == 10 veya yi >= 53 {
+                y_buf[yi] = 0;
+                vga_metin_yaz(9 + y_satir, 18, y_buf, renk_ark);
+                yi = 0;
+                y_satir = y_satir + 1;
+            } yoksa {
+                y_buf[yi] = ch;
+                yi = yi + 1;
+            }
+            b_idx = b_idx + 1;
+        }
+        eger yi > 0 ve y_satir < 4 {
+            y_buf[yi] = 0;
+            vga_metin_yaz(9 + y_satir, 18, y_buf, renk_ark);
+        }
+
+        vga_metin_yaz(14, 18, "Kabukta 'ai <soru>' veya 'bonsai <soru>' ile soru sorun.  ".ptr, renk_cam);
+
     } yoksa {
         # --- PENCERE KAPALI: SAF MASAÜSTÜ DUVAR KAĞIDI ---
         vga_metin_yaz(5, 25, "========================================".ptr, renk_sar);
@@ -300,21 +348,22 @@ isv desktop_ciz() {
 
     # 3. Baslat Menusu Aciksa Sol Alt Kosede Ciz
     eger g_gui_baslat_acik == 1 ise {
-        vga_kutu_ciz(12, 10, 27, renk_sar);
-        vga_metin_yaz(12, 2, "[* ❖ YknOS BASLAT MENUSU *]".ptr, renk_sar);
-        vga_metin_yaz(13, 2, "👤 root (Sistem Yoneticisi)".ptr, renk_yes);
-        vga_metin_yaz(14, 2, "1. 📁 Dosya Gezgini (VFS)  ".ptr, renk_ark);
-        vga_metin_yaz(15, 2, "2. 📝 Metin Editoru (Nano) ".ptr, renk_ark);
-        vga_metin_yaz(16, 2, "3. 📊 Gorev Yoneticisi     ".ptr, renk_ark);
-        vga_metin_yaz(17, 2, "4. 💾 SQL Studio           ".ptr, renk_ark);
-        vga_metin_yaz(18, 2, "5. 🌐 Web Sunucu & Ag      ".ptr, renk_ark);
-        vga_metin_yaz(19, 2, "6. 💻 Terminal (yknsh)     ".ptr, renk_ark);
+        vga_kutu_ciz(11, 11, 27, renk_sar);
+        vga_metin_yaz(11, 2, "[* ❖ YknOS BASLAT MENUSU *]".ptr, renk_sar);
+        vga_metin_yaz(12, 2, "👤 root (Sistem Yoneticisi)".ptr, renk_yes);
+        vga_metin_yaz(13, 2, "1. 📁 Dosya Gezgini (VFS)  ".ptr, renk_ark);
+        vga_metin_yaz(14, 2, "2. 📝 Metin Editoru (Nano) ".ptr, renk_ark);
+        vga_metin_yaz(15, 2, "3. 📊 Gorev Yoneticisi     ".ptr, renk_ark);
+        vga_metin_yaz(16, 2, "4. 💾 SQL Studio           ".ptr, renk_ark);
+        vga_metin_yaz(17, 2, "5. 🌐 Web Sunucu & Ag      ".ptr, renk_ark);
+        vga_metin_yaz(18, 2, "6. 💻 Terminal (yknsh)     ".ptr, renk_ark);
+        vga_metin_yaz(19, 2, "7. 🤖 YknAI Asistani (LLM) ".ptr, renk_ark);
         vga_metin_yaz(20, 2, "---------------------------".ptr, renk_sar);
         vga_metin_yaz(21, 2, "0. ⚡ Bilgisayari Kapat    ".ptr, renk_mag);
     }
 
     # 4. Alt Gorev Cubugu (Taskbar - Satir 22)
-    vga_metin_yaz(22, 0, "+-[ ❖ BASLAT ]-[ 📁 VFS ]-[ 📝 Editor ]-[ 📊 Gorevler ]-[ 💻 Terminal ]--[ 22:45 ]-+".ptr, renk_sar);
+    vga_metin_yaz(22, 0, "+-[ ❖ BASLAT ]-[ 📁 VFS ]-[ 📝 Edit ]-[ 📊 Top ]-[ 🤖 AI ]-[ 💻 sh ]--[ 22:45 ]-+".ptr, renk_sar);
 
     eger g_gui_baslat_acik == 1 ise {
         vga_metin_yaz(22, 2, "[* ❖ BASLAT *]".ptr, renk_yes);
@@ -373,6 +422,12 @@ isv desktop_etkilesimli_calistir() {
             desktop_pencere_ac(5);
         } yoksa eger c == 54 ise { # '6' -> Terminal
             desktop_pencere_ac(6);
+        } yoksa eger c == 55 ise { # '7' -> YknAI Asistani
+            desktop_pencere_ac(7);
+        } yoksa eger c == 109 veya c == 77 ise { # 'm' / 'M' -> Mikro-LLM Sec
+            ai_model_sec(AI_MODEL_MIKRO);
+        } yoksa eger c == 112 veya c == 80 ise { # 'p' / 'P' -> Bonsai-8B Sec
+            ai_model_sec(AI_MODEL_BONSAI);
         } yoksa eger c == 98 veya c == 66 ise { # 'b' / 'B' -> Baslat Menusu
             desktop_baslat_tetikle();
         } yoksa eger c == 120 veya c == 88 ise { # 'x' / 'X' -> Pencereyi Kapat

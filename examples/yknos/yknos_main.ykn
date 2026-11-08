@@ -12,6 +12,7 @@ ice_aktar "kernel/fs.ykn";
 ice_aktar "kernel/env.ykn";
 ice_aktar "services/sql_engine.ykn";
 ice_aktar "services/http_engine.ykn";
+ice_aktar "services/ai_engine.ykn";
 ice_aktar "shell/shell.ykn";
 
 isv cekirdek_onyukleme() {
@@ -42,7 +43,10 @@ isv cekirdek_onyukleme() {
     ekrana_yaz("[0.06s] [NET]  Gomulu HTTP 1.1 mikroservisi 0.0.0.0:8080 baslatildi.\n".ptr);
     http_servisi_baslat(8080);
 
-    ekrana_yaz("[0.07s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
+    ekrana_yaz("[0.07s] [AI]   Gomulu Mikro-LLM (BitNet 1.58b) ve Bonsai-8B yuklendi.\n".ptr);
+    ai_motoru_baslat();
+
+    ekrana_yaz("[0.08s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
 }
 
 isv ana() -> tamsayi {
