@@ -85,6 +85,10 @@ Yukinary provides comprehensive, beginner-friendly ("mala anlatır gibi") comple
 | 🇨🇳 **简体中文** | [**`docs/guide_zh.md`**](docs/guide_zh.md) | 开发者完全指南、原生中文语法、`#convert`多语言转译、自愈编译机制与嵌入式 AI 引擎 |
 | 🇰🇷 **한국어** | [**`docs/guide_ko.md`**](docs/guide_ko.md) | 개발자 가이드, 한국어 네이티브 문법, `#convert` 변환 엔진, 메모리 안전성 및 임베디드 AI |
 
+> [!TIP]
+> **🌍 Your Language Missing from the List? Add It Yourself in 15 Minutes!**  
+> Don't worry! In Yukinary, human language is just a syntax token. Follow our step-by-step community guide: [**`docs/Multi-lingual-add-language.md`**](docs/Multi-lingual-add-language.md) to add your mother tongue and submit a Pull Request!
+
 ---
 
 ## 🧠 Micro-LLM vs. Full LLM Architecture

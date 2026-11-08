@@ -49,20 +49,25 @@ if (Test-Path $srcStd) {
     Write-Host "[OK] Installed Yukinary Standard Library (std/)." -ForegroundColor Green
 }
 
-# 4. Patch User PATH environment variable
+# 4. Patch User PATH environment variable (Prepended to avoid Windows 2048-char path truncation)
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$pathParts = $currentPath -split ";" | Where-Object { $_ -ne "" }
+$pathParts = $currentPath -split ";" | Where-Object { $_ -ne "" -and $_ -notlike "*yukinary*" }
 
-if ($pathParts -notcontains $installDir) {
-    $newPath = "$currentPath;$installDir"
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    $env:Path = "$env:Path;$installDir"
-    Write-Host "[SUCCESS] Added $installDir to User PATH permanently!" -ForegroundColor Green
-} else {
-    Write-Host "[OK] $installDir is already in your PATH." -ForegroundColor Yellow
+$newPath = "$installDir;" + ($pathParts -join ";")
+[Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+$env:Path = "$installDir;$env:Path"
+Write-Host "[SUCCESS] Prepended $installDir to User PATH permanently!" -ForegroundColor Green
+
+# 5. Also copy to WindowsApps as a bulletproof zero-path fallback
+$winApps = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
+if (Test-Path $winApps) {
+    Copy-Item (Join-Path $installDir "ykn.exe") (Join-Path $winApps "ykn.exe") -Force -ErrorAction SilentlyContinue
+    Copy-Item (Join-Path $installDir "ykn.cmd") (Join-Path $winApps "ykn.cmd") -Force -ErrorAction SilentlyContinue
+    Write-Host "[OK] Synced ykn to WindowsApps for instant execution." -ForegroundColor Green
 }
 
 Write-Host "`nInstallation complete! You can now run 'ykn' from any terminal:" -ForegroundColor Cyan
 Write-Host "  ykn --yardim" -ForegroundColor White
 Write-Host "  ykn convert test.py -o test.ykn" -ForegroundColor White
 Write-Host "  ykn main.ykn" -ForegroundColor White
+

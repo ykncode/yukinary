@@ -92,6 +92,11 @@ YKN'de ana diliniz ne olursa olsun kod yazabilirsiniz. İster saf Türkçe, iste
 | **Eşleme** | `esles` | `match` | `сопоставление`| `一致` | `匹配` | `일치` |
 | **Boş Pointer**| `bos` | `null` / `nil` | `пусто` | `無` | `空` | `널` |
 
+> [!TIP]
+> **🌍 Senin Ana Dilin Listede Yok mu? Üzülme, 15 Dakikada Kendin Ekleyebilirsin!**  
+> Yukinary'de insan dilleri yalnızca birer sözdizimi jetonudur (token). Başka hiçbir dilde olmayan bu özgürlük sayesinde kendi ana dilini (Almanca, İspanyolca, Fransızca, Arapça vb.) derleyiciye 15 dakikada ekleyebilirsin.  
+> Adım adım rehber için: [**`Multi-lingual-add-language.md`**](Multi-lingual-add-language.md) kılavuzunu incele ve ilk Pull Request'ini gönder!
+
 ---
 
 ## 4. Temel Tipler, Değişkenler ve Operatörler
