@@ -76,38 +76,40 @@ Yukinary provides comprehensive, beginner-friendly ("mala anlatır gibi") comple
 
 Yukinary integrates artificial intelligence into the compilation pipeline through **two distinct, complementary layers**. Understanding the difference removes all misconceptions:
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        YUKINARY AI MOTOR MİMARİSİ                      │
+│                      YUKINARY AI ENGINE ARCHITECTURE                   │
 └────────────────────────────────────────────────────────────────────────┘
                                     │
          ┌──────────────────────────┴──────────────────────────┐
          ▼                                                     ▼
 ┌───────────────────────────────────┐       ┌───────────────────────────────────┐
-│     1. GÖMÜLÜ (EMBEDDED)          │       │       2. HARİCİ (EXTERNAL)        │
-│          MICRO-LLM                │       │         FULL LLM MOTORU           │
+│     1. EMBEDDED MICRO-LLM         │       │       2. EXTERNAL FULL LLM        │
+│          (Always-On)              │       │          (On-Demand)              │
 ├───────────────────────────────────┤       ├───────────────────────────────────┤
 │ 📁 std/ai/micro_llm.ykn           │       │ 📁 src/llm.ykn                    │
 │ 📁 std/ai/embedded_weights.ykn    │       │ 📁 std/ai/gguf_loader.ykn         │
-│ • Boyut: 16.448 Bayt (~16 KB)     │       │ • Boyut: 1 GB – 40 GB             │
-│ • Derleyici binary (.rodata) içi  │       │ • Dışarıdan model dosyası yükler  │
-│ • Sıfır dosya, sıfır internet     │       │ • `--llm-model model.gguf`        │
-│ • 0.1 milisaniyede tamamlama      │       │ • Doğal dilden sıfırdan karmaşık  │
-│ • Görev: Refleksler, Self-Heal,   │       │   algoritmalar ve modüller üretir │
-│   LSP tamamlama, C/Python convert │       │   (`#prompt "..."`)               │
+│ • Size: 16,448 Bytes (~16 KB)     │       │ • Size: 1 GB – 40 GB GGUF v3      │
+│ • Baked into binary (.rodata)     │       │ • Loaded dynamically from disk    │
+│ • Zero files, zero internet,      │       │ • CLI: `--llm-model model.gguf`   │
+│   zero external dependencies      │       │ • Compile-time generative coding  │
+│ • Sub-millisecond latency (<1ms)  │       │   via `#prompt "..."` directives  │
+│ • Purpose: Compiler Reflexes,     │       │ • Complex module & algorithmic    │
+│   Self-Healing, LSP Autocomplete, │       │   synthesis from natural language │
+│   Neural-guided `#convert`        │       │                                   │
 └───────────────────────────────────┘       └───────────────────────────────────┘
 ```
 
-### Karşılaştırma ve Kullanım Amaçları Tablosu:
+### Architectural Comparison & Operational Roles:
 
-| Kriter | 🧠 Gömülü Micro-LLM (16 KB) | 🚀 Harici Full LLM (1B – 70B GGUF) |
+| Dimension | 🧠 Embedded Micro-LLM (16 KB) | 🚀 External Full LLM (1B – 70B GGUF) |
 | :--- | :--- | :--- |
-| **Konum & Bellek** | Derleyici ikilisinin (`ykn.exe`) `.rodata` veri kesiti içine gömülü | Kullanıcının diskten gösterdiği harici `.gguf` dosyası |
-| **Boyut & Ağırlıklar** | **16.448 Bayt (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet omurgası | **1 GB – 40 GB** (Llama-3, Mistral, Qwen, BitNet b1.58 vb.) |
-| **Donanım Şartı** | **Sıfır GPU, Sıfır Python, Sıfır İnternet.** Her standart CPU'da çalışır | Model boyutuna göre 4 GB – 32 GB RAM veya GPU gerektirir |
-| **Gecikme (Latency)** | **0.1 milisaniye (insan gözünün algılayamayacağı kadar anlık)** | Token başına 10 – 50 milisaniye |
-| **Kullanım Amacı** | **Derleyicinin Refleksleri:**<br>• Sözdizimi onarımı (`Self-Healing`: noktalı virgül, parantez)<br>• Çökmeleri önleyen `null-guard` enjeksiyonu<br>• VSCode'da anlık kod ve struct alanı tamamlama<br>• C/Python/Rust kodunu YKN'ye anında çevirme (`#convert`) | **Geliştiricinin Üretkenliği:**<br>• Sıfırdan karmaşık veri yapıları veya algoritmalar tasarlama<br>• Doğal dilden YKN kodu üretme (`#prompt "HTTP sunucusu yaz"`)<br>• Büyük projelerde mimari refactoring |
-| **Kullanıcı Hisseder mi?** | **Hayır.** Arka planda sessiz, kesintisiz ve her daim aktiftir ("Always-On") | **Evet.** Geliştirici komut satırından özellikle model dosyasını vererek çağırır |
+| **Location & Storage** | Baked directly into the compiler binary (`.rodata` section) | External `.gguf` file loaded dynamically from user storage |
+| **Size & Weights** | **16,448 Bytes (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet causal transformer | **1 GB – 40 GB** (BitNet b1.58, Llama-3, Mistral, Qwen, etc.) |
+| **Hardware Reqs** | **Zero GPU, Zero Python, Zero Internet.** Runs on any standard 64-bit CPU using Q16.16 fixed-point arithmetic | Requires 4 GB – 32 GB RAM / VRAM depending on quantization and context size |
+| **Inference Latency** | **Sub-millisecond (< 1 ms)** — imperceptible compile-time overhead | 10 – 50 milliseconds per token |
+| **Primary Scope** | **Compiler Reflexes & Tooling:**<br>• Syntax & typo repair (`--self-heal`: semicolons, parens)<br>• Defensive `null-guard` injection against crashes<br>• Real-time LSP struct field and token autocompletion<br>• Neural intent assistance for polyglot AST transpilers (`#convert`) | **Generative Developer Synthesis:**<br>• Synthesizing complex data structures and algorithms from scratch<br>• Natural language prompt execution (`#prompt "write an HTTP server"` -> native YKN)<br>• Large-scale architectural transformations |
+| **Activation Mode** | **Transparent (Always-On).** Silent, ubiquitous, and always available | **Explicit (Opt-in).** Invoked when developer passes `--llm-model <path.gguf>` |
 
 ---
 
