@@ -44,12 +44,22 @@
 
 ## 2. Kurulum ve Hızlı Başlangıç
 
-### Windows Üzerinde Çalıştırma
-Derleyici ikilisi `app_full.exe` veya saf YKN ile üretilen `ykn_full.exe` dosyasını doğrudan çağırabilirsiniz:
+### Global Kurulum (Tüm Terminallerden Doğrudan `ykn` Olarak Çalıştırma)
+Komut satırında her defasında `.\` veya `ykn.exe` yazmak zorunda kalmamak için tek satırlık yükleyiciyi çalıştırın:
+
+```powershell
+# Windows: %USERPROFILE%\.yukinary\bin klasörüne kurar ve kalıcı olarak PATH'e ekler
+powershell -File tools/install.ps1
+
+# Linux / macOS: ~/.yukinary/bin klasörüne kurar ve ~/.bashrc / ~/.zshrc içine ekler
+sh tools/install.sh
+```
+
+Kurulum tamamlandıktan sonra hangi klasörde olursanız olun doğrudan `ykn` yazabilirsiniz:
 
 ```powershell
 # Merhaba Dunyasi dosyasını derle
-.\ykn_full.exe merhaba.ykn -o merhaba.exe
+ykn merhaba.ykn -o merhaba.exe
 
 # Çalıştır
 .\merhaba.exe
@@ -319,25 +329,55 @@ sh tools/download_models.sh all
 | **Microsoft BitNet b1.58 2B4T** | 1.18 GB | GGUF (i2_s) | [Hugging Face İndir](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf) | `models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf` |
 | **Prism ML Bonsai 8B** | 1.15 GB | GGUF | [Hugging Face İndir](https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf) | `models/bonsai-8b/Bonsai-8B.gguf` |
 
-#### Derleyici ile Kullanım Örnekleri:
-İndirdiğiniz modeli derleyiciye `--llm-model` parametresiyle verin:
+#### Modellerin Kullanımı: İki Farklı Yol
+
+##### Yöntem A: Sıfır Terminal Parametresi ile Kod İçinde `#config` (Tavsiye Edilen)
+Terminalde her defasında uzun model yolları yazmak yerine projenizin ana dosyasına (`ana.ykn`) `#config { ... }` bloğu koyabilirsiniz:
+
+```ykn
+#config {
+    model: "bitnet",          # Otomatik olarak 'models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf' yükler
+    optimizasyon: 3,          # O3 seviyesinde register ve döngü optimizasyonu
+    yigin_boyutu: 16777216,   # 16 MB Stack boyutu
+    guvenli: true             # Dizi sınır denetimleri açık
+}
+
+# Python fonksiyonunu doğrudan dosyanın içine gömebilirsiniz:
+#PY-convert
+def kare_al(x):
+    return x * x
+#end-convert
+
+isv ana() -> tamsayi {
+    degisken s: tamsayi = kare_al(5);
+    dondu 0;
+}
+```
+
+Ardından tek ve temiz bir komutla derleyin:
+```powershell
+ykn ana.ykn
+```
+
+##### Yöntem B: Komut Satırından Parametre Verme
+Modeli doğrudan terminalden vermek isterseniz:
 
 * **`#prompt` ile Kod Üretimi:**
   ```powershell
-  ykn.exe ana.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn ana.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Python Kütüphanesini YKN'ye Çevirme:**
   ```powershell
-  ykn.exe convert hesap.py --into-file hesap.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn convert hesap.py -o hesap.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Terminalden Canlı Kod Ürettirme:**
   ```powershell
-  ykn.exe ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Model Olmadan Çalışma (Gömülü Micro-LLM):**
   Hiçbir model belirtmezseniz dahili 16 KB motor devrededir:
   ```powershell
-  ykn.exe ana.ykn --self-heal
+  ykn ana.ykn --self-heal
   ```
 
 ---

@@ -24,6 +24,8 @@ vscode-eklentisi/** linguist-vendored=true
 *.inc linguist-vendored=true
 *.cfg linguist-vendored=true
 *.c linguist-vendored=true
+*.cmd linguist-vendored=true
+*.bat linguist-vendored=true
 
 
 # Documentation

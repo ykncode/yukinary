@@ -40,7 +40,18 @@ You **do not need** a C++ compiler or external toolchain to run Yukinary. Standa
 * **Windows:** Download `ykn.exe` (Standalone PE32+ binary)
 * **Linux:** Download `ykn` (Standalone ELF64 binary, `chmod +x ykn`)
 
-### 2. Write Your First Program (`hello.ykn`)
+### 2. Global CLI Setup (Run `ykn` Anywhere Without `.exe`)
+To run `ykn` directly from any directory without typing `.exe` or `.\`:
+
+```powershell
+# Windows: Installs to %USERPROFILE%\.yukinary\bin and adds to PATH permanently
+powershell -File tools/install.ps1
+
+# Linux / macOS: Installs to ~/.yukinary/bin and adds to PATH in ~/.bashrc / ~/.zshrc
+sh tools/install.sh
+```
+
+### 3. Write Your First Program (`hello.ykn`)
 ```ykn
 isv ana() -> tamsayi {
     ekrana_yaz("Merhaba, Yukinary Dunyasi!\n".ptr);
@@ -48,14 +59,14 @@ isv ana() -> tamsayi {
 }
 ```
 
-### 3. Compile Directly to Native Machine Code
+### 4. Compile Directly to Native Machine Code
 ```powershell
 # Windows
-.\ykn.exe hello.ykn -o hello.exe
+ykn hello.ykn -o hello.exe
 .\hello.exe
 
 # Linux
-./ykn hello.ykn -o hello
+ykn hello.ykn -o hello
 ./hello
 ```
 
@@ -151,24 +162,56 @@ If you prefer downloading manually via browser or `curl`:
 | **Prism ML Bonsai 8B** | 1.15 GB | GGUF | [Download from Hugging Face](https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf) | `models/bonsai-8b/Bonsai-8B.gguf` |
 
 #### 3. How to Use Models with the Compiler
-Pass the model file to `ykn` via the `--llm-model` flag:
+
+You have two clean ways to configure and run models:
+
+##### Method A: Zero CLI Flags via In-Source `#config` (Recommended)
+Instead of typing long paths on every build, declare your project's AI and compiler configuration directly in your source code:
+
+```ykn
+#config {
+    model: "bitnet",          # Automatically loads 'models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf'
+    optimizasyon: 3,          # Enable O3 loop and register optimization
+    yigin_boyutu: 16777216,   # 16 MB stack size stamped into binary headers
+    guvenli: true             # Enable compile-time bounds checking
+}
+
+# You can even embed Python/C functions directly in the file:
+#PY-convert
+def multiply(a, b):
+    return a * b
+#end-convert
+
+isv ana() -> tamsayi {
+    degisken res: tamsayi = multiply(6, 7);
+    dondu 0;
+}
+```
+
+Then compile with a clean, single command:
+```powershell
+ykn main.ykn
+```
+
+##### Method B: Command-Line Flags
+If you prefer passing models explicitly via the CLI:
 
 * **Compile with `#prompt` Generative Directives:**
   ```powershell
-  ykn.exe main.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn main.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Translate a Python Library into Native Yukinary:**
   ```powershell
-  ykn.exe convert math_helper.py --into-file math_helper.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn convert math_helper.py -o math_helper.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Interactive AI Code Completion:**
   ```powershell
-  ykn.exe ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ykn ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
   ```
 * **Zero-Model Default (Always-On Micro-LLM):**
   If you don't supply `--llm-model`, Yukinary uses its in-binary 16 KB engine for instant self-healing and completions:
   ```powershell
-  ykn.exe main.ykn --self-heal
+  ykn main.ykn --self-heal
   ```
 
 ---
