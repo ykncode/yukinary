@@ -36,6 +36,13 @@ if (Test-Path $srcExe) {
     exit 1
 }
 
+# 1b. Copy ykn_llm_simd.dll
+$srcDll = Join-Path $repoRoot "ykn_llm_simd.dll"
+if (Test-Path $srcDll) {
+    Copy-Item $srcDll (Join-Path $installDir "ykn_llm_simd.dll") -Force
+    Write-Host "[OK] Copied ykn_llm_simd.dll." -ForegroundColor Green
+}
+
 # 2. Create ykn.cmd shim for Command Prompt
 $cmdShim = "@echo off`r`n`"%~dp0ykn.exe`" %*"
 Set-Content -Path (Join-Path $installDir "ykn.cmd") -Value $cmdShim -Encoding ASCII
@@ -63,6 +70,9 @@ $winApps = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
 if (Test-Path $winApps) {
     Copy-Item (Join-Path $installDir "ykn.exe") (Join-Path $winApps "ykn.exe") -Force -ErrorAction SilentlyContinue
     Copy-Item (Join-Path $installDir "ykn.cmd") (Join-Path $winApps "ykn.cmd") -Force -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $installDir "ykn_llm_simd.dll")) {
+        Copy-Item (Join-Path $installDir "ykn_llm_simd.dll") (Join-Path $winApps "ykn_llm_simd.dll") -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "[OK] Synced ykn to WindowsApps for instant execution." -ForegroundColor Green
 }
 

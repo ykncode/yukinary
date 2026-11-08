@@ -33,6 +33,10 @@ if (-not (Test-Path $yknStd)) {
     New-Item -ItemType Directory -Force -Path $yknStd | Out-Null
 }
 
+# Stop running ykn background processes before updating binaries
+Get-Process "ykn*", "ykn_lsp*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 300
+
 # 2. Locate ykn.exe binary
 $candidateExes = @(
     (Join-Path $baseDir "ykn.exe"),
@@ -53,9 +57,44 @@ if (-not $srcExe) {
     exit 1
 }
 
-Copy-Item $srcExe (Join-Path $yknBin "ykn.exe") -Force
-Copy-Item $srcExe (Join-Path $yknBin "ykn_lsp.exe") -Force
+function Install-FileSafe($src, $dst) {
+    if (-not (Test-Path $src)) { return }
+    try {
+        Copy-Item $src $dst -Force -ErrorAction Stop
+    } catch {
+        $oldFile = "$dst.old"
+        if (Test-Path $oldFile) {
+            Remove-Item $oldFile -Force -ErrorAction SilentlyContinue
+        }
+        Move-Item $dst $oldFile -Force -ErrorAction SilentlyContinue
+        Copy-Item $src $dst -Force -ErrorAction SilentlyContinue
+        Remove-Item $oldFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Install-FileSafe $srcExe (Join-Path $yknBin "ykn.exe")
+Install-FileSafe $srcExe (Join-Path $yknBin "ykn_lsp.exe")
 Write-Host "[+] Installed ykn.exe and ykn_lsp.exe to $yknBin" -ForegroundColor Green
+
+# 2b. Locate and install ykn_llm_simd.dll (AVX2 SIMD acceleration runtime for Windows)
+$candidateDlls = @(
+    (Join-Path $baseDir "ykn_llm_simd.dll"),
+    (Join-Path $baseDir "bin\ykn_llm_simd.dll"),
+    (Join-Path $baseDir "build\ykn_llm_simd.dll")
+)
+$srcDll = $null
+foreach ($d in $candidateDlls) {
+    if (Test-Path $d) {
+        $srcDll = $d
+        break
+    }
+}
+if ($srcDll) {
+    Install-FileSafe $srcDll (Join-Path $yknBin "ykn_llm_simd.dll")
+    Write-Host "[+] Installed ykn_llm_simd.dll to $yknBin" -ForegroundColor Green
+} else {
+    Write-Host "[!] Note: ykn_llm_simd.dll not found in $baseDir" -ForegroundColor Yellow
+}
 
 # 3. Create ykn.cmd shim for instant cmd.exe execution
 $cmdShim = "@echo off`r`n`"%~dp0ykn.exe`" %*"
@@ -120,8 +159,11 @@ $env:Path = "$yknBin;$env:Path"
 # 7. Sync to WindowsApps (Guaranteed fallback for Windows 10/11)
 $winApps = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
 if (Test-Path $winApps) {
-    Copy-Item (Join-Path $yknBin "ykn.exe") (Join-Path $winApps "ykn.exe") -Force -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path $yknBin "ykn.cmd") (Join-Path $winApps "ykn.cmd") -Force -ErrorAction SilentlyContinue
+    Install-FileSafe (Join-Path $yknBin "ykn.exe") (Join-Path $winApps "ykn.exe")
+    Install-FileSafe (Join-Path $yknBin "ykn.cmd") (Join-Path $winApps "ykn.cmd")
+    if (Test-Path (Join-Path $yknBin "ykn_llm_simd.dll")) {
+        Install-FileSafe (Join-Path $yknBin "ykn_llm_simd.dll") (Join-Path $winApps "ykn_llm_simd.dll")
+    }
 }
 
 # 8. Broadcast WM_SETTINGCHANGE to notify running shells
@@ -154,3 +196,4 @@ Write-Host "  ykn --version           (Surum kontrolu)" -ForegroundColor White
 Write-Host "  ykn dosya.ykn           (Derle ve calistir)" -ForegroundColor White
 Write-Host "  ykn convert kod.py      (Python -> Yukinary AI donusumu)" -ForegroundColor White
 Write-Host ""
+

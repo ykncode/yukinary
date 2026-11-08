@@ -20,3 +20,4 @@ The extension communicates automatically with the `ykn` compiler installed at:
 
 - `yukinary.lspExecutable`: Custom absolute path to the `ykn` binary.
 - `yukinary.lspArgs`: Arguments passed to the language server (default: `["--lsp"]`).
+
