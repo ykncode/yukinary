@@ -5,22 +5,22 @@
 **Hedef Sistem:** Yukinary v1.0.0-PROD (Self-Hosting Sabit Nokta / Deterministik Doğrulanmış)  
 **İncelenen Temel Bileşenler:**
 * C++ Bootstrap Tohumu ([`app_full.cpp`](file:///d:/yukinary/yukinary-language/app_full.cpp) - 19,534 satır)
-* Saf YKN Derleyici Kaynak Kodları ([`src/`](file:///d:/yukinary/yukinary-language/src) - 43 dosya, 35,000+ satır)
-* Saf YKN Standart Kütüphanesi ([`std/`](file:///d:/yukinary/yukinary-language/std) - 80+ dosya, 45,000+ satır)
+* Saf YKN Derleyici Kaynak Kodları ([`src/`](file:///d:/yukinary/yukinary-language/src) - 58 dosya, 45,000+ satır)
+* Saf YKN Standart Kütüphanesi ([`std/`](file:///d:/yukinary/yukinary-language/std) - 143 dosya, 60,000+ satır)
 * Test ve Doğrulama Altyapısı ([`tests/`](file:///d:/yukinary/yukinary-language/tests), [`tools/`](file:///d:/yukinary/yukinary-language/tools))
 
 ---
 
 ## 1. Giriş ve Proje İnceleme Perspektifi
 
-Yukinary (YKN); harici bir C çalışma zamanına (`glibc`, `musl`, `msvcrt`) veya bağlayıcıya (`link.exe`, `ld`) ihtiyaç duymayan, doğrudan hedef işlemci mimarisine (x86_64, AArch64) makine kodu yayan, 13 dilde yerelleştirilmiş çok dilli sözdizimi sunan, affine mülkiyet denetimi (borrow checker), hijyenik AST makro genişletici, monomorfize statik jenerikler, asenkron reaktör olay döngüsü ve gömülü 1.58-bit ternary ({-1, 0, +1}) BitNet yapay zeka çıkarım motoru içeren bağımsız (freestanding) bir sistem programlama dilidir.
+Yukinary (YKN); harici bir C çalışma zamanına (`glibc`, `musl`, `msvcrt`) veya bağlayıcıya (`link.exe`, `ld`) ihtiyaç duymayan, doğrudan hedef işlemci mimarisine (x86_64, AArch64) makine kodu yayan, 7 dilde (TR, EN, FR, RU, JA, ZH, KO) yerelleştirilmiş çok dilli sözdizimi sunan, affine mülkiyet denetimi (borrow checker), hijyenik AST makro genişletici, monomorfize statik jenerikler, asenkron reaktör olay döngüsü ve gömülü 1.58-bit ternary ({-1, 0, +1}) BitNet yapay zeka çıkarım motoru içeren bağımsız (freestanding) bir sistem programlama dilidir.
 
 Bu rapor; projeye önceden hiçbir varsayımda bulunulmadan, tamamen dış bir kıdemli derleyici mühendisi gözüyle tüm kaynak kodların satır satır incelenmesiyle sıfırdan hazırlanmıştır.
 
 ```mermaid
 flowchart TD
     subgraph "Derleyici Boru Hattı (Pipeline)"
-        SRC["Kaynak Kod (*.ykn)"] --> LEX["src/lexer.ykn (UTF-8, 13 Dil, StringPool)"]
+        SRC["Kaynak Kod (*.ykn)"] --> LEX["src/lexer.ykn (UTF-8, 7 Dil, StringPool)"]
         LEX --> PAR["src/parser.ykn (Pratt & Recursive Descent, AstArena)"]
         PAR --> MAC["src/macros.ykn (Hijyenik Genişletici, Yerleşik Makrolar)"]
         MAC --> GEN["src/generics.ykn (Statik Monomorfizasyon)"]

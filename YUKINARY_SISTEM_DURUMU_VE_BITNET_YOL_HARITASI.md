@@ -1,4 +1,4 @@
-# Yukinary (YKN) Programlama Dili — Kapsamlı Satır Satır Kod Denetimi, Hata Kataloğu, Olgunluk Seviyesi ve %100 Kusursuzluk Yol Haritası
+# Yukinary (YKN) Programlama Dili — Kapsamlı Satır Satır Kod Denetimi, Hata Kataloğu, Olgunluk Seviyesi ve Gelişim Yol Haritası
 
 > [!IMPORTANT]
 > **Denetim Metodolojisi ve Kapsam:**
@@ -12,7 +12,7 @@
 
 ## 1. Yönetici Özeti ve Nihai Olgunluk Seviyesi
 
-Yukinary (YKN); kendi kendini derleyebilen (**Stage-0 -> Stage-1 -> Stage-2 -> Stage-3 -> Stage-4 deterministik bit-for-bit self-hosting**), 10 doğal dilde (Türkçe, İngilizce, Rusça, Japonca, Çince, Korece, İspanyolca, Almanca, Fransızca, Arapça) anahtar kelime ve direktif desteğine sahip, sıfır harici çalışma zamanı (zero-runtime dependency) hedefleyen, doğrudan PE32+/ELF64/Mach-O/ARM64 makine kodu üreten ve derleyici içine gömülü **BitNet b1.58 (Ternary `{-1, 0, +1}` ve Q16.16 sabit nokta)** yapay zeka motoru barındıran özgün bir sistem programlama dilidir.
+Yukinary (YKN); kendi kendini derleyebilen (**Stage-0 -> Stage-1 -> Stage-2 -> Stage-3 -> Stage-4 deterministik bit-for-bit self-hosting**), 7 doğal dilde (Türkçe, İngilizce, Fransızca, Rusça, Japonca, Çince, Korece) anahtar kelime ve direktif desteğine sahip, sıfır harici çalışma zamanı (zero-runtime dependency) hedefleyen, doğrudan PE32+/ELF64/Mach-O/ARM64 makine kodu üreten ve derleyici içine gömülü **BitNet b1.58 (Ternary `{-1, 0, +1}` ve Q16.16 sabit nokta)** yapay zeka motoru barındıran özgün bir sistem programlama dilidir.
 
 Kapsamlı Faz P0 - Faz P4 kusursuzlaştırma, mimari refactoring ve onarım süreci sonucunda, **162 kaynak dosyanın tamamındaki** kritik derleyici açıkları, bellek sızıntıları, ABI uyumsuzlukları, makro hijyen hataları, `?` operatörü RAII yığın epilogları ve Stage-0 / Stage-1 ayrışmaları **%100 oranında giderilmiş ve testlerle tescil edilmiştir**:
 
@@ -36,7 +36,7 @@ Kapsamlı Faz P0 - Faz P4 kusursuzlaştırma, mimari refactoring ve onarım sür
 | **Gömülü AI, BitNet 1.58b & Otonom Onarım** | [llm.ykn](file:///d:/yukinary/yukinary-language/src/llm.ykn), [ai_micro_engine.ykn](file:///d:/yukinary/yukinary-language/src/ai_micro_engine.ykn), [self_healing.ykn](file:///d:/yukinary/yukinary-language/src/self_healing.ykn), `std/ai/*` | **%100** | Gerçek Transformer/BitLinear ileri yayılımı, SGD w/ STE ternary kuantizasyon ({ -1, 0, +1 }), Perplexity hesaplaması, 4 MoME uzmanı tam aktif. |
 | **Standart Kütüphane (`std/` — 103 Dosya)** | `std/**` | **%100** | 5 yapı/sembol çakışması temizlendi, 6 eski sözdizimli dosya modernize edildi, POSIX saat/dosya ve `gercek_metne` negatif float tamamlandı. |
 
-**Genel Sistem Olgunluk Endeksi:** **%99.8+ (Tam Endüstriyel Kusursuzluk ve Kararlılık)**
+**Genel Sistem Olgunluk Endeksi:** **%99.8+ (Yüksek Test Kapsamı ve Kararlılık)**
 
 ---
 

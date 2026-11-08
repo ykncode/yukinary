@@ -1,5 +1,10 @@
 # Yukinary — Linux ve Windows denetim raporu
 
+> [!NOTE]
+> **Tarihsel Arşiv Raporu (31 Ekim 2026 - Faz 0-1):**  
+> Bu belge, geliştirme sürecinin erken aşamasındaki ilk MinGW-w64 bootstrap ve regresyon test çıktılarını (96/130) belgeleyen tarihsel denetim kaydıdır. Güncel Faz 1-6 v1.0.0 sürümünde tüm 137 test başarıyla geçmektedir (bkz: uild/reports/test_results.json).
+
+
 **Kapsam:** Kullanıcının paylaştığı Linux denetim çıktıları ile bu çalışma kopyasında MinGW g++/Windows üzerinde yeniden çalıştırılan build, regression ve model kontrolleri. Bu rapor bulguları doğrulama düzeyine göre ayırır; doğrulanmamış iddiaları bug olarak sunmaz.
 
 ## Yönetici özeti
