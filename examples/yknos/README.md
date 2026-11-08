@@ -5,32 +5,47 @@
 
 ---
 
-## Türkçe Özet
+## 📸 Canlı Masaüstü Ekran Görüntüleri (1024x768 TrueColor Bare-Metal)
 
-**YknOS**, **Yukinary** programlama dili ile geliştirilmiş, harici C/C++ bağımlılığı bulunmayan, Linux LTS çekirdeği üzerinde çalışan yerel kullanıcı alanı (YKN Userspace) ve yapay zeka merkezli (**AI-First**) bir işletim sistemi mimarisidir.
+![YknOS Modern AI-First Desktop](screenshots/yknos_final.png)
 
-### 🌟 Temel Vizyon & Felsefe (AI-First)
-YknOS mimarisinde yapay zeka sonradan eklenmiş bir sohbet botu değil, sistemin birincil etkileşim katmanıdır:
-- **"Başlangıç menüsü yerine AI"**: Kullanıcı işletim sistemiyle karmaşık menüler veya ezber komutlar yerine doğal dille konuşur.
-- **Y.U.K.I Core**: Kullanıcı alanı düzeyinde çalışan, sıfır bulut bağımlılığı olan, 100% yerel çalışan nöral işletim sistemi asistanı.
-- **Dürüst Mühendislik Prensibi**: LLM sihirli bir kutu değildir. Bir kullanıcı alanı süreci çekirdek çökmesini (Hard Kernel Panic) tamir edemez. Sınırlarımızı net biliyor ve güvenliği her şeyin üstünde tutuyoruz.
+*QEMU Bare-Metal (Ring-0) üzerinde BGA 1024x768x32 TrueColor Framebuffer, PS/2 Donanım Faresi ve Y.U.K.I Core Nöral İşletim Sistemi Arayüzü.*
 
 ---
 
-## 4 Yetenek Katmanı (Capability Layers)
+## 🌟 Temel Vizyon & Felsefe (AI-First & Modern GUI)
+
+YknOS, **Yukinary** programlama dili ile geliştirilmiş, harici C/C++ çalışma zamanı bağımlılığı bulunmayan, Linux LTS çekirdeği üzerinde çalışan yerel kullanıcı alanı (YKN Userspace) ve yapay zeka merkezli (**AI-First**) modern bir işletim sistemi mimarisidir.
+
+Arayüz tasarımı **Windows 11, macOS ve modern Linux masaüstü ortamlarının (GNOME/KDE)** en zarif özelliklerini bir araya getirirken, [VISION.md](VISION.md) belgesindeki temel felsefeyi merkezine alır:
+
+- **"Başlangıç Menüsü Yerine AI" (Spotlight AI Bar)**: Geleneksel karmaşık başlat menüleri yerine, ekranın üst merkezinde yer alan akrilik nöral arama barı üzerinden doğal dille işletim sistemi yönetimi.
+- **Modern Pencere Yöneticisi (`ykn-wm`)**: macOS tarzı 🔴🟡🟢 pencere kontrolleri, pencereler arası derinlik hissi veren drop shadow gölgelendirmeleri, akrilik koyu tema (`#1E1E2E`) ve yuvarlatılmış paneller.
+- **Y.U.K.I Core Nöral İşletim Sistemi Merkezi**:
+  - `[1: Genel]`: Canlı telemetri, yerel vektör belleği durumu, doğal dil soru-cevap alanı.
+  - `[2: Arkeoloji]`: Çekirdek ve donanım olaylarının timeline kök neden analizi.
+  - `[3: Bakım]`: S.M.A.R.T, RamFS, log rotasyonu ve zombi süreç tasfiyesi.
+  - `[4: Sandbox]`: 5 seviyeli güvenlik modeli ve izin hiyerarşisi.
+  - `[5: Modeller]`: BitNet 1.58b ternary {-1, 0, +1} mikro-LLM ve Bonsai-8B GGUF durumu.
+- **RamFS Dosya Gezgini**: Sol gezinme ağacı (`/bin`, `/etc`, `/proc`, `/home`, `/var`) ve sağ dosya ızgarası.
+- **yknsh Terminali**: Etkileşimli Linux 6.1 kullanıcı alanı kabuğu (`help`, `yuki`, `uptime`, `date`, `clear` vb.).
+- **Yarı Saydam Alt Dock (Floating Acrylic Dock)**: Windows 11 ve macOS Dock tarzı yuvarlatılmış cam kapsül ve aktif uygulama göstergeleri.
+- **Gerçek Donanım Faresi (Hardware Mouse)**: PS/2 denetleyicisi üzerinden 3-baytlık streaming veri paketlerini çözen, gölgeli beyaz ok imleci (`12x18 arrow pointer`) ve pikselleri titreşimsiz koruyan dirty-rect arka plan saklama motoru.
+
+---
+
+## 🏛️ 4 Yetenek Katmanı (Capability Layers)
 
 | Katman | Seviye | Açıklama & İşlev |
 | :--- | :--- | :--- |
 | **Katman 1** | CLI & Tanılama | `yknsh` entegrasyonu, log analizi (`dmesg`, `journalctl`), servis izleme ve komut önerisi/otomatik düzeltme. |
 | **Katman 2** | FFI & Güvenlik | C ABI / Syscall wrapper, dosya sistemi olayları (inotify), ağ anomali tespiti ve izin denetimi. |
 | **Katman 3** | Proaktif Bakım | Davranış tahmini, disk/kaynak optimizasyonu, periyodik sağlık raporları ve yerel vektör belleği. |
-| **Katman 4** | Dürüst Sınırlar | Güvenli fallback, insan onayı gerektiren kritik eylemler, çekirdek seviyesi ayrımı. |
+| **Katman 4** | Dürüst Sınırlar | Güvenli fallback, insan onayı gerektiren kritik eylemler, donanım/çekirdek çökmesi sınırları. |
 
 ---
 
-## 5 Seviyeli Sandbox Güvenlik Modeli
-
-YknOS, yetkileri katı biçimde izole eden 5 seviyeli bir güvenlik hiyerarşisi uygular:
+## 🛡️ 5 Seviyeli Sandbox Güvenlik Modeli
 
 ```
 +---------------------------------------------------------------+
@@ -54,73 +69,49 @@ YknOS, yetkileri katı biçimde izole eden 5 seviyeli bir güvenlik hiyerarşisi
 
 ---
 
-## Öne Çıkan Sistem Yetenekleri
+## 🚀 Çalıştırma Rehberi (How to Run)
 
-1. **Sistem Hata Arkeolojisi (`yuki arkeoloji`)**:
-   - Sistem çöküşlerinde veya arızalarda `dmesg` ve olay zaman çizelgesini (timeline) geriye doğru tarayarak donanım/bellek kök neden analizi sunar.
-2. **Proaktif Bakım & Sağlık Kontrolleri (`yuki bakim`)**:
-   - Günlük S.M.A.R.T, RAMFS ve log denetimi; haftalık log rotasyonu ve zombi süreç temizliği; aylık kaynak trend tahmini.
-3. **100% Yerel Vektör Belleği (`yuki hafiza`)**:
-   - `/home/root/.yuki/vector_memory.db`: SIFIR bulut, SIFIR telemetri. Kullanıcının terminal alışkanlıklarını ve geçmiş çözümleri cihaz üzerinde tutar.
-4. **Uygulama Uyumluluk Analizi (`yuki analiz <exe/apk>`)**:
-   - Windows PE ikililerini ve Android Waydroid APK paketlerini çalıştırmadan önce API çağrıları, registry ve ağ gereksinimleri yönünden statik güvenlik taramasından geçirir.
-5. **Gömülü Nöral Modeller**:
-   - **BitNet 1.58b Mikro-LLM**: 16,384 parametre, ternary {-1, 0, +1} ağırlıklar, sıfır-çarpma ALU, 28 KB RAM ayak izi.
-   - **Prism ML Bonsai-8B**: 399 tensörlü, 1.15 GB GGUF v3 disk eşlemeli gelişmiş model.
-
----
-
-## Çift Hedefli Çalışma Mimarisi (Dual-Target)
-
-### 1. Bare-Metal Multiboot1 Kernel (NASM + QEMU x86_64)
-- 8259 PIC yeniden haritalama, 256-girdili IDT ve 100 Hz PIT timer tick donanım kesmeleri.
-- 16550 UART COM1 seri port konsolu (çift yönlü TX/RX).
-- `0xB8000` VGA fiziksel video belleğinde çalışan grafiksel masaüstü ortamı (Desktop GUI, pencereler, fare imleci, başlat menüsü).
-
-### 2. Host Yerel İnteraktif Kullanıcı Alanı (Native Host PE / ELF)
-- Saf Yukinary (`ykn.exe`) ile derlenen 64-bit bağımsız ikili (`yknos.exe`).
-- Windows Konsolunda fiziksel donanım faresi desteği (`ENABLE_MOUSE_INPUT`).
-- RamFS sanal dosya sistemi, dinamik `/proc` tablosu, gömülü metin editörü (`nano`/`edit`), süreç yöneticisi (`ps aux`, `top`), dahili SQL motoru ve HTTP 1.1 REST mikroservisi.
-
----
-
-## Hızlı Başlangıç & Derleme
-
-### Bağımsız Sistem Olarak Derleme ve Çalıştırma:
+### 1. QEMU ile Gerçek Donanım Masaüstünü Başlatma (Tavsiye Edilen):
 
 ```powershell
-# 1. Host Yerel Sistemini Derleme ve Başlatma:
-.\build.ps1
-.\run_demo.ps1
-
-# veya Windows CMD ile:
-build.bat
-run_demo.bat
-```
-
-### Bare-Metal QEMU Sanal Makinesinde Başlatma:
-
-```powershell
-# QEMU ile Bare-Metal Başlatma:
+# QEMU Sanal Makinesinde 1024x768 Grafiksel Masaüstü:
 .\boot_qemu.ps1
 
 # veya Windows CMD ile:
 boot_qemu.bat
 ```
 
-### Y.U.K.I Core Komutları:
-```bash
-root@yknos:/# yuki arkeoloji          # Çekirdek hata kök neden analizi
-root@yknos:/# yuki bakim              # Proaktif sistem sağlığı ve trend tahmini
-root@yknos:/# yuki sandbox            # Güvenlik izinleri ve seviye tablosu
-root@yknos:/# yuki hafiza             # Yerel vektör belleği durumu
-root@yknos:/# yuki analiz app.exe     # PE / APK güvenlik davranış analizi
-root@yknos:/# yuki sistem sagligi     # Doğal dille nöral asistan sorgusu
+*QEMU penceresinde tam çözünürlüklü 1024x768 TrueColor grafiksel masaüstü açılır. Ekranda farenizi hareket ettirebilir, pencerelere ve sekmelere tıklayabilir, `1`..`5` tuşlarıyla Y.U.K.I sekmeleri arasında gezinebilir, `TAB` tuşuyla pencereler arasında geçiş yapabilirsiniz.*
+
+### 2. Host Yerel İnteraktif Kabuğu Başlatma:
+
+```powershell
+.\build.ps1
+.\run_demo.ps1
+```
+
+---
+
+## 📁 Proje Dizin Yapısı
+
+```
+yknos/
+├── boot/
+│   ├── font8x14.inc            # 8x14 Consolas Bitmap Font Tablosu (ASCII 32..126)
+│   ├── yknos_baremetal.asm     # 1024x768 BGA + PS/2 Mouse & Keyboard Ring-0 Çekirdeği
+│   └── boot.asm                # Minimal önyükleyici
+├── kernel/                     # Çekirdek yöneticileri (MMU, VFS, Scheduler, Desktop)
+├── services/                   # Y.U.K.I Core, AI Motoru (BitNet & Bonsai), SQL, HTTP
+├── shell/                      # yknsh komut satırı ve kabuk yorumlayıcısı
+├── screenshots/                # Canlı QEMU masaüstü ekran görüntüleri
+├── boot_qemu.ps1               # QEMU başlatıcı betik
+├── build.ps1                   # Yukinary derleme betiği
+└── VISION.md                   # YKNOS Vizyon ve Mimari Belgesi
 ```
 
 ---
 
 ## Lisans & Telif Hakkı
 
-Copyright (c) 2026 Berkan Öztürk (nyxsiz0). Tüm hakları saklıdır.
-YknOS mimarisi ve vizyonu [VISION.md](VISION.md) belgesinde detaylandırılmıştır.
+Copyright (c) 2026 Berkan Öztürk (nyxsiz0 / ykncode). Tüm hakları saklıdır.  
+YknOS mimarisi ve felsefesi [VISION.md](VISION.md) belgesinde detaylandırılmıştır.

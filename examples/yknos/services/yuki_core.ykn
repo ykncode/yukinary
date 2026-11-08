@@ -145,3 +145,4 @@ isv yuki_komut_isle(girdi: *u8, cikti: *u8, max_uzn: tamsayi) -> tamsayi {
     # Diger sorgular icin gomulu ai_sorgu_isle uzerinden devam et
     dondu ai_sorgu_isle(girdi, cikti, max_uzn);
 }
+
