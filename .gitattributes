@@ -1,0 +1,28 @@
+# ==============================================================================
+# GitHub Linguist Overrides for Yukinary Language Repository
+# ==============================================================================
+
+# Exclude auxiliary test scripts and tooling from repository language statistics
+tests/** linguist-vendored=true
+tools/** linguist-vendored=true
+libykn/** linguist-vendored=true
+vscode-eklentisi/** linguist-vendored=true
+
+# Auxiliary script extensions marked as vendored
+*.ps1 linguist-vendored=true
+*.py linguist-vendored=true
+*.cpp linguist-vendored=true
+*.h linguist-vendored=true
+*.cu linguist-vendored=true
+*.sh linguist-vendored=true
+*.js linguist-vendored=true
+*.json linguist-vendored=true
+*.expected linguist-vendored=true
+*.stdout linguist-vendored=true
+
+# Documentation
+docs/** linguist-documentation=true
+*.md linguist-documentation=true
+
+# Yukinary source code
+*.ykn linguist-detectable=true

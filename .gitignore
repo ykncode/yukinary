@@ -29,6 +29,12 @@ __pycache__/
 *.bak
 /*.txt
 
+# Distribution packages & release archives
+/dist/
+*.zip
+*.tar.gz
+
+
 # Historical default compiler outputs
 /out.exe
 /out*.exe
