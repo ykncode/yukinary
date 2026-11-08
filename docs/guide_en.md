@@ -286,11 +286,56 @@ Yukinary embeds artificial intelligence through two complementary tiers designed
 ### 1. Embedded Micro-LLM
 Runs automatically on every compile cycle. Requires no user configuration or downloads. It guarantees that self-healing, type narrowing, and basic completions function on offline or air-gapped environments.
 
-### 2. External Full LLM Runtime
-Allows developers to attach heavyweight models for large-scale generative coding:
+### 2. External Full LLM Runtime & Model Setup
+
+Yukinary works out-of-the-box with **zero downloads** using its embedded 16 KB Micro-LLM.
+
+When you require deep generative coding (`#prompt`) or polyglot library translation (`#convert`), you can plug in any standard GGUF model (Microsoft BitNet b1.58, Prism ML Bonsai 8B, Qwen, etc.).
+
+#### Why Models Are Not Stored in Git
+Git is built for source code. GitHub enforces a strict **100 MB per-file limit**, while neural weights range from 1.1 GB to 40 GB. Like Ollama and llama.cpp, model weights are hosted on [Hugging Face](https://huggingface.co).
+
+#### One-Command Automated Downloader
 ```powershell
-ykn.exe main.ykn --llm-model models/bitnet-b1.58-2B-4T.gguf --prompt "Implement a fast B-Tree index"
+# Windows (PowerShell)
+powershell -File tools/download_models.ps1 bitnet    # Downloads Microsoft BitNet b1.58 (1.18 GB)
+powershell -File tools/download_models.ps1 bonsai    # Downloads Prism ML Bonsai 8B (1.15 GB)
+powershell -File tools/download_models.ps1 all       # Downloads both models
 ```
+
+```bash
+# Linux / macOS (Bash)
+sh tools/download_models.sh bitnet
+sh tools/download_models.sh bonsai
+sh tools/download_models.sh all
+```
+
+#### Manual Download Links (Hugging Face)
+| Model | Size | Format | Direct Download Link | Target Local Path |
+| :--- | :--- | :--- | :--- | :--- |
+| **Microsoft BitNet b1.58 2B4T** | 1.18 GB | GGUF (i2_s) | [Download from Hugging Face](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf) | `models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf` |
+| **Prism ML Bonsai 8B** | 1.15 GB | GGUF | [Download from Hugging Face](https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf) | `models/bonsai-8b/Bonsai-8B.gguf` |
+
+#### Compiler CLI Usage Examples:
+Pass the model to `ykn` using `--llm-model`:
+
+* **Generative Synthesis (`#prompt`):**
+  ```powershell
+  ykn.exe main.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Translate Python Code to Yukinary:**
+  ```powershell
+  ykn.exe convert math_helper.py --into-file math_helper.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Interactive Code Generation:**
+  ```powershell
+  ykn.exe ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Offline Default (Embedded Micro-LLM):**
+  Zero configuration required when running without `--llm-model`:
+  ```powershell
+  ykn.exe main.ykn --self-heal
+  ```
 
 ---
 

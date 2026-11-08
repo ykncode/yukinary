@@ -17,6 +17,7 @@
   <a href="#-quick-start--releases">Download & Releases</a> •
   <a href="#-language-documentation--dil-kılavuzları">Documentation</a> •
   <a href="#-micro-llm-vs-full-llm-architecture">Micro-LLM vs Full LLM</a> •
+  <a href="#-how-to-download--use-full-llm-models-bitnet--bonsai">Models Guide</a> •
   <a href="#-key-features">Key Features</a> •
   <a href="#-four-repository-ecosystem">Ecosystem</a> •
   <a href="#-dual-license">License</a>
@@ -110,6 +111,62 @@ Yukinary integrates artificial intelligence into the compilation pipeline throug
 | **Inference Latency** | **Sub-millisecond (< 1 ms)** — imperceptible compile-time overhead | 10 – 50 milliseconds per token |
 | **Primary Scope** | **Compiler Reflexes & Tooling:**<br>• Syntax & typo repair (`--self-heal`: semicolons, parens)<br>• Defensive `null-guard` injection against crashes<br>• Real-time LSP struct field and token autocompletion<br>• Lightweight offline keyword/signature translation fallback | **Deep Semantic & Generative Power:**<br>• **Full Polyglot `#convert` Engine:** Translating entire Python, C, C++, and Rust libraries into native idiomatic YKN<br>• Natural language prompt execution (`#prompt "write an HTTP server"` -> native YKN)<br>• Synthesizing complex data structures and algorithmic modules |
 | **Activation Mode** | **Transparent (Always-On).** Silent, ubiquitous, and always available | **Explicit (Opt-in).** Invoked when developer passes `--llm-model <path.gguf>` |
+
+### 📥 How to Download & Use Full LLM Models (BitNet & Bonsai)
+
+Yukinary compiles code out-of-the-box with **zero model downloads** thanks to its embedded 16 KB Micro-LLM. 
+
+When you want heavyweight generative synthesis (`#prompt`) or full library translation (`#convert`), you can plug in any standard GGUF model (Microsoft BitNet b1.58, Prism ML Bonsai, Qwen, etc.).
+
+> [!NOTE]
+> **Why are large GGUF models not hosted directly inside the Git repository?**
+> Git is designed for source code. GitHub enforces a strict **100 MB per-file limit**, whereas production neural models range from 1.1 GB to 40 GB. Following industry best practices (like Ollama and llama.cpp), model weights are hosted on [Hugging Face](https://huggingface.co).
+
+#### 1. One-Command Download
+Use the automated helper scripts included in the repository:
+
+```powershell
+# Windows (PowerShell)
+powershell -File tools/download_models.ps1 bitnet    # Downloads Microsoft BitNet b1.58 (1.18 GB)
+powershell -File tools/download_models.ps1 bonsai    # Downloads Prism ML Bonsai 8B (1.15 GB)
+powershell -File tools/download_models.ps1 all       # Downloads both models
+```
+
+```bash
+# Linux / macOS (Bash)
+sh tools/download_models.sh bitnet
+sh tools/download_models.sh bonsai
+sh tools/download_models.sh all
+```
+
+#### 2. Manual Download (Direct Hugging Face Links)
+If you prefer downloading manually via browser or `curl`:
+
+| Model | Size | Format | Direct Download Link | Target Local Path |
+| :--- | :--- | :--- | :--- | :--- |
+| **Microsoft BitNet b1.58 2B4T** | 1.18 GB | GGUF (i2_s) | [Download from Hugging Face](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf) | `models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf` |
+| **Prism ML Bonsai 8B** | 1.15 GB | GGUF | [Download from Hugging Face](https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf) | `models/bonsai-8b/Bonsai-8B.gguf` |
+
+#### 3. How to Use Models with the Compiler
+Pass the model file to `ykn` via the `--llm-model` flag:
+
+* **Compile with `#prompt` Generative Directives:**
+  ```powershell
+  ykn.exe main.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Translate a Python Library into Native Yukinary:**
+  ```powershell
+  ykn.exe convert math_helper.py --into-file math_helper.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Interactive AI Code Completion:**
+  ```powershell
+  ykn.exe ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Zero-Model Default (Always-On Micro-LLM):**
+  If you don't supply `--llm-model`, Yukinary uses its in-binary 16 KB engine for instant self-healing and completions:
+  ```powershell
+  ykn.exe main.ykn --self-heal
+  ```
 
 ---
 

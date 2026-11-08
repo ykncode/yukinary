@@ -284,11 +284,58 @@ YKN'de yapay zeka iki tamamlayıcı katmandan oluşur. Bu iki katmanın görevle
 ### 1. Gömülü Micro-LLM Nasıl Çalışır?
 Her derleme anında arka planda otomatik devreye girer. Kullanıcının model indirmesine gerek yoktur. Kodda bir hata varsa Levenshtein mesafesi ve nöral logitler birleşerek anında en olası tamiri sunar.
 
-### 2. Harici Full LLM Nasıl Çalışır?
-Geliştirici diskteki bir GGUF modelini bağlayarak sıfırdan modül ürettirebilir:
+### 2. Harici Full LLM Nasıl Çalışır ve Modeller Nasıl İndirilir?
+
+Yukinary, gömülü 16 KB Micro-LLM sayesinde **sıfır indirme ile kutudan çıktığı gibi çalışır**. 
+
+Ancak `#prompt` ile sıfırdan büyük algoritmalar yazdırmak veya harici Python/C++ kütüphanelerini `#convert` ile bütünüyle YKN'ye dönüştürmek istediğinizde harici bir GGUF modeli (Microsoft BitNet b1.58, Prism ML Bonsai 8B vb.) bağlayabilirsiniz.
+
+#### Neden Modeller Doğrudan Git Deposunda Yok?
+Git kaynak kod versiyonlama içindir. GitHub'da **dosya başına 100 MB katı sınırı** vardır. Yapay zeka modelleri ise 1.1 GB ile 40 GB arasındadır. Tüm dünyada (llama.cpp, Ollama, PyTorch vb.) olduğu gibi model ağırlıkları [Hugging Face](https://huggingface.co) üzerinde barındırılır.
+
+#### Tek Komutla Otomatik Model İndirme:
+Repodaki hazır indirme araçlarını kullanarak modelleri doğrudan indirebilirsiniz:
+
 ```powershell
-ykn.exe ana.ykn --llm-model models/bitnet-b1.58-2B-4T.gguf --prompt "Bana hızlı bir hashmap yapısı yaz"
+# Windows (PowerShell)
+powershell -File tools/download_models.ps1 bitnet    # Microsoft BitNet b1.58 (1.18 GB) indirir
+powershell -File tools/download_models.ps1 bonsai    # Prism ML Bonsai 8B (1.15 GB) indirir
+powershell -File tools/download_models.ps1 all       # Her iki modeli de indirir
 ```
+
+```bash
+# Linux / macOS (Bash)
+sh tools/download_models.sh bitnet
+sh tools/download_models.sh bonsai
+sh tools/download_models.sh all
+```
+
+#### Manuel İndirme Linkleri (Hugging Face Doğrudan İndirme):
+| Model | Boyut | Format | Doğrudan İndirme Linki | Hedef Klasör Yolu |
+| :--- | :--- | :--- | :--- | :--- |
+| **Microsoft BitNet b1.58 2B4T** | 1.18 GB | GGUF (i2_s) | [Hugging Face İndir](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf) | `models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf` |
+| **Prism ML Bonsai 8B** | 1.15 GB | GGUF | [Hugging Face İndir](https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B.gguf) | `models/bonsai-8b/Bonsai-8B.gguf` |
+
+#### Derleyici ile Kullanım Örnekleri:
+İndirdiğiniz modeli derleyiciye `--llm-model` parametresiyle verin:
+
+* **`#prompt` ile Kod Üretimi:**
+  ```powershell
+  ykn.exe ana.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Python Kütüphanesini YKN'ye Çevirme:**
+  ```powershell
+  ykn.exe convert hesap.py --into-file hesap.ykn --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Terminalden Canlı Kod Ürettirme:**
+  ```powershell
+  ykn.exe ai "isv fibonacci(n: tamsayi) -> tamsayi" --llm-model models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf
+  ```
+* **Model Olmadan Çalışma (Gömülü Micro-LLM):**
+  Hiçbir model belirtmezseniz dahili 16 KB motor devrededir:
+  ```powershell
+  ykn.exe ana.ykn --self-heal
+  ```
 
 ---
 
