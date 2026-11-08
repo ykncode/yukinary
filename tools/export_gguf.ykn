@@ -1,0 +1,122 @@
+# ============================================================
+# tools/export_gguf.ykn
+# FAZ 9.1: Saf YKN ile GGUFv3 Agirlik Disa Aktarici
+# Egitilen agirliklari BitNet 1.58b / IQ2S / INT8 formatinda
+# quantize edip build/models/ykn_repair_mini.gguf yazar.
+# Native disk I/O: CreateFileA + WriteFile + CloseHandle
+# ============================================================
+#c-lib "kernel32";
+
+harici isv CreateFileA(
+    lpFileName: *u8, dwAccess: tamsayi, dwShare: tamsayi,
+    lpSec: *u8, dwCreate: tamsayi, dwFlags: tamsayi, hTemplate: tamsayi
+) -> tamsayi;
+harici isv WriteFile(hFile: tamsayi, lpBuf: *u8, nBytes: tamsayi, lpWritten: *tamsayi, lpOv: *u8) -> tamsayi;
+harici isv CloseHandle(hObj: tamsayi) -> tamsayi;
+
+# GGUFv3 Magic
+degisken GGUF_MAGIC_0: u8 = 71;   # 'G'
+degisken GGUF_MAGIC_1: u8 = 71;   # 'G'
+degisken GGUF_MAGIC_2: u8 = 85;   # 'U'
+degisken GGUF_MAGIC_3: u8 = 70;   # 'F'
+degisken GGUF_SURUM: tamsayi = 3;
+
+# INT8 Quantization: float -> int8 (clip to -127..127)
+isv int8_quantize(deger: tamsayi, olcek: tamsayi) -> u8 {
+    eger olcek == 0 ise { dondu 0; }
+    degisken q: tamsayi = (deger * 127) / olcek;
+    eger q > 127 ise { q = 127; }
+    eger q < (0 - 127) ise { q = 0 - 127; }
+    dondu q;
+}
+
+# IQ2S Quantization: 2-bit signed quantization
+isv iq2s_quantize(deger: tamsayi, olcek: tamsayi) -> u8 {
+    eger olcek == 0 ise { dondu 0; }
+    degisken q: tamsayi = (deger * 2) / olcek;
+    eger q > 1 ise { q = 1; }
+    eger q < (0 - 1) ise { q = 0 - 1; }
+    dondu q + 1; # 0, 1, 2 (-1, 0, +1)
+}
+
+# GGUF dosyasi yaz
+isv gguf_yaz(
+    agirliklar: *tamsayi, agirlik_sayisi: tamsayi,
+    cikis_yolu: *u8, quantization_tipi: tamsayi
+) -> tamsayi {
+    eger agirliklar == 0 veya agirlik_sayisi <= 0 veya cikis_yolu == 0 ise { dondu 0; }
+
+    # Tampon hazirla
+    degisken tampon_boyut: tamsayi = agirlik_sayisi + 256;
+    degisken tampon: *u8 = bellek_tahsis_et(tampon_boyut);
+    eger tampon == 0 ise { dondu 0; }
+
+    # GGUFv3 Header
+    tampon[0] = GGUF_MAGIC_0; tampon[1] = GGUF_MAGIC_1;
+    tampon[2] = GGUF_MAGIC_2; tampon[3] = GGUF_MAGIC_3;
+    # Surum: 3 (little-endian uint32)
+    tampon[4] = 3; tampon[5] = 0; tampon[6] = 0; tampon[7] = 0;
+    # tensor_count
+    tampon[8] = 1; tampon[9] = 0; tampon[10] = 0; tampon[11] = 0;
+    tampon[12] = 0; tampon[13] = 0; tampon[14] = 0; tampon[15] = 0;
+    # kv_count
+    tampon[16] = 0; tampon[17] = 0; tampon[18] = 0; tampon[19] = 0;
+    tampon[20] = 0; tampon[21] = 0; tampon[22] = 0; tampon[23] = 0;
+
+    degisken ofs: tamsayi = 24;
+
+    # Maksimum olcek deger bul
+    degisken maks: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < agirlik_sayisi {
+        degisken v: tamsayi = agirliklar[i];
+        eger v < 0 ise { v = 0 - v; }
+        eger v > maks ise { maks = v; }
+        i = i + 1;
+    }
+
+    # Agirliklari quantize et ve yaz
+    i = 0;
+    dongu i < agirlik_sayisi ve ofs < tampon_boyut - 2 {
+        eger quantization_tipi == 2 ise {
+            tampon[ofs] = iq2s_quantize(agirliklar[i], maks);
+        } yoksa {
+            tampon[ofs] = int8_quantize(agirliklar[i], maks);
+        }
+        ofs = ofs + 1;
+        i = i + 1;
+    }
+    tampon[ofs] = 0;
+
+    # Diske yaz
+    degisken h: tamsayi = CreateFileA(cikis_yolu, 1073741824, 0, 0, 2, 128, 0);
+    eger h == (0 - 1) veya h == 0 ise {
+        ekrana_yaz("GGUF: Dosya acilamadi\n".ptr);
+        dondu 0;
+    }
+    degisken yazilan: [1]tamsayi;
+    WriteFile(h, tampon, ofs, yazilan, 0);
+    CloseHandle(h);
+
+    ekrana_yaz("GGUF: disa aktarildi: ".ptr);
+    ekrana_yaz(cikis_yolu);
+    ekrana_yaz("\n".ptr);
+    dondu yazilan[0];
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("GGUF Exporter basliyor...\n".ptr);
+    # Ornek: bos agirlik seti ile test GGUF olustur
+    degisken ornek_agirliklar: [16]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 16 { ornek_agirliklar[i] = i * 1000; i = i + 1; }
+
+    New-Item -ItemType Directory "build/models" 2>$null;
+    degisken sonuc: tamsayi = gguf_yaz(ornek_agirliklar, 16, "build/models/ykn_repair_mini.gguf".ptr, 1);
+    eger sonuc > 0 ise {
+        ekrana_yaz("GGUF_EXPORT: OK\n".ptr);
+        dondu 0;
+    }
+    ekrana_yaz("GGUF_EXPORT: FAILED\n".ptr);
+    dondu 1;
+}

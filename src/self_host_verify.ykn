@@ -1,0 +1,285 @@
+# ============================================================
+# Yukinary (YKN) Self-Hosting Dogrulama ve Surekli Test Motoru
+# Modul: src/self_host_verify.ykn
+# FAZ 4: Uretim Duzeyi Self-Hosting ve Surekli Dogrulama (CI/CD)
+#
+# Gorev:
+# Stage-2 ve Stage-3 derleyici ciktilarinin bit-duzeyinde
+# (bit-for-bit reproducible build) esitligini dogrular.
+# Sifir non-determinism, sifir rastgele zaman damgasi (TimeDateStamp=0),
+# deterministik sifir dolgusu ve SHA-256 kriptografik ozet esitligi.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+# ============================================================
+# Self-Hosting Dogrulama Veri Yapilari
+# ============================================================
+yapi SelfHostSonuc {
+    stage2_yolu:       *u8;
+    stage3_yolu:       *u8;
+    stage2_boyut:      tamsayi;
+    stage3_boyut:      tamsayi;
+    sha256_stage2:     [68]u8;
+    sha256_stage3:     [68]u8;
+    tam_esit:          tamsayi; # 1 = birebir ozdes, 0 = farkli
+    fark_sayisi:       tamsayi;
+    ilk_fark_offset:   tamsayi;
+    ilk_fark_s2_bayt:  tamsayi;
+    ilk_fark_s3_bayt:  tamsayi;
+    fark_alani:        *u8;
+}
+
+# ============================================================
+# Ikili Dosya Bolgesi Tani Fonksiyonu
+# Farkin hangi yapisal baslik veya veri alanina denk geldigini belirler
+# ============================================================
+isv self_host_bolge_tani(offset: tamsayi, toplam_boyut: tamsayi) -> *u8 {
+    eger offset < 0 ise {
+        dondu "Bilinmeyen Alan".ptr;
+    }
+    # PE32+ Dosya Yapisi
+    eger offset >= 0 ve offset < 64 ise {
+        dondu "DOS Header (e_magic / e_lfanew)".ptr;
+    } yoksa eger offset >= 64 ve offset < 88 ise {
+        dondu "PE Signature & COFF Header".ptr;
+    } yoksa eger offset >= 88 ve offset < 92 ise {
+        dondu "COFF TimeDateStamp (Non-determinism Riski!)".ptr;
+    } yoksa eger offset >= 92 ve offset < 320 ise {
+        dondu "Optional Header (ImageBase, AddressOfEntryPoint, Subsystem)".ptr;
+    } yoksa eger offset >= 320 ve offset < 512 ise {
+        dondu "Section Headers (.text / .rdata bolum tanimlari)".ptr;
+    } yoksa eger offset >= 512 ve offset < 1024 ise {
+        dondu "Header Sifir Dolgusu / Dosya Hizalamasi (Zero-Padding)".ptr;
+    } yoksa eger offset >= 1024 ve offset < (toplam_boyut - 1024) ise {
+        dondu ".text Makine Kodu / Talimat Alani".ptr;
+    } yoksa {
+        dondu ".rdata / IAT / String Tablosu / Dosya Sonu".ptr;
+    }
+}
+
+# ============================================================
+# Hex Yardimcilari
+# ============================================================
+isv self_host_hex_yazdir_byte(b: tamsayi) {
+    degisken hex: *u8 = "0123456789ABCDEF".ptr;
+    degisken v: tamsayi = b & 0xFF;
+    degisken buf: [3]u8;
+    buf[0] = hex[(v >> 4) & 0xF];
+    buf[1] = hex[v & 0xF];
+    buf[2] = 0;
+    ekrana_yaz(buf);
+}
+
+isv self_host_hex_yazdir_offset(off: tamsayi) {
+    degisken hex: *u8 = "0123456789ABCDEF".ptr;
+    degisken buf: [11]u8;
+    buf[0] = 48; # '0'
+    buf[1] = 120; # 'x'
+    degisken shift: tamsayi = 28;
+    degisken pos: tamsayi = 2;
+    dongu shift >= 0 {
+        degisken nibble: tamsayi = (off >> shift) & 0xF;
+        buf[pos] = hex[nibble];
+        pos = pos + 1;
+        shift = shift - 4;
+    }
+    buf[pos] = 0;
+    ekrana_yaz(buf);
+}
+
+# ============================================================
+# Ikili Duzeyinde Karsilastirma Cekirdegi
+# ============================================================
+isv self_host_ikili_karsilastir(s2_buf: *u8, s2_len: tamsayi, s3_buf: *u8, s3_len: tamsayi, sonuc: *SelfHostSonuc) {
+    sonuc.stage2_boyut = s2_len;
+    sonuc.stage3_boyut = s3_len;
+    sonuc.tam_esit = 1;
+    sonuc.fark_sayisi = 0;
+    sonuc.ilk_fark_offset = 0 - 1;
+    sonuc.ilk_fark_s2_bayt = 0;
+    sonuc.ilk_fark_s3_bayt = 0;
+    sonuc.fark_alani = "Esit".ptr;
+
+    # 1. Kriptografik SHA-256 Ozetlerini Hesapla
+    sha256_hesapla(s2_buf, s2_len, sonuc.sha256_stage2);
+    sha256_hesapla(s3_buf, s3_len, sonuc.sha256_stage3);
+
+    # 2. Dosya Uzunluk Kontrolu
+    eger s2_len != s3_len ise {
+        sonuc.tam_esit = 0;
+        sonuc.fark_sayisi = 1;
+        sonuc.fark_alani = "Dosya Boyutu Uyusmazligi".ptr;
+        dondu;
+    }
+
+    # 3. Bayt-Bayt Bit-for-Bit Taramasi
+    degisken i: tamsayi = 0;
+    dongu i < s2_len {
+        degisken b2: u8 = s2_buf[i];
+        degisken b3: u8 = s3_buf[i];
+        eger b2 != b3 ise {
+            sonuc.tam_esit = 0;
+            sonuc.fark_sayisi = sonuc.fark_sayisi + 1;
+            eger sonuc.ilk_fark_offset < 0 ise {
+                sonuc.ilk_fark_offset = i;
+                sonuc.ilk_fark_s2_bayt = b2 & 0xFF;
+                sonuc.ilk_fark_s3_bayt = b3 & 0xFF;
+                sonuc.fark_alani = self_host_bolge_tani(i, s2_len);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+# ============================================================
+# Dosya Yukleyici ve Raporlayici
+# ============================================================
+isv self_host_dosya_dogrula(stage2_yolu: *u8, stage3_yolu: *u8, sonuc: *SelfHostSonuc) -> tamsayi {
+    sonuc.stage2_yolu = stage2_yolu;
+    sonuc.stage3_yolu = stage3_yolu;
+
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("Yukinary Self-Hosting Reproducible Build Dogrulama Motoru\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("[1/3] Asama 2 (Stage-2) dosyasi okunuyor: ".ptr);
+    ekrana_yaz(stage2_yolu);
+    ekrana_yaz("\n".ptr);
+
+    # Maksimum 64MB ikili bellek tamponu
+    degisken maks_boyut: tamsayi = 67108864;
+    degisken s2_tampon: *u8 = os_bellek_tahsis(maks_boyut);
+    eger s2_tampon == 0 ise {
+        ekrana_yaz("HATA: Stage-2 bellek tahsisi basarisiz!\n".ptr);
+        dondu 1;
+    }
+    degisken s2_okunan: tamsayi = dosya_oku(stage2_yolu, s2_tampon, maks_boyut);
+    eger s2_okunan <= 0 ise {
+        ekrana_yaz("HATA: Stage-2 dosyasi acilamadi veya bos: ".ptr);
+        ekrana_yaz(stage2_yolu);
+        ekrana_yaz("\n".ptr);
+        os_bellek_serbest(s2_tampon);
+        dondu 2;
+    }
+
+    ekrana_yaz("[2/3] Asama 3 (Stage-3) dosyasi okunuyor: ".ptr);
+    ekrana_yaz(stage3_yolu);
+    ekrana_yaz("\n".ptr);
+
+    degisken s3_tampon: *u8 = os_bellek_tahsis(maks_boyut);
+    eger s3_tampon == 0 ise {
+        ekrana_yaz("HATA: Stage-3 bellek tahsisi basarisiz!\n".ptr);
+        os_bellek_serbest(s2_tampon);
+        dondu 1;
+    }
+    degisken s3_okunan: tamsayi = dosya_oku(stage3_yolu, s3_tampon, maks_boyut);
+    eger s3_okunan <= 0 ise {
+        ekrana_yaz("HATA: Stage-3 dosyasi acilamadi veya bos: ".ptr);
+        ekrana_yaz(stage3_yolu);
+        ekrana_yaz("\n".ptr);
+        os_bellek_serbest(s2_tampon);
+        os_bellek_serbest(s3_tampon);
+        dondu 3;
+    }
+
+    ekrana_yaz("[3/3] Bit-duzeyinde ozdeslik ve SHA-256 ozet analizi yapiliyor...\n".ptr);
+    self_host_ikili_karsilastir(s2_tampon, s2_okunan, s3_tampon, s3_okunan, sonuc);
+
+    # Raporu Ekrana Yazdir
+    ekrana_yaz("------------------------------------------------------------\n".ptr);
+    ekrana_yaz("DOGRULAMA DETAYLARI:\n".ptr);
+    ekrana_yaz("  Stage-2 Boyutu : ".ptr);
+    sayiyi_ekrana_yaz(sonuc.stage2_boyut);
+    ekrana_yaz(" bayt\n".ptr);
+
+    ekrana_yaz("  Stage-3 Boyutu : ".ptr);
+    sayiyi_ekrana_yaz(sonuc.stage3_boyut);
+    ekrana_yaz(" bayt\n".ptr);
+
+    ekrana_yaz("  Stage-2 SHA-256: ".ptr);
+    ekrana_yaz(sonuc.sha256_stage2);
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("  Stage-3 SHA-256: ".ptr);
+    ekrana_yaz(sonuc.sha256_stage3);
+    ekrana_yaz("\n".ptr);
+
+    eger sonuc.tam_esit == 1 ise {
+        ekrana_yaz("------------------------------------------------------------\n".ptr);
+        ekrana_yaz("[SONUC]: %100 BIT-FOR-BIT TAM OZDESLIK DOGRULANDI!\n".ptr);
+        ekrana_yaz("  - Hash Durumu            : IDENTICAL (Tam Esit)\n".ptr);
+        ekrana_yaz("  - Non-determinism        : SIFIR (Zero Jitter / Zero Timestamps)\n".ptr);
+        ekrana_yaz("  - Sifir Dolgusu (Padding): Deterministik\n".ptr);
+        ekrana_yaz("  - Self-Hosting Seviyesi  : STAGE-3 COMPLETE (Tam Bagimsiz)\n".ptr);
+        ekrana_yaz("============================================================\n".ptr);
+        os_bellek_serbest(s2_tampon);
+        os_bellek_serbest(s3_tampon);
+        dondu 0;
+    } yoksa {
+        ekrana_yaz("------------------------------------------------------------\n".ptr);
+        ekrana_yaz("[HATA]: REPRODUCIBLE BUILD UYUMSUZLUGU TESPIT EDILDI!\n".ptr);
+        eger sonuc.stage2_boyut != sonuc.stage3_boyut ise {
+            ekrana_yaz("  - Sebep: Boyut esitsizligi (Fark: ".ptr);
+            sayiyi_ekrana_yaz(sonuc.stage3_boyut - sonuc.stage2_boyut);
+            ekrana_yaz(" bayt)\n".ptr);
+        } yoksa {
+            ekrana_yaz("  - Toplam Farkli Bayt Sayisi: ".ptr);
+            sayiyi_ekrana_yaz(sonuc.fark_sayisi);
+            ekrana_yaz("\n".ptr);
+            ekrana_yaz("  - Ilk Fark Ofseti          : ".ptr);
+            self_host_hex_yazdir_offset(sonuc.ilk_fark_offset);
+            ekrana_yaz(" (Desimal: ".ptr);
+            sayiyi_ekrana_yaz(sonuc.ilk_fark_offset);
+            ekrana_yaz(")\n".ptr);
+            ekrana_yaz("  - Stage-2 Bayt Degeri      : 0x".ptr);
+            self_host_hex_yazdir_byte(sonuc.ilk_fark_s2_bayt);
+            ekrana_yaz("\n".ptr);
+            ekrana_yaz("  - Stage-3 Bayt Degeri      : 0x".ptr);
+            self_host_hex_yazdir_byte(sonuc.ilk_fark_s3_bayt);
+            ekrana_yaz("\n".ptr);
+            ekrana_yaz("  - Supheli Bolge            : ".ptr);
+            ekrana_yaz(sonuc.fark_alani);
+            ekrana_yaz("\n".ptr);
+        }
+        ekrana_yaz("============================================================\n".ptr);
+        os_bellek_serbest(s2_tampon);
+        os_bellek_serbest(s3_tampon);
+        dondu 4;
+    }
+}
+
+# ============================================================
+# Kolay Kullanim Arayuzu (Varsayilan Dosyalarla Dogrulama)
+# ============================================================
+isv self_host_dogrula(stage2_yolu: *u8, stage3_yolu: *u8) -> tamsayi {
+    eger stage2_yolu == 0 ise {
+        stage2_yolu = "ykn_stage2.exe".ptr;
+    }
+    eger stage3_yolu == 0 ise {
+        stage3_yolu = "ykn_stage3.exe".ptr;
+    }
+    degisken sonuc: SelfHostSonuc;
+    dondu self_host_dosya_dogrula(stage2_yolu, stage3_yolu, &sonuc);
+}
+
+# ============================================================
+# PE32+ TimeDateStamp Determinizm Testi
+# Ikilideki TimeDateStamp alaninin gercekten 0 oldugunu teyit eder
+# ============================================================
+isv self_host_determinizm_kontrol(ikili_yolu: *u8) -> tamsayi {
+    degisken buf: [1024]u8;
+    degisken okunan: tamsayi = dosya_oku(ikili_yolu, buf, 1024);
+    eger okunan < 256 ise { dondu 0; }
+    # PE Header ofsetini oku (e_lfanew at 0x3C)
+    degisken pe_off: tamsayi = (buf[0x3C] & 0xFF) | ((buf[0x3D] & 0xFF) << 8) | ((buf[0x3E] & 0xFF) << 16) | ((buf[0x3F] & 0xFF) << 24);
+    eger pe_off <= 0 veya pe_off + 24 > okunan ise { dondu 0; }
+    # COFF TimeDateStamp at pe_off + 8 (4 bytes)
+    degisken timestamp: tamsayi = (buf[pe_off + 8] & 0xFF) | ((buf[pe_off + 9] & 0xFF) << 8) | ((buf[pe_off + 10] & 0xFF) << 16) | ((buf[pe_off + 11] & 0xFF) << 24);
+    eger timestamp == 0 ise {
+        # Deterministik sifir damgasi basarili
+        dondu 1;
+    }
+    dondu 0;
+}
+

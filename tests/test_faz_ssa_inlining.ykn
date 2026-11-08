@@ -1,0 +1,48 @@
+# ============================================================
+# Test: tests/test_faz_ssa_inlining.ykn
+# FAZ 3 Dogrulama: SSA Fonksiyon Inlining ve LTO Optimizasyonu
+# ============================================================
+
+ice_aktar "std/opt/ssa_ir.ykn";
+
+isv main() -> tamsayi {
+    # 1. Inline edilecek fonksiyonu tanimla: fn kare(x) => x * x
+    degisken kare_f: *SsaFonksiyon = ssa_fonksiyon_olustur();
+    eger kare_f == 0 ise { dondu 1; }
+    
+    # Parametre v0 kabul edilir. v1 = v0 * v0
+    kare_f.degisken_sayaci = 1; # v0 parametre
+    degisken k_v1: tamsayi = ssa_emit_ikili(kare_f, SSA_OP_CARP, 0, 0);
+
+    # 2. Ana fonksiyonu tanimla: fn ana() => kare(7) + 10
+    degisken ana_f: *SsaFonksiyon = ssa_fonksiyon_olustur();
+    eger ana_f == 0 ise { dondu 2; }
+
+    # v0 = 7
+    degisken a_v0: tamsayi = ssa_emit_sabit(ana_f, 7);
+    # v_inline = inlined kare(a_v0) => 7 * 7 = 49
+    degisken v_inlined: tamsayi = ssa_inline_cagri(ana_f, kare_f, a_v0);
+    # v_sabit = 10
+    degisken a_v10: tamsayi = ssa_emit_sabit(ana_f, 10);
+    # v_sonuc = v_inlined + 10 => 49 + 10 = 59
+    degisken v_sonuc: tamsayi = ssa_emit_ikili(ana_f, SSA_OP_TOPLA, v_inlined, a_v10);
+
+    # 3. Sabit Katlama calistir (Inlined kod sinirini asan katlama)
+    degisken katlanan: tamsayi = ssa_optimize_sabit_katla(ana_f);
+    eger katlanan != 2 ise {
+        dondu 10; # Hem 7*7 hem de 49+10 katlanmaliydi
+    }
+
+    # Sonuc talimatini kontrol et: degeri 59 olmali
+    degisken b: *SsaBlok = ana_f.ana_blok;
+    degisken t_son: *SsaTalimat = b.talimatlar + ((b.talimat_sayisi - 1) * 48);
+    eger t_son.op != SSA_OP_SABIT veya t_son.sabit_deger != 59 ise {
+        dondu 11; # Inlined sonuc 59 olmaliydi
+    }
+
+    ssa_fonksiyon_serbest_birak(kare_f);
+    ssa_fonksiyon_serbest_birak(ana_f);
+
+    dondu 0;
+}
+

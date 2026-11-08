@@ -1,0 +1,6 @@
+ice_aktar "std/koleksiyon.ykn"
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken len: tamsayi = dizi_uzunluk<tamsayi>(d);
+    dondu len;
+}

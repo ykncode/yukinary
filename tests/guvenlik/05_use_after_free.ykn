@@ -1,0 +1,119 @@
+# ============================================================
+# tests/guvenlik/05_use_after_free.ykn
+# GOREV 4.2 - Use-After-Free Temel Analizi Testi
+#
+# Senaryolar:
+# 1. Pointer kaydet → serbest birak → uaf_kontrol (UAF tespit)
+# 2. Pointer kaydet → uaf_kontrol (temiz erisim)
+# 3. pointer_grubu_serbest_birak (arena reset) → sonraki erisim UAF
+# 4. hata_sayisi artisi dogrulama
+# 5. guvenlik_uaf_raporu ciktisi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi; eger n < 0 ise { n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger sayi < 0 ise { buf[i] = 45; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../src/safety.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    degisken motor: *GuvenlikMotoru = guvenlik_motoru_olustur();
+    eger motor == 0 ise { ekrana_yaz("FAIL: motor\n".ptr); dondu 1; }
+
+    # -------------------------------------------------------
+    # Test 1: Temiz erisim — UAF olmamali
+    # -------------------------------------------------------
+    degisken isim_p: [8]u8;
+    isim_p[0] = 112; isim_p[1] = 116; isim_p[2] = 114; # "ptr"
+    degisken p_isim: *u8 = isim_p;
+
+    pointer_kaydet(motor, p_isim, 3, 1);
+
+    degisken temiz: tamsayi = uaf_kontrol(motor, p_isim, 3);
+    eger temiz != 0 ise {
+        ekrana_yaz("FAIL: temiz erisimde UAF olmamali\n".ptr);
+        dondu 1;
+    }
+    eger motor.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: hata_sayisi 0 olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 05 UAF: Temiz erisim OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 2: Serbest birak → erisim → UAF tespit
+    # -------------------------------------------------------
+    pointer_serbest_birak(motor, p_isim, 3);
+
+    degisken uaf1: tamsayi = uaf_kontrol(motor, p_isim, 3);
+    eger uaf1 != 1 ise {
+        ekrana_yaz("FAIL: UAF tespit edilmeli\n".ptr);
+        dondu 1;
+    }
+    eger motor.hata_sayisi != 1 ise {
+        ekrana_yaz("FAIL: hata_sayisi 1 olmali, bulunan=".ptr);
+        sayiyi_yazdir(motor.hata_sayisi); ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 05 UAF: Serbest sonrasi UAF tespit OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 3: Yeniden kaydet → gecerli → UAF yok
+    # -------------------------------------------------------
+    pointer_kaydet(motor, p_isim, 3, 1); # yeniden tahsis
+    motor.hata_sayisi = 0; # sayaci sifirla
+
+    degisken temiz2: tamsayi = uaf_kontrol(motor, p_isim, 3);
+    eger temiz2 != 0 ise {
+        ekrana_yaz("FAIL: yeniden kayit sonrasi UAF olmamali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 05 UAF: Yeniden kayit OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 4: Arena reset simulasyonu — pointer_grubu_serbest_birak
+    # -------------------------------------------------------
+    degisken isim_q: [8]u8;
+    isim_q[0] = 113; isim_q[1] = 49; # "q1"
+    degisken q_isim: *u8 = isim_q;
+    pointer_kaydet(motor, q_isim, 2, 1);
+
+    degisken onceki_kayitli: tamsayi = gm_kayitli_adet(motor);
+    pointer_grubu_serbest_birak(motor);
+
+    eger gm_kayitli_adet(motor) != 0 ise {
+        ekrana_yaz("FAIL: arena reset sonrasi kayitli_adet=0 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # Artik her iki pointer da serbest — UAF bekleniyor
+    motor.hata_sayisi = 0;
+    degisken uaf2: tamsayi = uaf_kontrol(motor, p_isim, 3);
+    degisken uaf3: tamsayi = uaf_kontrol(motor, q_isim, 2);
+    eger uaf2 != 1 veya uaf3 != 1 ise {
+        ekrana_yaz("FAIL: arena reset sonrasi her iki pointer UAF olmali\n".ptr);
+        dondu 1;
+    }
+    eger motor.hata_sayisi != 2 ise {
+        ekrana_yaz("FAIL: hata_sayisi 2 olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 05 UAF: Arena reset simulasyonu OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 5: UAF raporu
+    # -------------------------------------------------------
+    guvenlik_uaf_raporu(motor);
+
+    ekrana_yaz("FAZ14-UAF-PASS\n".ptr);
+    dondu 0;
+}

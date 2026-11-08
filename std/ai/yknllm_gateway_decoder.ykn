@@ -1,0 +1,98 @@
+# ============================================================
+# YKNLLM typed gateway decoder extension
+#
+# Bounded binary frame'i tekrar typed request'e cevirir. Bu dosya
+# gateway modulunun arayuzunu kullanir; JSON veya text protocol yoktur.
+# Cagiran kaynak once std/ai/yknllm_gateway.ykn'i ice aktarmalidir.
+# ============================================================
+
+isv yknllm_gateway_u64_oku(buf: *u8, uzunluk: tamsayi,
+                           pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    eger buf == 0 veya pos == 0 veya hata == 0 veya hata[0] != 0 veya
+       *pos < 0 veya *pos + 8 > uzunluk ise {
+        eger hata != 0 ise { hata[0] = 1; }
+        dondu 0;
+    }
+    degisken b0: tamsayi = buf[*pos];
+    degisken b1: tamsayi = buf[*pos + 1];
+    degisken b2: tamsayi = buf[*pos + 2];
+    degisken b3: tamsayi = buf[*pos + 3];
+    degisken b4: tamsayi = buf[*pos + 4];
+    degisken b5: tamsayi = buf[*pos + 5];
+    degisken b6: tamsayi = buf[*pos + 6];
+    degisken b7: tamsayi = buf[*pos + 7];
+    eger b0 < 0 ise { b0 = b0 + 256; }
+    eger b1 < 0 ise { b1 = b1 + 256; }
+    eger b2 < 0 ise { b2 = b2 + 256; }
+    eger b3 < 0 ise { b3 = b3 + 256; }
+    eger b4 < 0 ise { b4 = b4 + 256; }
+    eger b5 < 0 ise { b5 = b5 + 256; }
+    eger b6 < 0 ise { b6 = b6 + 256; }
+    eger b7 < 0 ise { b7 = b7 + 256; }
+    *pos = *pos + 8;
+    dondu b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 +
+           b4 * 4294967296 + b5 * 1099511627776 +
+           b6 * 281474976710656 + b7 * 72057594037927936;
+}
+
+isv yknllm_gateway_metin_oku(buf: *u8, uzunluk: tamsayi,
+                             pos: *tamsayi, hata: *tamsayi,
+                             azami: tamsayi) -> *u8 {
+    degisken metin_uzn: tamsayi = yknllm_gateway_u64_oku(buf, uzunluk, pos, hata);
+    eger hata[0] != 0 veya metin_uzn < 0 veya metin_uzn > azami veya
+       *pos > uzunluk veya metin_uzn > uzunluk - *pos ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    degisken sonuc: *u8 = bellek_tahsis_et(metin_uzn + 1);
+    eger sonuc == 0 ise { hata[0] = 1; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < metin_uzn {
+        sonuc[i] = buf[*pos + i];
+        i = i + 1;
+    }
+    sonuc[metin_uzn] = 0;
+    *pos = *pos + metin_uzn;
+    dondu sonuc;
+}
+
+isv yknllm_gateway_istek_coz(buf: *u8, uzunluk: tamsayi,
+                             decoded: *YKNLLMDecodedRequest) -> tamsayi {
+    eger buf == 0 veya decoded == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken hata: tamsayi = 0;
+    degisken magic: tamsayi = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    decoded->surum = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    decoded->rol = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    eger hata != 0 veya magic != YKNLLM_GATEWAY_MAGIC veya
+       decoded->surum != YKNLLM_GATEWAY_VERSION veya
+       decoded->rol != YKNLLM_ROLE_CODE_ONLY ise { dondu YKNLLM_DECODE_HATA_HEADER; }
+
+    decoded->kullanici_metni = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, YKNLLM_MAX_TEXT);
+    decoded->islem = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, 128);
+    decoded->calisma_alani = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, YKNLLM_MAX_TEXT);
+    decoded->kisitlar = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, YKNLLM_MAX_TEXT);
+    decoded->model_yolu = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, YKNLLM_MAX_TEXT);
+    decoded->mimari = yknllm_gateway_metin_oku(buf, uzunluk, &pos, &hata, 256);
+    decoded->gguf_versiyonu = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    decoded->tensor_sayisi = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    decoded->quant_tipi = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    decoded->read_only = yknllm_gateway_u64_oku(buf, uzunluk, &pos, &hata);
+    eger hata != 0 ise { dondu YKNLLM_DECODE_HATA_SINIR; }
+    eger pos != uzunluk ise { dondu YKNLLM_DECODE_HATA_ARTIK; }
+    degisken decoded_intent: YKNLLMIntent;
+    decoded_intent.kullanici_metni = decoded->kullanici_metni;
+    decoded_intent.islem = decoded->islem;
+    decoded_intent.calisma_alani = decoded->calisma_alani;
+    decoded_intent.kisitlar = decoded->kisitlar;
+    degisken decoded_model: YKNLLMModelProfile;
+    decoded_model.model_yolu = decoded->model_yolu;
+    decoded_model.mimari = decoded->mimari;
+    decoded_model.gguf_versiyonu = decoded->gguf_versiyonu;
+    decoded_model.tensor_sayisi = decoded->tensor_sayisi;
+    decoded_model.quant_tipi = decoded->quant_tipi;
+    decoded_model.read_only = decoded->read_only;
+    eger yknllm_gateway_intent_dogrula(&decoded_intent) == 0 veya
+       yknllm_gateway_model_profili_dogrula(&decoded_model) == 0 ise { dondu YKNLLM_DECODE_HATA_TIP; }
+    dondu 1;
+}

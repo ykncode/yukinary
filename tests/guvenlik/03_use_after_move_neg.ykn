@@ -1,0 +1,14 @@
+# Guvenlik Testi: Tasinmis (move edilmis) degiskenin tekrar kullanilmasi
+# E040 (USE_AFTER_MOVE) beklenir.
+isv tasi(x: tamsayi) -> tamsayi {
+    dondu x * 2;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken a: tamsayi = 100;
+    degisken b: tamsayi = tasi(a);
+    # 'a' tasindiktan sonra kullanilamaz!
+    degisken c: tamsayi = a + 50;
+    dondu c;
+}
+

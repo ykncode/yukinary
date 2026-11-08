@@ -1,0 +1,61 @@
+# Test Faz 3: BitNet CPU AVX2 & CUDA PTX Parity
+ice_aktar "std/io.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/cuda_quant_ptx.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 3 BitNet & Donanim Hizlandirma Testi Basliyor...\n".ptr);
+
+    # 1. CPU AVX2 Algilama
+    degisken avx2_var: tamsayi = ykn_cpu_has_avx2();
+    eger avx2_var == 1 ise {
+        ekrana_yaz("CPU Donanim Bilgisi: AVX2 Destegi MEVCUT.\n".ptr);
+    } yoksa {
+        ekrana_yaz("CPU Donanim Bilgisi: AVX2 Yok / Standart Mod.\n".ptr);
+    }
+
+    # 2. VirtualAlloc / JIT Sayfasi Alimi
+    degisken jit_buf: *u8 = VirtualAlloc(0, 4096, 12288, 64);
+    eger jit_buf == 0 ise {
+        ekrana_yaz("HATA: JIT Calistirilabilir Bellek Alinamadi!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("JIT Calistirilabilir Bellek Alindi (VirtualAlloc / sys_mmap BASARILI).\n".ptr);
+
+    # 3. BitNet I2_S ternary agirlik kod cozumleme testi
+    # GGUF I2_S: 00 -> -1 (kod 2), 01 -> 0 (kod 0), 10 -> +1 (kod 1)
+    degisken test_paket: [32]u8;
+    # 0b00011000 = 0x18 (24)
+    # lane 0 (bits 7..6 = 00) -> 2 (-1)
+    # lane 1 (bits 5..4 = 01) -> 0 (0)
+    # lane 2 (bits 3..2 = 10) -> 1 (+1)
+    # lane 3 (bits 1..0 = 00) -> 2 (-1)
+    test_paket[0] = 24;
+
+    degisken k0: tamsayi = bitnet_i2s_kodunu_oku(test_paket.ptr, 0);
+    degisken k1: tamsayi = bitnet_i2s_kodunu_oku(test_paket.ptr, 32);
+    degisken k2: tamsayi = bitnet_i2s_kodunu_oku(test_paket.ptr, 64);
+    degisken k3: tamsayi = bitnet_i2s_kodunu_oku(test_paket.ptr, 96);
+
+    eger k0 != 2 veya k1 != 0 veya k2 != 1 veya k3 != 2 ise {
+        ekrana_yaz("HATA: BitNet I2_S Agirlik Cozucu Hatali!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("BitNet I2_S Ternary Aritmetik Cozucu BASARILI.\n".ptr);
+
+    # 4. CUDA PTX Kernel Dogrulama
+    degisken ptx_src: *u8 = ykn_cuda_quant_ptx();
+    eger ptx_src == 0 ise {
+        ekrana_yaz("HATA: CUDA PTX Cekirdegi Eksik!\n".ptr);
+        dondu 3;
+    }
+    degisken baslik_ok: tamsayi = bellek_esit_mi(ptx_src, "//\n// Generated".ptr, 14);
+    eger baslik_ok != 1 ise {
+        ekrana_yaz("HATA: CUDA PTX Basligi Gecersiz!\n".ptr);
+        dondu 4;
+    }
+    ekrana_yaz("CUDA PTX sm_75 Cekirdek Bütünlügü BASARILI.\n".ptr);
+
+    ekrana_yaz("FAZ 3 BITNET & DONANIM HIZLANDIRMA TESTI TAMAMLANDI!\n".ptr);
+    dondu 0;
+}

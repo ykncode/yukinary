@@ -1,0 +1,108 @@
+# A8.4: gercek Arc strong-reference native acceptance testi.
+ice_aktar "std/bellek/akilli_isaretci.ykn";
+
+isv ekrana_yaz(m: *u8) {}
+
+isv ana() -> tamsayi {
+    degisken a: Arc;
+    eger arc_yeni(&a, 32) != 0 ise {
+        ekrana_yaz("ARC_CREATE_FAIL\n".ptr);
+        dondu 1;
+    }
+    eger arc_gecerli_mi(&a) == 0 ise {
+        ekrana_yaz("ARC_CREATE_STATE_FAIL\n".ptr);
+        dondu 2;
+    }
+
+    degisken oom: Arc;
+    degisken oom_sonuc: tamsayi = arc_yeni(&oom, 67108865);
+    eger oom_sonuc != -4 veya arc_gecerli_mi(&oom) != 0 ise {
+        ekrana_yaz("ARC_OOM_LIMIT_FAIL\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("ARC_OOM_LIMIT_PASS\n".ptr);
+
+    ykn_atomic_store_i64(a.kontrol_ptr.ref_sayisi_ptr, 0x7fffffffffffffff);
+    eger ykn_atomic_load_i64(a.kontrol_ptr.ref_sayisi_ptr) != 0x7fffffffffffffff ise {
+        ekrana_yaz("ARC_REF_MAX_STORE_FAIL\n".ptr);
+        dondu 4;
+    }
+    degisken max_clone: Arc;
+    degisken max_sonuc: tamsayi = arc_kopyala(&a, &max_clone);
+    eger max_sonuc != -3 ise {
+        ekrana_yaz("ARC_REF_MAX_CODE_FAIL\n".ptr);
+        dondu 4;
+    }
+    eger arc_gecerli_mi(&max_clone) != 0 ise {
+        ekrana_yaz("ARC_REF_MAX_HANDLE_FAIL\n".ptr);
+        dondu 4;
+    }
+    eger ykn_atomic_load_i64(a.kontrol_ptr.ref_sayisi_ptr) != 0x7fffffffffffffff ise {
+        ekrana_yaz("ARC_REF_MAX_VALUE_FAIL\n".ptr);
+        dondu 4;
+    }
+    ekrana_yaz("ARC_REF_MAX_PASS\n".ptr);
+
+    ykn_atomic_store_i64(a.kontrol_ptr.ref_sayisi_ptr, 0);
+    eger ykn_atomic_load_i64(a.kontrol_ptr.ref_sayisi_ptr) != 0 ise {
+        ekrana_yaz("ARC_UNDERFLOW_STORE_FAIL\n".ptr);
+        dondu 5;
+    }
+    degisken underflow: tamsayi = arc_birak(&a);
+    eger underflow != -3 ise {
+        ekrana_yaz("ARC_UNDERFLOW_CODE_FAIL\n".ptr);
+        dondu 5;
+    }
+    eger a.kontrol_ptr == 0 ise {
+        ekrana_yaz("ARC_UNDERFLOW_HANDLE_FAIL\n".ptr);
+        dondu 5;
+    }
+    eger ykn_atomic_load_i64(a.kontrol_ptr.ref_sayisi_ptr) != 0 ise {
+        ekrana_yaz("ARC_UNDERFLOW_VALUE_FAIL\n".ptr);
+        dondu 5;
+    }
+    ykn_atomic_store_i64(a.kontrol_ptr.ref_sayisi_ptr, 1);
+    ekrana_yaz("ARC_UNDERFLOW_PASS\n".ptr);
+
+    degisken b: Arc;
+    eger arc_kopyala(&a, &b) != 0 veya arc_gecerli_mi(&b) == 0 ise {
+        ekrana_yaz("ARC_CLONE_FAIL\n".ptr);
+        dondu 6;
+    }
+
+    degisken ilk: tamsayi = arc_birak(&b);
+    eger ilk != 0 ise {
+        ekrana_yaz("ARC_CLONE_DROP_CODE_FAIL\n".ptr);
+        dondu 7;
+    }
+    eger arc_gecerli_mi(&b) != 0 ise {
+        ekrana_yaz("ARC_CLONE_DROP_STATE_FAIL\n".ptr);
+        dondu 7;
+    }
+    degisken son: tamsayi = arc_birak(&a);
+    eger son != 1 ise {
+        ekrana_yaz("ARC_LAST_DROP_CODE_FAIL\n".ptr);
+        dondu 8;
+    }
+    eger arc_gecerli_mi(&a) != 0 ise {
+        ekrana_yaz("ARC_LAST_DROP_STATE_FAIL\n".ptr);
+        dondu 8;
+    }
+    eger a.kontrol_ptr == 0 ise {
+        ekrana_yaz("ARC_HANDLE_CLEAR_PASS\n".ptr);
+    } yoksa {
+        ekrana_yaz("ARC_HANDLE_CLEAR_FAIL\n".ptr);
+        dondu 9;
+    }
+    degisken tekrar: tamsayi = arc_birak(&a);
+    eger tekrar == -1 ise { ekrana_yaz("ARC_DOUBLE_DROP_HANDLE\n".ptr); dondu 10; }
+    eger tekrar == 0 ise { ekrana_yaz("ARC_DOUBLE_DROP_ZERO\n".ptr); dondu 10; }
+    eger tekrar == 1 ise { ekrana_yaz("ARC_DOUBLE_DROP_ONE\n".ptr); dondu 10; }
+    eger tekrar != -2 ise {
+        ekrana_yaz("ARC_DOUBLE_DROP_OTHER\n".ptr);
+        dondu 9;
+    }
+
+    ekrana_yaz("ARC_NATIVE_PASS\n".ptr);
+    dondu 0;
+}

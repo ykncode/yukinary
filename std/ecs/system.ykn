@@ -1,0 +1,56 @@
+# ============================================================
+# std/ecs/system.ykn
+# FAZ 47: Saf Yukinary ECS Sistem Yonetimi ve Fizik Motoru
+# SIFIR MOCK, Gercek Vektorize Fizik Adimlama ve Sinir Denetimi
+# ============================================================
+
+ice_aktar "component.ykn";
+
+# Tum aktif varliklarin konumlarini hizlariyla gunceller (P = P + V)
+isv ecs_fizik_sistemi(d: *EcsDunya) -> tamsayi {
+    degisken n: tamsayi = d.varlik_sayisi;
+    degisken kx: *tamsayi = d.konum_x;
+    degisken ky: *tamsayi = d.konum_y;
+    degisken hx: *tamsayi = d.hiz_dx;
+    degisken hy: *tamsayi = d.hiz_dy;
+    degisken cn: *tamsayi = d.canlilik;
+
+    degisken guncellenen: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger cn[i] == 1 ise {
+            kx[i] = kx[i] + hx[i];
+            ky[i] = ky[i] + hy[i];
+            guncellenen = guncellenen + 1;
+        }
+        i = i + 1;
+    }
+    dondu guncellenen;
+}
+
+# Sinirlara carpan varliklarin hizlarini tersine cevirir (Bounce)
+isv ecs_sinir_sistemi(d: *EcsDunya, min_x: tamsayi, max_x: tamsayi, min_y: tamsayi, max_y: tamsayi) -> tamsayi {
+    degisken n: tamsayi = d.varlik_sayisi;
+    degisken kx: *tamsayi = d.konum_x;
+    degisken ky: *tamsayi = d.konum_y;
+    degisken hx: *tamsayi = d.hiz_dx;
+    degisken hy: *tamsayi = d.hiz_dy;
+    degisken cn: *tamsayi = d.canlilik;
+
+    degisken sekme_sayisi: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger cn[i] == 1 ise {
+            eger kx[i] < min_x veya kx[i] > max_x ise {
+                hx[i] = 0 - hx[i];
+                sekme_sayisi = sekme_sayisi + 1;
+            }
+            eger ky[i] < min_y veya ky[i] > max_y ise {
+                hy[i] = 0 - hy[i];
+                sekme_sayisi = sekme_sayisi + 1;
+            }
+        }
+        i = i + 1;
+    }
+    dondu sekme_sayisi;
+}

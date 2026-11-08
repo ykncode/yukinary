@@ -1,0 +1,6 @@
+ice_aktar "dep_b.ykn";
+ice_aktar "dep_a.ykn";
+
+isv ana() -> tamsayi {
+    dondu alfa + zeta - 3;
+}

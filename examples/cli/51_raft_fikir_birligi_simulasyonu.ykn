@@ -1,0 +1,60 @@
+# ============================================================
+# Örnek 99: Konsol Tabanlı Dağıtık Raft Fikir Birliği (Consensus) Simülasyonu
+# ============================================================
+
+yapi RaftDugum {
+    id: tamsayi;
+    rol: tamsayi; # 1: Takipci, 2: Aday, 3: Lider
+    terim: tamsayi;
+    oy_sayisi: tamsayi;
+}
+
+degisken g_dugumler: [3]RaftDugum;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv secim_baslat(aday_id: tamsayi) {
+    g_dugumler[aday_id].rol = 2; # Aday
+    g_dugumler[aday_id].terim = g_dugumler[aday_id].terim + 1;
+    g_dugumler[aday_id].oy_sayisi = 1; # Kendi oyu
+
+    ekrana_yaz("Dugum ".ptr);
+    sayiyi_yaz(aday_id);
+    ekrana_yaz(" secim baslatti. Terim: ".ptr);
+    sayiyi_yaz(g_dugumler[aday_id].terim);
+    ekrana_yaz("\n".ptr);
+
+    # Diger dugumlerden oy al (Cogunluk saglandi)
+    g_dugumler[aday_id].oy_sayisi = 3;
+    g_dugumler[aday_id].rol = 3; # Lider oldu
+    ekrana_yaz("-> Cogunluk oyu alindi. Yeni Lider: Dugum ".ptr);
+    sayiyi_yaz(aday_id);
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Raft Dagitik Konsensus Simulasyonu ===\n".ptr);
+    g_dugumler[0].id = 0; g_dugumler[0].rol = 1; g_dugumler[0].terim = 1;
+    g_dugumler[1].id = 1; g_dugumler[1].rol = 1; g_dugumler[1].terim = 1;
+    g_dugumler[2].id = 2; g_dugumler[2].rol = 1; g_dugumler[2].terim = 1;
+
+    secim_baslat(0);
+    dondu 0;
+}

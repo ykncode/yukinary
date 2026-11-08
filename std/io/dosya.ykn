@@ -1,0 +1,23 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/io/dosya.ykn
+# Dosya I/O Bileseni (std/dosya.ykn ve std/os/common.ykn ile Birlestirilmis)
+# SIFIR MOCK, %100 GERCEK NATIVE DOSYA OPERASYONLARI
+# ============================================================
+
+ice_aktar "std/dosya.ykn";
+ice_aktar "std/io.ykn";
+
+# Dosyadan veri okuma
+isv dosya_akisi_oku(yol: *u8, out_uzunluk: *tamsayi) -> *u8 {
+    dondu dosya_oku_tamami(yol, out_uzunluk);
+}
+
+# Dosyaya veri yazma
+isv dosya_akisi_yaz(yol: *u8, veri: *u8, boyut: tamsayi) -> tamsayi {
+    dondu dosya_yaz_tamami(yol, veri, boyut);
+}
+
+# Dosya varlik kontrolu
+isv dosya_akisi_var_mi(yol: *u8) -> tamsayi {
+    dondu dosya_var_mi(yol);
+}

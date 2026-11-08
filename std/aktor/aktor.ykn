@@ -1,0 +1,52 @@
+# ============================================================
+# Yukinary Aktor Modeli (std/aktor/aktor.ykn)
+# Kanal Tabanli Izole Durum & Mesajlasma Varligi
+# ============================================================
+
+ice_aktar "std/es/kanal.ykn";
+
+yapi Aktor {
+    gonderici: Gonderici;
+    alici: Alici;
+    durum: tamsayi;
+    islenen_mesaj_sayisi: tamsayi;
+    aktif_mi: tamsayi;
+}
+
+isv aktor_yarat(a: *Aktor, baslangic_durumu: tamsayi) -> tamsayi {
+    eger a == 0 ise { dondu -1; }
+    degisken k_res: tamsayi = kanal_olustur(&a.gonderici, &a.alici);
+    eger k_res != 0 ise { dondu k_res; }
+    
+    a.durum = baslangic_durumu;
+    a.islenen_mesaj_sayisi = 0;
+    a.aktif_mi = 1;
+    dondu 0;
+}
+
+isv aktor_mesaj_at(a: *Aktor, mesaj: tamsayi) -> tamsayi {
+    eger a == 0 veya a.aktif_mi == 0 ise { dondu -1; }
+    dondu kanal_gonder(&a.gonderici, mesaj);
+}
+
+# Aktor gelen bir sonraki mesaji alir ve durumunu gunceller
+isv aktor_adim_calistir(a: *Aktor) -> tamsayi {
+    eger a == 0 veya a.aktif_mi == 0 ise { dondu -1; }
+    
+    degisken gelen_mesaj: tamsayi = 0;
+    degisken alindi_mi: tamsayi = kanal_al(&a.alici, &gelen_mesaj);
+    eger alindi_mi == 1 ise {
+        # Mesaj aktore ulasti: state transition
+        a.durum = a.durum + gelen_mesaj;
+        a.islenen_mesaj_sayisi = a.islenen_mesaj_sayisi + 1;
+        dondu 1;
+    }
+    dondu 0; # Mesaj yok
+}
+
+isv aktor_durdur(a: *Aktor) {
+    eger a == 0 ise { dondu; }
+    a.aktif_mi = 0;
+    gonderici_kapat(&a.gonderici);
+    alici_kapat(&a.alici);
+}

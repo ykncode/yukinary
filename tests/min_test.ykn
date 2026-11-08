@@ -1,0 +1,18 @@
+yapi DiziVeDegerTesti {
+    tampon: [10]u8;
+    deger: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    degisken dvd: DiziVeDegerTesti;
+    dvd.deger = 987654321;
+    degisken di: tamsayi = 0;
+    dongu di < 10 {
+        dvd.tampon[di] = 255 as u8;
+        di = di + 1;
+    }
+    eger dvd.deger != 987654321 ise {
+        dondu 2;
+    }
+    dondu 0;
+}

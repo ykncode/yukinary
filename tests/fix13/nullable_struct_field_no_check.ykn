@@ -1,0 +1,8 @@
+# FIX-13: nullable struct field guardsiz kullanilamaz.
+yapi Kut { veri: ?*u8; }
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken k: Kut;
+    k.veri[0] = 1;
+    dondu 0;
+}

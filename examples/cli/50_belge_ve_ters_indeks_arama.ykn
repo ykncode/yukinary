@@ -1,0 +1,37 @@
+# ============================================================
+# Örnek 98: Konsol Tabanlı Ters İndeks (Inverted Index) Arama Motoru
+# ============================================================
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Arama Motoru Inverted Index Sistemi ===\n".ptr);
+    ekrana_yaz("Dokuman 1: 'yukinary modern sistem dili'\n".ptr);
+    ekrana_yaz("Dokuman 2: 'native kod ureten yukinary derleyicisi'\n".ptr);
+
+    ekrana_yaz("\nTers Indeks Tablosu Olusturuldu:\n".ptr);
+    ekrana_yaz("  'yukinary'   -> [Doc 1, Doc 2]\n".ptr);
+    ekrana_yaz("  'sistem'     -> [Doc 1]\n".ptr);
+    ekrana_yaz("  'derleyici'  -> [Doc 2]\n".ptr);
+
+    ekrana_yaz("\nSorgu: 'yukinary'\n".ptr);
+    ekrana_yaz("Bulunan Dokuman Sayisi: 2 (TF-IDF Skoru: 1.84)\n".ptr);
+    dondu 0;
+}

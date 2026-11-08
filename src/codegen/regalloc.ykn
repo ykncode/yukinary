@@ -1,0 +1,679 @@
+# ============================================================
+# Yukinary Register Allocator (Linear Scan)
+# GOREV 6.1: Gercek Register Allocation
+#
+# Strateji:
+#   - Caller-saved scratch: R10, R11 (Windows x64 ABI'de guvende)
+#   - Callee-saved: RBX, R12..R15 (kullanilirsa prolog/epilog'da koru)
+#   - Binary op intermediate: PUSH/POP yerine R10 kullan
+#   - Live interval hesaplama: AST'yi pre-scan et
+#   - Spill: register baskisi altinda stack'e spill
+# ============================================================
+
+# ============================================================
+# Register ID sabitleri (x86_64)
+# ============================================================
+degisken REG_NONE : tamsayi = 0;
+degisken REG_RAX  : tamsayi = 1;   # Sonuc registeri (dokunma)
+degisken REG_RCX  : tamsayi = 2;   # arg0 / gecici
+degisken REG_RDX  : tamsayi = 3;   # arg1 / gecici
+degisken REG_R8   : tamsayi = 4;   # arg2
+degisken REG_R9   : tamsayi = 5;   # arg3
+degisken REG_R10  : tamsayi = 6;   # scratch1 (caller-saved, serbest)
+degisken REG_R11  : tamsayi = 7;   # scratch2 (caller-saved, serbest)
+degisken REG_RBX  : tamsayi = 8;   # callee-saved #1
+degisken REG_R12  : tamsayi = 9;   # callee-saved #2
+degisken REG_R13  : tamsayi = 10;  # callee-saved #3
+degisken REG_R14  : tamsayi = 11;  # callee-saved #4
+degisken REG_R15  : tamsayi = 12;  # callee-saved #5
+
+# Toplam tahsis edilebilir register sayisi
+# (RAX sonuc icin ayri, arg registerlari cagri sirasinda kullanilir)
+degisken RA_SCRATCH_HAVUZ_BOYUTU : tamsayi = 2; # R10, R11
+
+# ============================================================
+# Register Allocator Global State
+# ============================================================
+
+# Mevcut fonksiyon icinde hangi callee-saved reg'ler kullanildi?
+degisken g_ra_callee_saved_kullanildi : [5]tamsayi; # RBX R12 R13 R14 R15
+
+# Scratch register havuzu: R10=slot0, R11=slot1
+degisken g_ra_scratch_dolu : [2]tamsayi;  # 0=bos 1=dolu
+degisken g_ra_scratch_reg  : [2]tamsayi;  # REG_R10, REG_R11
+
+# Live interval tablosu (fonksiyon basi sifirlanir)
+# Her "virtual slot" icin: [baslangic_offset, bitis_offset, fiziksel_reg]
+degisken g_ra_interval_bas    : [256]tamsayi;
+degisken g_ra_interval_bitis  : [256]tamsayi;
+degisken g_ra_interval_reg    : [256]tamsayi;
+degisken g_ra_interval_spill  : [256]tamsayi;  # spill stack offset (0=spill yok)
+degisken g_ra_interval_adet   : tamsayi = 0;
+
+# Spill sayaci (stack offset yonetimi)
+degisken g_ra_spill_offset    : tamsayi = 0;
+
+# AST pre-scan icin kullanim sayaci (kaba live estimate)
+degisken g_ra_kullanim_sayaci : [256]tamsayi;
+
+# Degisken -> Register haritasi (0=yok/stack, 8=RBX, 9=R12, 10=R13)
+degisken g_ra_var_reg         : [256]tamsayi;
+degisken g_ra_var_isim        : [256]*u8;
+degisken g_ra_var_uzunluk     : [256]tamsayi;
+degisken g_ra_var_adresi_alindi : [256]tamsayi;
+degisken g_ra_var_adet        : tamsayi = 0;
+degisken g_ra_bound_count     : tamsayi = 0;
+degisken g_ra_opt_aktif       : tamsayi = 0;
+
+# Derinlik sayaci (ic ice binary op derinligi)
+degisken g_ra_derinlik        : tamsayi = 0;
+degisken g_lambda_tabani      : tamsayi = 0;
+
+# ============================================================
+# Register Emitter Yardimcilari
+# ============================================================
+
+# REX.B icin: R10=0x41 prefix yok, R11=0x41 prefix var
+# R10: REX.R=0, MOD/RM: 010 = %rdx encoding ama REX.B ile R10 gosterilir
+# Asagidaki tablo x86_64 encoding:
+#   R10: REX prefix 0x4D (REX.W+REX.R), ModRM 0xC2 (MOV RAX, R10 = PUSH R10 = 0x41 0x52)
+#   R11: REX prefix, PUSH R11 = 0x41 0x53
+
+isv emit_push_r10(a: *MakineKoduArenasi) {
+    # PUSH R10: 41 52
+    byte_yaz(a, 0x41); byte_yaz(a, 0x52);
+}
+
+isv emit_pop_r10(a: *MakineKoduArenasi) {
+    # POP R10: 41 5A
+    byte_yaz(a, 0x41); byte_yaz(a, 0x5A);
+}
+
+isv emit_push_r11(a: *MakineKoduArenasi) {
+    # PUSH R11: 41 53
+    byte_yaz(a, 0x41); byte_yaz(a, 0x53);
+}
+
+isv emit_pop_r11(a: *MakineKoduArenasi) {
+    # POP R11: 41 5B
+    byte_yaz(a, 0x41); byte_yaz(a, 0x5B);
+}
+
+# MOV R10, RAX  (sonucu R10'a kaydet)
+isv emit_mov_r10_rax(a: *MakineKoduArenasi) {
+    # 4D 89 C2  = REX.W+REX.R+REX.B MOV R10, RAX
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC2);
+}
+
+# MOV RAX, R10  (R10'dan RAX'e yukle)
+isv emit_mov_rax_r10(a: *MakineKoduArenasi) {
+    # 4C 89 D0  = REX.W+REX.R MOV RAX, R10
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD0);
+}
+
+# MOV R11, RAX
+isv emit_mov_r11_rax(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC3);
+}
+
+# MOV RAX, R11
+isv emit_mov_rax_r11(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD8);
+}
+
+# MOV RCX, R10  (binary op: sol operand RCX'e)
+isv emit_mov_rcx_r10(a: *MakineKoduArenasi) {
+    # 4D 89 D1 = MOV RCX, R10
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD1);
+}
+
+# MOV RCX, R11
+isv emit_mov_rcx_r11(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD9);
+}
+
+# PUSH callee-saved register
+isv emit_push_rbx(a: *MakineKoduArenasi) { byte_yaz(a, 0x53); }
+isv emit_pop_rbx(a: *MakineKoduArenasi)  { byte_yaz(a, 0x5B); }
+
+isv emit_push_r12(a: *MakineKoduArenasi) { byte_yaz(a, 0x41); byte_yaz(a, 0x54); }
+isv emit_pop_r12(a: *MakineKoduArenasi)  { byte_yaz(a, 0x41); byte_yaz(a, 0x5C); }
+
+isv emit_push_r13(a: *MakineKoduArenasi) { byte_yaz(a, 0x41); byte_yaz(a, 0x55); }
+isv emit_pop_r13(a: *MakineKoduArenasi)  { byte_yaz(a, 0x41); byte_yaz(a, 0x5D); }
+
+isv emit_push_r14(a: *MakineKoduArenasi) { byte_yaz(a, 0x41); byte_yaz(a, 0x56); }
+isv emit_pop_r14(a: *MakineKoduArenasi)  { byte_yaz(a, 0x41); byte_yaz(a, 0x5E); }
+
+isv emit_push_r15(a: *MakineKoduArenasi) { byte_yaz(a, 0x41); byte_yaz(a, 0x57); }
+isv emit_pop_r15(a: *MakineKoduArenasi)  { byte_yaz(a, 0x41); byte_yaz(a, 0x5F); }
+
+# ============================================================
+# Callee-saved koruması: fonksiyon prolog/epilog'da emit et
+# ============================================================
+isv ra_callee_prolog_emit(a: *MakineKoduArenasi) {
+    eger g_ra_callee_saved_kullanildi[0] == 1 ise { emit_push_rbx(a); }
+    eger g_ra_callee_saved_kullanildi[1] == 1 ise { emit_push_r12(a); }
+    eger g_ra_callee_saved_kullanildi[2] == 1 ise { emit_push_r13(a); }
+    eger g_ra_callee_saved_kullanildi[3] == 1 ise { emit_push_r14(a); }
+    eger g_ra_callee_saved_kullanildi[4] == 1 ise { emit_push_r15(a); }
+}
+
+isv ra_callee_epilog_emit(a: *MakineKoduArenasi) {
+    # Ters sirayla POP
+    eger g_ra_callee_saved_kullanildi[4] == 1 ise { emit_pop_r15(a); }
+    eger g_ra_callee_saved_kullanildi[3] == 1 ise { emit_pop_r14(a); }
+    eger g_ra_callee_saved_kullanildi[2] == 1 ise { emit_pop_r13(a); }
+    eger g_ra_callee_saved_kullanildi[1] == 1 ise { emit_pop_r12(a); }
+    eger g_ra_callee_saved_kullanildi[0] == 1 ise { emit_pop_rbx(a); }
+}
+
+# ============================================================
+# Register Allocator Init (her fonksiyon basinda cagir)
+# ============================================================
+isv ra_fonksiyon_sifirla() {
+    g_ra_scratch_dolu[0] = 0;
+    g_ra_scratch_dolu[1] = 0;
+    g_ra_scratch_reg[0]  = REG_R10;
+    g_ra_scratch_reg[1]  = REG_R11;
+    g_ra_interval_adet   = 0;
+    g_ra_spill_offset    = 0;
+    g_ra_derinlik        = 0;
+    g_ra_callee_saved_kullanildi[0] = 0;
+    g_ra_callee_saved_kullanildi[1] = 0;
+    g_ra_callee_saved_kullanildi[2] = 0;
+    g_ra_callee_saved_kullanildi[3] = 0;
+    g_ra_callee_saved_kullanildi[4] = 0;
+    g_ra_bound_count = 0;
+    g_ra_var_adet = 0;
+    degisken vi: tamsayi = 0;
+    dongu vi < 256 {
+        g_ra_var_reg[vi] = 0;
+        g_ra_var_adresi_alindi[vi] = 0;
+        vi = vi + 1;
+    }
+}
+
+# ============================================================
+# Scratch Register Tahsisi
+# Bos scratch varsa doner (REG_R10 / REG_R11)
+# Yoksa PUSH (spill) yaparak R10'u geri doner
+# ============================================================
+isv ra_scratch_al(a: *MakineKoduArenasi) -> tamsayi {
+    # Once bos slot ara
+    eger g_ra_scratch_dolu[0] == 0 ise {
+        g_ra_scratch_dolu[0] = 1;
+        dondu REG_R10;
+    }
+    eger g_ra_scratch_dolu[1] == 0 ise {
+        g_ra_scratch_dolu[1] = 1;
+        dondu REG_R11;
+    }
+    # Her ikisi dolu: R10'u spill et (PUSH), onu yeniden ver
+    emit_push_r10(a);
+    dondu REG_R10;
+}
+
+isv ra_scratch_serbest_birak(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_R10 ise {
+        eger g_ra_scratch_dolu[0] == 1 ise {
+            g_ra_scratch_dolu[0] = 0;
+        } yoksa {
+            # Spill edilmisti, geri yukle
+            emit_pop_r10(a);
+        }
+    } yoksa eger reg == REG_R11 ise {
+        g_ra_scratch_dolu[1] = 0;
+    }
+}
+
+# ============================================================
+# Binary Op Yardimcisi: PUSH/POP yerine R10 kullan
+#
+# Kullanim:
+#   ra_ikili_sol_kaydet(a)          -- sol sonucu RAX'ten R10/stack'e al
+#   ast_kod_uret(sag)               -- sag -> RAX
+#   ra_ikili_sol_geri_yukle_rcx(a)  -- sol'u RAX'a, sag'i RCX'e koy
+#   (operator)                      -- RAX op RCX -> RAX
+# ============================================================
+degisken g_ra_ikili_spill_derinlik : [16]tamsayi;  # her derinlikte ne kullanildi
+degisken g_ra_ikili_derinlik       : tamsayi = 0;
+
+isv ra_ikili_sol_kaydet(a: *MakineKoduArenasi) {
+    # GOREV 6.1: Guvenligi on planda tut
+    # R10 caller-saved oldugundan sag operand icinde bir fonksiyon cagrisi
+    # veya inline string concat / mmap cagrisi R10'u bozabilir.
+    # Bu nedenle her zaman PUSH/POP kullan (guvenli calisma).
+    eger platform_arm64_mi() == 1 ise {
+        # ARM64: STP X0, XZR, [SP, #-16]!  (16-byte stack aligned push)
+        byte_yaz(a, 0xE0); byte_yaz(a, 0x7F); byte_yaz(a, 0xBF); byte_yaz(a, 0xA9);
+    } yoksa eger g_target_platform == 6 ise {
+        # RISC-V 64: ADDI sp, sp, -16; SD a0, 0(sp)
+        int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_SP, RV_SP, 0 - 16));
+        int32_yaz(a, riscv_encode_s_type(RV_OP_STORE, 3, RV_SP, RV_A0, 0));
+    } yoksa eger g_target_platform == 5 ise {
+        # WebAssembly: operand stack handles it automatically
+    } yoksa {
+        byte_yaz(a, 0x50); # PUSH RAX
+    }
+    g_ra_ikili_spill_derinlik[g_ra_ikili_derinlik] = 0; # stack kullanildi
+    g_ra_ikili_derinlik = g_ra_ikili_derinlik + 1;
+}
+
+isv ra_ikili_sol_geri_yukle_rcx(a: *MakineKoduArenasi) {
+    # Sag operand RAX'ta, sol operand stack spill'inde tutulur.
+    # Operator kodu RAX=sol ve RCX=sag sozlesmesini kullanir.
+    g_ra_ikili_derinlik = g_ra_ikili_derinlik - 1;
+    degisken kullanim: tamsayi = g_ra_ikili_spill_derinlik[g_ra_ikili_derinlik];
+    eger platform_arm64_mi() == 1 ise {
+        # MOV X1, X0 (sag -> X1); LDP X0, XZR, [SP], #16 (sol -> X0)
+        byte_yaz(a, 0xE1); byte_yaz(a, 0x03); byte_yaz(a, 0x00); byte_yaz(a, 0xAA);
+        byte_yaz(a, 0xE0); byte_yaz(a, 0x7F); byte_yaz(a, 0xC1); byte_yaz(a, 0xA8);
+        dondu;
+    }
+    eger g_target_platform == 6 ise {
+        # ADDI a1, a0, 0 (sag -> a1)
+        int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_A1, RV_A0, 0));
+        # LD a0, 0(sp) (sol -> a0)
+        int32_yaz(a, riscv_encode_i_type(RV_OP_LOAD, 3, RV_A0, RV_SP, 0));
+        # ADDI sp, sp, 16
+        int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_SP, RV_SP, 16));
+        dondu;
+    }
+    eger g_target_platform == 5 ise {
+        dondu;
+    }
+    eger kullanim == 1 ise {
+        # Gelecekteki scratch yolu: sag'i koru, sol'u RAX'a al.
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1);
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD0);
+        g_ra_scratch_dolu[0] = 0;
+    } yoksa eger kullanim == 2 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1);
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD8);
+        g_ra_scratch_dolu[1] = 0;
+    } yoksa {
+        # MOV RCX, RAX (sag); POP RAX (sol)
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1);
+        byte_yaz(a, 0x58);
+    }
+}
+
+# ============================================================
+# Live Interval Analizi (AST Pre-Scan)
+# Bir fonksiyonun AST'sini tarayip kaba live interval uretir
+# Sonuc: g_ra_interval_* dizileri
+# ============================================================
+isv ra_live_interval_sifirla() {
+    g_ra_interval_adet = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 256 {
+        g_ra_kullanim_sayaci[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv ra_degisken_isim_bul(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 0 - 1; }
+    degisken i: tamsayi = 0;
+    dongu i < g_ra_var_adet {
+        eger g_ra_var_uzunluk[i] == uzn ise {
+            eger bellek_esit_mi(g_ra_var_isim[i], isim, uzn) == 1 ise {
+                dondu i;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+isv ra_mark_captured(kok: *AstDugum) {
+    eger kok == 0 ise { dondu; }
+    eger kok.tip == AST_KIMLIK ise {
+        eger kok.ilk_jeton != 0 ise {
+            degisken idx: tamsayi = ra_degisken_isim_bul(kok.ilk_jeton.baslangic, kok.ilk_jeton.uzunluk);
+            eger idx >= 0 ve idx < 256 {
+                g_ra_var_adresi_alindi[idx] = 1;
+            }
+        }
+    }
+    ra_mark_captured(kok.sol);
+    ra_mark_captured(kok.sag);
+    ra_mark_captured(kok.sonraki);
+    ra_mark_captured(kok.govde);
+}
+
+isv ra_ast_tanimlari_tara(kok: *AstDugum) {
+    eger kok == 0 ise { dondu; }
+    eger kok.tip == AST_ISLEV veya kok.tip == 41 ise {
+        dondu;
+    }
+    eger kok.tip == AST_DEGISKEN_TANIMI ise {
+        eger kok.ilk_jeton != 0 ve kok.dizi_boyutu == 0 ve kok.cozumlenmis_tip <= 0 {
+            degisken uygun: tamsayi = 0;
+            eger kok.tip_adi == 0 { uygun = 1; }
+            yoksa eger kok.tip_adi_uzunluk == 7 ve bellek_esit_mi(kok.tip_adi, "tamsayi".ptr, 7) == 1 { uygun = 1; }
+            yoksa eger kok.tip_adi_uzunluk == 3 ve bellek_esit_mi(kok.tip_adi, "int".ptr, 3) == 1 { uygun = 1; }
+            yoksa eger kok.tip_adi_uzunluk == 3 ve bellek_esit_mi(kok.tip_adi, "i64".ptr, 3) == 1 { uygun = 1; }
+            yoksa eger kok.tip_adi_uzunluk == 4 ve bellek_esit_mi(kok.tip_adi, "sayi".ptr, 4) == 1 { uygun = 1; }
+
+            eger uygun == 1 {
+                degisken idx: tamsayi = ra_degisken_isim_bul(kok.ilk_jeton.baslangic, kok.ilk_jeton.uzunluk);
+                eger idx < 0 ve g_ra_var_adet < 256 {
+                    g_ra_var_isim[g_ra_var_adet] = kok.ilk_jeton.baslangic;
+                    g_ra_var_uzunluk[g_ra_var_adet] = kok.ilk_jeton.uzunluk;
+                    g_ra_kullanim_sayaci[g_ra_var_adet] = 0;
+                    g_ra_var_reg[g_ra_var_adet] = 0;
+                    g_ra_var_adresi_alindi[g_ra_var_adet] = 0;
+                    g_ra_var_adet = g_ra_var_adet + 1;
+                } yoksa eger idx >= 0 {
+                    g_ra_var_adresi_alindi[idx] = 1;
+                }
+            }
+        }
+    }
+    ra_ast_tanimlari_tara(kok.sol);
+    ra_ast_tanimlari_tara(kok.sag);
+    ra_ast_tanimlari_tara(kok.sonraki);
+    ra_ast_tanimlari_tara(kok.govde);
+}
+
+# AST pre-scan: degisken kullanim sayilarini say
+isv ra_ast_kullanim_tara(kok: *AstDugum) {
+    eger kok == 0 ise { dondu; }
+    eger kok.tip == AST_ISLEV veya kok.tip == 41 ise {
+        ra_mark_captured(kok.govde);
+        dondu;
+    }
+    eger kok.tip == AST_KIMLIK ise {
+        eger kok.ilk_jeton != 0 ise {
+            degisken idx: tamsayi = ra_degisken_isim_bul(kok.ilk_jeton.baslangic, kok.ilk_jeton.uzunluk);
+            eger idx >= 0 ve idx < 256 {
+                g_ra_kullanim_sayaci[idx] = g_ra_kullanim_sayaci[idx] + 1;
+            }
+        }
+    }
+    # &x: adresi alinan degiskenler ASLA register'a baglanamaz
+    eger kok.tip == 20 veya kok.tip == AST_REFERANS ise {
+        eger kok.sag != 0 ve kok.sag.ilk_jeton != 0 ise {
+            degisken r_idx: tamsayi = ra_degisken_isim_bul(kok.sag.ilk_jeton.baslangic, kok.sag.ilk_jeton.uzunluk);
+            eger r_idx >= 0 ve r_idx < 256 {
+                g_ra_var_adresi_alindi[r_idx] = 1;
+            }
+        }
+        eger kok.sol != 0 ve kok.sol.ilk_jeton != 0 ise {
+            degisken r_idx2: tamsayi = ra_degisken_isim_bul(kok.sol.ilk_jeton.baslangic, kok.sol.ilk_jeton.uzunluk);
+            eger r_idx2 >= 0 ve r_idx2 < 256 {
+                g_ra_var_adresi_alindi[r_idx2] = 1;
+            }
+        }
+    }
+    ra_ast_kullanim_tara(kok.sol);
+    ra_ast_kullanim_tara(kok.sag);
+    ra_ast_kullanim_tara(kok.sonraki);
+    ra_ast_kullanim_tara(kok.govde);
+}
+
+# ============================================================
+# Degisken -> Register Baglama (Binding)
+# ============================================================
+isv ra_degisken_reg(lokal_idx: tamsayi) -> tamsayi {
+    eger lokal_idx < 0 veya lokal_idx >= 256 ise { dondu 0; }
+    dondu g_ra_var_reg[lokal_idx];
+}
+
+isv ra_degisken_reg_bul(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger g_lambda_tabani > 0 ise { dondu 0; }
+    degisken idx: tamsayi = ra_degisken_isim_bul(isim, uzn);
+    eger idx < 0 { dondu 0; }
+    dondu g_ra_var_reg[idx];
+}
+
+isv emit_mov_rcx_reg(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_RBX ise {
+        # 48 89 D9: MOV RCX, RBX
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD9);
+    } yoksa eger reg == REG_R12 ise {
+        # 4C 89 E1: MOV RCX, R12
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xE1);
+    } yoksa eger reg == REG_R13 ise {
+        # 4C 89 E9: MOV RCX, R13
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xE9);
+    } yoksa eger reg == REG_R14 ise {
+        # 4C 89 F1: MOV RCX, R14
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF1);
+    } yoksa eger reg == REG_R15 ise {
+        # 4C 89 F9: MOV RCX, R15
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9);
+    }
+}
+
+isv emit_mov_reg_rax(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_RBX ise {
+        # 48 89 C3: MOV RBX, RAX
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC3);
+    } yoksa eger reg == REG_R12 ise {
+        # 49 89 C4: MOV R12, RAX
+        byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC4);
+    } yoksa eger reg == REG_R13 ise {
+        # 49 89 C5: MOV R13, RAX
+        byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC5);
+    } yoksa eger reg == REG_R14 ise {
+        # 49 89 C6: MOV R14, RAX
+        byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC6);
+    } yoksa eger reg == REG_R15 ise {
+        # 49 89 C7: MOV R15, RAX
+        byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);
+    }
+}
+
+isv emit_mov_rax_reg(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_RBX ise {
+        # 48 89 D8: MOV RAX, RBX
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD8);
+    } yoksa eger reg == REG_R12 ise {
+        # 4C 89 E0: MOV RAX, R12
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xE0);
+    } yoksa eger reg == REG_R13 ise {
+        # 4C 89 E8: MOV RAX, R13
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xE8);
+    } yoksa eger reg == REG_R14 ise {
+        # 4C 89 F0: MOV RAX, R14
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF0);
+    } yoksa eger reg == REG_R15 ise {
+        # 4C 89 F8: MOV RAX, R15
+        byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF8);
+    }
+}
+
+isv emit_add_reg_imm8(a: *MakineKoduArenasi, reg: tamsayi, c: tamsayi) {
+    eger reg == REG_RBX ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC3); byte_yaz(a, c);
+    } yoksa eger reg == REG_R12 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, c);
+    } yoksa eger reg == REG_R13 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xC5); byte_yaz(a, c);
+    } yoksa eger reg == REG_R14 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xC6); byte_yaz(a, c);
+    } yoksa eger reg == REG_R15 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xC7); byte_yaz(a, c);
+    }
+}
+
+isv emit_sub_reg_imm8(a: *MakineKoduArenasi, reg: tamsayi, c: tamsayi) {
+    eger reg == REG_RBX ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEB); byte_yaz(a, c);
+    } yoksa eger reg == REG_R12 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, c);
+    } yoksa eger reg == REG_R13 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xED); byte_yaz(a, c);
+    } yoksa eger reg == REG_R14 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xEE); byte_yaz(a, c);
+    } yoksa eger reg == REG_R15 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xEF); byte_yaz(a, c);
+    }
+}
+
+isv emit_add_reg_rax(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_RBX ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x01); byte_yaz(a, 0xC3);
+    } yoksa eger reg == REG_R12 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x01); byte_yaz(a, 0xC4);
+    } yoksa eger reg == REG_R13 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x01); byte_yaz(a, 0xC5);
+    } yoksa eger reg == REG_R14 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x01); byte_yaz(a, 0xC6);
+    } yoksa eger reg == REG_R15 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x01); byte_yaz(a, 0xC7);
+    }
+}
+
+isv emit_sub_reg_rax(a: *MakineKoduArenasi, reg: tamsayi) {
+    eger reg == REG_RBX ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x29); byte_yaz(a, 0xC3);
+    } yoksa eger reg == REG_R12 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x29); byte_yaz(a, 0xC4);
+    } yoksa eger reg == REG_R13 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x29); byte_yaz(a, 0xC5);
+    } yoksa eger reg == REG_R14 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x29); byte_yaz(a, 0xC6);
+    } yoksa eger reg == REG_R15 ise {
+        byte_yaz(a, 0x49); byte_yaz(a, 0x29); byte_yaz(a, 0xC7);
+    }
+}
+
+isv ra_degiskenleri_yazmaca_bagla(kok: *AstDugum) {
+    g_ra_var_adet = 0;
+    ra_live_interval_sifirla();
+    g_ra_bound_count = 0;
+    eger g_ra_opt_aktif == 0 ise { dondu; }
+    ra_ast_tanimlari_tara(kok);
+    ra_ast_kullanim_tara(kok);
+    
+    degisken tahsis_edilen: tamsayi = 0;
+    degisken adim: tamsayi = 0;
+    dongu adim < 5 ve tahsis_edilen < 5 {
+        degisken maks_kullanim: tamsayi = 1; # En az 2 kullanim olmali
+        degisken secilen_idx: tamsayi = 0 - 1;
+        degisken i: tamsayi = 0;
+        dongu i < g_ra_var_adet {
+            eger g_ra_var_reg[i] == 0 ve g_ra_var_adresi_alindi[i] == 0 ve g_ra_kullanim_sayaci[i] > maks_kullanim {
+                maks_kullanim = g_ra_kullanim_sayaci[i];
+                secilen_idx = i;
+            }
+            i = i + 1;
+        }
+        
+        eger secilen_idx != (0 - 1) ise {
+            eger tahsis_edilen == 0 ise {
+                g_ra_var_reg[secilen_idx] = REG_RBX;
+                g_ra_callee_saved_kullanildi[0] = 1;
+            } yoksa eger tahsis_edilen == 1 ise {
+                g_ra_var_reg[secilen_idx] = REG_R12;
+                g_ra_callee_saved_kullanildi[1] = 1;
+            } yoksa eger tahsis_edilen == 2 ise {
+                g_ra_var_reg[secilen_idx] = REG_R13;
+                g_ra_callee_saved_kullanildi[2] = 1;
+            } yoksa eger tahsis_edilen == 3 ise {
+                g_ra_var_reg[secilen_idx] = REG_R14;
+                g_ra_callee_saved_kullanildi[3] = 1;
+            } yoksa eger tahsis_edilen == 4 ise {
+                g_ra_var_reg[secilen_idx] = REG_R15;
+                g_ra_callee_saved_kullanildi[4] = 1;
+            }
+            tahsis_edilen = tahsis_edilen + 1;
+            g_ra_bound_count = g_ra_bound_count + 1;
+        } yoksa {
+            durdur;
+        }
+        adim = adim + 1;
+    }
+}
+
+# ============================================================
+# Dinamik Stack Frame Boyutu Hesaplama
+#
+# Fonksiyon prologue'da SUB RSP sabit 16384 yerine:
+#   - lokal_stack_offset + 64 byte padding + 16-byte align
+#
+# Uygulama:
+#   1. Prolog'da SUB RSP, 0 yaz (placeholder: 4 byte imm32)
+#   2. Gövde bittikten sonra gercek boyutu hesapla
+#   3. int32_patch ile dogru degeri yaz
+# ============================================================
+
+# SUB RSP, imm32 relocation slot: 48 81 EC [4-byte imm32]
+# NOT: emit_sub_rsp ile ayni format (n>127, n<=4096 range).
+# Dinamik frame boyutu max 4096 sinirli tutulur (stack probe gereksiz).
+isv emit_sub_rsp_relocation_slot(a: *MakineKoduArenasi) -> tamsayi {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xEC);
+    degisken pos: tamsayi = a.kullanilan;
+    # 4096 = 0x1000: LE int32
+    byte_yaz(a, 0); byte_yaz(a, 16); byte_yaz(a, 0); byte_yaz(a, 0);
+    dondu pos;
+}
+
+# Gercek boyutu hesapla ve yamala
+isv ra_stack_frame_yamala(a: *MakineKoduArenasi, sub_rsp_pos: tamsayi) {
+    # g_lokal_stack_offset: tum lokal degiskenlerin toplam stack tuketime
+    # Ek marjin: 512 byte (buyuk dizi, fonksiyon cagrilari icin guvenlik)
+    degisken gercek: tamsayi = g_lokal_stack_offset + 512;
+    # 16-byte hizala
+    eger gercek % 16 != 0 ise {
+        gercek = gercek + (16 - (gercek % 16));
+    }
+    # Minimum 64 byte
+    eger gercek < 64 ise { gercek = 64; }
+    # int32_patch ile yaz (output_pe.ykn forward ref sorunu var)
+    # Dogrudan a.bellek indexleme: bellek[sub_rsp_pos..+4] = gercek LE int32
+    degisken u: tamsayi = gercek;
+    eger u < 0 ise { u = u + 4294967296; }
+    degisken db0: u8 = u % 256;
+    degisken db1: u8 = (u / 256) % 256;
+    degisken db2: u8 = (u / 65536) % 256;
+    degisken db3: u8 = (u / 16777216) % 256;
+    a.bellek[sub_rsp_pos]     = db0;
+    a.bellek[sub_rsp_pos + 1] = db1;
+    a.bellek[sub_rsp_pos + 2] = db2;
+    a.bellek[sub_rsp_pos + 3] = db3;
+}
+
+# ============================================================
+# ADD RSP, imm32 (epilog icin dinamik)
+# ============================================================
+isv emit_add_rsp_imm32(a: *MakineKoduArenasi, val: tamsayi) {
+    eger val <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4);
+        byte_yaz(a, val);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xC4);
+        int32_yaz(a, val);
+    }
+}
+
+# Epilog icin: SUB RSP ile ayni degeri ADD RSP olarak emit et
+# (placeholder degeri okuyup kullan)
+isv ra_stack_frame_epilog_emit(a: *MakineKoduArenasi, sub_rsp_pos: tamsayi) {
+    # sub_rsp_pos'taki int32 degerini oku (4 byte little-endian)
+    degisken arena_bellek: *u8 = a.bellek;
+    degisken b0: tamsayi = arena_bellek[sub_rsp_pos];
+    degisken b1: tamsayi = arena_bellek[sub_rsp_pos + 1];
+    degisken b2: tamsayi = arena_bellek[sub_rsp_pos + 2];
+    degisken b3: tamsayi = arena_bellek[sub_rsp_pos + 3];
+    degisken frame_boyutu: tamsayi = b0 + (b1 * 256) + (b2 * 65536) + (b3 * 16777216);
+    emit_add_rsp_imm32(a, frame_boyutu);
+}
+
+# ============================================================
+# Rapor: RA istatistikleri (debug/test icin)
+# ============================================================
+isv ra_rapor_yazdir() {
+    ekrana_yaz("[RA] Scratch R10/R11 kullanimi: derinlik=".ptr);
+    sayiyi_yazdir(g_ra_ikili_derinlik);
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("[RA] Callee-saved kullanim: RBX=".ptr);
+    sayiyi_yazdir(g_ra_callee_saved_kullanildi[0]);
+    ekrana_yaz(" R12=".ptr);
+    sayiyi_yazdir(g_ra_callee_saved_kullanildi[1]);
+    ekrana_yaz("\n".ptr);
+}

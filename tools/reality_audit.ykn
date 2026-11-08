@@ -1,0 +1,182 @@
+# Saf YKN gerçeklik tarayıcısı çekirdeği.
+# Bu modül yalnız verilen NUL-sonlu kaynak tamponunu tarar; dosya keşfi,
+# annotation çözümleme ve rapor serialization katmanları ayrıca uygulanacaktır.
+
+yapi RealityAuditCounts {
+    mock_marker: tamsayi;
+    stub_marker: tamsayi;
+    constant_success: tamsayi;
+    fake_handle: tamsayi;
+}
+
+isv reality_audit_strlen(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu metin[n] != 0 {
+        n = n + 1;
+    }
+    dondu n;
+}
+
+isv reality_audit_ascii_kucult(deger: u8) -> u8 {
+    eger deger >= 65 ve deger <= 90 ise { dondu deger + 32; }
+    dondu deger;
+}
+
+isv reality_audit_eslesme(metin: *u8, metin_uzunlugu: tamsayi,
+                         aranan: *u8, aranan_uzunlugu: tamsayi,
+                         baslangic: tamsayi) -> tamsayi {
+    eger metin == 0 veya aranan == 0 veya aranan_uzunlugu <= 0 veya
+       baslangic < 0 veya baslangic + aranan_uzunlugu > metin_uzunlugu ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < aranan_uzunlugu {
+        eger reality_audit_ascii_kucult(metin[baslangic + i]) !=
+           reality_audit_ascii_kucult(aranan[i]) ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+isv reality_audit_bosluk(deger: u8) -> tamsayi {
+    eger deger == 9 veya deger == 10 veya deger == 13 veya deger == 32 ise { dondu 1; }
+    dondu 0;
+}
+
+isv reality_audit_sabit_donus_say(metin: *u8, anahtar: *u8) -> tamsayi {
+    eger metin == 0 veya anahtar == 0 ise { dondu 0; }
+    degisken toplam: tamsayi = reality_audit_strlen(metin);
+    degisken anahtar_uzunlugu: tamsayi = reality_audit_strlen(anahtar);
+    degisken adet: tamsayi = 0;
+    degisken konum: tamsayi = 0;
+    dongu konum + anahtar_uzunlugu < toplam {
+        eger reality_audit_eslesme(metin, toplam, anahtar, anahtar_uzunlugu, konum) == 1 ise {
+            degisken p: tamsayi = konum + anahtar_uzunlugu;
+            eger reality_audit_bosluk(metin[p]) == 1 ise {
+                dongu p < toplam ve reality_audit_bosluk(metin[p]) == 1 { p = p + 1; }
+                eger p < toplam ve metin[p] == 48 ise {
+                    p = p + 1;
+                    dongu p < toplam ve reality_audit_bosluk(metin[p]) == 1 { p = p + 1; }
+                    eger p < toplam ve metin[p] == 59 ise { adet = adet + 1; }
+                }
+            }
+        }
+        konum = konum + 1;
+    }
+    dondu adet;
+}
+
+isv reality_audit_handle_say(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken toplam: tamsayi = reality_audit_strlen(metin);
+    degisken adet: tamsayi = 0;
+    degisken konum: tamsayi = 0;
+    dongu konum + 6 < toplam {
+        eger reality_audit_eslesme(metin, toplam, "handle".ptr, 6, konum) == 1 ise {
+            degisken p: tamsayi = konum + 6;
+            dongu p < toplam ve reality_audit_bosluk(metin[p]) == 1 { p = p + 1; }
+            eger p < toplam ve metin[p] == 61 ise {
+                p = p + 1;
+                dongu p < toplam ve reality_audit_bosluk(metin[p]) == 1 { p = p + 1; }
+                eger p < toplam ve metin[p] == 49 ise {
+                    p = p + 1;
+                    dongu p < toplam ve reality_audit_bosluk(metin[p]) == 1 { p = p + 1; }
+                    eger p < toplam ve metin[p] == 59 ise { adet = adet + 1; }
+                }
+            }
+        }
+        konum = konum + 1;
+    }
+    dondu adet;
+}
+
+isv reality_audit_say(metin: *u8, aranan: *u8) -> tamsayi {
+    eger metin == 0 veya aranan == 0 ise { dondu 0; }
+    degisken metin_uzunlugu: tamsayi = reality_audit_strlen(metin);
+    degisken aranan_uzunlugu: tamsayi = reality_audit_strlen(aranan);
+    eger aranan_uzunlugu <= 0 veya aranan_uzunlugu > metin_uzunlugu ise { dondu 0; }
+    degisken adet: tamsayi = 0;
+    degisken konum: tamsayi = 0;
+    dongu konum + aranan_uzunlugu <= metin_uzunlugu {
+        eger reality_audit_eslesme(metin, metin_uzunlugu, aranan,
+                                  aranan_uzunlugu, konum) == 1 ise {
+            adet = adet + 1;
+            konum = konum + aranan_uzunlugu;
+        } yoksa {
+            konum = konum + 1;
+        }
+    }
+    dondu adet;
+}
+
+isv reality_audit_kodu_maskle(metin: *u8, maske: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger metin == 0 veya maske == 0 veya uzunluk < 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    degisken yorum_satiri: tamsayi = 0;
+    degisken yorum_blok: tamsayi = 0;
+    degisken metin_icinde: tamsayi = 0;
+    degisken kacis: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken c: u8 = metin[i];
+        degisken sonraki: u8 = 0;
+        eger i + 1 < uzunluk ise { sonraki = metin[i + 1]; }
+        eger yorum_satiri != 0 ise {
+            eger c == 10 ise { yorum_satiri = 0; maske[i] = c; }
+            yoksa { maske[i] = 32; }
+        } yoksa eger yorum_blok != 0 ise {
+            maske[i] = 32;
+            eger c == 42 ve sonraki == 47 ise {
+                maske[i + 1] = 32;
+                i = i + 1;
+                yorum_blok = 0;
+            } yoksa eger c == 10 ise { maske[i] = c; }
+        } yoksa eger metin_icinde != 0 ise {
+            maske[i] = 32;
+            eger c == 10 ise { maske[i] = c; }
+            eger kacis != 0 ise { kacis = 0; }
+            yoksa eger c == 92 ise { kacis = 1; }
+            yoksa eger c == 34 ise { metin_icinde = 0; }
+        } yoksa eger c == 35 ise {
+            maske[i] = 32;
+            yorum_satiri = 1;
+        } yoksa eger c == 47 ve sonraki == 42 ise {
+            maske[i] = 32;
+            maske[i + 1] = 32;
+            i = i + 1;
+            yorum_blok = 1;
+        } yoksa eger c == 34 ise {
+            maske[i] = 32;
+            metin_icinde = 1;
+        } yoksa {
+            maske[i] = c;
+        }
+        i = i + 1;
+    }
+    maske[uzunluk] = 0;
+    eger yorum_blok != 0 veya metin_icinde != 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv reality_audit_tara(metin: *u8, sonuc: *RealityAuditCounts) -> tamsayi {
+    eger metin == 0 veya sonuc == 0 ise { dondu 0; }
+    degisken uzunluk: tamsayi = reality_audit_strlen(metin);
+    degisken maske: *u8 = bellek_tahsis_et(uzunluk + 1);
+    eger maske == 0 ise { dondu 0; }
+    eger reality_audit_kodu_maskle(metin, maske, uzunluk) != 1 ise {
+        os_bellek_serbest(maske);
+        dondu 0;
+    }
+    sonuc->mock_marker = reality_audit_say(maske, "mock".ptr) +
+        reality_audit_say(maske, "placeholder".ptr) +
+        reality_audit_say(maske, "dummy".ptr) +
+        reality_audit_say(maske, "sahte".ptr);
+    sonuc->stub_marker = reality_audit_say(maske, "stub".ptr) +
+        reality_audit_say(maske, "todo".ptr) +
+        reality_audit_say(maske, "fixme".ptr) +
+        reality_audit_say(maske, "iskelet".ptr);
+    sonuc->constant_success = reality_audit_sabit_donus_say(maske, "dondu".ptr) +
+        reality_audit_sabit_donus_say(maske, "return".ptr);
+    sonuc->fake_handle = reality_audit_handle_say(maske);
+    os_bellek_serbest(maske);
+    dondu 1;
+}

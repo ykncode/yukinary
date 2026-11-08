@@ -1,0 +1,59 @@
+# ============================================================
+# Yukinary Test - tests/test_final_faz2_regalloc_graph.ykn
+# FAZ 2 DOGRULAMA: Chaitin-Briggs Canli Aralıklarla Register Tahsisati
+# ============================================================
+
+ice_aktar "std/opt/chaitin_briggs_alloc.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+isv main() -> tamsayi {
+    degisken v_adet: tamsayi = 5;
+    degisken canli_bas: *tamsayi = bellek_tahsis_et(v_adet * 8);
+    degisken canli_bit: *tamsayi = bellek_tahsis_et(v_adet * 8);
+    
+    # 5 Sanal Degiskenin Canlilik Araliklari
+    # v0: [0, 10]
+    # v1: [2, 6]   -> v0 ile cakisir
+    # v2: [4, 8]   -> v0 ve v1 ile cakisir (Clique-3)
+    # v3: [12, 18] -> v0, v1, v2 ile kesismez (ayrik)
+    # v4: [14, 20] -> v3 ile cakisir
+    canli_bas[0] = 0;   canli_bit[0] = 10;
+    canli_bas[1] = 2;   canli_bit[1] = 6;
+    canli_bas[2] = 4;   canli_bit[2] = 8;
+    canli_bas[3] = 12;  canli_bit[3] = 18;
+    canli_bas[4] = 14;  canli_bit[4] = 20;
+    
+    # Test 1: K = 3 Fiziksel Yazmac (Clique-3 icin 3 renk yeterli, spill = 0)
+    degisken sonuc3: *RegTahsisSonucu = chaitin_briggs_tahsis_et(canli_bas, canli_bit, v_adet, 3);
+    eger sonuc3 == 0 ise { dondu 1; }
+    eger sonuc3.spill_sayisi != 0 ise { dondu 2; } # Spill olmamali
+    
+    degisken r: *tamsayi = sonuc3.atanan_regler;
+    degisken r0: tamsayi = r[0];
+    degisken r1: tamsayi = r[1];
+    degisken r2: tamsayi = r[2];
+    degisken r3: tamsayi = r[3];
+    degisken r4: tamsayi = r[4];
+    
+    # Cakisik olan v0, v1, v2 farkli renklere sahip olmali
+    eger r0 == r1 veya r0 == r2 veya r1 == r2 ise { dondu 3; }
+    # Cakisik olan v3 ve v4 farkli renklere sahip olmali
+    eger r3 == r4 ise { dondu 4; }
+    
+    reg_tahsis_sonucu_serbest_birak(sonuc3);
+    
+    # Test 2: K = 2 Fiziksel Yazmac (Clique-3 iki renkle renklendirilemez, spill olmali!)
+    degisken sonuc2: *RegTahsisSonucu = chaitin_briggs_tahsis_et(canli_bas, canli_bit, v_adet, 2);
+    eger sonuc2 == 0 ise { dondu 5; }
+    eger sonuc2.spill_sayisi <= 0 ise { dondu 6; } # Mutlaka en az 1 spill olmali
+    
+    reg_tahsis_sonucu_serbest_birak(sonuc2);
+    
+    os_bellek_serbest(canli_bas as *u8);
+    os_bellek_serbest(canli_bit as *u8);
+    
+    # Basarili!
+    dondu 0;
+}
+

@@ -1,0 +1,9 @@
+#config {
+    output: "build/custom_output.exe"
+}
+
+isv main() -> tamsayi {
+    ekrana_yaz("CUSTOM OUTPUT FILE OK\n".ptr);
+    dondu 0;
+}
+

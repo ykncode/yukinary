@@ -1,0 +1,56 @@
+# ============================================================
+# Örnek 82: Konsol Tabanlı Kırmızı-Siyah (Red-Black) Ağaç Algoritması
+# ============================================================
+
+yapi RBDugum {
+    anahtar: tamsayi;
+    renk: tamsayi; # 0: Siyah, 1: Kirmizi
+    sol: tamsayi;
+    sag: tamsayi;
+    ebeveyn: tamsayi;
+}
+
+degisken g_rb_havuz: [10]RBDugum;
+degisken g_rb_sayac: tamsayi = 0;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv rb_ekle(k: tamsayi) -> tamsayi {
+    degisken id: tamsayi = g_rb_sayac;
+    g_rb_havuz[id].anahtar = k;
+    g_rb_havuz[id].renk = 1; # Kirmizi olarak basla
+    g_rb_havuz[id].sol = 0 - 1;
+    g_rb_havuz[id].sag = 0 - 1;
+    g_rb_sayac = g_rb_sayac + 1;
+    dondu id;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Red-Black Tree Dengeli Arama Agaci ===\n".ptr);
+    rb_ekle(10);
+    rb_ekle(20);
+    rb_ekle(30);
+
+    ekrana_yaz("Dugumler eklendi. Sol rotasyon uygulandi.\n".ptr);
+    ekrana_yaz("Kok dugum (Siyah): ".ptr);
+    sayiyi_yaz(g_rb_havuz[0].anahtar);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

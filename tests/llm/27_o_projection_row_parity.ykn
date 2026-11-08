@@ -1,0 +1,33 @@
+# Real BitNet attention-output row parity.
+# K=2560 => 10 IQ2_S blocks => 820 packed bytes.
+harici isv ykn_llm_iq2s_dot_q16(packed: *u8, activation: *tamsayi, k: tamsayi, row_offset: tamsayi) -> tamsayi;
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [48]u8;
+    degisken n: tamsayi = sayi;
+    degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    dongu i > 0 { i = i - 1; degisken one: [2]u8; one[0] = buf[i]; one[1] = 0; ekrana_yaz(one); }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken packed: *u8 = bellek_tahsis_et(820);
+    degisken x: *tamsayi = bellek_tahsis_et(2560 * 8);
+    degisken scalar: [1]tamsayi;
+    degisken i: tamsayi = 0;
+    eger packed == 0 veya x == 0 ise { ekrana_yaz("O-ROW-ALLOC-FAIL\n".ptr); dondu 1; }
+    eger dosya_oku_aralik("models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr,
+        680399648, packed, 820) != 820 ise { ekrana_yaz("O-ROW-READ-FAIL\n".ptr); dondu 2; }
+    dongu i < 2560 { x[i] = (((i * 13) % 17) - 8) * 65536; i = i + 1; }
+    eger bitnet_iq2s_paketli_matris_carp(packed, x, scalar, 1, 2560, 1) == 0 ise {
+        ekrana_yaz("O-ROW-SCALAR-FAIL\n".ptr); dondu 3;
+    }
+    degisken native: tamsayi = ykn_llm_iq2s_dot_q16(packed, x, 2560, 0);
+    ekrana_yaz("O-ROW=".ptr); sayiyi_yazdir(scalar[0]); ekrana_yaz(" ".ptr); sayiyi_yazdir(native); ekrana_yaz("\n".ptr);
+    eger scalar[0] != native ise { ekrana_yaz("O-ROW-PARITY-FAIL\n".ptr); dondu 4; }
+    ekrana_yaz("O-ROW-PARITY-PASS\n".ptr); dondu 0;
+}

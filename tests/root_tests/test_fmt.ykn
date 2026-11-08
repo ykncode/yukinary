@@ -1,0 +1,4 @@
+isv ana() -> tamsayi {
+    degisken ptr: *u8 = 0;
+    degisken x: tamsayi = 1 + 2;
+}

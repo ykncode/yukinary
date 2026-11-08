@@ -1,0 +1,55 @@
+# ============================================================
+# tests/fix9/test_os_soyutlama.ykn
+# std/os/common.ykn OS soyutlama katmani test suiti:
+#   - os_bellek_tahsis + bellek tahsisi guvencesi
+#   - os_standart_handle_al (stdout) + os_dosya_yaz
+#   - os_komut_satiri_argumanlari
+# Beklenen cikti: "OS SOYUTLAMA TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- os_bellek_tahsis: gercek bellek elde edilmeli ---
+    degisken ptr: *u8 = os_bellek_tahsis(4096);
+    eger ptr == 0 ise {
+        ekrana_yaz("HATA: os_bellek_tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # Bellegin yazilabilir oldugunu dogrula
+    ptr[0] = 77;
+    ptr[4095] = 88;
+    eger ptr[0] != 77 ise {
+        ekrana_yaz("HATA: os_bellek_tahsis yazma basarisiz\n".ptr);
+        dondu 1;
+    }
+    eger ptr[4095] != 88 ise {
+        ekrana_yaz("HATA: os_bellek_tahsis son byte yazma basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # --- os_bellek_serbest: serbest birakma (cokme olmamali) ---
+    os_bellek_serbest(ptr);
+    os_bellek_serbest(0);   # null-safety: cokme olmamali
+
+    # --- os_standart_handle_al: stdout handle gecerli olmali ---
+    degisken stdout_h: tamsayi = os_standart_handle_al(WIN_STD_OUTPUT_HANDLE);
+    # Windows'ta INVALID_HANDLE_VALUE = 0xffffffffffffffff
+    eger stdout_h == WIN_INVALID_HANDLE_VALUE ise {
+        ekrana_yaz("HATA: os_standart_handle_al gecersiz handle\n".ptr);
+        dondu 1;
+    }
+
+    # --- os_dosya_yaz: stdout'a yaz ---
+    degisken mesaj: *u8 = "OS SOYUTLAMA TESTLERI TAMAM\n".ptr;
+    degisken uz: tamsayi = 0;
+    dongu mesaj[uz] != 0 { uz = uz + 1; }
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(stdout_h, mesaj, uz, &yazilan);
+    eger yazilan != uz ise {
+        dondu 1;
+    }
+
+    dondu 0;
+}

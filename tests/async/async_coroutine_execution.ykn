@@ -1,0 +1,25 @@
+# ============================================================
+# Async/Await Gerçek Coroutine Lowering ve Execution Acceptance
+# ============================================================
+
+async isv bir() -> tamsayi {
+    dondu 1;
+}
+
+async isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+async isv zincir() -> tamsayi {
+    degisken x: tamsayi = await bir();
+    degisken y: tamsayi = await topla(x, 41);
+    dondu y;
+}
+
+async isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = await zincir();
+    eger sonuc == 42 ise {
+        dondu 0;
+    }
+    dondu 1;
+}

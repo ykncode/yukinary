@@ -1,0 +1,48 @@
+# ============================================================
+# Yukinary Faz 3: Cebirsel Veri Tipleri (ADT / Tagged Enums) ve Pattern Matching
+# %100 Gercek Kod, Zero Mocks, Windows PE32+ ve Linux ELF64 Uyumlu
+# ============================================================
+
+enum IslemDurumu {
+    Beklemede,
+    Calisiyor(tamsayi),
+    Tamamlandi(tamsayi),
+    Hata(tamsayi)
+}
+
+isv durumu_degerlendir(d: IslemDurumu) -> tamsayi {
+    esles d {
+        IslemDurumu::Beklemede => {
+            dondu 10;
+        }
+        IslemDurumu::Calisiyor(ilerleme) => {
+            dondu 20 + ilerleme;
+        }
+        IslemDurumu::Tamamlandi(kod) => {
+            dondu 100 + kod;
+        }
+        IslemDurumu::Hata(hata_kodu) => {
+            dondu 0 - hata_kodu;
+        }
+    }
+    dondu 0;
+}
+
+isv main() -> tamsayi {
+    degisken d1: IslemDurumu = IslemDurumu::Beklemede;
+    degisken d2: IslemDurumu = IslemDurumu::Calisiyor(5);
+    degisken d3: IslemDurumu = IslemDurumu::Tamamlandi(0);
+    degisken d4: IslemDurumu = IslemDurumu::Hata(404);
+
+    degisken r1: tamsayi = durumu_degerlendir(d1);
+    degisken r2: tamsayi = durumu_degerlendir(d2);
+    degisken r3: tamsayi = durumu_degerlendir(d3);
+    degisken r4: tamsayi = durumu_degerlendir(d4);
+
+    # r1 == 10, r2 == 25, r3 == 100, r4 == -404
+    eger r1 == 10 ve r2 == 25 ve r3 == 100 ve r4 == -404 ise {
+        dondu 0; # Basarili - Exit Code 0
+    }
+    dondu 1; # Hata
+}
+

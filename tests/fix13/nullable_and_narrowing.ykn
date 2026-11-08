@@ -1,0 +1,10 @@
+# FIX-13: ve ile birlesen iki nullable guard.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    degisken q: ?*u8 = bos;
+    eger p != bos ve q != bos ise {
+        p[0] = 80;
+        q[0] = 81;
+    }
+    dondu 0;
+}

@@ -1,0 +1,15 @@
+# Gerçek YKN chunked HTTP server: iki chunk ve final zero chunk gönderir.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu 80; }
+    degisken sunucu: tamsayi = sunucu_olustur(18084);
+    eger sunucu < 0 ise { dondu 81; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { soket_kapat(sunucu); dondu 82; }
+    degisken cevap: *u8 = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nHELLO\r\n6\r\n WORLD\r\n0\r\n\r\n".ptr;
+    degisken uzunluk: tamsayi = 0;
+    dongu cevap[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    eger soket_gonder_tam(istemci, cevap, uzunluk) != uzunluk ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 83; }
+    soket_kapat(istemci); soket_kapat(sunucu); dondu 0;
+}

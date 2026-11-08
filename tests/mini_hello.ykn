@@ -1,0 +1,8 @@
+isv ekrana_yaz(mesaj: *u8) {}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("merhaba\n".ptr);
+    dondu 0;
+}
+
+

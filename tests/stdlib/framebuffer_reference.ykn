@@ -1,0 +1,12 @@
+# Framebuffer primitive acceptance: memory writes, bounds and logo pixels.
+ice_aktar "../../std/os/drivers/framebuffer.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken vram: [256]u8;
+    eger framebuffer_ekranini_temizle(vram.ptr, 64, 0x11223344) == 0 ise { dondu 1; }
+    eger vram[0] != 68 veya vram[1] != 51 veya vram[2] != 34 veya vram[3] != 17 ise { dondu 2; }
+    eger yuki_logosu_cizdir(vram.ptr, 16, 16, 64, 4, 4, 0xAABBCCDD) == 0 ise { dondu 3; }
+    eger vram[(4 * 64) + (6 * 4)] != 221 veya
+       yuki_logosu_cizdir(vram.ptr, 16, 16, 64, 15, 15, 0xFFFFFFFF) != 0 ise { dondu 4; }
+    dondu 0;
+}

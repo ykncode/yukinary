@@ -1,0 +1,16 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv test_uz<T>(d: *Dizi<T>) -> tamsayi {
+    dondu d;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("merhaba\n".ptr);
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken ret_d: tamsayi = test_uz<tamsayi>(d);
+    degisken ptr_d: tamsayi = d;
+    eger ret_d == ptr_d ise {
+        dondu 42; # d basariyla fonksiyona gecti!
+    }
+    dondu 99; # d yanlis gecti!
+}

@@ -1,0 +1,27 @@
+# GPT-2 byte-level decoder contract for GGUF token text.
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/tokenizer.ykn";
+
+isv ana() -> tamsayi {
+    degisken space_token: [3]u8;
+    space_token[0] = 196; space_token[1] = 160; space_token[2] = 0;
+    degisken newline_token: [3]u8;
+    newline_token[0] = 196; newline_token[1] = 138; newline_token[2] = 0;
+    degisken plain: [6]u8;
+    plain[0] = 104; plain[1] = 101; plain[2] = 108;
+    plain[3] = 108; plain[4] = 111; plain[5] = 0;
+
+    degisken decoded_space: [8]u8;
+    degisken decoded_newline: [8]u8;
+    degisken decoded_plain: [8]u8;
+    eger bitnet_gpt2_byte_decode(space_token, 2, decoded_space, 8) != 1 veya
+       decoded_space[0] != 32 ise { dondu 1; }
+    eger bitnet_gpt2_byte_decode(newline_token, 2, decoded_newline, 8) != 1 veya
+       decoded_newline[0] != 10 ise { dondu 2; }
+    eger bitnet_gpt2_byte_decode(plain, 5, decoded_plain, 8) != 5 veya
+       decoded_plain[0] != 104 veya decoded_plain[4] != 111 ise { dondu 3; }
+    ekrana_yaz("GPT2-BYTE-DECODER-PASS\n".ptr);
+    dondu 0;
+}

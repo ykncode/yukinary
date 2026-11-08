@@ -1,0 +1,9 @@
+# FIX-13: loop kosulundaki non-null guard govdeye tasinir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    dongu p != bos {
+        p[0] = 84;
+        durdur;
+    }
+    dondu 0;
+}

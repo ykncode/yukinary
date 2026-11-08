@@ -1,0 +1,342 @@
+# ============================================================
+# Yukinary (YKN) Fingerprint Sistemi (src/fingerprint.ykn)
+# FAZ 6.1: Deterministic Incremental Compilation Fingerprints
+#
+# Bilesenler:
+# 1. Source SHA-256 fingerprint
+# 2. Imported module fingerprint
+# 3. Compiler version fingerprint
+# 4. Target platform fingerprint
+# 5. Feature flag fingerprint
+# 6. Stdlib API fingerprint
+# 7. Generic specialization fingerprint
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+# ============================================================
+# Standart SHA-256 Algoritmasi
+# ============================================================
+
+degisken g_fp_sha256_k: [64]tamsayi;
+degisken g_fp_sha256_k_hazir: tamsayi = 0;
+
+isv fp_sha256_rotr(x: tamsayi, n: tamsayi) -> tamsayi {
+    degisken x32: tamsayi = x & 0xffffffff;
+    dondu ((x32 >> n) | (x32 << (32 - n))) & 0xffffffff;
+}
+
+isv fp_sha256_shr(x: tamsayi, n: tamsayi) -> tamsayi {
+    dondu ((x & 0xffffffff) >> n) & 0xffffffff;
+}
+
+isv fp_sha256_init_k() {
+    eger g_fp_sha256_k_hazir == 1 ise { dondu; }
+    g_fp_sha256_k[0]  = 0x428a2f98; g_fp_sha256_k[1]  = 0x71374491; g_fp_sha256_k[2]  = 0xb5c0fbcf; g_fp_sha256_k[3]  = 0xe9b5dba5;
+    g_fp_sha256_k[4]  = 0x3956c25b; g_fp_sha256_k[5]  = 0x59f111f1; g_fp_sha256_k[6]  = 0x923f82a4; g_fp_sha256_k[7]  = 0xab1c5ed5;
+    g_fp_sha256_k[8]  = 0xd807aa98; g_fp_sha256_k[9]  = 0x12835b01; g_fp_sha256_k[10] = 0x243185be; g_fp_sha256_k[11] = 0x550c7dc3;
+    g_fp_sha256_k[12] = 0x72be5d74; g_fp_sha256_k[13] = 0x80deb1fe; g_fp_sha256_k[14] = 0x9bdc06a7; g_fp_sha256_k[15] = 0xc19bf174;
+    g_fp_sha256_k[16] = 0xe49b69c1; g_fp_sha256_k[17] = 0xefbe4786; g_fp_sha256_k[18] = 0x0fc19dc6; g_fp_sha256_k[19] = 0x240ca1cc;
+    g_fp_sha256_k[20] = 0x2de92c6f; g_fp_sha256_k[21] = 0x4a7484aa; g_fp_sha256_k[22] = 0x5cb0a9dc; g_fp_sha256_k[23] = 0x76f988da;
+    g_fp_sha256_k[24] = 0x983e5152; g_fp_sha256_k[25] = 0xa831c66d; g_fp_sha256_k[26] = 0xb00327c8; g_fp_sha256_k[27] = 0xbf597fc7;
+    g_fp_sha256_k[28] = 0xc6e00bf3; g_fp_sha256_k[29] = 0xd5a79147; g_fp_sha256_k[30] = 0x06ca6351; g_fp_sha256_k[31] = 0x14292967;
+    g_fp_sha256_k[32] = 0x27b70a85; g_fp_sha256_k[33] = 0x2e1b2138; g_fp_sha256_k[34] = 0x4d2c6dfc; g_fp_sha256_k[35] = 0x53380d13;
+    g_fp_sha256_k[36] = 0x650a7354; g_fp_sha256_k[37] = 0x766a0abb; g_fp_sha256_k[38] = 0x81c2c92e; g_fp_sha256_k[39] = 0x92722c85;
+    g_fp_sha256_k[40] = 0xa2bfe8a1; g_fp_sha256_k[41] = 0xa81a664b; g_fp_sha256_k[42] = 0xc24b8b70; g_fp_sha256_k[43] = 0xc76c51a3;
+    g_fp_sha256_k[44] = 0xd192e819; g_fp_sha256_k[45] = 0xd6990624; g_fp_sha256_k[46] = 0xf40e3585; g_fp_sha256_k[47] = 0x106aa070;
+    g_fp_sha256_k[48] = 0x19a4c116; g_fp_sha256_k[49] = 0x1e376c08; g_fp_sha256_k[50] = 0x2748774c; g_fp_sha256_k[51] = 0x34b0bcb5;
+    g_fp_sha256_k[52] = 0x391c0cb3; g_fp_sha256_k[53] = 0x4ed8aa4a; g_fp_sha256_k[54] = 0x5b9cca4f; g_fp_sha256_k[55] = 0x682e6ff3;
+    g_fp_sha256_k[56] = 0x748f82ee; g_fp_sha256_k[57] = 0x78a5636f; g_fp_sha256_k[58] = 0x84c87814; g_fp_sha256_k[59] = 0x8cc70208;
+    g_fp_sha256_k[60] = 0x90befffa; g_fp_sha256_k[61] = 0xa4506ceb; g_fp_sha256_k[62] = 0xbef9a3f7; g_fp_sha256_k[63] = 0xc67178f2;
+    g_fp_sha256_k_hazir = 1;
+}
+
+isv sha256_hesapla(veri: *u8, len: tamsayi, cikti_hex: *u8) {
+    fp_sha256_init_k();
+
+    degisken pad_len: tamsayi = len + 1 + 8;
+    degisken rem: tamsayi = pad_len % 64;
+    eger rem != 0 ise {
+        pad_len = pad_len + (64 - rem);
+    }
+
+    degisken buffer: *u8 = os_bellek_tahsis(pad_len);
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        buffer[i] = veri[i];
+        i = i + 1;
+    }
+    buffer[len] = 0x80;
+    i = len + 1;
+    dongu i < pad_len - 8 {
+        buffer[i] = 0;
+        i = i + 1;
+    }
+
+    degisken bit_len: tamsayi = len * 8;
+    buffer[pad_len - 8] = ((bit_len >> 56) & 0xff);
+    buffer[pad_len - 7] = ((bit_len >> 48) & 0xff);
+    buffer[pad_len - 6] = ((bit_len >> 40) & 0xff);
+    buffer[pad_len - 5] = ((bit_len >> 32) & 0xff);
+    buffer[pad_len - 4] = ((bit_len >> 24) & 0xff);
+    buffer[pad_len - 3] = ((bit_len >> 16) & 0xff);
+    buffer[pad_len - 2] = ((bit_len >> 8) & 0xff);
+    buffer[pad_len - 1] = (bit_len & 0xff);
+
+    degisken h0: tamsayi = 0x6a09e667;
+    degisken h1: tamsayi = 0xbb67ae85;
+    degisken h2: tamsayi = 0x3c6ef372;
+    degisken h3: tamsayi = 0xa54ff53a;
+    degisken h4: tamsayi = 0x510e527f;
+    degisken h5: tamsayi = 0x9b05688c;
+    degisken h6: tamsayi = 0x1f83d9ab;
+    degisken h7: tamsayi = 0x5be0cd19;
+
+    degisken w: [64]tamsayi;
+
+    degisken block_offset: tamsayi = 0;
+    dongu block_offset < pad_len {
+        degisken t: tamsayi = 0;
+        dongu t < 16 {
+            degisken b_idx: tamsayi = block_offset + (t * 4);
+            degisken b0: tamsayi = buffer[b_idx];
+            degisken b1: tamsayi = buffer[b_idx + 1];
+            degisken b2: tamsayi = buffer[b_idx + 2];
+            degisken b3: tamsayi = buffer[b_idx + 3];
+            w[t] = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 0xffffffff;
+            t = t + 1;
+        }
+        dongu t < 64 {
+            degisken s0_x: tamsayi = w[t - 15];
+            degisken s0: tamsayi = (fp_sha256_rotr(s0_x, 7) ^ fp_sha256_rotr(s0_x, 18) ^ fp_sha256_shr(s0_x, 3)) & 0xffffffff;
+            degisken s1_x: tamsayi = w[t - 2];
+            degisken s1: tamsayi = (fp_sha256_rotr(s1_x, 17) ^ fp_sha256_rotr(s1_x, 19) ^ fp_sha256_shr(s1_x, 10)) & 0xffffffff;
+            w[t] = (w[t - 16] + s0 + w[t - 7] + s1) & 0xffffffff;
+            t = t + 1;
+        }
+
+        degisken a: tamsayi = h0;
+        degisken b: tamsayi = h1;
+        degisken c: tamsayi = h2;
+        degisken d: tamsayi = h3;
+        degisken e: tamsayi = h4;
+        degisken f: tamsayi = h5;
+        degisken g: tamsayi = h6;
+        degisken h: tamsayi = h7;
+
+        t = 0;
+        dongu t < 64 {
+            degisken s1_e: tamsayi = (fp_sha256_rotr(e, 6) ^ fp_sha256_rotr(e, 11) ^ fp_sha256_rotr(e, 25)) & 0xffffffff;
+            degisken ch_not: tamsayi = e ^ 0xffffffff;
+            degisken ch_efg: tamsayi = ((e & f) ^ (ch_not & g)) & 0xffffffff;
+            degisken temp1: tamsayi = (h + s1_e + ch_efg + g_fp_sha256_k[t] + w[t]) & 0xffffffff;
+            
+            degisken s0_a: tamsayi = (fp_sha256_rotr(a, 2) ^ fp_sha256_rotr(a, 13) ^ fp_sha256_rotr(a, 22)) & 0xffffffff;
+            degisken maj_abc: tamsayi = ((a & b) ^ (a & c) ^ (b & c)) & 0xffffffff;
+            degisken temp2: tamsayi = (s0_a + maj_abc) & 0xffffffff;
+
+            h = g;
+            g = f;
+            f = e;
+            e = (d + temp1) & 0xffffffff;
+            d = c;
+            c = b;
+            b = a;
+            a = (temp1 + temp2) & 0xffffffff;
+            t = t + 1;
+        }
+
+        h0 = (h0 + a) & 0xffffffff;
+        h1 = (h1 + b) & 0xffffffff;
+        h2 = (h2 + c) & 0xffffffff;
+        h3 = (h3 + d) & 0xffffffff;
+        h4 = (h4 + e) & 0xffffffff;
+        h5 = (h5 + f) & 0xffffffff;
+        h6 = (h6 + g) & 0xffffffff;
+        h7 = (h7 + h) & 0xffffffff;
+
+        block_offset = block_offset + 64;
+    }
+
+    degisken hex_chars: *u8 = "0123456789abcdef".ptr;
+    degisken h_arr: [8]tamsayi;
+    h_arr[0] = h0; h_arr[1] = h1; h_arr[2] = h2; h_arr[3] = h3;
+    h_arr[4] = h4; h_arr[5] = h5; h_arr[6] = h6; h_arr[7] = h7;
+
+    degisken out_idx: tamsayi = 0;
+    degisken hi: tamsayi = 0;
+    dongu hi < 8 {
+        degisken val: tamsayi = h_arr[hi];
+        degisken shift: tamsayi = 28;
+        dongu shift >= 0 {
+            degisken nibble: tamsayi = (val >> shift) & 0xf;
+            cikti_hex[out_idx] = hex_chars[nibble];
+            out_idx = out_idx + 1;
+            shift = shift - 4;
+        }
+        hi = hi + 1;
+    }
+    cikti_hex[64] = 0;
+
+    os_bellek_serbest(buffer);
+}
+
+isv sha256_dosya(dosya_yolu: *u8, cikti_hex: *u8) -> tamsayi {
+    degisken h: tamsayi = os_dosya_yarat(dosya_yolu, 0x80000000, 1, 3, 0x80);
+    eger h == 0xffffffffffffffff veya h == 0 ise {
+        dondu 0;
+    }
+    degisken max_boyut: tamsayi = 16777216; # 16 MB
+    degisken buf: *u8 = os_bellek_tahsis(max_boyut);
+    degisken okunan: tamsayi = 0;
+    os_dosya_oku(h, buf, max_boyut, &okunan);
+    os_dosya_kapat(h);
+
+    eger okunan <= 0 ise {
+        os_bellek_serbest(buf);
+        sha256_hesapla("".ptr, 0, cikti_hex);
+        dondu 1;
+    }
+
+    sha256_hesapla(buf, okunan, cikti_hex);
+    os_bellek_serbest(buf);
+    dondu 1;
+}
+
+# ============================================================
+# F6.1: Fingerprint Bilesenleri
+# ============================================================
+
+# 1. Source SHA-256 fingerprint
+isv fp_kaynak_hash(kaynak_kodu: *u8, uzn: tamsayi, cikti_hex: *u8) {
+    sha256_hesapla(kaynak_kodu, uzn, cikti_hex);
+}
+
+# 2. Imported module fingerprint
+isv fp_import_hash(import_listesi: **u8, adet: tamsayi, cikti_hex: *u8) {
+    eger adet <= 0 ise {
+        sha256_hesapla("NO_IMPORTS".ptr, 10, cikti_hex);
+        dondu;
+    }
+    degisken tam_tampon: *u8 = os_bellek_tahsis(adet * 64 + 16);
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        degisken imp_yol: *u8 = import_listesi[i];
+        degisken tek_hex: [68]u8;
+        degisken basarili: tamsayi = sha256_dosya(imp_yol, tek_hex);
+        eger basarili == 1 ise {
+            degisken j: tamsayi = 0;
+            dongu j < 64 {
+                tam_tampon[pos] = tek_hex[j];
+                pos = pos + 1;
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    sha256_hesapla(tam_tampon, pos, cikti_hex);
+    os_bellek_serbest(tam_tampon);
+}
+
+# 3. Compiler version fingerprint
+isv fp_derleyici_surumu(cikti_hex: *u8) {
+    degisken ver: *u8 = "yukinary-v1.0.0-phase6-deterministic".ptr;
+    degisken len: tamsayi = 36;
+    sha256_hesapla(ver, len, cikti_hex);
+}
+
+# 4. Target platform fingerprint (windows=0, linux=1, macos=2, linux-arm64=3, macos-arm64=4)
+isv fp_hedef_platform(platform_id: tamsayi, cikti_hex: *u8) {
+    degisken plt_str: *u8 = "windows-x86_64".ptr;
+    degisken len: tamsayi = 14;
+    eger platform_id == 1 ise { plt_str = "linux-x86_64".ptr; len = 12; }
+    yoksa eger platform_id == 2 ise { plt_str = "macos-x86_64".ptr; len = 12; }
+    yoksa eger platform_id == 3 ise { plt_str = "linux-arm64".ptr; len = 11; }
+    yoksa eger platform_id == 4 ise { plt_str = "macos-arm64".ptr; len = 11; }
+    sha256_hesapla(plt_str, len, cikti_hex);
+}
+
+# 5. Feature flag fingerprint (bitmask of flags: bounds_check, self_heal, verbose, etc.)
+isv fp_ozellik_bayraklari(flags: tamsayi, cikti_hex: *u8) {
+    degisken fbuf: [32]u8;
+    degisken temp: tamsayi = flags;
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        fbuf[i] = (temp & 0xff);
+        temp = temp >> 8;
+        i = i + 1;
+    }
+    sha256_hesapla(fbuf, 8, cikti_hex);
+}
+
+# 6. Stdlib API fingerprint
+# Yukinary standart kutuphane halka acik API imzasinin SHA-256 ozeti
+isv fp_stdlib_api(cikti_hex: *u8) {
+    degisken api_manifest: *u8 = "YKN_STDLIB_PUBLIC_API_V1_METIN_KOLEKSIYON_BELLEK_OS_FS".ptr;
+    degisken len: tamsayi = 54;
+    sha256_hesapla(api_manifest, len, cikti_hex);
+}
+
+# 7. Generic specialization fingerprint
+isv fp_generics_ozellesme(mangled_adlar: **u8, adet: tamsayi, cikti_hex: *u8) {
+    eger adet <= 0 ise {
+        sha256_hesapla("NO_GENERICS".ptr, 11, cikti_hex);
+        dondu;
+    }
+    degisken buf: *u8 = os_bellek_tahsis(adet * 128);
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        degisken ad: *u8 = mangled_adlar[i];
+        eger ad != 0 ise {
+            degisken j: tamsayi = 0;
+            dongu ad[j] != 0 {
+                buf[pos] = ad[j];
+                pos = pos + 1;
+                j = j + 1;
+            }
+            buf[pos] = 59; # ';'
+            pos = pos + 1;
+        }
+        i = i + 1;
+    }
+    sha256_hesapla(buf, pos, cikti_hex);
+    os_bellek_serbest(buf);
+}
+
+# ============================================================
+# Bilesik (Composite) Module Fingerprint
+# SHA256(source + imported + compiler + target + flags + stdlib + generic)
+# ============================================================
+isv fp_bilesik_hesapla(
+    kaynak_fp: *u8,
+    import_fp: *u8,
+    derleyici_fp: *u8,
+    platform_fp: *u8,
+    flag_fp: *u8,
+    stdlib_fp: *u8,
+    generic_fp: *u8,
+    bilesik_cikti_hex: *u8
+) {
+    # 7 bilesen x 64 hex bayt = 448 bayt
+    degisken birlesik: [512]u8;
+    degisken pos: tamsayi = 0;
+
+    degisken b_idx: tamsayi = 0;
+    dongu b_idx < 64 { birlesik[pos] = kaynak_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = import_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = derleyici_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = platform_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = flag_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = stdlib_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+    b_idx = 0;
+    dongu b_idx < 64 { birlesik[pos] = generic_fp[b_idx]; pos = pos + 1; b_idx = b_idx + 1; }
+
+    sha256_hesapla(birlesik, pos, bilesik_cikti_hex);
+}

@@ -1,0 +1,17 @@
+# RMSNorm epsilon must remain in the input's original scale when the
+# implementation first normalizes by max-abs to avoid overflow.
+ice_aktar "std/ai/attention.ykn";
+
+isv ana() -> tamsayi {
+    degisken input: [2]tamsayi;
+    degisken output: [2]tamsayi;
+    input[0] = 66;
+    input[1] = 0;
+
+    # epsilon_q16=1 is the smallest nonzero representable epsilon. For a
+    # vector with max=66 (about 0.001), epsilon/max^2 materially affects RMS.
+    # Expected result follows floor-based Q16 RMSNorm arithmetic.
+    eger bitnet_rmsnorm_q16(input, 0, output, 2, 1) != 1 { dondu 1; }
+    eger output[0] != 16622 veya output[1] != 0 { dondu 2; }
+    dondu 0;
+}

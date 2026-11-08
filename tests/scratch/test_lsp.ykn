@@ -1,0 +1,19 @@
+degisken mesaj: [64]u8 = "Merhaba LSP!";
+degisken sayi: tamsayi = 42;
+
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    degisken n: Nokta;
+    n.x = 10;
+    n.y = 20;
+    degisken sonuc: tamsayi = topla(n.x, sayi);
+    dondu sonuc;
+}

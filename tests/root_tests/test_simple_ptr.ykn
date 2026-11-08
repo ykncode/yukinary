@@ -1,0 +1,17 @@
+﻿yapi T {
+    f0: tamsayi;
+    f1: tamsayi;
+    f2: tamsayi;
+    f3: tamsayi;
+}
+isv yaz(s: *T) {
+    s.f0 = 7;
+    s.f1 = 8;
+    s.f2 = 9;
+    s.f3 = 11;
+}
+isv ana() -> tamsayi {
+    degisken st: T;
+    yaz(&st);
+    dondu st.f0 + st.f1 + st.f2 + st.f3;
+}

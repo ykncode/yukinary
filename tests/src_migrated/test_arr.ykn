@@ -1,0 +1,1 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi { degisken buf: *u8 = argv[0]; degisken ilk: u8 = buf[0]; degisken uc: u8 = buf[2]; dondu ilk + uc; }

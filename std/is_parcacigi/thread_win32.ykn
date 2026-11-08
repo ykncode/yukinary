@@ -1,0 +1,44 @@
+# ============================================================
+# std/is_parcacigi/thread_win32.ykn
+# Win32 Thread ve WaitForSingleObject sarmalayicilari
+# ============================================================
+
+# Win32 API bildirimleri
+harici isv CreateThread(
+    lpSecurityAttributes: *u8,
+    dwStackSize: tamsayi,
+    lpStartAddress: *u8,
+    lpParameter: *u8,
+    dwCreationFlags: tamsayi,
+    lpThreadId: *tamsayi
+) -> tamsayi;
+
+harici isv WaitForSingleObject(hHandle: tamsayi, dwMilliseconds: tamsayi) -> tamsayi;
+harici isv CloseHandle(hObject: tamsayi) -> tamsayi;
+
+degisken INFINITE_WAIT: tamsayi = -1;
+degisken WAIT_OBJECT_0: tamsayi = 0;
+
+yapi Win32Thread {
+    handle: tamsayi;
+    thread_id: tamsayi;
+}
+
+# Thread baslatma: islev_ptr = islevin makine kodu adresi
+isv win32_thread_olustur(islev_ptr: *u8, parametre: *u8) -> *Win32Thread {
+    degisken t: *Win32Thread = bellek_tahsis_et(16);
+    eger t == 0 ise { dondu 0; }
+    degisken id_tampon: [1]tamsayi;
+    t.handle = CreateThread(0, 0, islev_ptr, parametre, 0, id_tampon);
+    t.thread_id = id_tampon[0];
+    dondu t;
+}
+
+# Thread'in bitmesini bekle
+isv win32_thread_bekle(t: *Win32Thread) -> tamsayi {
+    eger t == 0 veya t.handle == 0 ise { dondu -1; }
+    degisken sonuc: tamsayi = WaitForSingleObject(t.handle, INFINITE_WAIT);
+    CloseHandle(t.handle);
+    t.handle = 0;
+    dondu sonuc;
+}

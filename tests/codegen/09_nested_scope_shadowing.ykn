@@ -1,0 +1,16 @@
+isv ana() -> tamsayi {
+    degisken deger: tamsayi = 1;
+    eger 1 ise {
+        degisken deger: tamsayi = 2;
+        eger deger != 2 ise {
+            ekrana_yaz("INNER_SCOPE_FAIL\n".ptr);
+            dondu 1;
+        }
+    }
+    eger deger != 1 ise {
+        ekrana_yaz("OUTER_SCOPE_SHADOWED\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("SCOPE_SHADOW_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,14 @@
+isv ekrana_yaz(m: *u8) {}
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("start\n".ptr);
+    degisken buf: *u8 = bellek_tahsis_et(65536);
+    ekrana_yaz("buf ok\n".ptr);
+    degisken dosya: *u8 = argumanlar[1];
+    ekrana_yaz("dosya ok\n".ptr);
+    degisken n: tamsayi = dosya_oku(dosya, buf, 65536);
+    ekrana_yaz("dosya_oku ok\n".ptr);
+    dondu 0;
+}

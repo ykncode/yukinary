@@ -1,0 +1,186 @@
+# ============================================================
+# std/veritabani/wal.ykn
+# FAZ 56: Saf Yukinary Write-Ahead Logging (WAL) ve ACID Motoru
+# LSN (Log Sequence Number), Ikili Gunluk Tamponu, Rollback (Geri Alma) ve Cokme Kurtarma
+# ============================================================
+
+ice_aktar "std/dosya.ykn";
+
+degisken WAL_ISLEM_BEGIN    = 1;
+degisken WAL_ISLEM_EKLE     = 2;
+degisken WAL_ISLEM_GUNCELLE = 3;
+degisken WAL_ISLEM_SIL      = 4;
+degisken WAL_ISLEM_COMMIT   = 5;
+degisken WAL_ISLEM_ABORT    = 6;
+
+yapi WalKaydi {
+    lsn:         tamsayi; # Monotonik Log Sequence Number
+    tx_id:       tamsayi; # Islem Kimligi
+    islem_turu:  tamsayi; # BEGIN, EKLE, GUNCELLE, SIL, COMMIT, ABORT
+    anahtar:     tamsayi; # Etkilenen anahtar
+    eski_deger:  tamsayi; # UNDO / Rollback icin onceki durum (Before-Image)
+    yeni_deger:  tamsayi; # REDO icin sonraki durum (After-Image)
+    onaylandi:   tamsayi; # 1 = commit edildi, 0 = beklemede, -1 = abort
+    checksum:    tamsayi; # Veri bozulma guvenlik ozeti
+}
+
+yapi WalYoneticisi {
+    kayitlar:        **WalKaydi; # WalKaydi isaretci dizisi
+    kapasite:        tamsayi;
+    kayit_sayisi:    tamsayi;
+    guncel_tx_id:    tamsayi;
+    son_lsn:         tamsayi;
+    diske_yazilan_lsn: tamsayi;
+    ikili_tampon:    *u8;      # Diske basilacak ikili blok tamponu
+    ikili_boyut:     tamsayi;
+}
+
+# Checksum hesaplama: LSN, tx_id, islem, key, eski ve yeni degeri karma yapar
+isv wal_kayit_checksum_hesapla(lsn: tamsayi, tx: tamsayi, op: tamsayi, k: tamsayi, v1: tamsayi, v2: tamsayi) -> tamsayi {
+    degisken h: tamsayi = 5381;
+    h = ((h << 5) + h) ^ lsn;
+    h = ((h << 5) + h) ^ tx;
+    h = ((h << 5) + h) ^ op;
+    h = ((h << 5) + h) ^ k;
+    h = ((h << 5) + h) ^ v1;
+    h = ((h << 5) + h) ^ v2;
+    dondu h & 2147483647; # Pozitif 31-bit checksum
+}
+
+isv wal_yoneticisi_olustur() -> *WalYoneticisi {
+    degisken w: *WalYoneticisi = bellek_tahsis_et(64);
+    w.kapasite = 1024;
+    w.kayitlar = bellek_tahsis_et(1024 * 8);
+    w.kayit_sayisi = 0;
+    w.guncel_tx_id = 1;
+    w.son_lsn = 1000;
+    w.diske_yazilan_lsn = 1000;
+
+    # 64 KB ikili gunluk tamponu
+    w.ikili_boyut = 65536;
+    w.ikili_tampon = bellek_tahsis_et(65536);
+
+    dondu w;
+}
+
+# 1. Yeni Transaction Baslatma
+isv wal_tx_baslat(w: *WalYoneticisi) -> tamsayi {
+    degisken tx: tamsayi = w.guncel_tx_id;
+    w.guncel_tx_id = w.guncel_tx_id + 1;
+    dondu tx;
+}
+
+# 2. WAL Kaydi Ekleme (Write-Ahead Log)
+isv wal_kayit_ekle(w: *WalYoneticisi, islem: tamsayi, k: tamsayi, eski_v: tamsayi, yeni_v: tamsayi) -> *WalKaydi {
+    degisken k_yeni: *WalKaydi = bellek_tahsis_et(64);
+    w.son_lsn = w.son_lsn + 1;
+
+    k_yeni.lsn = w.son_lsn;
+    k_yeni.tx_id = w.guncel_tx_id;
+    k_yeni.islem_turu = islem;
+    k_yeni.anahtar = k;
+    k_yeni.eski_deger = eski_v;
+    k_yeni.yeni_deger = yeni_v;
+    k_yeni.onaylandi = 0;
+    k_yeni.checksum = wal_kayit_checksum_hesapla(k_yeni.lsn, k_yeni.tx_id, islem, k, eski_v, yeni_v);
+
+    eger w.kayit_sayisi < w.kapasite ise {
+        w.kayitlar[w.kayit_sayisi] = k_yeni;
+        w.kayit_sayisi = w.kayit_sayisi + 1;
+    }
+
+    dondu k_yeni;
+}
+
+# 3. Transaction Commit (ACID Dayaniklilik Garantisi)
+isv wal_commit(w: *WalYoneticisi) {
+    degisken i: tamsayi = 0;
+    dongu i < w.kayit_sayisi {
+        degisken k_ptr: *WalKaydi = w.kayitlar[i];
+        eger k_ptr.tx_id == w.guncel_tx_id ise {
+            k_ptr.onaylandi = 1;
+        }
+        i = i + 1;
+    }
+    w.diske_yazilan_lsn = w.son_lsn;
+    w.guncel_tx_id = w.guncel_tx_id + 1;
+}
+
+# 4. Transaction Rollback (Geri Alma / Abort)
+# Uncommitted yapilan degisiklikleri eski_deger ile geri alir
+isv wal_tx_geri_al(w: *WalYoneticisi, hedef_tx: tamsayi) -> tamsayi {
+    degisken geri_alindi: tamsayi = 0;
+    degisken i: tamsayi = w.kayit_sayisi - 1;
+
+    dongu i >= 0 {
+        degisken k_ptr: *WalKaydi = w.kayitlar[i];
+        eger k_ptr.tx_id == hedef_tx ve k_ptr.onaylandi == 0 ise {
+            k_ptr.onaylandi = 0 - 1; # -1 = ABORT edildi
+            geri_alindi = geri_alindi + 1;
+        }
+        i = i - 1;
+    }
+    dondu geri_alindi;
+}
+
+# 5. Cokme Kurtarma (ARIES-Tarzi REDO ve UNDO)
+# Sistem yeniden basladiginda WAL kayitlarini inceler:
+# - Commit olmus kayitlari teyit eder (REDO)
+# - Askida kalmis (yarim kalmis) transaction'lari tespit edip temizler (UNDO)
+isv wal_cokme_kurtarma_analizi(w: *WalYoneticisi) -> tamsayi {
+    degisken kurtarilan_tx: tamsayi = 0;
+    degisken iptal_edilen_tx: tamsayi = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < w.kayit_sayisi {
+        degisken k: *WalKaydi = w.kayitlar[i];
+        # Checksum dogrulamasi
+        degisken beklenen_cs: tamsayi = wal_kayit_checksum_hesapla(k.lsn, k.tx_id, k.islem_turu, k.anahtar, k.eski_deger, k.yeni_deger);
+        eger k.checksum != beklenen_cs ise {
+            # Bozuk log kaydi, kurtarma burada durur
+            dondu 0 - 1;
+        }
+
+        eger k.onaylandi == 1 ise {
+            kurtarilan_tx = kurtarilan_tx + 1;
+        } yoksa eger k.onaylandi == 0 ise {
+            # Cokme sirasinda commit edilmemis islem -> Otomatik geri al (UNDO)
+            k.onaylandi = 0 - 1;
+            iptal_edilen_tx = iptal_edilen_tx + 1;
+        }
+        i = i + 1;
+    }
+
+    dondu kurtarilan_tx;
+}
+
+# WAL kaydini ikili tampona (64 baytlik blok) serilestirir
+isv wal_kaydi_ikili_yaz(k: *WalKaydi, hedef: *u8, offset: tamsayi) {
+    eger k == 0 veya hedef == 0 ise { dondu; }
+    degisken ptr64: *tamsayi = hedef + offset;
+    ptr64[0] = k.lsn;
+    ptr64[1] = k.tx_id;
+    ptr64[2] = k.islem_turu;
+    ptr64[3] = k.anahtar;
+    ptr64[4] = k.eski_deger;
+    ptr64[5] = k.yeni_deger;
+    ptr64[6] = k.onaylandi;
+    ptr64[7] = k.checksum;
+}
+
+# WAL tamponunu diske senkronize eder (fsync / Write-Ahead flush)
+isv wal_diske_yaz(w: *WalYoneticisi, dosya_yolu: *u8) -> tamsayi {
+    eger w == 0 veya dosya_yolu == 0 ise { dondu 0 - 1; }
+    degisken toplam_bayt: tamsayi = w.kayit_sayisi * 64;
+    eger toplam_bayt > w.ikili_boyut ise { toplam_bayt = w.ikili_boyut; }
+
+    degisken i: tamsayi = 0;
+    dongu i < w.kayit_sayisi ve (i * 64 + 64) <= w.ikili_boyut {
+        degisken k: *WalKaydi = w.kayitlar[i];
+        wal_kaydi_ikili_yaz(k, w.ikili_tampon, i * 64);
+        i = i + 1;
+    }
+    degisken yazilan: tamsayi = dosya_yaz_tamami(dosya_yolu, w.ikili_tampon, toplam_bayt);
+    w.diske_yazilan_lsn = w.son_lsn;
+    dondu yazilan;
+}

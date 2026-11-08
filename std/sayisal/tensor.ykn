@@ -1,0 +1,55 @@
+# ============================================================
+# std/sayisal/tensor.ykn
+# FAZ 34: Saf Yukinary N-Boyutlu Strided Tensor Kutuphanesi
+# Birlesik Tensor yapisi std/ai/tensor.ykn ile paylasilir.
+# ============================================================
+
+ice_aktar "std/ai/tensor.ykn";
+
+isv tensor_olustur_2d(satir: tamsayi, sutun: tamsayi, grad_hesapla: tamsayi) -> *Tensor {
+    degisken t: *Tensor = bellek_tahsis_et(112);
+    degisken toplam: tamsayi = satir * sutun;
+    t.veri = bellek_tahsis_et(toplam * 8);
+    t.veri_adresi = t.veri;
+    t.boyut_sayisi = 2;
+    t.b0 = satir;
+    t.b1 = sutun;
+    t.s0 = sutun; # Row-major stride
+    t.s1 = 1;
+    t.eleman_sayisi = toplam;
+    t.grad_istiyor = grad_hesapla;
+
+    eger grad_hesapla == 1 ise {
+        t.grad = bellek_tahsis_et(toplam * 8);
+    } yoksa {
+        t.grad = 0;
+    }
+
+    dondu t;
+}
+
+isv tensor_koy_2d(t: *Tensor, i: tamsayi, j: tamsayi, val: tamsayi) {
+    degisken indeks: tamsayi = (i * t.s0) + (j * t.s1);
+    t.veri[indeks] = val;
+}
+
+isv tensor_al_2d(t: *Tensor, i: tamsayi, j: tamsayi) -> tamsayi {
+    degisken indeks: tamsayi = (i * t.s0) + (j * t.s1);
+    dondu t.veri[indeks];
+}
+
+isv tensor_grad_koy_2d(t: *Tensor, i: tamsayi, j: tamsayi, g_val: tamsayi) {
+    eger t.grad != 0 ise {
+        degisken indeks: tamsayi = (i * t.s0) + (j * t.s1);
+        t.grad[indeks] = g_val;
+    }
+}
+
+isv tensor_grad_al_2d(t: *Tensor, i: tamsayi, j: tamsayi) -> tamsayi {
+    eger t.grad != 0 ise {
+        degisken indeks: tamsayi = (i * t.s0) + (j * t.s1);
+        dondu t.grad[indeks];
+    }
+    dondu 0;
+}
+

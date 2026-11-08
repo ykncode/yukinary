@@ -1,0 +1,76 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/grafik/cizim.ykn
+# 2D Framebuffer Rasterizer ve Ucgen Cizim Modulu
+# ============================================================
+
+ice_aktar "std/gui/cizim.ykn";
+
+isv ekrani_bas(yuzey: *CizimYuzeyi) -> tamsayi {
+    eger yuzey == 0 veya yuzey.arabellek == 0 veya yuzey.boyut_bayt <= 0 ise {
+        dondu -1;
+    }
+    dondu yuzey.boyut_bayt;
+}
+
+isv cizgi_yatay_ciz(yuzey: *CizimYuzeyi, x_bas: tamsayi, x_bit: tamsayi, y: tamsayi, renk: tamsayi) {
+    eger yuzey == 0 veya y < 0 veya y >= yuzey.yukseklik ise { dondu; }
+    degisken x0: tamsayi = x_bas;
+    degisken x1: tamsayi = x_bit;
+    eger x0 > x1 ise {
+        degisken tmp: tamsayi = x0;
+        x0 = x1;
+        x1 = tmp;
+    }
+    eger x0 < 0 ise { x0 = 0; }
+    eger x1 >= yuzey.genislik ise { x1 = yuzey.genislik - 1; }
+    degisken x: tamsayi = x0;
+    dongu x <= x1 {
+        cizim_piksel_koy(yuzey, x, y, renk);
+        x = x + 1;
+    }
+}
+
+isv ucgen_ciz_yuzey(yuzey: *CizimYuzeyi, x0: tamsayi, y0: tamsayi, x1: tamsayi, y1: tamsayi, x2: tamsayi, y2: tamsayi, renk: tamsayi) -> tamsayi {
+    eger yuzey == 0 veya yuzey.arabellek == 0 ise { dondu -1; }
+    degisken min_x: tamsayi = x0;
+    eger x1 < min_x ise { min_x = x1; }
+    eger x2 < min_x ise { min_x = x2; }
+    degisken max_x: tamsayi = x0;
+    eger x1 > max_x ise { max_x = x1; }
+    eger x2 > max_x ise { max_x = x2; }
+    degisken min_y: tamsayi = y0;
+    eger y1 < min_y ise { min_y = y1; }
+    eger y2 < min_y ise { min_y = y2; }
+    degisken max_y: tamsayi = y0;
+    eger y1 > max_y ise { max_y = y1; }
+    eger y2 > max_y ise { max_y = y2; }
+
+    eger min_x < 0 ise { min_x = 0; }
+    eger min_y < 0 ise { min_y = 0; }
+    eger max_x >= yuzey.genislik ise { max_x = yuzey.genislik - 1; }
+    eger max_y >= yuzey.yukseklik ise { max_y = yuzey.yukseklik - 1; }
+
+    degisken py: tamsayi = min_y;
+    dongu py <= max_y {
+        degisken px: tamsayi = min_x;
+        dongu px <= max_x {
+            degisken w0: tamsayi = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
+            degisken w1: tamsayi = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+            degisken w2: tamsayi = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
+            eger (w0 >= 0 ve w1 >= 0 ve w2 >= 0) veya (w0 <= 0 ve w1 <= 0 ve w2 <= 0) ise {
+                cizim_piksel_koy(yuzey, px, py, renk);
+            }
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+    dondu 0;
+}
+
+isv ucgen_ciz(x: tamsayi, y: tamsayi) -> tamsayi {
+    degisken yuzey: CizimYuzeyi;
+    eger cizim_yuzeyi_olustur(&yuzey, 64, 64) != 0 ise { dondu -1; }
+    degisken s: tamsayi = ucgen_ciz_yuzey(&yuzey, x, y, x + 8, y + 16, x - 8, y + 16, 0xFFFFFFFF);
+    cizim_yuzeyi_serbest_birak(&yuzey);
+    dondu s;
+}

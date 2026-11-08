@@ -1,0 +1,24 @@
+# F16/F32 scalar byte signedness regression.
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+ice_aktar "../../std/ai/bitnet_backend.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    # 0x3b2b = 0.89599609375; 0x3c0d = 1.0126953125.
+    eger llm_f16_q16_coz(43, 59) != 58720 veya
+       llm_f16_q16_coz(13, 60) != 66368 ise {
+        ekrana_yaz("FLOAT-DECODE-FAIL-F16\n".ptr);
+        dondu 1;
+    }
+    # 1.0f = 00 00 80 3f; high bytes are deliberately passed signed.
+    eger llm_f16_q16_coz(55, 47) != 7388 ise {
+        ekrana_yaz("FLOAT-DECODE-FAIL-EMBEDDING\n".ptr);
+        dondu 3;
+    }
+    eger llm_f32_q16_coz(0, 0, 0 - 128, 63) != 65536 ise {
+        ekrana_yaz("FLOAT-DECODE-FAIL-F32\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("FLOAT-DECODE-PASS\n".ptr);
+    dondu 0;
+}

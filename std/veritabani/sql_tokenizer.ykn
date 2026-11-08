@@ -1,0 +1,662 @@
+# ============================================================
+# std/veritabani/sql_tokenizer.ykn
+# FAZ C: Saf Yukinary SQL Sözcük ve İfade Çözümleyicisi (Tokenizer & Parser)
+# ANSI SQL (SELECT, FROM, WHERE AND/OR, JOIN, INSERT VALUES, UPDATE SET, DELETE)
+# ve Kısaltılmış SQL Komutlarını Tam AST Ağacına Dönüştürür
+# ============================================================
+
+ice_aktar "sql_parser.ykn";
+
+# Token Sabitleri
+degisken SQL_TK_EOF:          tamsayi = 0;
+degisken SQL_TK_SELECT:       tamsayi = 1;
+degisken SQL_TK_FROM:         tamsayi = 2;
+degisken SQL_TK_WHERE:        tamsayi = 3;
+degisken SQL_TK_INSERT:       tamsayi = 4;
+degisken SQL_TK_INTO:         tamsayi = 5;
+degisken SQL_TK_VALUES:       tamsayi = 6;
+degisken SQL_TK_UPDATE:       tamsayi = 7;
+degisken SQL_TK_SET:          tamsayi = 8;
+degisken SQL_TK_DELETE:       tamsayi = 9;
+degisken SQL_TK_JOIN:         tamsayi = 10;
+degisken SQL_TK_INNER:        tamsayi = 11;
+degisken SQL_TK_ON:           tamsayi = 12;
+degisken SQL_TK_AND:          tamsayi = 13;
+degisken SQL_TK_OR:           tamsayi = 14;
+degisken SQL_TK_LIMIT:        tamsayi = 15;
+degisken SQL_TK_IDENT:        tamsayi = 16;
+degisken SQL_TK_SAYI:         tamsayi = 17;
+degisken SQL_TK_ESIT:         tamsayi = 18;  # = veya ==
+degisken SQL_TK_BUYUK:        tamsayi = 19;  # >
+degisken SQL_TK_KUCUK:        tamsayi = 20;  # <
+degisken SQL_TK_ESIT_DEGIL:   tamsayi = 21;  # != veya <>
+degisken SQL_TK_BUYUK_ESIT:   tamsayi = 22;  # >=
+degisken SQL_TK_KUCUK_ESIT:   tamsayi = 23;  # <=
+degisken SQL_TK_YILDIZ:       tamsayi = 24;  # *
+degisken SQL_TK_VIRGUL:       tamsayi = 25;  # ,
+degisken SQL_TK_NOKTA:        tamsayi = 26;  # .
+degisken SQL_TK_PAR_AC:       tamsayi = 27;  # (
+degisken SQL_TK_PAR_KAPA:     tamsayi = 28;  # )
+
+yapi SqlToken {
+    tur:   tamsayi; # SQL_TK_*
+    metin: *u8;
+    uzn:   tamsayi;
+    sayi:  tamsayi;
+}
+
+# Geriye dönük uyumluluk: Metin icindeki N'inci sayisal degeri bulur
+isv sql_sayiyi_cek(metin: *u8, uzunluk: tamsayi, hedef_sira: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    degisken bulunan_sira: tamsayi = 0;
+    degisken sayi: tamsayi = 0;
+    degisken sayi_okunuyor: tamsayi = 0;
+
+    dongu i < uzunluk {
+        degisken c: u8 = metin[i];
+        eger c >= 48 ve c <= 57 ise {
+            eger sayi_okunuyor == 0 ise {
+                sayi_okunuyor = 1;
+                bulunan_sira = bulunan_sira + 1;
+                sayi = 0;
+            }
+            eger bulunan_sira == hedef_sira ise {
+                sayi = sayi * 10 + (c - 48);
+            }
+        } yoksa {
+            eger sayi_okunuyor == 1 ise {
+                sayi_okunuyor = 0;
+                eger bulunan_sira == hedef_sira ise {
+                    dondu sayi;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    eger sayi_okunuyor == 1 ve bulunan_sira == hedef_sira ise {
+        dondu sayi;
+    }
+    dondu sayi;
+}
+
+# Geriye dönük uyumluluk: Metin icinde alt kelime arar
+isv sql_kelime_ara(metin: *u8, uzunluk: tamsayi, aranan: *u8, aranan_len: tamsayi) -> tamsayi {
+    eger uzunluk < aranan_len ise { dondu 0 - 1; }
+    degisken i: tamsayi = 0;
+    dongu i <= (uzunluk - aranan_len) {
+        degisken eslesiyor: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < aranan_len ve eslesiyor == 1 {
+            degisken c1: tamsayi = metin[i + j] & 255;
+            degisken c2: tamsayi = aranan[j] & 255;
+            eger c1 >= 97 ve c1 <= 122 ise { c1 = c1 - 32; }
+            eger c2 >= 97 ve c2 <= 122 ise { c2 = c2 - 32; }
+            eger c1 != c2 ise {
+                eslesiyor = 0;
+            }
+            j = j + 1;
+        }
+        eger eslesiyor == 1 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+# Büyük/küçük harf duyarsız kelime karşılaştırma
+isv sql_kw_esit(metin: *u8, uzn: tamsayi, kw: *u8, kw_len: tamsayi) -> tamsayi {
+    eger uzn != kw_len ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        degisken c1: tamsayi = metin[i] & 255;
+        degisken c2: tamsayi = kw[i] & 255;
+        eger c1 >= 97 ve c1 <= 122 ise { c1 = c1 - 32; }
+        eger c2 >= 97 ve c2 <= 122 ise { c2 = c2 - 32; }
+        eger c1 != c2 ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Sütun adından indis çıkarımı: id -> 0, deger/val/yas/puan -> 1, deger2/ref_id/kat -> 2
+isv sql_sutun_indis_bul(ad: *u8, uzn: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzn == 0 ise { dondu 0; }
+    eger sql_kw_esit(ad, uzn, "ID".ptr, 2) == 1 ise { dondu 0; }
+    eger sql_kw_esit(ad, uzn, "KIMLIK".ptr, 6) == 1 ise { dondu 0; }
+    eger sql_kw_esit(ad, uzn, "VAL2".ptr, 4) == 1 ise { dondu 2; }
+    eger sql_kw_esit(ad, uzn, "DEGER2".ptr, 6) == 1 ise { dondu 2; }
+    eger sql_kw_esit(ad, uzn, "REF_ID".ptr, 6) == 1 ise { dondu 2; }
+    eger sql_kw_esit(ad, uzn, "MUSTERI_ID".ptr, 10) == 1 ise { dondu 2; }
+    # Adın son karakteri 2 ise ikinci alan
+    eger uzn > 1 ve ad[uzn - 1] == 50 ise { dondu 2; }
+    # Varsayılan değer alanı
+    dondu 1;
+}
+
+# SQL Sözcük Ayrıştırıcı (Lexer)
+isv sql_tokenize(metin: *u8, uzunluk: tamsayi, tokenlar: *SqlToken, maks_token: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    degisken sayac: tamsayi = 0;
+
+    dongu i < uzunluk ve sayac < maks_token {
+        degisken c: tamsayi = metin[i] & 255;
+
+        # Boşlukları atla
+        eger c == 32 veya c == 9 veya c == 10 veya c == 13 veya c == 59 ise { # 59 = ';'
+            i = i + 1;
+        } yoksa eger c == 40 ise { # '('
+            degisken t_par1: *SqlToken = tokenlar + (sayac * 32);
+            t_par1.tur = SQL_TK_PAR_AC;
+            t_par1.metin = metin + i;
+            t_par1.uzn = 1;
+            t_par1.sayi = 0;
+            sayac = sayac + 1;
+            i = i + 1;
+        } yoksa eger c == 41 ise { # ')'
+            degisken t_par2: *SqlToken = tokenlar + (sayac * 32);
+            t_par2.tur = SQL_TK_PAR_KAPA;
+            t_par2.metin = metin + i;
+            t_par2.uzn = 1;
+            t_par2.sayi = 0;
+            sayac = sayac + 1;
+            i = i + 1;
+        } yoksa eger c == 44 ise { # ','
+            degisken t_vir: *SqlToken = tokenlar + (sayac * 32);
+            t_vir.tur = SQL_TK_VIRGUL;
+            t_vir.metin = metin + i;
+            t_vir.uzn = 1;
+            t_vir.sayi = 0;
+            sayac = sayac + 1;
+            i = i + 1;
+        } yoksa eger c == 46 ise { # '.'
+            degisken t_nok: *SqlToken = tokenlar + (sayac * 32);
+            t_nok.tur = SQL_TK_NOKTA;
+            t_nok.metin = metin + i;
+            t_nok.uzn = 1;
+            t_nok.sayi = 0;
+            sayac = sayac + 1;
+            i = i + 1;
+        } yoksa eger c == 42 ise { # '*'
+            degisken t_star: *SqlToken = tokenlar + (sayac * 32);
+            t_star.tur = SQL_TK_YILDIZ;
+            t_star.metin = metin + i;
+            t_star.uzn = 1;
+            t_star.sayi = 0;
+            sayac = sayac + 1;
+            i = i + 1;
+        } yoksa eger c == 61 ise { # '=' veya '=='
+            degisken esit_len: tamsayi = 1;
+            eger (i + 1) < uzunluk ve metin[i + 1] == 61 ise { esit_len = 2; }
+            degisken t_eq: *SqlToken = tokenlar + (sayac * 32);
+            t_eq.tur = SQL_TK_ESIT;
+            t_eq.metin = metin + i;
+            t_eq.uzn = esit_len;
+            t_eq.sayi = 0;
+            sayac = sayac + 1;
+            i = i + esit_len;
+        } yoksa eger c == 33 ise { # '!='
+            degisken ne_len: tamsayi = 1;
+            eger (i + 1) < uzunluk ve metin[i + 1] == 61 ise { ne_len = 2; }
+            degisken t_ne: *SqlToken = tokenlar + (sayac * 32);
+            t_ne.tur = SQL_TK_ESIT_DEGIL;
+            t_ne.metin = metin + i;
+            t_ne.uzn = ne_len;
+            t_ne.sayi = 0;
+            sayac = sayac + 1;
+            i = i + ne_len;
+        } yoksa eger c == 62 ise { # '>' veya '>='
+            degisken gt_len: tamsayi = 1;
+            degisken gt_tur: tamsayi = SQL_TK_BUYUK;
+            eger (i + 1) < uzunluk ve metin[i + 1] == 61 ise {
+                gt_len = 2;
+                gt_tur = SQL_TK_BUYUK_ESIT;
+            }
+            degisken t_gt: *SqlToken = tokenlar + (sayac * 32);
+            t_gt.tur = gt_tur;
+            t_gt.metin = metin + i;
+            t_gt.uzn = gt_len;
+            t_gt.sayi = 0;
+            sayac = sayac + 1;
+            i = i + gt_len;
+        } yoksa eger c == 60 ise { # '<', '<=' veya '<>'
+            degisken lt_len: tamsayi = 1;
+            degisken lt_tur: tamsayi = SQL_TK_KUCUK;
+            eger (i + 1) < uzunluk ve metin[i + 1] == 61 ise {
+                lt_len = 2;
+                lt_tur = SQL_TK_KUCUK_ESIT;
+            } yoksa eger (i + 1) < uzunluk ve metin[i + 1] == 62 ise {
+                lt_len = 2;
+                lt_tur = SQL_TK_ESIT_DEGIL;
+            }
+            degisken t_lt: *SqlToken = tokenlar + (sayac * 32);
+            t_lt.tur = lt_tur;
+            t_lt.metin = metin + i;
+            t_lt.uzn = lt_len;
+            t_lt.sayi = 0;
+            sayac = sayac + 1;
+            i = i + lt_len;
+        } yoksa eger c >= 48 ve c <= 57 ise { # Sayı literal
+            degisken s_bas: tamsayi = i;
+            degisken val: tamsayi = 0;
+            dongu i < uzunluk {
+                degisken dc: tamsayi = metin[i] & 255;
+                eger dc >= 48 ve dc <= 57 ise {
+                    val = val * 10 + (dc - 48);
+                    i = i + 1;
+                } yoksa {
+                    durdur;
+                }
+            }
+            degisken t_num: *SqlToken = tokenlar + (sayac * 32);
+            t_num.tur = SQL_TK_SAYI;
+            t_num.metin = metin + s_bas;
+            t_num.uzn = i - s_bas;
+            t_num.sayi = val;
+            sayac = sayac + 1;
+        } yoksa eger (c >= 65 ve c <= 90) veya (c >= 97 ve c <= 122) veya c == 95 ise { # Kelime / Tanımlayıcı
+            degisken w_bas: tamsayi = i;
+            dongu i < uzunluk {
+                degisken ac: tamsayi = metin[i] & 255;
+                eger (ac >= 65 ve ac <= 90) veya (ac >= 97 ve ac <= 122) veya (ac >= 48 ve ac <= 57) veya ac == 95 ise {
+                    i = i + 1;
+                } yoksa {
+                    durdur;
+                }
+            }
+            degisken w_uzn: tamsayi = i - w_bas;
+            degisken w_ptr: *u8 = metin + w_bas;
+            degisken w_tur: tamsayi = SQL_TK_IDENT;
+
+            eger sql_kw_esit(w_ptr, w_uzn, "SELECT".ptr, 6) == 1 ise { w_tur = SQL_TK_SELECT; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "FROM".ptr, 4) == 1 ise { w_tur = SQL_TK_FROM; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "WHERE".ptr, 5) == 1 ise { w_tur = SQL_TK_WHERE; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "INSERT".ptr, 6) == 1 ise { w_tur = SQL_TK_INSERT; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "INTO".ptr, 4) == 1 ise { w_tur = SQL_TK_INTO; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "VALUES".ptr, 6) == 1 ise { w_tur = SQL_TK_VALUES; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "UPDATE".ptr, 6) == 1 ise { w_tur = SQL_TK_UPDATE; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "SET".ptr, 3) == 1 ise { w_tur = SQL_TK_SET; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "DELETE".ptr, 6) == 1 ise { w_tur = SQL_TK_DELETE; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "JOIN".ptr, 4) == 1 ise { w_tur = SQL_TK_JOIN; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "INNER".ptr, 5) == 1 ise { w_tur = SQL_TK_INNER; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "ON".ptr, 2) == 1 ise { w_tur = SQL_TK_ON; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "AND".ptr, 3) == 1 ise { w_tur = SQL_TK_AND; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "OR".ptr, 2) == 1 ise { w_tur = SQL_TK_OR; }
+            yoksa eger sql_kw_esit(w_ptr, w_uzn, "LIMIT".ptr, 5) == 1 ise { w_tur = SQL_TK_LIMIT; }
+
+            degisken t_w: *SqlToken = tokenlar + (sayac * 32);
+            t_w.tur = w_tur;
+            t_w.metin = w_ptr;
+            t_w.uzn = w_uzn;
+            t_w.sayi = 0;
+            sayac = sayac + 1;
+        } yoksa {
+            i = i + 1; # Bilinmeyen karakteri atla
+        }
+    }
+
+    dondu sayac;
+}
+
+# Kapsamlı AST Tabanlı SQL Ayrıştırıcı
+isv sql_dize_ayristir(metin: *u8, uzunluk: tamsayi) -> *SqlSorgusu {
+    eger uzunluk < 5 veya metin == 0 ise {
+        dondu 0;
+    }
+
+    degisken maks_tok: tamsayi = 64;
+    degisken token_alani: *SqlToken = bellek_tahsis_et(maks_tok * 32);
+    degisken tok_adet: tamsayi = sql_tokenize(metin, uzunluk, token_alani, maks_tok);
+    eger tok_adet <= 0 ise {
+        dondu 0;
+    }
+
+    degisken t0: *SqlToken = token_alani;
+    degisken komut: tamsayi = t0.tur;
+
+    # 1. KISALTILMIŞ (COMPACT) SQL SÖZDİZİMİ KONTROLÜ (Geriye Dönük %100 Uyum)
+    # Örnek: "INSERT 201 8800", "SELECT 202", "UPDATE 202 9950", "DELETE 201"
+    eger tok_adet >= 2 ise {
+        degisken t1: *SqlToken = token_alani + 32;
+        eger t1.tur == SQL_TK_SAYI ise {
+            eger komut == SQL_TK_SELECT ise {
+                dondu sql_sorgu_olustur(SQL_KOMUT_SELECT, 1, t1.sayi, 0);
+            } yoksa eger komut == SQL_TK_DELETE ise {
+                dondu sql_sorgu_olustur(SQL_KOMUT_DELETE, 1, t1.sayi, 0);
+            } yoksa eger komut == SQL_TK_INSERT ve tok_adet >= 3 ise {
+                degisken t2: *SqlToken = token_alani + 64;
+                eger t2.tur == SQL_TK_SAYI ise {
+                    dondu sql_sorgu_olustur(SQL_KOMUT_INSERT, 1, t1.sayi, t2.sayi);
+                }
+            } yoksa eger komut == SQL_TK_UPDATE ve tok_adet >= 3 ise {
+                degisken t2_u: *SqlToken = token_alani + 64;
+                eger t2_u.tur == SQL_TK_SAYI ise {
+                    dondu sql_sorgu_olustur(SQL_KOMUT_UPDATE, 1, t1.sayi, t2_u.sayi);
+                }
+            }
+        }
+    }
+
+    # 2. TAM ANSI SQL SÖZDİZİMİ AYRIŞTIRMA (AST MODELLİ)
+    # ----------------------------------------------------
+    # 2.1. SELECT Sorgusu: SELECT ... FROM ... [JOIN ...] [WHERE ...] [LIMIT ...]
+    eger komut == SQL_TK_SELECT ise {
+        degisken s_sel: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_SELECT, 1, 0, 0);
+        degisken idx: tamsayi = 1;
+
+        # FROM kelimesini ara
+        dongu idx < tok_adet {
+            degisken cur: *SqlToken = token_alani + (idx * 32);
+            eger cur.tur == SQL_TK_FROM ise {
+                idx = idx + 1;
+                eger idx < tok_adet {
+                    degisken tbl_tok: *SqlToken = token_alani + (idx * 32);
+                    s_sel.tablo_ad = tbl_tok.metin;
+                    s_sel.tablo_uzn = tbl_tok.uzn;
+                    idx = idx + 1;
+                }
+                durdur;
+            }
+            idx = idx + 1;
+        }
+
+        # [INNER] JOIN ... ON ... kontrolü
+        dongu idx < tok_adet {
+            degisken j_cur: *SqlToken = token_alani + (idx * 32);
+            eger j_cur.tur == SQL_TK_INNER veya j_cur.tur == SQL_TK_JOIN ise {
+                eger j_cur.tur == SQL_TK_INNER ve (idx + 1) < tok_adet {
+                    idx = idx + 1; # 'JOIN' kelimesine gec
+                }
+                idx = idx + 1; # Tablo adina gec
+                degisken j_tbl: *SqlToken = 0;
+                eger idx < tok_adet {
+                    j_tbl = token_alani + (idx * 32);
+                    idx = idx + 1;
+                }
+                # ON kelimesi
+                degisken sol_col_indis: tamsayi = 0;
+                degisken sag_col_indis: tamsayi = 0;
+                eger idx < tok_adet {
+                    degisken on_tok: *SqlToken = token_alani + (idx * 32);
+                    eger on_tok.tur == SQL_TK_ON ise {
+                        idx = idx + 1;
+                        # sol_tablo.sol_sutun = sag_tablo.sag_sutun
+                        dongu idx < tok_adet {
+                            degisken cond_tok: *SqlToken = token_alani + (idx * 32);
+                            eger cond_tok.tur == SQL_TK_WHERE veya cond_tok.tur == SQL_TK_LIMIT ise {
+                                durdur;
+                            }
+                            eger cond_tok.tur == SQL_TK_NOKTA ve (idx + 1) < tok_adet {
+                                degisken col_n: *SqlToken = token_alani + ((idx + 1) * 32);
+                                eger sol_col_indis == 0 ise {
+                                    sol_col_indis = sql_sutun_indis_bul(col_n.metin, col_n.uzn);
+                                } yoksa {
+                                    sag_col_indis = sql_sutun_indis_bul(col_n.metin, col_n.uzn);
+                                }
+                            }
+                            idx = idx + 1;
+                        }
+                    }
+                }
+                eger j_tbl != 0 ise {
+                    s_sel.join_bilgisi = sql_join_olustur(j_tbl.metin, j_tbl.uzn, sol_col_indis, sag_col_indis);
+                }
+                durdur;
+            } yoksa eger j_cur.tur == SQL_TK_WHERE veya j_cur.tur == SQL_TK_LIMIT ise {
+                durdur;
+            }
+            idx = idx + 1;
+        }
+
+        # WHERE kosullarini cozumle (AND / OR baglantilari)
+        degisken maks_kosul: tamsayi = 8;
+        degisken kosullar_dizi: *SqlKosul = bellek_tahsis_et(maks_kosul * 48);
+        degisken kosul_sayisi: tamsayi = 0;
+
+        dongu idx < tok_adet {
+            degisken w_cur: *SqlToken = token_alani + (idx * 32);
+            eger w_cur.tur == SQL_TK_WHERE ise {
+                idx = idx + 1;
+                dongu idx < tok_adet ve kosul_sayisi < maks_kosul {
+                    degisken tok_col: *SqlToken = token_alani + (idx * 32);
+                    eger tok_col.tur == SQL_TK_LIMIT ise { durdur; }
+
+                    degisken c_indis: tamsayi = 0;
+                    eger tok_col.tur == SQL_TK_IDENT ise {
+                        # Eger tablo.sutun seklindeyse noktadan sonrakini al
+                        eger (idx + 2) < tok_adet {
+                            degisken nokta_tok: *SqlToken = token_alani + ((idx + 1) * 32);
+                            eger nokta_tok.tur == SQL_TK_NOKTA ise {
+                                degisken sag_col: *SqlToken = token_alani + ((idx + 2) * 32);
+                                c_indis = sql_sutun_indis_bul(sag_col.metin, sag_col.uzn);
+                                idx = idx + 2;
+                            } yoksa {
+                                c_indis = sql_sutun_indis_bul(tok_col.metin, tok_col.uzn);
+                            }
+                        } yoksa {
+                            c_indis = sql_sutun_indis_bul(tok_col.metin, tok_col.uzn);
+                        }
+                        idx = idx + 1;
+                    }
+
+                    # Karsilastirma isleci (OP)
+                    degisken op: tamsayi = SQL_OP_ESIT;
+                    eger idx < tok_adet {
+                        degisken op_tok: *SqlToken = token_alani + (idx * 32);
+                        eger op_tok.tur == SQL_TK_ESIT ise { op = SQL_OP_ESIT; }
+                        yoksa eger op_tok.tur == SQL_TK_BUYUK ise { op = SQL_OP_BUYUK; }
+                        yoksa eger op_tok.tur == SQL_TK_KUCUK ise { op = SQL_OP_KUCUK; }
+                        yoksa eger op_tok.tur == SQL_TK_ESIT_DEGIL ise { op = SQL_OP_ESIT_DEGIL; }
+                        yoksa eger op_tok.tur == SQL_TK_BUYUK_ESIT ise { op = SQL_OP_BUYUK_ESIT; }
+                        yoksa eger op_tok.tur == SQL_TK_KUCUK_ESIT ise { op = SQL_OP_KUCUK_ESIT; }
+                        idx = idx + 1;
+                    }
+
+                    # Karsilastirilacak deger
+                    degisken val: tamsayi = 0;
+                    eger idx < tok_adet {
+                        degisken val_tok: *SqlToken = token_alani + (idx * 32);
+                        val = val_tok.sayi;
+                        idx = idx + 1;
+                    }
+
+                    # Baglac: AND, OR veya YOK
+                    degisken baglac: tamsayi = SQL_BAGLAC_YOK;
+                    eger idx < tok_adet {
+                        degisken b_tok: *SqlToken = token_alani + (idx * 32);
+                        eger b_tok.tur == SQL_TK_AND ise {
+                            baglac = SQL_BAGLAC_AND;
+                            idx = idx + 1;
+                        } yoksa eger b_tok.tur == SQL_TK_OR ise {
+                            baglac = SQL_BAGLAC_OR;
+                            idx = idx + 1;
+                        }
+                    }
+
+                    degisken k_item: *SqlKosul = kosullar_dizi + (kosul_sayisi * 48);
+                    k_item.sutun_indis = c_indis;
+                    k_item.op = op;
+                    k_item.deger = val;
+                    k_item.baglac = baglac;
+                    kosul_sayisi = kosul_sayisi + 1;
+
+                    eger baglac == SQL_BAGLAC_YOK ise {
+                        durdur;
+                    }
+                }
+                durdur;
+            } yoksa eger w_cur.tur == SQL_TK_LIMIT ise {
+                durdur;
+            }
+            idx = idx + 1;
+        }
+
+        # LIMIT kontrolü
+        dongu idx < tok_adet {
+            degisken l_cur: *SqlToken = token_alani + (idx * 32);
+            eger l_cur.tur == SQL_TK_LIMIT ve (idx + 1) < tok_adet ise {
+                degisken lim_num: *SqlToken = token_alani + ((idx + 1) * 32);
+                s_sel.limit = lim_num.sayi;
+                durdur;
+            }
+            idx = idx + 1;
+        }
+
+        s_sel.kosullar = kosullar_dizi;
+        s_sel.kosul_sayisi = kosul_sayisi;
+        eger kosul_sayisi > 0 ise {
+            degisken ilk_k: *SqlKosul = kosullar_dizi;
+            s_sel.filtre_degeri = ilk_k.deger;
+            s_sel.kosul_op = ilk_k.op;
+        }
+
+        dondu s_sel;
+    }
+
+    # 2.2. INSERT INTO <table> [(cols...)] VALUES (val1, val2, ...)
+    eger komut == SQL_TK_INSERT ise {
+        degisken s_ins: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_INSERT, 1, 0, 0);
+        degisken i_idx: tamsayi = 1;
+        eger i_idx < tok_adet {
+            degisken into_tok: *SqlToken = token_alani + (i_idx * 32);
+            eger into_tok.tur == SQL_TK_INTO ise { i_idx = i_idx + 1; }
+        }
+        eger i_idx < tok_adet {
+            degisken tbl_t: *SqlToken = token_alani + (i_idx * 32);
+            s_ins.tablo_ad = tbl_t.metin;
+            s_ins.tablo_uzn = tbl_t.uzn;
+            i_idx = i_idx + 1;
+        }
+
+        # VALUES arayalım
+        degisken deger_sayisi: tamsayi = 0;
+        degisken degerler: [4]tamsayi;
+        degerler[0] = 0; degerler[1] = 0; degerler[2] = 0; degerler[3] = 0;
+
+        dongu i_idx < tok_adet {
+            degisken v_cur: *SqlToken = token_alani + (i_idx * 32);
+            eger v_cur.tur == SQL_TK_VALUES ise {
+                i_idx = i_idx + 1;
+                dongu i_idx < tok_adet ve deger_sayisi < 4 {
+                    degisken val_t: *SqlToken = token_alani + (i_idx * 32);
+                    eger val_t.tur == SQL_TK_SAYI ise {
+                        degerler[deger_sayisi] = val_t.sayi;
+                        deger_sayisi = deger_sayisi + 1;
+                    } yoksa eger val_t.tur == SQL_TK_PAR_KAPA ise {
+                        durdur;
+                    }
+                    i_idx = i_idx + 1;
+                }
+                durdur;
+            }
+            i_idx = i_idx + 1;
+        }
+
+        eger deger_sayisi >= 1 ise {
+            s_ins.eklenen_id = degerler[0];
+            s_ins.filtre_degeri = degerler[0];
+        }
+        eger deger_sayisi >= 2 ise {
+            s_ins.eklenen_deger = degerler[1];
+            s_ins.atanan_deger = degerler[1];
+        }
+        eger deger_sayisi >= 3 ise {
+            s_ins.eklenen_deger2 = degerler[2];
+        }
+
+        dondu s_ins;
+    }
+
+    # 2.3. UPDATE <table> SET <col> = <val> WHERE <kosul>
+    eger komut == SQL_TK_UPDATE ise {
+        degisken s_upd: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_UPDATE, 1, 0, 0);
+        degisken u_idx: tamsayi = 1;
+        eger u_idx < tok_adet {
+            degisken tbl_u: *SqlToken = token_alani + (u_idx * 32);
+            s_upd.tablo_ad = tbl_u.metin;
+            s_upd.tablo_uzn = tbl_u.uzn;
+            u_idx = u_idx + 1;
+        }
+        # SET arayalim
+        dongu u_idx < tok_adet {
+            degisken set_t: *SqlToken = token_alani + (u_idx * 32);
+            eger set_t.tur == SQL_TK_SET ise {
+                u_idx = u_idx + 1;
+                # col = val
+                degisken upd_col_indis: tamsayi = 1;
+                eger u_idx < tok_adet {
+                    degisken c_t: *SqlToken = token_alani + (u_idx * 32);
+                    upd_col_indis = sql_sutun_indis_bul(c_t.metin, c_t.uzn);
+                    u_idx = u_idx + 1;
+                }
+                s_upd.guncellenen_sutun_indis = upd_col_indis;
+                eger u_idx < tok_adet {
+                    degisken eq_t: *SqlToken = token_alani + (u_idx * 32);
+                    eger eq_t.tur == SQL_TK_ESIT ise { u_idx = u_idx + 1; }
+                }
+                eger u_idx < tok_adet {
+                    degisken val_u: *SqlToken = token_alani + (u_idx * 32);
+                    s_upd.atanan_deger = val_u.sayi;
+                    u_idx = u_idx + 1;
+                }
+                durdur;
+            }
+            u_idx = u_idx + 1;
+        }
+
+        # WHERE kosulu
+        dongu u_idx < tok_adet {
+            degisken w_u: *SqlToken = token_alani + (u_idx * 32);
+            eger w_u.tur == SQL_TK_WHERE ise {
+                u_idx = u_idx + 1;
+                # col = val
+                eger u_idx < tok_adet { u_idx = u_idx + 1; } # col
+                eger u_idx < tok_adet { u_idx = u_idx + 1; } # op
+                eger u_idx < tok_adet {
+                    degisken id_u: *SqlToken = token_alani + (u_idx * 32);
+                    s_upd.filtre_degeri = id_u.sayi;
+                }
+                durdur;
+            }
+            u_idx = u_idx + 1;
+        }
+
+        dondu s_upd;
+    }
+
+    # 2.4. DELETE FROM <table> WHERE <kosul>
+    eger komut == SQL_TK_DELETE ise {
+        degisken s_del: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_DELETE, 1, 0, 0);
+        degisken d_idx: tamsayi = 1;
+        eger d_idx < tok_adet {
+            degisken from_d: *SqlToken = token_alani + (d_idx * 32);
+            eger from_d.tur == SQL_TK_FROM ise { d_idx = d_idx + 1; }
+        }
+        eger d_idx < tok_adet {
+            degisken tbl_d: *SqlToken = token_alani + (d_idx * 32);
+            s_del.tablo_ad = tbl_d.metin;
+            s_del.tablo_uzn = tbl_d.uzn;
+            d_idx = d_idx + 1;
+        }
+        # WHERE kosulu
+        dongu d_idx < tok_adet {
+            degisken w_d: *SqlToken = token_alani + (d_idx * 32);
+            eger w_d.tur == SQL_TK_WHERE ise {
+                d_idx = d_idx + 1;
+                eger d_idx < tok_adet { d_idx = d_idx + 1; } # col
+                eger d_idx < tok_adet { d_idx = d_idx + 1; } # op
+                eger d_idx < tok_adet {
+                    degisken id_d: *SqlToken = token_alani + (d_idx * 32);
+                    s_del.filtre_degeri = id_d.sayi;
+                }
+                durdur;
+            }
+            d_idx = d_idx + 1;
+        }
+
+        dondu s_del;
+    }
+
+    dondu 0;
+}

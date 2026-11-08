@@ -1,0 +1,1 @@
+isv ana() -> tamsayi { degisken a = 3; degisken b = 5; eger a >= b ise { dondu 99; } yoksa { dondu 7; } }

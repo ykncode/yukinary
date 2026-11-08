@@ -1,0 +1,170 @@
+# ============================================================
+# Yukinary (YKN) Dinamik Dizi Kutuphanesi (libykn/std/collection/vec.ykn)
+# Vec<T> Dynamic Array: O(1) Amortized Grow, Random Access, Capacity Reserve
+# ============================================================
+
+yapi Vec {
+    veri: *u8;
+    uzunluk: tamsayi;
+    kapasite: tamsayi;
+    eleman_boyutu: tamsayi;
+}
+
+# ------------------------------------------------------------
+# Yapici ve Yonetim Fonksiyonlari
+# ------------------------------------------------------------
+
+# vec_yeni: Belirtilen eleman bayt boyutu ile dinamik dizi olusturur
+isv vec_yeni(eleman_boyutu: tamsayi) -> *Vec {
+    degisken eb: tamsayi = eleman_boyutu;
+    eger eb <= 0 { eb = 8; }
+
+    degisken baslangic_kapasite: tamsayi = 8;
+    degisken v: *Vec = bellek_tahsis_et(32);
+    v.veri = bellek_tahsis_et(baslangic_kapasite * eb);
+    v.uzunluk = 0;
+    v.kapasite = baslangic_kapasite;
+    v.eleman_boyutu = eb;
+    dondu v;
+}
+
+# vec_kapasite_ile: Belirli bir baslangic kapasitesi ile olusturur
+isv vec_kapasite_ile(kapasite: tamsayi, eleman_boyutu: tamsayi) -> *Vec {
+    degisken cap: tamsayi = kapasite;
+    eger cap < 4 { cap = 4; }
+    degisken eb: tamsayi = eleman_boyutu;
+    eger eb <= 0 { eb = 8; }
+
+    degisken v: *Vec = bellek_tahsis_et(32);
+    v.veri = bellek_tahsis_et(cap * eb);
+    v.uzunluk = 0;
+    v.kapasite = cap;
+    v.eleman_boyutu = eb;
+    dondu v;
+}
+
+# Tamsayi vektoru olustur (varsayilan 8 bayt int64)
+isv vec_tamsayi_yeni() -> *Vec {
+    dondu vec_yeni(8);
+}
+
+# ------------------------------------------------------------
+# Kapasite ve Boyut Yonetimi
+# ------------------------------------------------------------
+
+# vec_ayir (reserve): En az ek_kapasite kadar yer ayirir
+isv vec_ayir(v: *Vec, ek_kapasite: tamsayi) {
+    eger v == 0 veya ek_kapasite <= 0 { dondu; }
+    degisken hedef_kapasite: tamsayi = v.uzunluk + ek_kapasite;
+    eger hedef_kapasite > v.kapasite {
+        degisken yeni_kap: tamsayi = v.kapasite * 2;
+        eger yeni_kap < hedef_kapasite { yeni_kap = hedef_kapasite; }
+
+        degisken yeni_alan: *u8 = bellek_tahsis_et(yeni_kap * v.eleman_boyutu);
+        degisken eski_ptr: *tamsayi = v.veri;
+        degisken yeni_ptr: *tamsayi = yeni_alan;
+        degisken i: tamsayi = 0;
+        degisken toplam_u64: tamsayi = (v.uzunluk * v.eleman_boyutu) / 8;
+        dongu i < toplam_u64 {
+            yeni_ptr[i] = eski_ptr[i];
+            i = i + 1;
+        }
+        v.veri = yeni_alan;
+        v.kapasite = yeni_kap;
+    }
+}
+
+# vec_uzunluk (len): Mevcut eleman sayisini dondurur
+isv vec_uzunluk(v: *Vec) -> tamsayi {
+    eger v == 0 { dondu 0; }
+    dondu v.uzunluk;
+}
+
+# vec_kapasite (capacity): Tahsis edilmis kapasiteyi dondurur
+isv vec_kapasite(v: *Vec) -> tamsayi {
+    eger v == 0 { dondu 0; }
+    dondu v.kapasite;
+}
+
+# vec_bos_mu (is_empty): Dizi bos mu?
+isv vec_bos_mu(v: *Vec) -> tamsayi {
+    eger v == 0 { dondu 1; }
+    dondu v.uzunluk == 0;
+}
+
+# vec_temizle (clear): Tum elemanlari sifirlar (kapasiteyi korur)
+isv vec_temizle(v: *Vec) {
+    eger v != 0 {
+        v.uzunluk = 0;
+    }
+}
+
+# ------------------------------------------------------------
+# Eleman Islemleri (Tamsayi / 64-bit Pointer)
+# ------------------------------------------------------------
+
+# vec_ekle (push): Sona eleman ekler (amortized O(1))
+isv vec_ekle(v: *Vec, deger: tamsayi) {
+    eger v == 0 { dondu; }
+    eger v.uzunluk >= v.kapasite {
+        vec_ayir(v, 1);
+    }
+    degisken ptr: *tamsayi = v.veri;
+    ptr[v.uzunluk] = deger;
+    v.uzunluk = v.uzunluk + 1;
+}
+
+# vec_al (get): Indeksteki elemani dondurur (O(1))
+isv vec_al(v: *Vec, indeks: tamsayi) -> tamsayi {
+    eger v == 0 veya indeks < 0 veya indeks >= v.uzunluk {
+        dondu 0;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    dondu ptr[indeks];
+}
+
+# vec_yaz (set): Indeksteki elemani gunceller
+isv vec_yaz(v: *Vec, indeks: tamsayi, deger: tamsayi) {
+    eger v == 0 veya indeks < 0 veya indeks >= v.uzunluk {
+        dondu;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    ptr[indeks] = deger;
+}
+
+# vec_cikar (pop): Son elemani cikarir ve dondurur
+isv vec_cikar(v: *Vec) -> tamsayi {
+    eger v == 0 veya v.uzunluk <= 0 {
+        dondu 0;
+    }
+    v.uzunluk = v.uzunluk - 1;
+    degisken ptr: *tamsayi = v.veri;
+    dondu ptr[v.uzunluk];
+}
+
+# vec_sil (remove): Indeksteki elemani silip elemanlari sola kaydirir
+isv vec_sil(v: *Vec, indeks: tamsayi) -> tamsayi {
+    eger v == 0 veya indeks < 0 veya indeks >= v.uzunluk {
+        dondu 0;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    degisken cikarilan: tamsayi = ptr[indeks];
+    degisken i: tamsayi = indeks;
+    dongu i < v.uzunluk - 1 {
+        ptr[i] = ptr[i + 1];
+        i = i + 1;
+    }
+    v.uzunluk = v.uzunluk - 1;
+    dondu cikarilan;
+}
+
+# ------------------------------------------------------------
+# Pointer Destekli Islemler
+# ------------------------------------------------------------
+isv vec_ekle_ptr(v: *Vec, p: *u8) {
+    vec_ekle(v, p);
+}
+
+isv vec_al_ptr(v: *Vec, indeks: tamsayi) -> *u8 {
+    dondu vec_al(v, indeks) as *u8;
+}

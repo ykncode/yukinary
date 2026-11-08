@@ -1,0 +1,25 @@
+modul durumlar {
+    enum Durum {
+        Basarili,
+        Beklemede,
+        Hatali
+    }
+
+    isv durum_isle(d: Durum) -> tamsayi {
+        esles d {
+            Durum.Basarili ise {
+                dondu 1;
+            }
+            Durum.Beklemede ise {
+                dondu 0;
+            }
+            varsayilan ise {
+                dondu -1;
+            }
+        }
+    }
+}
+
+isv ana() -> tamsayi {
+    dondu durumlar::durum_isle(Durum.Basarili);
+}

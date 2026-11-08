@@ -1,0 +1,10 @@
+# Test Francais: Controle de flux
+fonction principal(argc: tamsayi, argv: **u8) -> tamsayi {
+    soit x: tamsayi = 42;
+    si x == 42 alors {
+        ekrana_yaz("Bonjour depuis Yukinary francais!\n".ptr);
+    } sinon {
+        ekrana_yaz("Erreur!\n".ptr);
+    }
+    retour 0;
+}

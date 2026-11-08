@@ -1,0 +1,53 @@
+# ============================================================
+# tests/faz8_neg_pubgrub_conflict.ykn
+# FAZ 8: PubGrub Sürüm Çakışması (Version Conflict) Negatif Testi
+# A -> C == 1.0.0
+# B -> C == 2.0.0
+# Çakışma fail-closed tespit edilmeli ve derleme/çözüm durdurulmalı (Exit: 1)
+# ============================================================
+
+ice_aktar "src/utils.ykn";
+ice_aktar "src/paket.ykn";
+
+isv ana() -> tamsayi {
+    degisken pA: PubGrubPaketSurum;
+    pA.isim = "pkgA".ptr; pA.major = 1; pA.minor = 0; pA.patch = 0;
+    pA.alt_bagimli_paket = "pkgC".ptr;
+    pA.alt_bagimli_kisit = "1.0.0".ptr; # Kesin 1.0.0 istiyor
+    pA.alt_bagimli_kisit_uzn = 5;
+
+    degisken pB: PubGrubPaketSurum;
+    pB.isim = "pkgB".ptr; pB.major = 1; pB.minor = 0; pB.patch = 0;
+    pB.alt_bagimli_paket = "pkgC".ptr;
+    pB.alt_bagimli_kisit = "2.0.0".ptr; # Kesin 2.0.0 istiyor (ÇAKIŞMA!)
+    pB.alt_bagimli_kisit_uzn = 5;
+
+    degisken pC1: PubGrubPaketSurum;
+    pC1.isim = "pkgC".ptr; pC1.major = 1; pC1.minor = 0; pC1.patch = 0;
+    pC1.alt_bagimli_paket = 0; pC1.alt_bagimli_kisit = 0; pC1.alt_bagimli_kisit_uzn = 0;
+
+    degisken pC2: PubGrubPaketSurum;
+    pC2.isim = "pkgC".ptr; pC2.major = 2; pC2.minor = 0; pC2.patch = 0;
+    pC2.alt_bagimli_paket = 0; pC2.alt_bagimli_kisit = 0; pC2.alt_bagimli_kisit_uzn = 0;
+
+    degisken katalog: [4]tamsayi;
+    katalog[0] = &pA as tamsayi;
+    katalog[1] = &pB as tamsayi;
+    katalog[2] = &pC1 as tamsayi;
+    katalog[3] = &pC2 as tamsayi;
+
+    degisken cozum: PubGrubCozum;
+    degisken sonuc: tamsayi = pubgrub_graf_coz(katalog.ptr, 4,
+                                              "pkgA".ptr, "^1.0.0".ptr, 6,
+                                              "pkgB".ptr, "^1.0.0".ptr, 6,
+                                              &cozum);
+
+    # Çözüm 0 dönmeli veya cozum.adet 0 olmalı (çatışma çözülemez)
+    eger sonuc == 0 veya cozum.adet == 0 ise {
+        ekrana_yaz("BEKLENEN HATA: PubGrub surum cakismasi tespit edildi (fail-closed basarili)!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("HATA: Uyumsuz surumler hatali olarak onaylandi!\n".ptr);
+    dondu 0;
+}

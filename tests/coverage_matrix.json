@@ -1,0 +1,257 @@
+﻿{
+    "timestamp":  "2026-10-02T10:20:00Z",
+    "total_nodes":  35,
+    "codegen_covered":  29,
+    "test_covered":  29,
+    "both_covered":  28,
+    "codegen_only":  1,
+    "test_only":  0,
+    "neither":  5,
+    "nodes":  [
+                  {
+                      "id":  0,
+                      "name":  "AST_BOS",
+                      "in_codegen":  false,
+                      "in_tests":  false,
+                      "coverage":  "[INFO] Henuz kullanilmamis"
+                  },
+                  {
+                      "id":  1,
+                      "name":  "AST_SAYI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  2,
+                      "name":  "AST_GERCEK_SAYI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  3,
+                      "name":  "AST_METIN",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  4,
+                      "name":  "AST_KIMLIK",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  5,
+                      "name":  "AST_IKILI_OP",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  6,
+                      "name":  "AST_ATAMA",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  7,
+                      "name":  "AST_DEGISKEN_TANIMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  8,
+                      "name":  "AST_EGER",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  9,
+                      "name":  "AST_DONGU",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  10,
+                      "name":  "AST_ISLEV",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  11,
+                      "name":  "AST_ISLEV_CAGRISI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  12,
+                      "name":  "AST_DONDUR",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  13,
+                      "name":  "AST_BLOK",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  14,
+                      "name":  "AST_DURDUR",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  15,
+                      "name":  "AST_DEVAM_ET",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  16,
+                      "name":  "AST_YAPI_TANIMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  17,
+                      "name":  "AST_ALAN_ERISIMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  18,
+                      "name":  "AST_INDEKS_ERISIMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  19,
+                      "name":  "AST_UNARY",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  20,
+                      "name":  "AST_REFERANS",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  21,
+                      "name":  "AST_ICE_AKTAR",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  22,
+                      "name":  "AST_MAKRO_TANIMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  23,
+                      "name":  "AST_MAKRO_CAGRISI",
+                      "in_codegen":  true,
+                      "in_tests":  false,
+                      "coverage":  "[WARN] Codegen var, test yok"
+                  },
+                  {
+                      "id":  24,
+                      "name":  "AST_GENERIC_TANIM",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  25,
+                      "name":  "AST_TRAIT_TANIM",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  26,
+                      "name":  "AST_MANTIK",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  27,
+                      "name":  "AST_DIREKTIF_PROMPT",
+                      "in_codegen":  false,
+                      "in_tests":  true,
+                      "coverage":  "[WARN] Test var, codegen eksik"
+                  },
+                  {
+                      "id":  28,
+                      "name":  "AST_DIREKTIF_AI",
+                      "in_codegen":  false,
+                      "in_tests":  false,
+                      "coverage":  "[INFO] Henuz kullanilmamis"
+                  },
+                  {
+                      "id":  29,
+                      "name":  "AST_DIREKTIF_C_LIB",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  30,
+                      "name":  "AST_DIREKTIF_CPP_LIB",
+                      "in_codegen":  false,
+                      "in_tests":  false,
+                      "coverage":  "[INFO] Henuz kullanilmamis"
+                  },
+                  {
+                      "id":  31,
+                      "name":  "AST_DIREKTIF_PY_LIB",
+                      "in_codegen":  false,
+                      "in_tests":  false,
+                      "coverage":  "[INFO] Henuz kullanilmamis"
+                  },
+                  {
+                      "id":  32,
+                      "name":  "AST_DIREKTIF_RS_LIB",
+                      "in_codegen":  false,
+                      "in_tests":  false,
+                      "coverage":  "[INFO] Henuz kullanilmamis"
+                  },
+                  {
+                      "id":  33,
+                      "name":  "AST_SORU_ISLEMI",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  },
+                  {
+                      "id":  34,
+                      "name":  "AST_SONUC_TANIM",
+                      "in_codegen":  true,
+                      "in_tests":  true,
+                      "coverage":  "[OK] Codegen+Test"
+                  }
+              ]
+}

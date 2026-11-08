@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 56: Win32 Zar Atma Uygulaması (Dice Roller)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_zar_tohum: tamsayi = 987654321;
+
+isv zar_at() -> tamsayi {
+    g_zar_tohum = (g_zar_tohum * 1103515245 + 12345) % 2147483648;
+    degisken p: tamsayi = g_zar_tohum;
+    eger p < 0 ise { p = 0 - p; }
+    dondu (p % 6) + 1;
+}
+
+isv zar_simulasyonu() {
+    degisken z1: tamsayi = zar_at();
+    degisken z2: tamsayi = zar_at();
+    ekrana_yaz("Zarlar Atildi -> Zar 1: ".ptr);
+    sayiyi_ekrana_yaz(z1);
+    ekrana_yaz(" | Zar 2: ".ptr);
+    sayiyi_ekrana_yaz(z2);
+    ekrana_yaz(" | Toplam: ".ptr);
+    sayiyi_ekrana_yaz(z1 + z2);
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Cift Zar Atici".ptr, 320, 220);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Butonlar
+    buton_olustur(p_h, "ZAR AT!".ptr, 4001, 80, 50, 150, 50);
+    buton_olustur(p_h, "Gecmisi Temizle".ptr, 4002, 80, 120, 150, 35);
+
+    ekrana_yaz("Zar uygulamasi hazir.\n".ptr);
+    zar_simulasyonu();
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

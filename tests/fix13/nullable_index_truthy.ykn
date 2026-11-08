@@ -1,0 +1,8 @@
+# FIX-13 olumlu: eger p ise truthy guard daraltmasi.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p ise {
+        p[0] = 66;
+    }
+    dondu 0;
+}

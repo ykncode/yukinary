@@ -1,0 +1,106 @@
+{
+  "schema": "yukinary.fix3-i18n-matrix.v1",
+  "categories": [
+    "declaration",
+    "control_flow",
+    "struct",
+    "import",
+    "generic",
+    "enum",
+    "error",
+    "output"
+  ],
+  "languages": {
+    "tr": {
+      "fixture": "tests/stdlib/01_stdlib_tum.ykn",
+      "categories": {
+        "declaration": "tests/stdlib/01_stdlib_tum.ykn",
+        "control_flow": "tests/stdlib/14_her_dongusu.ykn",
+        "struct": "tests/stdlib/25_modules.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/01_undefined_var.ykn",
+        "output": "tests/stdlib/01_stdlib_tum.ykn"
+      }
+    },
+    "en": {
+      "fixture": "tests/i18n/01_en_hello.ykn",
+      "categories": {
+        "declaration": "tests/i18n/01_en_hello.ykn",
+        "control_flow": "tests/i18n/02_en_control_flow.ykn",
+        "struct": "tests/stdlib/26_algebraic_enum.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/02_type_mismatch.ykn",
+        "output": "tests/i18n/01_en_hello.ykn"
+      }
+    },
+    "fr": {
+      "fixture": "tests/i18n/02_fr_control.ykn",
+      "categories": {
+        "declaration": "tests/i18n/02_fr_control.ykn",
+        "control_flow": "tests/i18n/02_fr_control.ykn",
+        "struct": "tests/stdlib/25_modules.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/03_invalid_return.ykn",
+        "output": "tests/i18n/02_fr_control.ykn"
+      }
+    },
+    "ru": {
+      "fixture": "tests/i18n/03_ru_math.ykn",
+      "categories": {
+        "declaration": "tests/i18n/03_ru_math.ykn",
+        "control_flow": "tests/i18n/03_ru_math.ykn",
+        "struct": "tests/stdlib/25_modules.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/01_undefined_var.ykn",
+        "output": "tests/i18n/03_ru_math.ykn"
+      }
+    },
+    "ja": {
+      "fixture": "tests/i18n/04_ja_struct.ykn",
+      "categories": {
+        "declaration": "tests/i18n/04_ja_struct.ykn",
+        "control_flow": "tests/i18n/04_ja_struct.ykn",
+        "struct": "tests/i18n/04_ja_struct.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/02_type_mismatch.ykn",
+        "output": "tests/i18n/04_ja_struct.ykn"
+      }
+    },
+    "zh": {
+      "fixture": "tests/i18n/05_zh_loop.ykn",
+      "categories": {
+        "declaration": "tests/i18n/05_zh_loop.ykn",
+        "control_flow": "tests/i18n/05_zh_loop.ykn",
+        "struct": "tests/stdlib/25_modules.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/03_invalid_return.ykn",
+        "output": "tests/i18n/05_zh_loop.ykn"
+      }
+    },
+    "ko": {
+      "fixture": "tests/i18n/06_ko_logic.ykn",
+      "categories": {
+        "declaration": "tests/i18n/06_ko_logic.ykn",
+        "control_flow": "tests/i18n/06_ko_logic.ykn",
+        "struct": "tests/stdlib/25_modules.ykn",
+        "import": "tests/stdlib/19_libykn_collections.ykn",
+        "generic": "tests/generics/01_identity.ykn",
+        "enum": "tests/stdlib/26_algebraic_enum.ykn",
+        "error": "tests/negative/01_undefined_var.ykn",
+        "output": "tests/i18n/06_ko_logic.ykn"
+      }
+    }
+  }
+}

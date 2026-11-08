@@ -1,0 +1,179 @@
+# ============================================================
+# tests/stdlib/19_libykn_collections.ykn
+# libykn Koleksiyon ve Option Kutuphanesi Testi
+# Vec<T>, HashMap<K,V>, Option<T> ve Traits
+# ============================================================
+
+
+ice_aktar "../../libykn/std/traits.ykn";
+ice_aktar "../../libykn/std/option.ykn";
+ice_aktar "../../libykn/std/collection/vec.ykn";
+ice_aktar "../../libykn/std/collection/hashmap.ykn";
+
+isv ana() -> tamsayi {
+    # --------------------------------------------------------
+    # 1. Option<T> (Bazi / Hic) Testleri
+    # --------------------------------------------------------
+    degisken opt_dolu = bazi(12345);
+    degisken opt_bos  = hic();
+
+    eger bazi_mi(opt_dolu) != 1 {
+        ekrana_yaz("FAIL: opt_dolu bazi olmali\n".ptr);
+        dondu 1;
+    }
+    eger hic_mi(opt_dolu) != 0 {
+        ekrana_yaz("FAIL: opt_dolu hic olmamali\n".ptr);
+        dondu 2;
+    }
+    eger hic_mi(opt_bos) != 1 {
+        ekrana_yaz("FAIL: opt_bos hic olmali\n".ptr);
+        dondu 3;
+    }
+    eger bazi_mi(opt_bos) != 0 {
+        ekrana_yaz("FAIL: opt_bos bazi olmamali\n".ptr);
+        dondu 4;
+    }
+    eger deger_veya(opt_dolu, 999) != 12345 {
+        ekrana_yaz("FAIL: opt_dolu degeri 12345 olmali\n".ptr);
+        dondu 5;
+    }
+    eger deger_veya(opt_bos, 999) != 999 {
+        ekrana_yaz("FAIL: opt_bos varsayilan 999 donmeli\n".ptr);
+        dondu 6;
+    }
+
+    # --------------------------------------------------------
+    # 2. Vec<T> Dinamik Dizi Testleri (Amortized Grow, Set, Pop, Remove)
+    # --------------------------------------------------------
+    degisken v: *Vec = vec_tamsayi_yeni();
+    eger vec_uzunluk(v) != 0 veya vec_bos_mu(v) != 1 {
+        ekrana_yaz("FAIL: yeni vec bos olmali\n".ptr);
+        dondu 10;
+    }
+
+    # 20 eleman ekle (8'lik baslangic kapasitesini asarak 2x buyumeyi test et)
+    degisken i: tamsayi = 0;
+    dongu i < 20 {
+        vec_ekle(v, (i + 1) * 10);
+        i = i + 1;
+    }
+
+    eger vec_uzunluk(v) != 20 {
+        ekrana_yaz("FAIL: vec uzunlugu 20 olmali\n".ptr);
+        dondu 11;
+    }
+    eger vec_kapasite(v) < 20 {
+        ekrana_yaz("FAIL: vec kapasitesi buyumus olmali\n".ptr);
+        dondu 12;
+    }
+
+    # Erisim kontrolu
+    eger vec_al(v, 0) != 10 veya vec_al(v, 19) != 200 {
+        ekrana_yaz("FAIL: vec indeks erisimi yanlis\n".ptr);
+        dondu 13;
+    }
+
+    # Guncelleme (set)
+    vec_yaz(v, 5, 555);
+    eger vec_al(v, 5) != 555 {
+        ekrana_yaz("FAIL: vec_yaz guncellemedi\n".ptr);
+        dondu 14;
+    }
+
+    # Pop (son eleman)
+    degisken son: tamsayi = vec_cikar(v);
+    eger son != 200 veya vec_uzunluk(v) != 19 {
+        ekrana_yaz("FAIL: vec_cikar yanlis deger veya uzunluk\n".ptr);
+        dondu 15;
+    }
+
+    # Silme (remove)
+    degisken silinen: tamsayi = vec_sil(v, 0); # ilk elemani (10) sil
+    eger silinen != 10 veya vec_al(v, 0) != 20 veya vec_uzunluk(v) != 18 {
+        ekrana_yaz("FAIL: vec_sil eleman kaydirmadi\n".ptr);
+        dondu 16;
+    }
+
+    # Temizle
+    vec_temizle(v);
+    eger vec_uzunluk(v) != 0 veya vec_bos_mu(v) != 1 {
+        ekrana_yaz("FAIL: vec_temizle sifirlamadi\n".ptr);
+        dondu 17;
+    }
+
+    # --------------------------------------------------------
+    # 3. HashMap<K,V> Testleri (Insert, Lookup, Contains, Remove, Rehash)
+    # --------------------------------------------------------
+    degisken hm: *HashMap = hashmap_yeni(16);
+    eger hashmap_uzunluk(hm) != 0 veya hashmap_bos_mu(hm) != 1 {
+        ekrana_yaz("FAIL: yeni hashmap bos olmali\n".ptr);
+        dondu 20;
+    }
+
+    hashmap_koy(hm, "elma".ptr, 100);
+    hashmap_koy(hm, "armut".ptr, 200);
+    hashmap_koy(hm, "muz".ptr, 300);
+    hashmap_koy(hm, "cilek".ptr, 400);
+
+    eger hashmap_uzunluk(hm) != 4 {
+        ekrana_yaz("FAIL: hashmap uzunlugu 4 olmali\n".ptr);
+        dondu 21;
+    }
+
+    eger hashmap_var_mi(hm, "elma".ptr) != 1 {
+        ekrana_yaz("FAIL: elma haritada bulunamadi\n".ptr);
+        dondu 22;
+    }
+    eger hashmap_var_mi(hm, "karpuz".ptr) != 0 {
+        ekrana_yaz("FAIL: karpuz haritada olmamali\n".ptr);
+        dondu 23;
+    }
+
+    eger hashmap_al(hm, "muz".ptr, 0) != 300 {
+        ekrana_yaz("FAIL: muz degeri 300 olmali\n".ptr);
+        dondu 24;
+    }
+    eger hashmap_al(hm, "karpuz".ptr, 999) != 999 {
+        ekrana_yaz("FAIL: olmayan anahtar varsayilani dondurmeli\n".ptr);
+        dondu 25;
+    }
+
+    # Guncelleme
+    hashmap_koy(hm, "elma".ptr, 150);
+    eger hashmap_al(hm, "elma".ptr, 0) != 150 veya hashmap_uzunluk(hm) != 4 {
+        ekrana_yaz("FAIL: hashmap guncelleme hatali\n".ptr);
+        dondu 26;
+    }
+
+    # Silme (tombstone)
+    degisken silinen_val: tamsayi = hashmap_sil(hm, "armut".ptr);
+    eger silinen_val != 200 veya hashmap_var_mi(hm, "armut".ptr) != 0 veya hashmap_uzunluk(hm) != 3 {
+        ekrana_yaz("FAIL: hashmap_sil hatali\n".ptr);
+        dondu 27;
+    }
+
+    # Silinen anahtar sonrasi diger elemanlar linear probing ile hala erisilebilir olmali
+    eger hashmap_al(hm, "cilek".ptr, 0) != 400 {
+        ekrana_yaz("FAIL: linear probing tombstone sonrasi bozuldu\n".ptr);
+        dondu 28;
+    }
+
+    # --------------------------------------------------------
+    # 4. Trait Yardimci Fonksiyon Testleri
+    # --------------------------------------------------------
+    degisken src_buf: [16]u8;
+    degisken dst_buf: [16]u8;
+    src_buf[0] = 65; # 'A'
+    src_buf[1] = 66; # 'B'
+    src_buf[2] = 67; # 'C'
+    src_buf[3] = 0;
+    bellek_blok_kopyala(dst_buf, src_buf, 4);
+
+    eger dst_buf[0] != 65 veya dst_buf[1] != 66 veya dst_buf[2] != 67 {
+        ekrana_yaz("FAIL: bellek_blok_kopyala hatali\n".ptr);
+        dondu 30;
+    }
+
+    ekrana_yaz("LIBYKN-COLLECTIONS-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,228 @@
+# ============================================================
+# Yukinary Kriptografi - std/kripto/sha256.ykn
+# Donanim Hizlandirmali / FIPS 180-4 Bağımsız SHA-256 Engine
+# 1. Oncelik: Donanim / C-ABI Hizlandirici (ykn_ag_tls.dll)
+# 2. Oncelik: Windows OS BCrypt CNG Kripto Donanimi (bcrypt.dll)
+# 3. Fallback: Sifir Bagimlilikli Saf FIPS 180-4 SHA-256 Motoru
+# ============================================================
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+
+degisken g_sha256_dll: tamsayi = 0;
+degisken g_pfn_sha256: tamsayi = 0;
+degisken g_sha256_modu: tamsayi = 0; # 1: ykn_ag_tls, 2: saf fips
+
+isv sha256_ilklendir() -> tamsayi {
+    eger g_sha256_modu != 0 { dondu g_sha256_modu; }
+    
+    # 1. ykn_ag_tls.dll dene
+    g_sha256_dll = LoadLibraryA("ykn_ag_tls.dll".ptr);
+    eger g_sha256_dll != 0 {
+        g_pfn_sha256 = GetProcAddress(g_sha256_dll, "ykn_sha256".ptr);
+        eger g_pfn_sha256 != 0 {
+            g_sha256_modu = 1;
+            dondu 1;
+        }
+    }
+    
+    # 2. DLL yoksa, Saf FIPS 180-4 motoru devrede
+    g_sha256_modu = 2;
+    dondu 2;
+}
+
+# --- Saf FIPS 180-4 SHA-256 Yardimci Islemleri ---
+
+isv sha256_rotr(x: tamsayi, n: tamsayi) -> tamsayi {
+    degisken u: tamsayi = x & 0xFFFFFFFF;
+    dondu ((u >> n) | (u << (32 - n))) & 0xFFFFFFFF;
+}
+
+isv sha256_ch(x: tamsayi, y: tamsayi, z: tamsayi) -> tamsayi {
+    dondu ((x & y) ^ ((~x) & z)) & 0xFFFFFFFF;
+}
+
+isv sha256_maj(x: tamsayi, y: tamsayi, z: tamsayi) -> tamsayi {
+    dondu ((x & y) ^ (x & z) ^ (y & z)) & 0xFFFFFFFF;
+}
+
+isv sha256_sigma0(x: tamsayi) -> tamsayi {
+    dondu (sha256_rotr(x, 2) ^ sha256_rotr(x, 13) ^ sha256_rotr(x, 22)) & 0xFFFFFFFF;
+}
+
+isv sha256_sigma1(x: tamsayi) -> tamsayi {
+    dondu (sha256_rotr(x, 6) ^ sha256_rotr(x, 11) ^ sha256_rotr(x, 25)) & 0xFFFFFFFF;
+}
+
+isv sha256_gamma0(x: tamsayi) -> tamsayi {
+    degisken u: tamsayi = x & 0xFFFFFFFF;
+    dondu (sha256_rotr(u, 7) ^ sha256_rotr(u, 18) ^ (u >> 3)) & 0xFFFFFFFF;
+}
+
+isv sha256_gamma1(x: tamsayi) -> tamsayi {
+    degisken u: tamsayi = x & 0xFFFFFFFF;
+    dondu (sha256_rotr(u, 17) ^ sha256_rotr(u, 19) ^ (u >> 10)) & 0xFFFFFFFF;
+}
+
+# Saf FIPS 180-4 Blok Donusumu
+isv sha256_blok_isle(state: *tamsayi, blok: *u8) {
+    degisken K: [64]tamsayi;
+    K[0] = 0x428a2f98; K[1] = 0x71374491; K[2] = 0xb5c0fbcf; K[3] = 0xe9b5dba5;
+    K[4] = 0x3956c25b; K[5] = 0x59f111f1; K[6] = 0x923f82a4; K[7] = 0xab1c5ed5;
+    K[8] = 0xd807aa98; K[9] = 0x12835b01; K[10] = 0x243185be; K[11] = 0x550c7dc3;
+    K[12] = 0x72be5d74; K[13] = 0x80deb1fe; K[14] = 0x9bdc06a7; K[15] = 0xc19bf174;
+    K[16] = 0xe49b69c1; K[17] = 0xefbe4786; K[18] = 0x0fc19dc6; K[19] = 0x240ca1cc;
+    K[20] = 0x2de92c6f; K[21] = 0x4a7484aa; K[22] = 0x5cb0a9dc; K[23] = 0x76f988da;
+    K[24] = 0x983e5152; K[25] = 0xa831c66d; K[26] = 0xb00327c8; K[27] = 0xbf597fc7;
+    K[28] = 0xc6e00bf3; K[29] = 0xd5a79147; K[30] = 0x06ca6351; K[31] = 0x14292967;
+    K[32] = 0x27b70a85; K[33] = 0x2e1b2138; K[34] = 0x4d2c6dfc; K[35] = 0x53380d13;
+    K[36] = 0x650a7354; K[37] = 0x766a0abb; K[38] = 0x81c2c92e; K[39] = 0x92722c85;
+    K[40] = 0xa2bfe8a1; K[41] = 0xa81a664b; K[42] = 0xc24b8b70; K[43] = 0xc76c51a3;
+    K[44] = 0xd192e819; K[45] = 0xd6990624; K[46] = 0xf40e3585; K[47] = 0x106aa070;
+    K[48] = 0x19a4c116; K[49] = 0x1e376c08; K[50] = 0x2748774c; K[51] = 0x34b0bcb5;
+    K[52] = 0x391c0cb3; K[53] = 0x4ed8aa4a; K[54] = 0x5b9cca4f; K[55] = 0x682e6ff3;
+    K[56] = 0x748f82ee; K[57] = 0x78a5636f; K[58] = 0x84c87814; K[59] = 0x8cc70208;
+    K[60] = 0x90befffa; K[61] = 0xa4506ceb; K[62] = 0xbef9a3f7; K[63] = 0xc67178f2;
+
+    degisken W: [64]tamsayi;
+    degisken t: tamsayi = 0;
+    dongu t < 16 {
+        degisken p: tamsayi = t * 4;
+        W[t] = ((blok[p] & 0xFF) << 24) |
+               ((blok[p + 1] & 0xFF) << 16) |
+               ((blok[p + 2] & 0xFF) << 8) |
+               (blok[p + 3] & 0xFF);
+        t = t + 1;
+    }
+    dongu t < 64 {
+        degisken s0_val: tamsayi = sha256_gamma0(W[t - 15]);
+        degisken s1_val: tamsayi = sha256_gamma1(W[t - 2]);
+        W[t] = (W[t - 16] + s0_val + W[t - 7] + s1_val) & 0xFFFFFFFF;
+        t = t + 1;
+    }
+
+    degisken a: tamsayi = state[0];
+    degisken b: tamsayi = state[1];
+    degisken c: tamsayi = state[2];
+    degisken d: tamsayi = state[3];
+    degisken e: tamsayi = state[4];
+    degisken f: tamsayi = state[5];
+    degisken g: tamsayi = state[6];
+    degisken h: tamsayi = state[7];
+
+    t = 0;
+    dongu t < 64 {
+        degisken T1: tamsayi = (h + sha256_sigma1(e) + sha256_ch(e, f, g) + K[t] + W[t]) & 0xFFFFFFFF;
+        degisken T2: tamsayi = (sha256_sigma0(a) + sha256_maj(a, b, c)) & 0xFFFFFFFF;
+        h = g;
+        g = f;
+        f = e;
+        e = (d + T1) & 0xFFFFFFFF;
+        d = c;
+        c = b;
+        b = a;
+        a = (T1 + T2) & 0xFFFFFFFF;
+        t = t + 1;
+    }
+
+    state[0] = (state[0] + a) & 0xFFFFFFFF;
+    state[1] = (state[1] + b) & 0xFFFFFFFF;
+    state[2] = (state[2] + c) & 0xFFFFFFFF;
+    state[3] = (state[3] + d) & 0xFFFFFFFF;
+    state[4] = (state[4] + e) & 0xFFFFFFFF;
+    state[5] = (state[5] + f) & 0xFFFFFFFF;
+    state[6] = (state[6] + g) & 0xFFFFFFFF;
+    state[7] = (state[7] + h) & 0xFFFFFFFF;
+}
+
+# Saf YKN FIPS 180-4 SHA-256 Hesaplayici (Sifir Harici DLL)
+isv sha256_saf_hesapla(veri: *u8, uzunluk: tamsayi, cikis_hash32: *u8) -> tamsayi {
+    degisken state: [8]tamsayi;
+    state[0] = 0x6a09e667;
+    state[1] = 0xbb67ae85;
+    state[2] = 0x3c6ef372;
+    state[3] = 0xa54ff53a;
+    state[4] = 0x510e527f;
+    state[5] = 0x9b05688c;
+    state[6] = 0x1f83d9ab;
+    state[7] = 0x5be0cd19;
+
+    degisken tam_bloklar: tamsayi = uzunluk / 64;
+    degisken b_i: tamsayi = 0;
+    dongu b_i < tam_bloklar {
+        sha256_blok_isle(state, veri + (b_i * 64));
+        b_i = b_i + 1;
+    }
+
+    # Padding Buffer (Maks 128 bayt)
+    degisken pad: [128]u8;
+    degisken kalan: tamsayi = uzunluk % 64;
+    degisken k_i: tamsayi = 0;
+    dongu k_i < kalan {
+        pad[k_i] = veri[tam_bloklar * 64 + k_i];
+        k_i = k_i + 1;
+    }
+    pad[kalan] = 0x80; # 1 bit ekle
+    k_i = kalan + 1;
+    dongu k_i < 128 {
+        pad[k_i] = 0;
+        k_i = k_i + 1;
+    }
+
+    degisken pad_len: tamsayi = 64;
+    eger kalan >= 56 {
+        pad_len = 128;
+    }
+
+    # 64-bit Big-Endian Bit Uzunlugu Ekle
+    degisken bit_len: tamsayi = uzunluk * 8;
+    pad[pad_len - 8] = (bit_len >> 56) & 0xFF;
+    pad[pad_len - 7] = (bit_len >> 48) & 0xFF;
+    pad[pad_len - 6] = (bit_len >> 40) & 0xFF;
+    pad[pad_len - 5] = (bit_len >> 32) & 0xFF;
+    pad[pad_len - 4] = (bit_len >> 24) & 0xFF;
+    pad[pad_len - 3] = (bit_len >> 16) & 0xFF;
+    pad[pad_len - 2] = (bit_len >> 8) & 0xFF;
+    pad[pad_len - 1] = bit_len & 0xFF;
+
+    sha256_blok_isle(state, pad);
+    eger pad_len == 128 {
+        sha256_blok_isle(state, pad + 64);
+    }
+
+    # Cikisa Big-Endian 32 bayt yaz
+    degisken out_i: tamsayi = 0;
+    dongu out_i < 8 {
+        degisken w: tamsayi = state[out_i];
+        degisken op: tamsayi = out_i * 4;
+        cikis_hash32[op] = (w >> 24) & 0xFF;
+        cikis_hash32[op + 1] = (w >> 16) & 0xFF;
+        cikis_hash32[op + 2] = (w >> 8) & 0xFF;
+        cikis_hash32[op + 3] = w & 0xFF;
+        out_i = out_i + 1;
+    }
+    dondu 0;
+}
+
+# Genel SHA-256 API (Harici DLL varsa donanim hiziyla, yoksa saf motorla calisir)
+isv sha256_hesapla(veri: *u8, uzunluk: tamsayi, cikis_hash32: *u8) -> tamsayi {
+    degisken mod: tamsayi = sha256_ilklendir();
+    eger mod == 1 ve g_pfn_sha256 != 0 {
+        dondu ykn_dyn_call_ptr_3(g_pfn_sha256, veri, uzunluk, cikis_hash32);
+    }
+    dondu sha256_saf_hesapla(veri, uzunluk, cikis_hash32);
+}
+
+isv sha256_hex_formatla(hash32: *u8, cikis_hex64: *u8) {
+    degisken hex_karakterler: *u8 = "0123456789abcdef".ptr;
+    degisken i: tamsayi = 0;
+    dongu i < 32 {
+        degisken bayt: tamsayi = hash32[i] & 0xFF;
+        cikis_hex64[i * 2] = hex_karakterler[(bayt >> 4) & 0x0F];
+        cikis_hex64[(i * 2) + 1] = hex_karakterler[bayt & 0x0F];
+        i = i + 1;
+    }
+    cikis_hex64[64] = 0;
+}

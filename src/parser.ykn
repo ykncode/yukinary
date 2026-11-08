@@ -1,0 +1,2220 @@
+# ============================================================
+# Yukinary Parser v4 - Tam Recursive Descent + Pratt
+# ============================================================
+
+yapi ParserDurumu {
+    jetonlar: *Jeton;
+    jeton_sayisi: tamsayi;
+    guncel_index: tamsayi;
+    arena: *AstArena;
+    hata_sayisi: tamsayi;
+}
+
+degisken g_parser_hata_sessiz: tamsayi = 0;
+degisken g_parser_hata_sayisi: tamsayi = 0;
+degisken g_parser_son_hata_satir: tamsayi = 0;
+degisken g_parser_son_hata_sutun: tamsayi = 0;
+degisken g_parser_son_hata_uzunluk: tamsayi = 1;
+
+# Namespace/modeule-qualified identifier storage. The generated Stage-1
+# compiler must keep these names alive across imported parser arenas.
+degisken g_parser_mangle_buf: [1048576]u8;
+degisken g_parser_mangle_kullanilan: tamsayi = 0;
+
+# Global visibility: parser TIP_GENEL gordugunde 1 atar, sembol_ekle okur ve sifirlar
+degisken g_son_gorunurluk: tamsayi = 0;
+
+# ============================================================
+# Yardimcilar & Hata Raporlama
+# ============================================================
+isv hata_bas_parser(mesaj: *u8, j: *Jeton) {
+    degisken hk: HataKaydi;
+    degisken satir: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    degisken u: tamsayi = 1;
+    eger j != 0 ise {
+        satir = j.satir;
+        sutun = j.sutun;
+        u = j.uzunluk;
+        eger u <= 0 ise { u = 1; }
+    }
+    g_parser_son_hata_satir = satir;
+    g_parser_son_hata_sutun = sutun;
+    g_parser_son_hata_uzunluk = u;
+    g_parser_hata_sayisi = g_parser_hata_sayisi + 1;
+    eger g_parser_hata_sessiz != 0 ise { dondu; }
+    tani_olustur(&hk, 2, satir, sutun, mesaj, 0);
+    hk.isaret_uzunluk = u;
+    hata_kaydi_yazdir(&hk);
+}
+
+
+isv suanki_jeton(d: *ParserDurumu) -> *Jeton {
+    eger d.guncel_index >= d.jeton_sayisi ise { dondu 0; }
+    degisken p: *u8 = d.jetonlar;
+    degisken ofs: tamsayi = d.guncel_index * 40;
+    p = p + ofs;
+    dondu p;
+}
+
+isv onceki_jeton(d: *ParserDurumu) -> *Jeton {
+    eger d.guncel_index == 0 ise { dondu 0; }
+    degisken p: *u8 = d.jetonlar;
+    degisken ofs: tamsayi = (d.guncel_index - 1) * 40;
+    p = p + ofs;
+    dondu p;
+}
+
+isv ilerle(d: *ParserDurumu) {
+    eger d.guncel_index < d.jeton_sayisi ise {
+        d.guncel_index = d.guncel_index + 1;
+    }
+}
+
+# Hata sonrasi ';', '}' veya yeni bir declaration baslangicinda dur.
+# Siniflayici token tuketmez; caller ayni tokeni yeniden parse edebilir.
+isv parser_declaration_baslangici(tip: tamsayi) -> tamsayi {
+    eger tip == TIP_ISLEV veya tip == TIP_ASYNC veya tip == TIP_YAPI veya tip == TIP_ENUM veya
+        tip == TIP_MODUL veya tip == TIP_ICE_AKTAR veya tip == TIP_DURDUR veya
+        tip == TIP_DEVAM_ET veya tip == TIP_EGER veya tip == TIP_DONGU veya
+        tip == TIP_HER veya tip == TIP_ESLES veya tip == TIP_TRAIT veya tip == TIP_UYGULA ise { dondu 1; }
+    dondu 0;
+}
+
+isv parser_senkronize(d: *ParserDurumu) {
+    degisken baslangic: tamsayi = d.guncel_index;
+    dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF {
+        degisken tip: tamsayi = suanki_jeton(d).tip;
+        eger tip == TIP_NOKTALI_VIRGUL ise {
+            ilerle(d);
+            durdur;
+        }
+        eger tip == TIP_SAG_KUSLU ise { durdur; }
+        eger d.guncel_index > baslangic ve parser_declaration_baslangici(tip) == 1 ise { durdur; }
+        ilerle(d);
+    }
+    # Kurtarma noktasi olmayan tek tokenli hatada ilerleme garantisi.
+    eger d.guncel_index == baslangic ve suanki_jeton(d) != 0 ve
+        suanki_jeton(d).tip != TIP_SAG_KUSLU ise { ilerle(d); }
+}
+
+isv jeton_tipinde_mi(d: *ParserDurumu, tip: tamsayi) -> tamsayi {
+    degisken j: *Jeton = suanki_jeton(d);
+    eger j == 0 ise { dondu 0; }
+    eger j.tip == tip ise { dondu 1; }
+    dondu 0;
+}
+
+isv bekle(d: *ParserDurumu, tip: tamsayi) -> *Jeton {
+    degisken j: *Jeton = suanki_jeton(d);
+    eger j == 0 ise {
+        d.hata_sayisi = d.hata_sayisi + 1;
+        hata_bas_parser("Beklenmeyen dosya sonu (EOF)".ptr, 0);
+        dondu 0;
+    }
+    eger j.tip != tip ise {
+        eger tip == TIP_KIMLIK ve j.tip == TIP_UYGULA ise {
+            ilerle(d);
+            dondu j;
+        }
+        d.hata_sayisi = d.hata_sayisi + 1;
+        hata_bas_parser("Beklenmeyen jeton (sozdizimi hatasi)".ptr, j);
+        # Kapanis tokenlari bir ust parser seviyesine aittir; erken tuketme.
+        eger j.tip != TIP_SAG_KUSLU ve j.tip != TIP_SAG_PARANTEZ ve
+            j.tip != TIP_SAG_KOSE ve j.tip != TIP_EOF ise { ilerle(d); }
+        dondu 0;
+    }
+    ilerle(d);
+    dondu j;
+}
+
+# ============================================================
+# Tip adn oku (*u8, tamsayi, *Jeton vb.)
+# Prefix ? nullable isaretcidir: ?*u8, ?*Jeton, ?*yapi_adi
+# ============================================================
+# Lexer shift operatorini (>>) tek token olarak üretir. Nested generic kapanışında
+# bu token iki ayrı '>' olarak parser token akışına bölünür; bitwise shift
+# ifadelerinin normal Pratt yolunu etkilemez.
+isv generic_kapanis_shift_ayir(d: *ParserDurumu) -> tamsayi {
+    eger d == 0 veya d.guncel_index >= d.jeton_sayisi veya
+        suanki_jeton(d).tip != TIP_SAG_KAYDIR ise { dondu 0; }
+    eger d.jeton_sayisi >= 262143 ise { dondu 0; }
+    degisken i: tamsayi = d.jeton_sayisi;
+    dongu i > d.guncel_index {
+        degisken kaynak_p: *u8 = d.jetonlar + ((i - 1) * 40);
+        degisken hedef_p: *u8 = d.jetonlar + (i * 40);
+        degisken kaynak: *Jeton = kaynak_p;
+        degisken hedef: *Jeton = hedef_p;
+        hedef.tip = kaynak.tip;
+        hedef.baslangic = kaynak.baslangic;
+        hedef.uzunluk = kaynak.uzunluk;
+        hedef.satir = kaynak.satir;
+        hedef.sutun = kaynak.sutun;
+        i = i - 1;
+    }
+    degisken shift: *Jeton = d.jetonlar + (d.guncel_index * 40);
+    degisken ikinci: *Jeton = d.jetonlar + ((d.guncel_index + 1) * 40);
+    shift.tip = TIP_BUYUK_MU;
+    shift.uzunluk = 1;
+    ikinci.tip = TIP_BUYUK_MU;
+    ikinci.baslangic = shift.baslangic + 1;
+    ikinci.uzunluk = 1;
+    ikinci.satir = shift.satir;
+    ikinci.sutun = shift.sutun + 1;
+    d.jeton_sayisi = d.jeton_sayisi + 1;
+    dondu 1;
+}
+
+isv tip_oku(d: *ParserDurumu, dugum: *AstDugum) {
+    # Nullable prefix: ? baslangicta mi kontrol et (ör: ?*T, ?*YapiAdi)
+    degisken nullable_bas: tamsayi = 0;
+    eger jeton_tipinde_mi(d, TIP_SORU_ISLEMI) == 1 ise {
+        ilerle(d);
+        nullable_bas = 1;
+    }
+    # stee bal pointer neki
+    degisken yildiz_sayisi: tamsayi = 0;
+    dongu jeton_tipinde_mi(d, TIP_CARPI) == 1 {
+        ilerle(d);
+        yildiz_sayisi = yildiz_sayisi + 1;
+    }
+    
+    eger dugum == 0 ise { dondu; }
+    dugum.dizi_boyutu = 0;
+    eger jeton_tipinde_mi(d, TIP_SOL_KOSE) == 1 ise {
+        ilerle(d);
+        degisken sayi_j: *Jeton = bekle(d, TIP_TAMSAYI);
+        eger sayi_j != 0 ise {
+            dugum.dizi_boyutu = string_tamsayiya(sayi_j.baslangic, sayi_j.uzunluk);
+        }
+        bekle(d, TIP_SAG_KOSE);
+    }
+    
+    dongu jeton_tipinde_mi(d, TIP_CARPI) == 1 {
+        ilerle(d);
+        yildiz_sayisi = yildiz_sayisi + 1;
+    }
+    
+    degisken isim_j: *Jeton = suanki_jeton(d);
+    eger isim_j == 0 ise { dondu; }
+    ilerle(d);
+
+    degisken tip_ptr: *u8 = isim_j.baslangic;
+    degisken tip_len: tamsayi = isim_j.uzunluk;
+
+    # Dynamic dispatch trait nesnesi: dyn TraitAdi
+    eger isim_j.tip == TIP_DYN veya (isim_j.uzunluk == 3 ve bellek_esit_mi(isim_j.baslangic, "dyn".ptr, 3) == 1) ise {
+        degisken tr_j: *Jeton = suanki_jeton(d);
+        eger tr_j != 0 ise {
+            ilerle(d);
+            degisken dyn_uzn: tamsayi = 4 + tr_j.uzunluk;
+            degisken dyn_buf: *u8 = compiler_tahsis_et(dyn_uzn + 1);
+            dyn_buf[0] = 100; dyn_buf[1] = 121; dyn_buf[2] = 110; dyn_buf[3] = 32; # "dyn "
+            degisken ti: tamsayi = 0;
+            dongu ti < tr_j.uzunluk {
+                dyn_buf[4 + ti] = tr_j.baslangic[ti];
+                ti = ti + 1;
+            }
+            dyn_buf[dyn_uzn] = 0;
+            tip_ptr = dyn_buf;
+            tip_len = dyn_uzn;
+        }
+    }
+
+    dugum.tip_adi = tip_ptr;
+    dugum.tip_adi_uzunluk = tip_len;
+    dugum.cozumlenmis_tip = yildiz_sayisi;
+    # Nullable: ?*T veya ?T (islev donus tipi vb.)
+    dugum.nullable = nullable_bas;
+
+    # sonuc<T>/Result<T> için payload temel tip kimliğini koru.
+    # dizi_boyutu burada yalnızca Result AST'sinde metadata alanı olarak kullanılır.
+    degisken canonical_result_adi: tamsayi = 0;
+    eger (isim_j.uzunluk == 5 ve bellek_esit_mi(isim_j.baslangic, "sonuc".ptr, 5) == 1) veya
+        (isim_j.uzunluk == 5 ve bellek_esit_mi(isim_j.baslangic, "Sonuc".ptr, 5) == 1) veya
+        (isim_j.uzunluk == 6 ve bellek_esit_mi(isim_j.baslangic, "Result".ptr, 6) == 1) ise {
+        canonical_result_adi = 1;
+    }
+    eger canonical_result_adi == 1 ve jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+        degisken ic_j: *Jeton = d.jetonlar + ((d.guncel_index + 1) * 40);
+        eger ic_j.tip == TIP_KIMLIK ise {
+            eger ic_j.uzunluk == 7 ve bellek_esit_mi(ic_j.baslangic, "tamsayi".ptr, 7) == 1 ise { dugum.dizi_boyutu = 1; }
+            yoksa eger ic_j.uzunluk == 6 ve bellek_esit_mi(ic_j.baslangic, "gercek".ptr, 6) == 1 ise { dugum.dizi_boyutu = 2; }
+            yoksa eger ic_j.uzunluk == 5 ve bellek_esit_mi(ic_j.baslangic, "metin".ptr, 5) == 1 ise { dugum.dizi_boyutu = 3; }
+            yoksa eger ic_j.uzunluk == 6 ve bellek_esit_mi(ic_j.baslangic, "mantik".ptr, 6) == 1 ise { dugum.dizi_boyutu = 4; }
+            yoksa eger ic_j.uzunluk == 2 ve bellek_esit_mi(ic_j.baslangic, "u8".ptr, 2) == 1 ise { dugum.dizi_boyutu = 5; }
+        }
+    }
+
+    # Generic tip parametreleri: <T> veya <T, E>.
+    # Argumanlar expression child alanlarini kullanmaz; type metadata zincirinde
+    # tutulur. Bu sayede Future<Future<T>> gibi nested tipler kaybolmaz.
+    dugum.tip_arglari = 0;
+    dugum.tip_arg_sayisi = 0;
+    eger jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+        ilerle(d);
+        degisken ilk_arg: *AstDugum = 0;
+        degisken son_arg: *AstDugum = 0;
+        dongu jeton_tipinde_mi(d, TIP_BUYUK_MU) == 0 ve suanki_jeton(d) != 0 {
+            eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+            degisken arg_j: *Jeton = suanki_jeton(d);
+            degisken arg: *AstDugum = arena_dugum_yarat(d.arena, AST_GENERIC_TANIM, arg_j);
+            eger arg == 0 ise { dondu; }
+            tip_oku(d, arg);
+            eger ilk_arg == 0 ise { ilk_arg = arg; son_arg = arg; }
+            yoksa { son_arg.sonraki = arg; son_arg = arg; }
+            dugum.tip_arg_sayisi = dugum.tip_arg_sayisi + 1;
+            eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+            yoksa { durdur; }
+        }
+        eger jeton_tipinde_mi(d, TIP_SAG_KAYDIR) == 1 ise { generic_kapanis_shift_ayir(d); }
+        bekle(d, TIP_BUYUK_MU);
+        # -1 distinguishes explicit Future<> from the runtime yapi Future.
+        eger ilk_arg == 0 ise { dugum.tip_arg_sayisi = 0 - 1; }
+        dugum.tip_arglari = ilk_arg;
+    }
+}
+
+# ============================================================
+# Operatr ncelikleri (Pratt)
+# ============================================================
+isv operator_onceligi(tip: tamsayi) -> tamsayi {
+    eger tip == TIP_ATAMA ise { dondu 10; }
+    eger tip == TIP_VEYA ise { dondu 20; }
+    eger tip == TIP_VE ise { dondu 30; }
+    eger tip == TIP_DIKEY_CUBUK ise { dondu 33; }  # bitwise OR
+    eger tip == TIP_XOR ise { dondu 35; }
+    eger tip == TIP_AMPERSAND ise { dondu 37; }  # bitwise AND
+    eger tip == TIP_ESIT_MI ise { dondu 40; }
+    eger tip == TIP_ESIT_DEGIL ise { dondu 40; }
+    eger tip == TIP_KUCUK_MU ise { dondu 50; }
+    eger tip == TIP_BUYUK_MU ise { dondu 50; }
+    eger tip == TIP_KUCUK_ESIT ise { dondu 50; }
+    eger tip == TIP_BUYUK_ESIT ise { dondu 50; }
+    eger tip == TIP_SOL_KAYDIR ise { dondu 55; }  # <<
+    eger tip == TIP_SAG_KAYDIR ise { dondu 55; }  # >>
+    eger tip == TIP_ARTI ise { dondu 60; }
+    eger tip == TIP_EKSI ise { dondu 60; }
+    eger tip == TIP_CARPI ise { dondu 70; }
+    eger tip == TIP_BOLME ise { dondu 70; }
+    eger tip == TIP_MODULO ise { dondu 70; }
+    eger tip == TIP_OLARAK ise { dondu 75; } # as / olarak (cast)
+    eger tip == TIP_NOKTA ise { dondu 80; }
+    eger tip == TIP_OK ise { dondu 80; }
+    eger tip == TIP_SOL_KOSE ise { dondu 80; }
+    # ? postfix operatörüdür — infix önceliği 0 (postfix döngüsünde işlenir)
+    dondu 0;
+}
+
+isv generic_cagri_mi(d: *ParserDurumu) -> tamsayi {
+    eger d == 0 veya d.guncel_index >= d.jeton_sayisi ise { dondu 0; }
+    degisken p_jetonlar: *u8 = d.jetonlar;
+    degisken j0: *Jeton = p_jetonlar + (d.guncel_index * 40);
+    eger j0.tip != TIP_KUCUK_MU ise { dondu 0; }
+    degisken derinlik: tamsayi = 1;
+    degisken i: tamsayi = d.guncel_index + 1;
+    degisken kimlik_goruldu: tamsayi = 0;
+    dongu i < d.jeton_sayisi ve derinlik > 0 {
+        degisken ji: *Jeton = p_jetonlar + (i * 40);
+        degisken jt: tamsayi = ji.tip;
+        eger jt == TIP_EOF ise { dondu 0; }
+        eger jt == TIP_KUCUK_MU ise {
+            derinlik = derinlik + 1;
+        } yoksa eger jt == TIP_BUYUK_MU ise {
+            derinlik = derinlik - 1;
+        } yoksa eger jt == TIP_SAG_KAYDIR ise {
+            derinlik = derinlik - 2;
+            eger derinlik < 0 ise { dondu 0; }
+        } yoksa eger jt == TIP_KIMLIK veya jt == TIP_DYN ise {
+            kimlik_goruldu = 1;
+        } yoksa eger jt == TIP_CARPI veya jt == TIP_SORU_ISLEMI veya jt == TIP_VIRGUL veya
+                     jt == TIP_SOL_KOSE veya jt == TIP_SAG_KOSE veya jt == TIP_TAMSAYI veya
+                     jt == TIP_CIFT_IKINOKTA ise {
+            # Gecerli tip tokeni (*u8, ?*T, [N]T, K, V, modul::Tip)
+        } yoksa {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    eger derinlik != 0 veya kimlik_goruldu == 0 ise { dondu 0; }
+    eger i < d.jeton_sayisi ise {
+        degisken j_sonra: *Jeton = p_jetonlar + (i * 40);
+        eger j_sonra.tip == TIP_SOL_PARANTEZ ise { dondu 1; }
+    }
+    # Geriye donuk uyumluluk: tek/coklu basit generic referans (fonk<T> veya sonuc<T>)
+    eger d.guncel_index + 2 < d.jeton_sayisi ise {
+        degisken j1: *Jeton = p_jetonlar + ((d.guncel_index + 1) * 40);
+        degisken j2: *Jeton = p_jetonlar + ((d.guncel_index + 2) * 40);
+        eger j1.tip == TIP_KIMLIK ve (j2.tip == TIP_BUYUK_MU veya j2.tip == TIP_VIRGUL) ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+# ============================================================
+# leri tanmlamalar - stage0 bunlari C++ forward decl olarak otomatik uretir
+# ============================================================
+
+# ============================================================
+# Prefix ayrtrclar
+# ============================================================
+isv parse_prefix(d: *ParserDurumu) -> *AstDugum {
+    degisken j: *Jeton = suanki_jeton(d);
+    eger j == 0 ise {
+        dondu 0;
+    }
+
+    # comptime { expr } / comptime expr
+    eger j.tip == TIP_COMPTIME ise {
+        ilerle(d);
+        degisken comp_d: *AstDugum = arena_dugum_yarat(d.arena, AST_COMPTIME, j);
+        comp_d.sol = parse_ifade(d, 0);
+        dondu comp_d;
+    }
+
+    # Anonim Islev / Lambda
+    eger j.tip == TIP_ISLEV ise {
+        ilerle(d);
+        degisken isim_j: *Jeton = 0;
+        eger jeton_tipinde_mi(d, TIP_KIMLIK) == 1 ise {
+            isim_j = suanki_jeton(d);
+            ilerle(d);
+        } yoksa {
+            isim_j = j;
+        }
+        degisken islev_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_ISLEV, isim_j);
+        degisken islev_params: *AstDugum = parametre_listesi_oku(d);
+        islev_dugum.parametreler = islev_params;
+        eger jeton_tipinde_mi(d, TIP_OK) == 1 ise {
+            ilerle(d);
+            tip_oku(d, islev_dugum);
+        }
+        islev_dugum.govde = parse_blok(d);
+        dondu islev_dugum;
+    }
+
+    # await expr. AST node'u compiler lowering'e kadar taşıyoruz; codegen
+    # bunu desteklemiyorsa fail-closed E043 vermelidir.
+    eger j.tip == TIP_AWAIT ise {
+        ilerle(d);
+        degisken await_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_AWAIT, j);
+        await_dugum.sag = parse_ifade(d, 75);
+        eger await_dugum.sag == 0 ise { dondu 0; }
+        dondu await_dugum;
+    }
+
+    # Null literal: bos/nil AST'de sayisal null degeri olarak tasinir.
+    # Bu dal Stage-0 seed'deki TIP_BOS prefix davranisiyla ayni olmali.
+    eger j.tip == TIP_BOS ise {
+        ilerle(d);
+        dondu arena_dugum_yarat(d.arena, AST_SAYI, j);
+    }
+
+    # Boolean literal'lar gercek AST_MANTIK dugumu olarak uretilir.
+    # Bunlari kimlik veya sayi gibi gecirmek typechecker/codegen ayrimini bozar.
+    eger j.tip == TIP_DOGRU veya j.tip == TIP_YANLIS ise {
+        ilerle(d);
+        degisken mantik_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_MANTIK, j);
+        eger j.tip == TIP_DOGRU ise { mantik_dugum.dizi_boyutu = 1; }
+        yoksa { mantik_dugum.dizi_boyutu = 0; }
+        dondu mantik_dugum;
+    }
+
+    # Sayi literali
+    eger j.tip == TIP_TAMSAYI ise {
+        ilerle(d);
+        degisken sn: *AstDugum = arena_dugum_yarat(d.arena, AST_SAYI, j);
+        dondu sn;
+    }
+
+    # Gerek say literali
+    eger j.tip == TIP_GERCEK_SAYI ise {
+        ilerle(d);
+        dondu arena_dugum_yarat(d.arena, AST_GERCEK_SAYI, j);
+    }
+
+    # String literali
+    eger j.tip == TIP_METIN ise {
+        ilerle(d);
+        dondu arena_dugum_yarat(d.arena, AST_METIN, j);
+    }
+
+    # F-String interpolasyonu: f"..."
+    eger j.tip == TIP_FSTRING ise {
+        ilerle(d);
+        dondu arena_dugum_yarat(d.arena, AST_FSTRING, j);
+    }
+
+    # Kimlik veya fonksiyon cagrisi
+    eger j.tip == TIP_KIMLIK veya j.tip == TIP_UYGULA ise {
+        ilerle(d);
+
+        # Namespace / modül erişimi: modul::uye
+        degisken namespace_modul_j: *Jeton = 0;
+        degisken namespace_uye_j: *Jeton = 0;
+        dongu jeton_tipinde_mi(d, TIP_CIFT_IKINOKTA) == 1 {
+            eger namespace_modul_j == 0 ise { namespace_modul_j = j; }
+            ilerle(d); # '::'
+            degisken sag_j: *Jeton = bekle(d, TIP_KIMLIK);
+            namespace_uye_j = sag_j;
+            degisken sol_isim: *u8 = j.baslangic;
+            degisken sol_uzn: tamsayi = j.uzunluk;
+            degisken sag_isim: *u8 = sag_j.baslangic;
+            degisken sag_uzn: tamsayi = sag_j.uzunluk;
+            degisken yeni_uzn: tamsayi = sol_uzn + 2 + sag_uzn;
+            degisken yeni_buf: *u8 = compiler_tahsis_et(yeni_uzn + 1);
+            degisken bi: tamsayi = 0;
+            dongu bi < sol_uzn {
+                yeni_buf[bi] = sol_isim[bi];
+                bi = bi + 1;
+            }
+            yeni_buf[bi] = 95;
+            yeni_buf[bi + 1] = 95;
+            bi = bi + 2;
+            degisken sai: tamsayi = 0;
+            dongu sai < sag_uzn {
+                yeni_buf[bi + sai] = sag_isim[sai];
+                sai = sai + 1;
+            }
+            yeni_buf[yeni_uzn] = 0;
+
+            degisken yeni_j: *Jeton = compiler_tahsis_et(40);
+            yeni_j.tip = TIP_KIMLIK;
+            yeni_j.baslangic = yeni_buf;
+            yeni_j.uzunluk = yeni_uzn;
+            yeni_j.satir = j.satir;
+            yeni_j.sutun = j.sutun;
+            j = yeni_j;
+        }
+
+        degisken kimlik: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, j);
+        eger namespace_modul_j != 0 ve namespace_uye_j != 0 ise {
+            # ilk_jeton typechecker icin mangled adi korur; tip_adi ve
+            # son_jeton codegen patch ABI'si icin ham metadata tasir.
+            kimlik.tip_adi = namespace_modul_j.baslangic;
+            kimlik.tip_adi_uzunluk = namespace_modul_j.uzunluk;
+            kimlik.son_jeton = namespace_uye_j;
+        }
+
+        degisken generic_arg_tip: *AstDugum = 0;
+        # sonuc<T>/Result<T> type definition handling
+        degisken result_tipi_mi: tamsayi = 0;
+        eger (j.uzunluk == 5 ve bellek_esit_mi(j.baslangic, "sonuc".ptr, 5) == 1) veya
+            (j.uzunluk == 5 ve bellek_esit_mi(j.baslangic, "Sonuc".ptr, 5) == 1) veya
+            (j.uzunluk == 6 ve bellek_esit_mi(j.baslangic, "Result".ptr, 6) == 1) ise {
+            result_tipi_mi = 1;
+        }
+        eger result_tipi_mi == 1 ve d.guncel_index + 2 < d.jeton_sayisi ve jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+            degisken p_jetonlar_s: *u8 = d.jetonlar;
+            degisken js1: *Jeton = p_jetonlar_s + ((d.guncel_index + 1) * 40);
+            degisken js2: *Jeton = p_jetonlar_s + ((d.guncel_index + 2) * 40);
+            eger js1.tip == TIP_KIMLIK ve js2.tip == TIP_BUYUK_MU ise {
+                ilerle(d); # '<'
+                degisken g_tip_j: *Jeton = bekle(d, TIP_KIMLIK);
+                degisken sonuc_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_SONUC_TANIM, j);
+                sonuc_dugum.tip_adi = j.baslangic;
+                sonuc_dugum.tip_adi_uzunluk = j.uzunluk;
+                eger g_tip_j.uzunluk == 7 ve bellek_esit_mi(g_tip_j.baslangic, "tamsayi".ptr, 7) == 1 ise { sonuc_dugum.dizi_boyutu = 1; }
+                yoksa eger g_tip_j.uzunluk == 6 ve bellek_esit_mi(g_tip_j.baslangic, "gercek".ptr, 6) == 1 ise { sonuc_dugum.dizi_boyutu = 2; }
+                yoksa eger g_tip_j.uzunluk == 5 ve bellek_esit_mi(g_tip_j.baslangic, "metin".ptr, 5) == 1 ise { sonuc_dugum.dizi_boyutu = 3; }
+                yoksa eger g_tip_j.uzunluk == 6 ve bellek_esit_mi(g_tip_j.baslangic, "mantik".ptr, 6) == 1 ise { sonuc_dugum.dizi_boyutu = 4; }
+                yoksa eger g_tip_j.uzunluk == 2 ve bellek_esit_mi(g_tip_j.baslangic, "u8".ptr, 2) == 1 ise { sonuc_dugum.dizi_boyutu = 5; }
+                bekle(d, TIP_BUYUK_MU); # '>'
+                dondu sonuc_dugum;
+            }
+        }
+        # Check lookahead for generic call: fonk<Type>(...), fonk<*u8, Dizi<tamsayi>>(...)
+        eger generic_cagri_mi(d) == 1 ise {
+            ilerle(d); # '<' tüket
+            degisken son_arg_tip: *AstDugum = 0;
+            dongu jeton_tipinde_mi(d, TIP_BUYUK_MU) == 0 ve jeton_tipinde_mi(d, TIP_SAG_KAYDIR) == 0 ve suanki_jeton(d) != 0 {
+                eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                degisken g_arg_j: *Jeton = suanki_jeton(d);
+                degisken ek_arg: *AstDugum = arena_dugum_yarat(d.arena, AST_GENERIC_TANIM, g_arg_j);
+                tip_oku(d, ek_arg);
+                eger generic_arg_tip == 0 ise {
+                    generic_arg_tip = ek_arg;
+                    son_arg_tip = ek_arg;
+                } yoksa {
+                    son_arg_tip.sonraki = ek_arg;
+                    son_arg_tip = ek_arg;
+                }
+                eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+                yoksa { durdur; }
+            }
+            eger jeton_tipinde_mi(d, TIP_SAG_KAYDIR) == 1 ise { generic_kapanis_shift_ayir(d); }
+            bekle(d, TIP_BUYUK_MU); # '>'
+        }
+        # Fonksiyon cagrisi: isim(...)
+        degisken sol_par: tamsayi = jeton_tipinde_mi(d, TIP_SOL_PARANTEZ);
+
+        eger sol_par == 1 ise {
+            ilerle(d); # '(' atla
+            degisken cagri: *AstDugum = arena_dugum_yarat(d.arena, AST_ISLEV_CAGRISI, j);
+            cagri.sol = kimlik;
+            cagri.yoksa_govde = generic_arg_tip;
+
+            # Argumanlar linked list olarak topla
+            degisken ilk_arg: *AstDugum = 0;
+            degisken son_arg: *AstDugum = 0;
+            degisken devam_arg: tamsayi = 1;
+            dongu devam_arg == 1 {
+                degisken cur_j: *Jeton = suanki_jeton(d);
+                eger cur_j == 0 veya cur_j.tip == TIP_EOF veya cur_j.tip == TIP_SAG_PARANTEZ ise {
+                    durdur;
+                }
+                degisken arg: *AstDugum = parse_ifade(d, 0);
+                eger arg == 0 ise {
+                    parser_senkronize(d);
+                } yoksa eger ilk_arg == 0 ise {
+                    ilk_arg = arg;
+                    son_arg = arg;
+                } yoksa {
+                    son_arg.sonraki = arg;
+                    son_arg = arg;
+                }
+                degisken virgul_mu: tamsayi = jeton_tipinde_mi(d, TIP_VIRGUL);
+                eger virgul_mu == 1 ise {
+                    ilerle(d);
+                } yoksa {
+                    durdur;
+                }
+            }
+            bekle(d, TIP_SAG_PARANTEZ);
+            cagri.sag = ilk_arg;
+            # Enum constructor payload'i self-host stage'lerinde AST linked-list
+            # alan drift'inden etkilenmesin: sabit tamsayi payload'i metadata'ya
+            # da kopyala. cozumlenmis_tip=1 bu alanin enum sabiti oldugunu belirtir.
+            degisken cagri_ev_idx: tamsayi = enum_varyant_bul_tam(j.baslangic, j.uzunluk);
+            eger cagri_ev_idx >= 0 ve ilk_arg != 0 ve ilk_arg.tip == AST_SAYI ise {
+                cagri.dizi_boyutu = string_tamsayiya(ilk_arg.ilk_jeton.baslangic, ilk_arg.ilk_jeton.uzunluk);
+                cagri.cozumlenmis_tip = 1;
+            }
+            dondu cagri;
+        }
+
+        # Parametresiz enum varyanti cagrisi (orn: Secenek::Hicbiri veya Hicbiri)
+        degisken ev_idx: tamsayi = enum_varyant_bul_tam(j.baslangic, j.uzunluk);
+        eger ev_idx == (0 - 1) ise {
+            ev_idx = enum_varyant_bul_kisa(j.baslangic, j.uzunluk);
+        }
+        eger ev_idx >= 0 ve g_enum_var_payload[ev_idx] == 0 ise {
+            degisken ev_cagri: *AstDugum = arena_dugum_yarat(d.arena, AST_ISLEV_CAGRISI, j);
+            ev_cagri.sol = kimlik;
+            ev_cagri.sag = 0;
+            dondu ev_cagri;
+        }
+
+        dondu kimlik;
+    }
+
+    # Parantezli ifade veya demet (tuple)
+    eger j.tip == TIP_SOL_PARANTEZ ise {
+        ilerle(d);
+        degisken ic: *AstDugum = parse_ifade(d, 0);
+        eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise {
+            degisken tuple_d: *AstDugum = arena_dugum_yarat(d.arena, AST_PARANTEZ_IFADE, j);
+            tuple_d.sol = ic;
+            degisken son_el: *AstDugum = ic;
+            dongu jeton_tipinde_mi(d, TIP_VIRGUL) == 1 {
+                ilerle(d); # ','
+                eger jeton_tipinde_mi(d, TIP_SAG_PARANTEZ) == 1 ise { durdur; }
+                degisken sonraki_el: *AstDugum = parse_ifade(d, 0);
+                eger sonraki_el != 0 ise {
+                    son_el.sonraki = sonraki_el;
+                    son_el = sonraki_el;
+                }
+            }
+            bekle(d, TIP_SAG_PARANTEZ);
+            dondu tuple_d;
+        }
+        bekle(d, TIP_SAG_PARANTEZ);
+        eger ic == 0 ise { dondu 0; }
+        dondu ic;
+    }
+
+    # Unary eksi, mantiksal degil (!), veya bit-tersleme (~)
+    eger j.tip == TIP_EKSI veya j.tip == TIP_DEGIL veya j.tip == TIP_TILDE ise {
+        ilerle(d);
+        degisken unary: *AstDugum = arena_dugum_yarat(d.arena, AST_UNARY, j);
+        unary.sag = parse_ifade(d, 75);
+        eger unary.sag == 0 ise { dondu 0; }
+        dondu unary;
+    }
+
+    # Adres alma: &
+    eger j.tip == TIP_AMPERSAND ise {
+        ilerle(d);
+        degisken mut_ref: tamsayi = 0;
+        degisken sj: *Jeton = suanki_jeton(d);
+        eger sj != 0 ve sj.tip == TIP_DEGISKEN ve sj.uzunluk == 3 ve bellek_esit_mi(sj.baslangic, "mut".ptr, 3) == 1 ise {
+            ilerle(d);
+            mut_ref = 1;
+        }
+        degisken ref_d: *AstDugum = arena_dugum_yarat(d.arena, AST_REFERANS, j);
+        ref_d.gorunurluk = mut_ref;
+        ref_d.sag = parse_ifade(d, 75);
+        eger ref_d.sag == 0 ise { dondu 0; }
+        dondu ref_d;
+    }
+
+    # Dereference: *
+    eger j.tip == TIP_CARPI ise {
+        ilerle(d);
+        degisken deref: *AstDugum = arena_dugum_yarat(d.arena, AST_UNARY, j);
+        deref.sag = parse_ifade(d, 75);
+        eger deref.sag == 0 ise { dondu 0; }
+        dondu deref;
+    }
+
+    d.hata_sayisi = d.hata_sayisi + 1;
+    hata_bas_parser("Gecersiz ifade (sozdizimi hatasi)".ptr, j);
+    # parse_prefix hata tokenini tuketir; parser ayni token uzerinde kilitlenmez.
+    ilerle(d);
+    dondu 0;
+}
+
+# ============================================================
+# Infix ayrtrclar
+# ============================================================
+isv parse_infix(d: *ParserDurumu, sol: *AstDugum) -> *AstDugum {
+    degisken j: *Jeton = suanki_jeton(d);
+    eger j == 0 ise { dondu sol; }
+    degisken oncelik: tamsayi = operator_onceligi(j.tip);
+    ilerle(d);
+
+    # Alan erisimi: a.b veya pointer alan erisimi: a->b
+    eger j.tip == TIP_NOKTA veya j.tip == TIP_OK ise {
+        degisken alan: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, j);
+        alan.sol = sol;
+        # Alan adi yoksa mevcut kapanis tokenini tuketme; ust seviye kurtarsin.
+        degisken sag_j: *Jeton = suanki_jeton(d);
+        eger sag_j == 0 veya sag_j.tip != TIP_KIMLIK ise {
+            d.hata_sayisi = d.hata_sayisi + 1;
+            hata_bas_parser("Alan adi bekleniyordu".ptr, sag_j);
+            dondu 0;
+        }
+        ilerle(d);
+        degisken sag_kimlik: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, sag_j);
+        # Metod ars: a.metod(...)
+        eger jeton_tipinde_mi(d, TIP_SOL_PARANTEZ) == 1 ise {
+            ilerle(d);
+            alan.tip = AST_ISLEV_CAGRISI;
+            alan.sol = sol;
+            alan.sag = sag_kimlik;
+            degisken ilk_arg: *AstDugum = 0;
+            degisken son_arg: *AstDugum = 0;
+            degisken devam_m_arg: tamsayi = 1;
+            dongu devam_m_arg == 1 {
+                degisken cur_j: *Jeton = suanki_jeton(d);
+                eger cur_j == 0 veya cur_j.tip == TIP_EOF veya cur_j.tip == TIP_SAG_PARANTEZ ise {
+                    durdur;
+                }
+                degisken arg: *AstDugum = parse_ifade(d, 0);
+                eger arg == 0 ise {
+                    parser_senkronize(d);
+                } yoksa eger ilk_arg == 0 ise { ilk_arg = arg; son_arg = arg; }
+                yoksa { son_arg.sonraki = arg; son_arg = arg; }
+                degisken virgul_mu: tamsayi = jeton_tipinde_mi(d, TIP_VIRGUL);
+                eger virgul_mu == 1 ise { ilerle(d); }
+                yoksa { durdur; }
+            }
+            bekle(d, TIP_SAG_PARANTEZ);
+            sag_kimlik.sag = ilk_arg;
+        } yoksa {
+            # Parametresiz enum varyanti `Durum.Basarili`, normal alan
+            # erisimi degil tagged-union constructor olarak temsil edilir.
+            degisken alan_enum_idx: tamsayi = enum_varyant_bul_tam(
+                sag_j.baslangic, sag_j.uzunluk
+            );
+            eger alan_enum_idx == (0 - 1) ise {
+                alan_enum_idx = enum_varyant_bul_kisa(
+                    sag_j.baslangic, sag_j.uzunluk
+                );
+            }
+            eger alan_enum_idx >= 0 ve g_enum_var_payload[alan_enum_idx] == 0 ise {
+                alan.tip = AST_ISLEV_CAGRISI;
+                alan.sag = sag_kimlik;
+                alan.sag.sag = 0;
+            } yoksa {
+                alan.sag = sag_kimlik;
+            }
+        }
+        dondu alan;
+    }
+
+    # ndeks eriimi: a[i]
+    eger j.tip == TIP_SOL_KOSE ise {
+        degisken indeks: *AstDugum = arena_dugum_yarat(d.arena, AST_INDEKS_ERISIMI, j);
+        indeks.sol = sol;
+        indeks.sag = parse_ifade(d, 0);
+        bekle(d, TIP_SAG_KOSE);
+        dondu indeks;
+    }
+
+    # Atama
+    eger j.tip == TIP_ATAMA ise {
+        degisken atama: *AstDugum = arena_dugum_yarat(d.arena, AST_ATAMA, j);
+        eger atama == 0 ise { dondu 0; }
+        eger sol == 0 veya sol.ilk_jeton == 0 ise {
+            dondu 0;
+        }
+        atama.sol = sol;
+        atama.sag = parse_ifade(d, 0); # Sa asosyatif
+        eger atama.sag == 0 ise { dondu 0; }
+        dondu atama;
+    }
+
+    # Tip donusumu: expr as Tip / expr olarak Tip
+    eger j.tip == TIP_OLARAK ise {
+        degisken donusum: *AstDugum = arena_dugum_yarat(d.arena, AST_DONUSUM, j);
+        donusum.sol = sol;
+        tip_oku(d, donusum);
+        dondu donusum;
+    }
+
+    # kili operatr
+    degisken op: *AstDugum = arena_dugum_yarat(d.arena, AST_IKILI_OP, j);
+    op.sol = sol;
+    op.sag = parse_ifade(d, oncelik);
+    eger op.sag == 0 ise { dondu 0; }
+    dondu op;
+}
+
+# ============================================================
+# Ana ifade ayrtrc (Pratt)
+# ============================================================
+degisken g_parser_ifade_derinlik: tamsayi = 0;
+degisken PARSER_MAKS_IFADE_DERINLIK: tamsayi = 256;
+degisken g_esles_gecici_sayac: tamsayi = 0;
+
+isv parse_ifade(d: *ParserDurumu, oncelik: tamsayi) -> *AstDugum {
+    eger g_parser_ifade_derinlik >= PARSER_MAKS_IFADE_DERINLIK ise {
+        degisken j: *Jeton = suanki_jeton(d);
+        degisken sat: tamsayi = 1;
+        degisken sut: tamsayi = 1;
+        eger j != 0 ise { sat = j.satir; sut = j.sutun; }
+        ozyineleme_derinlik_hatasi(sat, sut, "Ifade ozyineleme derinlik limiti asildi".ptr);
+        os_sureci_sonlandir(1);
+    }
+    g_parser_ifade_derinlik = g_parser_ifade_derinlik + 1;
+    degisken sol: *AstDugum = parse_prefix(d);
+    eger sol == 0 ise {
+        g_parser_ifade_derinlik = g_parser_ifade_derinlik - 1;
+        dondu 0;
+    }
+
+    degisken devam_infix: tamsayi = 1;
+    dongu devam_infix == 1 {
+        degisken j: *Jeton = suanki_jeton(d);
+        eger j == 0 ise {
+            durdur;
+        }
+        degisken j_oncelik: tamsayi = operator_onceligi(j.tip);
+        eger oncelik < j_oncelik ise {
+            sol = parse_infix(d, sol);
+            eger sol == 0 ise {
+                durdur;
+            }
+        } yoksa {
+            durdur;
+        }
+    }
+
+    # Postfix operatorler (?, !, etc.)
+    degisken devam_post: tamsayi = 1;
+    dongu devam_post == 1 {
+        degisken pj: *Jeton = suanki_jeton(d);
+        eger pj != 0 ise {
+            eger pj.tip == TIP_SORU_ISLEMI ise {
+                ilerle(d);
+                degisken postfix_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_SORU_ISLEMI, pj);
+                postfix_dugum.sol = sol;
+                sol = postfix_dugum;
+            } yoksa {
+                durdur;
+            }
+        } yoksa {
+            durdur;
+        }
+    }
+
+    g_parser_ifade_derinlik = g_parser_ifade_derinlik - 1;
+    dondu sol;
+}
+
+# ============================================================
+# Tip anotasyonu oku: ": tip"
+# ============================================================
+isv tip_anotasyonu_oku(d: *ParserDurumu, hedef: *AstDugum) {
+    eger jeton_tipinde_mi(d, TIP_KOLON) == 0 ise { dondu; }
+    ilerle(d); # ':' atla
+    tip_oku(d, hedef);
+}
+
+# ============================================================
+# Parametre listesi oku: (isim: tip, isim: tip, ...)
+# ============================================================
+isv parametre_listesi_oku(d: *ParserDurumu) -> *AstDugum {
+    bekle(d, TIP_SOL_PARANTEZ);
+    degisken ilk: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+
+    dongu jeton_tipinde_mi(d, TIP_SAG_PARANTEZ) == 0 ve suanki_jeton(d) != 0 ve
+        suanki_jeton(d).tip != TIP_SAG_KUSLU ve suanki_jeton(d).tip != TIP_SAG_KOSE {
+        eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        eger isim_j == 0 ise {
+            parser_senkronize(d);
+            devam_et;
+        }
+        degisken param: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, isim_j);
+        param.tip_adi = isim_j.baslangic;
+        param.tip_adi_uzunluk = isim_j.uzunluk;
+        tip_anotasyonu_oku(d, param);
+
+        eger ilk == 0 ise { ilk = param; son = param; }
+        yoksa { son.sonraki = param; son = param; }
+
+        eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+    }
+    bekle(d, TIP_SAG_PARANTEZ);
+    dondu ilk;
+}
+
+# ============================================================
+# Blok ayrtrc: { satr; satr; ... }
+# ============================================================
+isv parse_blok(d: *ParserDurumu) -> *AstDugum {
+    degisken ac_j: *Jeton = bekle(d, TIP_SOL_KUSLU);
+    degisken blok: *AstDugum = arena_dugum_yarat(d.arena, AST_BLOK, ac_j);
+    degisken ilk: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+
+    dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF ve suanki_jeton(d).tip != TIP_SAG_KUSLU {
+        degisken onceki_index: tamsayi = d.guncel_index;
+        degisken satir: *AstDugum = parse_satir(d);
+        eger satir == 0 ise {
+            parser_senkronize(d);
+            eger d.guncel_index == onceki_index ve suanki_jeton(d) != 0 ve
+                suanki_jeton(d).tip != TIP_SAG_KUSLU ise { ilerle(d); }
+            devam_et;
+        }
+        eger d.guncel_index == onceki_index ise { ilerle(d); }
+        eger ilk == 0 ise { ilk = satir; son = satir; }
+        yoksa { son.sonraki = satir; son = satir; }
+        dongu son.sonraki != 0 { son = son.sonraki; }
+    }
+    bekle(d, TIP_SAG_KUSLU);
+    blok.sol = ilk;
+    dondu blok;
+}
+
+
+# Namespace'li enum pattern'lerinde tam isim lookup'u başarısız olursa
+# Secenek__Bazi adının son parçası olan Bazi üzerinden kısa varyantı bul.
+isv enum_deseni_varyanti_bul(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 2 ise { dondu 0 - 1; }
+    degisken i: tamsayi = uzn - 1;
+    dongu i >= 1 {
+        eger isim[i - 1] == 95 ve isim[i] == 95 ise {
+            degisken kisa: *u8 = isim + i + 1;
+            degisken kisa_uzn: tamsayi = uzn - i - 1;
+            dondu enum_varyant_bul_kisa(kisa, kisa_uzn);
+        }
+        i = i - 1;
+    }
+    dondu 0 - 1;
+}
+
+# Tam varyant adindan (Enum__Varyant) enum sahibini bulup toplam
+# varyant sayisini verir. Exhaustiveness kontrolu icin parser seviyesinde
+# kullanilir; nested/module pattern'ler de ayni canonical metadata'yı taşır.
+isv enum_deseni_turu_varyant_sayisi(tam_isim: *u8, tam_uzn: tamsayi) -> tamsayi {
+    eger tam_isim == 0 veya tam_uzn <= 2 ise { dondu 0; }
+    degisken ayrac: tamsayi = 0;
+    dongu ayrac + 1 < tam_uzn {
+        eger tam_isim[ayrac] == 95 ve tam_isim[ayrac + 1] == 95 ise { durdur; }
+        ayrac = ayrac + 1;
+    }
+    eger ayrac == 0 veya ayrac + 2 >= tam_uzn ise { dondu 0; }
+    degisken sayi: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < g_enum_var_sayisi {
+        eger g_enum_var_tam_uzn[i] > ayrac + 2 ve
+            bellek_esit_mi(g_enum_var_tam_isim[i], tam_isim, ayrac) == 1 ve
+            bellek_esit_mi(g_enum_var_tam_isim[i] + ayrac, "__".ptr, 2) == 1 ise {
+            sayi = sayi + 1;
+        }
+        i = i + 1;
+    }
+    dondu sayi;
+}
+
+# ============================================================
+# Satr (statement) ayrtrc
+# ============================================================
+isv parse_satir(d: *ParserDurumu) -> *AstDugum {
+    degisken j: *Jeton = suanki_jeton(d);
+    eger j == 0 ise { dondu 0; }
+    eger j.tip == TIP_SAG_KUSLU ise { dondu 0; }
+
+    degisken gorunurluk_aktif: tamsayi = 0;
+    eger j.tip == TIP_GENEL ise {
+        ilerle(d);
+        gorunurluk_aktif = 1;
+        g_son_gorunurluk = 1;
+        j = suanki_jeton(d);
+        eger j == 0 ise { dondu 0; }
+    }
+
+    # --- kullanıcı tanımlı tip alias'ı: tip Sayi = tamsayi; ---
+    # 'tip' henüz ayrı lexer keyword'ü değil; KIMLIK olarak parse edilir.
+    eger j.tip == TIP_KIMLIK ve j.uzunluk == 3 ve bellek_esit_mi(j.baslangic, "tip".ptr, 3) == 1 ise {
+        ilerle(d);
+        degisken alias_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken alias_d: *AstDugum = arena_dugum_yarat(d.arena, AST_TIP_ALIAS, alias_j);
+        eger jeton_tipinde_mi(d, TIP_ATAMA) == 1 ise { ilerle(d); }
+        eger suanki_jeton(d) != 0 ve suanki_jeton(d).tip == TIP_CARPI ise {
+            alias_d.cozumlenmis_tip = 1;
+        }
+        tip_oku(d, alias_d);
+        bekle(d, TIP_NOKTALI_VIRGUL);
+        alias_d.gorunurluk = gorunurluk_aktif;
+        dondu alias_d;
+    }
+
+    # --- degisken tanm ---
+    eger j.tip == TIP_DEGISKEN veya j.tip == TIP_SABIT ise {
+        degisken sabit_mi: tamsayi = 0;
+        eger j.tip == TIP_SABIT ise {
+            sabit_mi = 1;
+        }
+        eger j.tip == TIP_DEGISKEN ve j.uzunluk == 3 ve bellek_esit_mi(j.baslangic, "let".ptr, 3) == 1 ise {
+            sabit_mi = 1;
+        }
+        ilerle(d);
+        eger suanki_jeton(d) != 0 ve suanki_jeton(d).tip == TIP_DEGISKEN ve suanki_jeton(d).uzunluk == 3 ve bellek_esit_mi(suanki_jeton(d).baslangic, "mut".ptr, 3) == 1 ise {
+            ilerle(d);
+            sabit_mi = 0;
+        }
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_DEGISKEN_TANIMI, isim_j);
+        tip_anotasyonu_oku(d, dugum);
+        eger jeton_tipinde_mi(d, TIP_ATAMA) == 1 ise {
+            ilerle(d);
+            dugum.sag = parse_ifade(d, 0);
+        }
+        bekle(d, TIP_NOKTALI_VIRGUL);
+        dugum.gorunurluk = gorunurluk_aktif + (sabit_mi * 2);
+        dondu dugum;
+    }
+
+    # --- dondur ---
+    eger j.tip == TIP_DONDUR ise {
+        ilerle(d);
+        degisken ret: *AstDugum = arena_dugum_yarat(d.arena, AST_DONDUR, j);
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 0 ise {
+            ret.sag = parse_ifade(d, 0);
+        }
+        bekle(d, TIP_NOKTALI_VIRGUL);
+        dondu ret;
+    }
+
+    # --- durdur ---
+    eger j.tip == TIP_DURDUR ise {
+        ilerle(d);
+        bekle(d, TIP_NOKTALI_VIRGUL);
+        dondu arena_dugum_yarat(d.arena, AST_DURDUR, j);
+    }
+
+    # --- devam_et ---
+    eger j.tip == TIP_DEVAM_ET ise {
+        ilerle(d);
+        bekle(d, TIP_NOKTALI_VIRGUL);
+        dondu arena_dugum_yarat(d.arena, AST_DEVAM_ET, j);
+    }
+
+    # --- eger / ise / yoksa ---
+    eger j.tip == TIP_EGER ise {
+        ilerle(d);
+        degisken eger_d: *AstDugum = arena_dugum_yarat(d.arena, AST_EGER, j);
+        eger_d.sol = parse_ifade(d, 0); # kosul
+        eger jeton_tipinde_mi(d, TIP_ISE) == 1 ise {
+            ilerle(d);
+        }
+        eger_d.govde = parse_blok(d);
+        eger jeton_tipinde_mi(d, TIP_YOKSA) == 1 ise {
+            ilerle(d);
+            # yoksa eger zincirleme
+            eger jeton_tipinde_mi(d, TIP_EGER) == 1 ise {
+                eger_d.yoksa_govde = parse_satir(d);
+            } yoksa {
+                eger_d.yoksa_govde = parse_blok(d);
+            }
+        }
+        dondu eger_d;
+    }
+
+    # --- dongu ---
+    eger j.tip == TIP_DONGU ise {
+        ilerle(d);
+        degisken dongu_d: *AstDugum = arena_dugum_yarat(d.arena, AST_DONGU, j);
+        # Kosulsuz dongu: dongu { ... }
+        eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 1 ise {
+            dongu_d.sol = 0; # kosul yok
+        } yoksa {
+            dongu_d.sol = parse_ifade(d, 0); # kosul var
+        }
+        dongu_d.govde = parse_blok(d);
+        dondu dongu_d;
+    }
+
+    # --- her / for (for döngüsü) ---
+    eger j.tip == TIP_HER ise {
+        ilerle(d); # 'her' veya 'for'
+        degisken parantezli: tamsayi = 0;
+        eger jeton_tipinde_mi(d, TIP_SOL_PARANTEZ) == 1 ise {
+            ilerle(d); # '('
+            parantezli = 1;
+        }
+
+        # 1. baslangic (degisken i: tamsayi = 0 veya i = 0)
+        degisken baslangic_d: *AstDugum = 0;
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 0 ise {
+            baslangic_d = parse_satir(d);
+        } yoksa {
+            ilerle(d);
+        }
+
+        # 2. kosul (i < 10)
+        degisken kosul_d: *AstDugum = 0;
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 0 ise {
+            kosul_d = parse_ifade(d, 0);
+        }
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+            ilerle(d);
+        }
+
+        # 3. adim (i = i + 1)
+        degisken adim_d: *AstDugum = 0;
+        eger parantezli == 1 ise {
+            eger jeton_tipinde_mi(d, TIP_SAG_PARANTEZ) == 0 ise {
+                adim_d = parse_ifade(d, 0);
+            }
+            bekle(d, TIP_SAG_PARANTEZ); # ')'
+        } yoksa {
+            eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 0 ise {
+                adim_d = parse_ifade(d, 0);
+            }
+        }
+
+        # 4. govde
+        degisken govde_blok: *AstDugum = parse_blok(d);
+
+        # AST_DONGU dugumu olustur (adim_d yoksa_govde'de saklanir ki devam_et adimi atlamasin)
+        degisken dongu_her: *AstDugum = arena_dugum_yarat(d.arena, AST_DONGU, j);
+        dongu_her.sol = kosul_d;
+        dongu_her.govde = govde_blok;
+        dongu_her.yoksa_govde = adim_d;
+
+        # Eger baslangic varsa, zincirle: baslangic -> dongu_her
+        eger baslangic_d != 0 ise {
+            degisken cur_b: *AstDugum = baslangic_d;
+            dongu cur_b.sonraki != 0 {
+                cur_b = cur_b.sonraki;
+            }
+            cur_b.sonraki = dongu_her;
+            dondu baslangic_d;
+        }
+
+        dondu dongu_her;
+    }
+
+    # --- esles / match (desen esleme) ---
+    eger j.tip == TIP_ESLES ise {
+        ilerle(d); # 'esles' / 'match'
+        degisken ham_hedef: *AstDugum = parse_ifade(d, 0);
+        bekle(d, TIP_SOL_KUSLU); # '{'
+
+        # Gorev 1.5: Karmasik hedef ifadesini (orn: fonksiyon cagrisi) yalnizca
+        # bir kez degerlendirmek icin gizli gecici degiskene (__esles_hedef_N) bagla.
+        degisken hedef_tanim: *AstDugum = 0;
+        degisken hedef_val: *AstDugum = ham_hedef;
+        eger ham_hedef != 0 ve ham_hedef.tip != AST_KIMLIK ve ham_hedef.tip != AST_SAYI ve
+            ham_hedef.tip != AST_MANTIK ve ham_hedef.tip != AST_GERCEK_SAYI ve ham_hedef.tip != AST_METIN ise {
+            degisken gec_no: tamsayi = g_esles_gecici_sayac;
+            g_esles_gecici_sayac = g_esles_gecici_sayac + 1;
+            degisken no_str: *u8 = disc_to_str(gec_no);
+            degisken no_uzn: tamsayi = disc_str_uzunluk(gec_no);
+            degisken gec_uzn: tamsayi = 14 + no_uzn;
+            degisken gec_buf: *u8 = compiler_tahsis_et(gec_uzn + 1);
+            degisken on_ek: *u8 = "__esles_hedef_".ptr;
+            degisken gi: tamsayi = 0;
+            dongu gi < 14 {
+                gec_buf[gi] = on_ek[gi];
+                gi = gi + 1;
+            }
+            degisken ni: tamsayi = 0;
+            dongu ni < no_uzn {
+                gec_buf[14 + ni] = no_str[ni];
+                ni = ni + 1;
+            }
+            gec_buf[gec_uzn] = 0;
+            degisken gec_j: *Jeton = compiler_tahsis_et(40);
+            gec_j.tip = TIP_KIMLIK;
+            gec_j.baslangic = gec_buf;
+            gec_j.uzunluk = gec_uzn;
+            gec_j.satir = j.satir;
+            gec_j.sutun = j.sutun;
+            hedef_tanim = arena_dugum_yarat(d.arena, AST_DEGISKEN_TANIMI, gec_j);
+            hedef_tanim.sag = ham_hedef;
+            hedef_val = arena_dugum_yarat(d.arena, AST_KIMLIK, gec_j);
+        }
+
+        degisken ilk_eger: *AstDugum = 0;
+        degisken son_eger: *AstDugum = 0;
+        # Enum match kabul kapisi: duplicate arm ve default'suz eksik
+        # varyantlar parser seviyesinde deterministik olarak reddedilir.
+        degisken esles_seen: [4096]tamsayi;
+        degisken esles_seen_sayisi: tamsayi = 0;
+        degisken esles_ilk_enum_idx: tamsayi = 0 - 1;
+        degisken esles_default_var_mi: tamsayi = 0;
+        degisken esles_si: tamsayi = 0;
+        dongu esles_si < 4096 {
+            esles_seen[esles_si] = 0;
+            esles_si = esles_si + 1;
+        }
+
+        dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF ve suanki_jeton(d).tip != TIP_SAG_KUSLU {
+            degisken kol_j: *Jeton = suanki_jeton(d);
+
+            # Varsayilan / default / _ kolu
+            degisken varsayilan_mi: tamsayi = 0;
+            eger kol_j.tip == TIP_VARSAYILAN ise { varsayilan_mi = 1; }
+            eger kol_j.tip == TIP_KIMLIK ve kol_j.uzunluk == 1 ve kol_j.baslangic[0] == 95 ise { varsayilan_mi = 1; } # '_'
+            eger kol_j.tip == TIP_KIMLIK ve kol_j.uzunluk == 10 ve bellek_esit_mi(kol_j.baslangic, "varsayilan".ptr, 10) == 1 ise { varsayilan_mi = 1; }
+            eger kol_j.tip == TIP_KIMLIK ve kol_j.uzunluk == 7 ve bellek_esit_mi(kol_j.baslangic, "default".ptr, 7) == 1 ise { varsayilan_mi = 1; }
+
+            eger varsayilan_mi == 1 ise {
+                esles_default_var_mi = 1;
+                ilerle(d); # varsayilan tokenini tuket
+                eger jeton_tipinde_mi(d, TIP_KALIN_OK) == 1 veya jeton_tipinde_mi(d, TIP_OK) == 1 veya jeton_tipinde_mi(d, TIP_ISE) == 1 ise { ilerle(d); } # '=>', '->' veya 'ise'
+                degisken def_blok: *AstDugum = parse_blok(d);
+                eger son_eger != 0 ise {
+                    son_eger.yoksa_govde = def_blok;
+                }
+                devam_et;
+            }
+
+            # Normal desen / deger kolu (örn: 1 => { ... } veya Secenek::Bazi(x) ise { ... })
+            degisken desen_val: *AstDugum = parse_ifade(d, 0);
+            eger jeton_tipinde_mi(d, TIP_KALIN_OK) == 1 veya jeton_tipinde_mi(d, TIP_OK) == 1 veya jeton_tipinde_mi(d, TIP_ISE) == 1 ise { ilerle(d); } # '=>', '->' veya 'ise'
+            degisken kol_blok: *AstDugum = parse_blok(d);
+
+            degisken esitlik_op: *AstDugum = 0;
+            degisken ev_idx: tamsayi = 0 - 1;
+            degisken bag_ev_idx: tamsayi = 0 - 1;
+            degisken binding_var: *AstDugum = 0;
+            degisken nested_pattern: *AstDugum = 0;
+            degisken binding_base: *AstDugum = 0;
+
+            eger desen_val != 0 ise {
+                eger desen_val.tip == AST_PARANTEZ_IFADE ise {
+                    # Demet / tuple deseni: (x, y) veya (1, 2)
+                    binding_var = desen_val.sol;
+                    degisken t_cur: *AstDugum = desen_val.sol;
+                    degisken t_idx: tamsayi = 0;
+                    dongu t_cur != 0 {
+                        eger t_cur.tip == AST_SAYI veya t_cur.tip == AST_METIN veya t_cur.tip == AST_MANTIK ise {
+                            degisken f_ad_t: *u8 = "deger".ptr;
+                            degisken f_uzn_t: tamsayi = 5;
+                            eger t_idx == 1 ise { f_ad_t = "deger2".ptr; f_uzn_t = 6; }
+                            yoksa eger t_idx == 2 ise { f_ad_t = "deger3".ptr; f_uzn_t = 6; }
+                            yoksa eger t_idx == 3 ise { f_ad_t = "deger4".ptr; f_uzn_t = 6; }
+                            degisken dj_t: *Jeton = compiler_tahsis_et(40);
+                            dj_t.tip = TIP_KIMLIK;
+                            dj_t.baslangic = f_ad_t;
+                            dj_t.uzunluk = f_uzn_t;
+                            dj_t.satir = kol_j.satir;
+                            dj_t.sutun = kol_j.sutun;
+                            degisken dk_t: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, dj_t);
+                            degisken alan_t: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, dj_t);
+                            alan_t.sol = hedef_val;
+                            alan_t.sag = dk_t;
+                            degisken eqj_t: *Jeton = compiler_tahsis_et(40);
+                            eqj_t.tip = TIP_ESIT_MI;
+                            eqj_t.baslangic = "==".ptr;
+                            eqj_t.uzunluk = 2;
+                            eqj_t.satir = kol_j.satir;
+                            eqj_t.sutun = kol_j.sutun;
+                            degisken tek_eq: *AstDugum = arena_dugum_yarat(d.arena, AST_IKILI_OP, eqj_t);
+                            tek_eq.sol = alan_t;
+                            tek_eq.sag = t_cur;
+                            eger esitlik_op == 0 ise {
+                                esitlik_op = tek_eq;
+                            } yoksa {
+                                degisken and_j: *Jeton = compiler_tahsis_et(40);
+                                and_j.tip = TIP_VE;
+                                and_j.baslangic = "ve".ptr;
+                                and_j.uzunluk = 2;
+                                and_j.satir = kol_j.satir;
+                                and_j.sutun = kol_j.sutun;
+                                degisken and_d: *AstDugum = arena_dugum_yarat(d.arena, AST_IKILI_OP, and_j);
+                                and_d.sol = esitlik_op;
+                                and_d.sag = tek_eq;
+                                esitlik_op = and_d;
+                            }
+                        }
+                        t_idx = t_idx + 1;
+                        t_cur = t_cur.sonraki;
+                    }
+                    eger esitlik_op == 0 ise {
+                        degisken bir_j: *Jeton = compiler_tahsis_et(40);
+                        bir_j.tip = TIP_TAMSAYI;
+                        bir_j.baslangic = "1".ptr;
+                        bir_j.uzunluk = 1;
+                        bir_j.satir = kol_j.satir;
+                        bir_j.sutun = kol_j.sutun;
+                        degisken d1: *AstDugum = arena_dugum_yarat(d.arena, AST_SAYI, bir_j);
+                        degisken d2: *AstDugum = arena_dugum_yarat(d.arena, AST_SAYI, bir_j);
+                        degisken eq_j2: *Jeton = compiler_tahsis_et(40);
+                        eq_j2.tip = TIP_ESIT_MI;
+                        eq_j2.baslangic = "==".ptr;
+                        eq_j2.uzunluk = 2;
+                        eq_j2.satir = kol_j.satir;
+                        eq_j2.sutun = kol_j.sutun;
+                        esitlik_op = arena_dugum_yarat(d.arena, AST_IKILI_OP, eq_j2);
+                        esitlik_op.sol = d1;
+                        esitlik_op.sag = d2;
+                    }
+                } yoksa eger desen_val.tip == AST_ISLEV_CAGRISI ise {
+                    # `Durum.Deger(x)` alan-cagrisi AST'sinde enum adi
+                    # desen_val.sol, varyant ve payload ise desen_val.sag
+                    # dugumunun icindedir. Eski `Deger(x)` AST'sini de koru.
+                    degisken varyant_dugum: *AstDugum = desen_val.sol;
+                    degisken aday_payload: *AstDugum = desen_val.sag;
+                    degisken sol_is_variant: tamsayi = 0;
+                    eger varyant_dugum != 0 ve varyant_dugum.ilk_jeton != 0 ise {
+                        degisken s_isim: *u8 = varyant_dugum.ilk_jeton.baslangic;
+                        degisken s_uzn: tamsayi = varyant_dugum.ilk_jeton.uzunluk;
+                        eger enum_varyant_bul_tam(s_isim, s_uzn) >= 0 veya
+                           enum_varyant_bul_kisa(s_isim, s_uzn) >= 0 veya
+                           enum_deseni_varyanti_bul(s_isim, s_uzn) >= 0 ise {
+                            sol_is_variant = 1;
+                        }
+                    }
+                    eger sol_is_variant == 0 ve desen_val.sag != 0 ve desen_val.sag.ilk_jeton != 0 ve
+                        desen_val.sag.tip == AST_KIMLIK ise {
+                        varyant_dugum = desen_val.sag;
+                        aday_payload = desen_val.sag.sag;
+                    }
+                    eger varyant_dugum != 0 ve varyant_dugum.ilk_jeton != 0 ise {
+                        degisken c_isim: *u8 = varyant_dugum.ilk_jeton.baslangic;
+                        degisken c_uzn: tamsayi = varyant_dugum.ilk_jeton.uzunluk;
+                        ev_idx = enum_varyant_bul_tam(c_isim, c_uzn);
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_varyant_bul_kisa(c_isim, c_uzn);
+                        }
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_deseni_varyanti_bul(c_isim, c_uzn);
+                        }
+                        eger ev_idx >= 0 ise {
+                            eger aday_payload != 0 ve aday_payload.tip == AST_ISLEV_CAGRISI ise {
+                                # Ic constructor payload'i nested pattern'dir;
+                                # binding ve inner discriminant asagida cozulur.
+                                nested_pattern = aday_payload;
+                            } yoksa {
+                                binding_var = aday_payload;
+                            }
+                        }
+                    }
+                } yoksa eger desen_val.tip == AST_KIMLIK ise {
+                    eger desen_val.ilk_jeton != 0 ise {
+                        degisken k_isim: *u8 = desen_val.ilk_jeton.baslangic;
+                        degisken k_uzn: tamsayi = desen_val.ilk_jeton.uzunluk;
+                        ev_idx = enum_varyant_bul_tam(k_isim, k_uzn);
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_varyant_bul_kisa(k_isim, k_uzn);
+                        }
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_deseni_varyanti_bul(k_isim, k_uzn);
+                        }
+                    }
+                } yoksa eger desen_val.tip == AST_ALAN_ERISIMI ise {
+                    # Basit enum pattern'i `Durum.Basarili` parser'da
+                    # alan-erisim AST'si olarak gelir; varyant adını sağ
+                    # taraftan çözerek algebraic enum yoluna bağla.
+                    eger desen_val.sag != 0 ve desen_val.sag.ilk_jeton != 0 ise {
+                        degisken alan_isim: *u8 = desen_val.sag.ilk_jeton.baslangic;
+                        degisken alan_uzn: tamsayi = desen_val.sag.ilk_jeton.uzunluk;
+                        ev_idx = enum_varyant_bul_tam(alan_isim, alan_uzn);
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_varyant_bul_kisa(alan_isim, alan_uzn);
+                        }
+                        eger ev_idx == (0 - 1) ise {
+                            ev_idx = enum_deseni_varyanti_bul(alan_isim, alan_uzn);
+                        }
+                    }
+                }
+            }
+
+            eger ev_idx >= 0 ise {
+                eger esles_ilk_enum_idx < 0 ise { esles_ilk_enum_idx = ev_idx; }
+                eger esles_seen[ev_idx] == 1 ise {
+                    d.hata_sayisi = d.hata_sayisi + 1;
+                    hata_bas_parser("Enum pattern kolu tekrar ediyor (unreachable arm)".ptr, kol_j);
+                } yoksa {
+                    esles_seen[ev_idx] = 1;
+                    esles_seen_sayisi = esles_seen_sayisi + 1;
+                }
+                # Enum varyanti esleme! hedef_val.durum == disc
+                degisken durum_j: *Jeton = compiler_tahsis_et(40);
+                durum_j.tip = TIP_KIMLIK;
+                durum_j.baslangic = "durum".ptr;
+                durum_j.uzunluk = 5;
+                durum_j.satir = kol_j.satir;
+                durum_j.sutun = kol_j.sutun;
+
+                degisken durum_kimlik: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, durum_j);
+                degisken alan_durum: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, durum_j);
+                alan_durum.sol = hedef_val;
+                alan_durum.sag = durum_kimlik;
+
+                degisken disc_val: tamsayi = g_enum_var_disc[ev_idx];
+                degisken disc_j: *Jeton = compiler_tahsis_et(40);
+                disc_j.tip = TIP_TAMSAYI;
+                disc_j.baslangic = disc_to_str(disc_val);
+                disc_j.uzunluk = disc_str_uzunluk(disc_val);
+                disc_j.satir = kol_j.satir;
+                disc_j.sutun = kol_j.sutun;
+                degisken disc_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_SAYI, disc_j);
+
+                degisken eq_j: *Jeton = compiler_tahsis_et(40);
+                eq_j.tip = TIP_ESIT_MI;
+                eq_j.baslangic = "==".ptr;
+                eq_j.uzunluk = 2;
+                eq_j.satir = kol_j.satir;
+                eq_j.sutun = kol_j.sutun;
+
+                esitlik_op = arena_dugum_yarat(d.arena, AST_IKILI_OP, eq_j);
+                esitlik_op.sol = alan_durum;
+                esitlik_op.sag = disc_dugum;
+
+                bag_ev_idx = ev_idx;
+
+                # Nested pattern: Outer.Ic(Inner.Deger(x))
+                # Outer discriminant'e ek olarak payload pointer'inin inner
+                # discriminant'i kontrol edilir ve x inner payload'dan alinir.
+                eger nested_pattern != 0 ise {
+                    degisken inner_varyant: *AstDugum = nested_pattern.sol;
+                    degisken inner_arglar: *AstDugum = nested_pattern.sag;
+                    eger nested_pattern.sag != 0 ve nested_pattern.sag.ilk_jeton != 0 ve
+                        nested_pattern.sag.tip == AST_KIMLIK ise {
+                        inner_varyant = nested_pattern.sag;
+                        inner_arglar = nested_pattern.sag.sag;
+                    }
+                    degisken inner_idx: tamsayi = 0 - 1;
+                    eger inner_varyant != 0 ve inner_varyant.ilk_jeton != 0 ise {
+                        inner_idx = enum_varyant_bul_tam(
+                            inner_varyant.ilk_jeton.baslangic,
+                            inner_varyant.ilk_jeton.uzunluk
+                        );
+                        eger inner_idx == (0 - 1) ise {
+                            inner_idx = enum_varyant_bul_kisa(
+                                inner_varyant.ilk_jeton.baslangic,
+                                inner_varyant.ilk_jeton.uzunluk
+                            );
+                        }
+                    }
+                    eger inner_idx >= 0 ise {
+                        degisken nested_deger_j: *Jeton = compiler_tahsis_et(40);
+                        nested_deger_j.tip = TIP_KIMLIK;
+                        nested_deger_j.baslangic = "deger".ptr;
+                        nested_deger_j.uzunluk = 5;
+                        nested_deger_j.satir = kol_j.satir;
+                        nested_deger_j.sutun = kol_j.sutun;
+                        degisken nested_deger_k: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, nested_deger_j);
+                        degisken nested_payload: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, nested_deger_j);
+                        nested_payload.sol = hedef_val;
+                        nested_payload.sag = nested_deger_k;
+
+                        degisken nested_durum_j: *Jeton = compiler_tahsis_et(40);
+                        nested_durum_j.tip = TIP_KIMLIK;
+                        nested_durum_j.baslangic = "durum".ptr;
+                        nested_durum_j.uzunluk = 5;
+                        nested_durum_j.satir = kol_j.satir;
+                        nested_durum_j.sutun = kol_j.sutun;
+                        degisken nested_durum_k: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, nested_durum_j);
+                        degisken nested_alan_durum: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, nested_durum_j);
+                        nested_alan_durum.sol = nested_payload;
+                        nested_alan_durum.sag = nested_durum_k;
+
+                        degisken inner_disc_j: *Jeton = compiler_tahsis_et(40);
+                        inner_disc_j.tip = TIP_TAMSAYI;
+                        inner_disc_j.baslangic = disc_to_str(g_enum_var_disc[inner_idx]);
+                        inner_disc_j.uzunluk = disc_str_uzunluk(g_enum_var_disc[inner_idx]);
+                        inner_disc_j.satir = kol_j.satir;
+                        inner_disc_j.sutun = kol_j.sutun;
+                        degisken inner_disc_d: *AstDugum = arena_dugum_yarat(d.arena, AST_SAYI, inner_disc_j);
+                        degisken inner_eq_j: *Jeton = compiler_tahsis_et(40);
+                        inner_eq_j.tip = TIP_ESIT_MI;
+                        inner_eq_j.baslangic = "==".ptr;
+                        inner_eq_j.uzunluk = 2;
+                        inner_eq_j.satir = kol_j.satir;
+                        inner_eq_j.sutun = kol_j.sutun;
+                        degisken inner_eq: *AstDugum = arena_dugum_yarat(d.arena, AST_IKILI_OP, inner_eq_j);
+                        inner_eq.sol = nested_alan_durum;
+                        inner_eq.sag = inner_disc_d;
+
+                        degisken and_j: *Jeton = compiler_tahsis_et(40);
+                        and_j.tip = TIP_VE;
+                        and_j.baslangic = "ve".ptr;
+                        and_j.uzunluk = 2;
+                        and_j.satir = kol_j.satir;
+                        and_j.sutun = kol_j.sutun;
+                        degisken and_d: *AstDugum = arena_dugum_yarat(d.arena, AST_IKILI_OP, and_j);
+                        and_d.sol = esitlik_op;
+                        and_d.sag = inner_eq;
+                        esitlik_op = and_d;
+                        binding_var = inner_arglar;
+                        binding_base = nested_payload;
+                        bag_ev_idx = inner_idx;
+                    }
+                }
+
+            } yoksa {
+                eger esitlik_op == 0 ise {
+                    # esitlik: hedef_val == desen_val
+                    degisken eq_j: *Jeton = compiler_tahsis_et(40);
+                    eq_j.tip = TIP_ESIT_MI;
+                    eq_j.baslangic = "==".ptr;
+                    eq_j.uzunluk = 2;
+                    eq_j.satir = kol_j.satir;
+                    eq_j.sutun = kol_j.sutun;
+
+                    esitlik_op = arena_dugum_yarat(d.arena, AST_IKILI_OP, eq_j);
+                    esitlik_op.sol = hedef_val;
+                    esitlik_op.sag = desen_val;
+                }
+            }
+
+            # Payload degisken baglama (pattern destructuring): coklu veya tekli alanlar (enum / demet / struct)
+            eger binding_var != 0 ve kol_blok != 0 ise {
+                degisken b_cur: *AstDugum = binding_var;
+                degisken b_idx: tamsayi = 0;
+                dongu b_cur != 0 {
+                    eger b_cur.ilk_jeton != 0 ve (b_cur.ilk_jeton.uzunluk != 1 veya b_cur.ilk_jeton.baslangic[0] != 95) ise {
+                        degisken f_ad: *u8 = "deger".ptr;
+                        degisken f_uzn: tamsayi = 5;
+                        eger b_idx == 1 ise {
+                            f_ad = "deger2".ptr;
+                            f_uzn = 6;
+                        } yoksa eger b_idx == 2 ise {
+                            f_ad = "deger3".ptr;
+                            f_uzn = 6;
+                        } yoksa eger b_idx == 3 ise {
+                            f_ad = "deger4".ptr;
+                            f_uzn = 6;
+                        }
+
+                        degisken deger_j: *Jeton = compiler_tahsis_et(40);
+                        deger_j.tip = TIP_KIMLIK;
+                        deger_j.baslangic = f_ad;
+                        deger_j.uzunluk = f_uzn;
+                        deger_j.satir = kol_j.satir;
+                        deger_j.sutun = kol_j.sutun;
+
+                        degisken deger_kimlik: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, deger_j);
+                        degisken alan_deger: *AstDugum = arena_dugum_yarat(d.arena, AST_ALAN_ERISIMI, deger_j);
+                        eger binding_base != 0 ise { alan_deger.sol = binding_base; }
+                        yoksa { alan_deger.sol = hedef_val; }
+                        alan_deger.sag = deger_kimlik;
+                        alan_deger.cozumlenmis_tip = 77;
+
+                        degisken tanim_d: *AstDugum = arena_dugum_yarat(d.arena, AST_DEGISKEN_TANIMI, b_cur.ilk_jeton);
+                        eger bag_ev_idx >= 0 ve g_enum_var_payload_tip[bag_ev_idx] != 0 ve g_enum_var_payload_tip_uzn[bag_ev_idx] > 0 ise {
+                            tanim_d.tip_adi = g_enum_var_payload_tip[bag_ev_idx];
+                            tanim_d.tip_adi_uzunluk = g_enum_var_payload_tip_uzn[bag_ev_idx];
+                        } yoksa {
+                            tanim_d.tip_adi = "tamsayi".ptr;
+                            tanim_d.tip_adi_uzunluk = 7;
+                        }
+                        tanim_d.cozumlenmis_tip = 0;
+                        tanim_d.sag = alan_deger;
+
+                        tanim_d.sonraki = kol_blok.sol;
+                        kol_blok.sol = tanim_d;
+                    }
+                    b_idx = b_idx + 1;
+                    b_cur = b_cur.sonraki;
+                }
+            }
+
+            degisken eger_d: *AstDugum = arena_dugum_yarat(d.arena, AST_EGER, kol_j);
+            eger_d.sol = esitlik_op;
+            eger_d.govde = kol_blok;
+
+            eger ilk_eger == 0 ise {
+                ilk_eger = eger_d;
+                son_eger = eger_d;
+            } yoksa {
+                son_eger.yoksa_govde = eger_d;
+                son_eger = eger_d;
+            }
+        }
+        eger esles_ilk_enum_idx >= 0 ve esles_default_var_mi == 0 ise {
+            degisken toplam_varyant: tamsayi = enum_deseni_turu_varyant_sayisi(
+                g_enum_var_tam_isim[esles_ilk_enum_idx],
+                g_enum_var_tam_uzn[esles_ilk_enum_idx]
+            );
+            eger toplam_varyant > 0 ve esles_seen_sayisi < toplam_varyant ise {
+                d.hata_sayisi = d.hata_sayisi + 1;
+                hata_bas_parser("Enum esles tum varyantlari kapsamiyor; varsayilan kol ekleyin".ptr, j);
+            }
+        }
+        bekle(d, TIP_SAG_KUSLU); # '}'
+        eger hedef_tanim != 0 ise {
+            eger esles_ilk_enum_idx >= 0 ise {
+                degisken tam_p: *u8 = g_enum_var_tam_isim[esles_ilk_enum_idx];
+                degisken tam_u: tamsayi = g_enum_var_tam_uzn[esles_ilk_enum_idx];
+                degisken ayrac_i: tamsayi = 0;
+                dongu ayrac_i + 1 < tam_u {
+                    eger tam_p[ayrac_i] == 95 ve tam_p[ayrac_i + 1] == 95 ise { durdur; }
+                    ayrac_i = ayrac_i + 1;
+                }
+                eger ayrac_i > 0 ve ayrac_i + 1 < tam_u ise {
+                    hedef_tanim.tip_adi = tam_p;
+                    hedef_tanim.tip_adi_uzunluk = ayrac_i;
+                }
+            }
+            hedef_tanim.sonraki = ilk_eger;
+            dondu hedef_tanim;
+        }
+        dondu ilk_eger;
+    }
+
+    # --- extern / dis / harici on-eki ---
+    eger j.tip == TIP_KIMLIK ise {
+        eger (j.uzunluk == 6 ve bellek_esit_mi(j.baslangic, "extern".ptr, 6) == 1) veya
+             (j.uzunluk == 3 ve bellek_esit_mi(j.baslangic, "dis".ptr, 3) == 1) veya
+             (j.uzunluk == 6 ve bellek_esit_mi(j.baslangic, "harici".ptr, 6) == 1) ise {
+            ilerle(d);
+            degisken sj: *Jeton = suanki_jeton(d);
+            eger sj != 0 ve sj.tip == TIP_ISLEV ise {
+                dondu parse_satir(d);
+            }
+        }
+    }
+
+    # --- makro tanimi ---
+    # makro isim(param1, param2, ...) { govde }
+    eger j.tip == TIP_KIMLIK ise {
+        eger j.uzunluk == 5 ve bellek_esit_mi(j.baslangic, "makro".ptr, 5) == 1 ise {
+            ilerle(d); # 'makro' tüket
+            degisken makro_isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+            degisken makro_dugum: *AstDugum = arena_dugum_yarat(d.arena, 22, makro_isim_j); # AST_MAKRO_TANIMI = 22
+            # Parametreler: (param1, param2, ...)
+            eger jeton_tipinde_mi(d, TIP_SOL_PARANTEZ) == 1 ise {
+                ilerle(d); # '(' tüket
+                degisken ilk_param: *AstDugum = 0;
+                degisken son_param: *AstDugum = 0;
+                dongu jeton_tipinde_mi(d, TIP_SAG_PARANTEZ) == 0 ve suanki_jeton(d) != 0 ve
+                    suanki_jeton(d).tip != TIP_SAG_KUSLU ve suanki_jeton(d).tip != TIP_SAG_KOSE {
+                    eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                    degisken mp_j: *Jeton = bekle(d, TIP_KIMLIK);
+                    degisken mp: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, mp_j);
+                    eger ilk_param == 0 ise { ilk_param = mp; son_param = mp; }
+                    yoksa { son_param.sonraki = mp; son_param = mp; }
+                    eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+                }
+                bekle(d, TIP_SAG_PARANTEZ); # ')' tüket
+                makro_dugum.parametreler = ilk_param;
+            }
+            # Gövde: { ... }
+            eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 1 ise {
+                makro_dugum.govde = parse_blok(d);
+            }
+            makro_dugum.gorunurluk = gorunurluk_aktif;
+            dondu makro_dugum;
+        }
+    }
+
+    # --- async isv/fn (syntax + AST; lowering ayrı release kapısıdır) ---
+    eger j.tip == TIP_ASYNC ise {
+        degisken async_j: *Jeton = j;
+        ilerle(d);
+        eger jeton_tipinde_mi(d, TIP_ISLEV) == 0 ise {
+            d.hata_sayisi = d.hata_sayisi + 1;
+            hata_bas_parser("async sonrasinda isv/fn bekleniyordu".ptr, suanki_jeton(d));
+            parser_senkronize(d);
+            dondu 0;
+        }
+        ilerle(d); # isv/fn
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        eger isim_j == 0 ise { dondu 0; }
+        degisken async_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_ASYNC_ISLEV, isim_j);
+        # ilk_jeton function name olarak kalır; son_jeton async keyword'ünü
+        # taşıyan marker'dır ve lowering tarafından tüketilecektir.
+        async_dugum.son_jeton = async_j;
+        async_dugum.parametreler = parametre_listesi_oku(d);
+        eger jeton_tipinde_mi(d, TIP_OK) == 1 ise {
+            ilerle(d);
+            tip_oku(d, async_dugum);
+        }
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+            ilerle(d);
+            async_dugum.govde = 0;
+        } yoksa {
+            async_dugum.govde = parse_blok(d);
+        }
+        async_dugum.gorunurluk = gorunurluk_aktif;
+        dondu async_dugum;
+    }
+
+    # --- isv (fonksiyon tanimi) ---
+    eger j.tip == TIP_ISLEV ise {
+        ilerle(d);
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        isim_j = onceki_jeton(d);
+        degisken islev_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_ISLEV, isim_j);
+
+        # Generic Parametreler: <T> veya <T, U> veya <T: Trait>
+        eger jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+            ilerle(d); # '<'
+            degisken ilk_gp: *AstDugum = 0;
+            degisken son_gp: *AstDugum = 0;
+            dongu jeton_tipinde_mi(d, TIP_BUYUK_MU) == 0 ve suanki_jeton(d) != 0 ve
+                suanki_jeton(d).tip != TIP_SAG_KUSLU ve suanki_jeton(d).tip != TIP_SAG_PARANTEZ {
+                eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                degisken gp_j: *Jeton = bekle(d, TIP_KIMLIK);
+                degisken gp: *AstDugum = arena_dugum_yarat(d.arena, AST_GENERIC_TANIM, gp_j);
+                gp.tip_adi = gp_j.baslangic;
+                gp.tip_adi_uzunluk = gp_j.uzunluk;
+                eger jeton_tipinde_mi(d, TIP_KOLON) == 1 ise {
+                    ilerle(d);
+                    degisken tb_j: *Jeton = bekle(d, TIP_KIMLIK);
+                    degisken ilk_tb: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_TANIM, tb_j);
+                    degisken son_tb: *AstDugum = ilk_tb;
+                    dongu jeton_tipinde_mi(d, TIP_ARTI) == 1 {
+                        ilerle(d); # '+'
+                        degisken tb2_j: *Jeton = bekle(d, TIP_KIMLIK);
+                        degisken tb2: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_TANIM, tb2_j);
+                        son_tb.sonraki = tb2;
+                        son_tb = tb2;
+                    }
+                    gp.sag = ilk_tb;
+                }
+                eger ilk_gp == 0 ise { ilk_gp = gp; son_gp = gp; }
+                yoksa { son_gp.sonraki = gp; son_gp = gp; }
+                eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise {
+                    ilerle(d);
+                    eger jeton_tipinde_mi(d, TIP_BUYUK_MU) == 1 ise {
+                        d.hata_sayisi = d.hata_sayisi + 1;
+                        hata_bas_parser("Generic listesinde sondaki virgul gecersiz".ptr, suanki_jeton(d));
+                    }
+                }
+            }
+            bekle(d, TIP_BUYUK_MU); # '>'
+            islev_dugum.sol = ilk_gp;
+            islev_dugum.tip = AST_GENERIC_TANIM;
+        }
+
+        degisken islev_params: *AstDugum = parametre_listesi_oku(d);
+        islev_dugum.parametreler = islev_params;
+        eger jeton_tipinde_mi(d, TIP_OK) == 1 ise {
+            ilerle(d);
+            tip_oku(d, islev_dugum);
+        }
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+            ilerle(d);
+            islev_dugum.govde = 0;
+        } yoksa {
+            islev_dugum.govde = parse_blok(d);
+        }
+        islev_dugum.gorunurluk = gorunurluk_aktif;
+        dondu islev_dugum;
+    }
+
+    # --- yapi (struct tanm) ---
+    eger j.tip == TIP_YAPI ise {
+        ilerle(d);
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken yapi_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_YAPI_TANIMI, isim_j);
+        
+        # Generic Parametreler: <T> veya <T, U>
+        eger jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+            ilerle(d); # '<'
+            degisken ilk_gp: *AstDugum = 0;
+            degisken son_gp: *AstDugum = 0;
+            dongu jeton_tipinde_mi(d, TIP_BUYUK_MU) == 0 ve suanki_jeton(d) != 0 ve
+                suanki_jeton(d).tip != TIP_SAG_KUSLU ve suanki_jeton(d).tip != TIP_SAG_PARANTEZ {
+                eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                degisken gp_j: *Jeton = bekle(d, TIP_KIMLIK);
+                degisken gp: *AstDugum = arena_dugum_yarat(d.arena, AST_GENERIC_TANIM, gp_j);
+                gp.tip_adi = gp_j.baslangic;
+                gp.tip_adi_uzunluk = gp_j.uzunluk;
+                eger jeton_tipinde_mi(d, TIP_KOLON) == 1 ise {
+                    ilerle(d);
+                    degisken tb_j: *Jeton = bekle(d, TIP_KIMLIK);
+                    degisken ilk_tb: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_TANIM, tb_j);
+                    degisken son_tb: *AstDugum = ilk_tb;
+                    dongu jeton_tipinde_mi(d, TIP_ARTI) == 1 {
+                        ilerle(d); # '+'
+                        degisken tb2_j: *Jeton = bekle(d, TIP_KIMLIK);
+                        degisken tb2: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_TANIM, tb2_j);
+                        son_tb.sonraki = tb2;
+                        son_tb = tb2;
+                    }
+                    gp.sag = ilk_tb;
+                }
+                eger ilk_gp == 0 ise { ilk_gp = gp; son_gp = gp; }
+                yoksa { son_gp.sonraki = gp; son_gp = gp; }
+                eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise {
+                    ilerle(d);
+                    eger jeton_tipinde_mi(d, TIP_BUYUK_MU) == 1 ise {
+                        d.hata_sayisi = d.hata_sayisi + 1;
+                        hata_bas_parser("Generic listesinde sondaki virgul gecersiz".ptr, suanki_jeton(d));
+                    }
+                }
+            }
+            bekle(d, TIP_BUYUK_MU); # '>'
+            yapi_dugum.parametreler = ilk_gp;
+        }
+
+        bekle(d, TIP_SOL_KUSLU);
+        degisken ilk_alan: *AstDugum = 0;
+        degisken son_alan: *AstDugum = 0;
+        dongu jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 0 ve suanki_jeton(d) != 0 {
+            eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+            degisken alan_isim: *Jeton = bekle(d, TIP_KIMLIK);
+            degisken alan: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, alan_isim);
+            bekle(d, TIP_KOLON);
+            tip_oku(d, alan);
+            eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+            eger ilk_alan == 0 ise { ilk_alan = alan; son_alan = alan; }
+            yoksa { son_alan.sonraki = alan; son_alan = alan; }
+        }
+        bekle(d, TIP_SAG_KUSLU);
+        yapi_dugum.sol = ilk_alan;
+        yapi_dugum.gorunurluk = gorunurluk_aktif;
+        dondu yapi_dugum;
+    }
+
+    # --- ozellik / trait tanimi ---
+    eger j.tip == TIP_TRAIT ise {
+        ilerle(d); # 'ozellik' veya 'trait'
+        degisken trait_isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken trait_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_TANIM, trait_isim_j);
+        bekle(d, TIP_SOL_KUSLU); # '{'
+        degisken ilk_m: *AstDugum = 0;
+        degisken son_m: *AstDugum = 0;
+        dongu jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 0 ve suanki_jeton(d) != 0 {
+            eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+            degisken m_satir: *AstDugum = parse_satir(d);
+            eger m_satir != 0 ise {
+                eger ilk_m == 0 ise { ilk_m = m_satir; son_m = m_satir; }
+                yoksa { son_m.sonraki = m_satir; son_m = m_satir; }
+            }
+        }
+        bekle(d, TIP_SAG_KUSLU); # '}'
+        trait_dugum.govde = ilk_m;
+        trait_dugum.gorunurluk = gorunurluk_aktif;
+        dondu trait_dugum;
+    }
+
+    # --- uygula / impl Trait [icin / for] HedefTip ---
+    eger j.tip == TIP_UYGULA ise {
+        degisken sonraki_j: *Jeton = 0;
+        eger d.guncel_index + 1 < d.jeton_sayisi ise {
+            degisken p_sonraki: *u8 = d.jetonlar;
+            p_sonraki = p_sonraki + ((d.guncel_index + 1) * 40);
+            sonraki_j = p_sonraki;
+        }
+        eger sonraki_j != 0 ve (sonraki_j.tip == TIP_SOL_PARANTEZ veya sonraki_j.tip == TIP_ATAMA veya sonraki_j.tip == TIP_NOKTA) ise {
+            degisken expr: *AstDugum = parse_ifade(d, 0);
+            bekle(d, TIP_NOKTALI_VIRGUL);
+            dondu expr;
+        }
+        ilerle(d); # 'uygula' veya 'impl'
+        degisken trait_isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken cur_j: *Jeton = suanki_jeton(d);
+        eger cur_j != 0 ve cur_j.tip == TIP_KIMLIK ise {
+            eger (cur_j.uzunluk == 4 ve bellek_esit_mi(cur_j.baslangic, "icin".ptr, 4) == 1) veya
+                 (cur_j.uzunluk == 3 ve bellek_esit_mi(cur_j.baslangic, "for".ptr, 3) == 1) ise {
+                ilerle(d);
+            }
+        }
+        degisken hedef_tip_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken hedef_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, hedef_tip_j);
+        degisken uygula_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_TRAIT_UYGULAMA, trait_isim_j);
+        uygula_dugum.sol = hedef_dugum;
+
+        eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 1 ise {
+            ilerle(d); # '{'
+            degisken ilk_im: *AstDugum = 0;
+            degisken son_im: *AstDugum = 0;
+            dongu jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 0 ve suanki_jeton(d) != 0 {
+                eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                degisken m_satir: *AstDugum = parse_satir(d);
+                eger m_satir != 0 ise {
+                    eger ilk_im == 0 ise { ilk_im = m_satir; son_im = m_satir; }
+                    yoksa { son_im.sonraki = m_satir; son_im = m_satir; }
+                }
+            }
+            bekle(d, TIP_SAG_KUSLU); # '}'
+            uygula_dugum.govde = ilk_im;
+        } yoksa eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+            ilerle(d);
+        }
+        uygula_dugum.gorunurluk = gorunurluk_aktif;
+        dondu uygula_dugum;
+    }
+
+    # --- asm { } inline assembly blogu ---
+    eger j.tip == TIP_ASM ise {
+        ilerle(d); # 'asm'
+        bekle(d, TIP_SOL_KUSLU); # '{'
+        degisken asm_d: *AstDugum = arena_dugum_yarat(d.arena, AST_INLINE_ASM, j);
+        eger suanki_jeton(d) != 0 ve suanki_jeton(d).tip == TIP_METIN ise {
+            asm_d.ilk_jeton = suanki_jeton(d);
+            ilerle(d);
+        }
+        dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_SAG_KUSLU {
+            ilerle(d);
+        }
+        bekle(d, TIP_SAG_KUSLU); # '}'
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        dondu asm_d;
+    }
+
+    # --- enum / sayim (cebirsel veri tipi) ---
+    eger j.tip == TIP_ENUM ise {
+        ilerle(d); # 'enum' veya 'sayim'
+        degisken enum_isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+
+        # Generic Parametreler: <T>
+        degisken ilk_gp: *AstDugum = 0;
+        degisken son_gp: *AstDugum = 0;
+        eger jeton_tipinde_mi(d, TIP_KUCUK_MU) == 1 ise {
+            ilerle(d); # '<'
+            dongu jeton_tipinde_mi(d, TIP_BUYUK_MU) == 0 ve suanki_jeton(d) != 0 ve
+                suanki_jeton(d).tip != TIP_SAG_KUSLU ve suanki_jeton(d).tip != TIP_SAG_PARANTEZ {
+                eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+                degisken gp_j: *Jeton = bekle(d, TIP_KIMLIK);
+                degisken gp: *AstDugum = arena_dugum_yarat(d.arena, AST_GENERIC_TANIM, gp_j);
+                gp.tip_adi = gp_j.baslangic;
+                gp.tip_adi_uzunluk = gp_j.uzunluk;
+                eger ilk_gp == 0 ise { ilk_gp = gp; son_gp = gp; }
+                yoksa { son_gp.sonraki = gp; son_gp = gp; }
+                eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise {
+                    ilerle(d);
+                    eger jeton_tipinde_mi(d, TIP_BUYUK_MU) == 1 ise {
+                        d.hata_sayisi = d.hata_sayisi + 1;
+                        hata_bas_parser("Generic listesinde sondaki virgul gecersiz".ptr, suanki_jeton(d));
+                    }
+                }
+            }
+            bekle(d, TIP_BUYUK_MU); # '>'
+        }
+
+        bekle(d, TIP_SOL_KUSLU); # '{'
+        degisken disc: tamsayi = 0;
+        dongu jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 0 ve suanki_jeton(d) != 0 {
+            eger suanki_jeton(d).tip == TIP_EOF ise { durdur; }
+            degisken var_j: *Jeton = bekle(d, TIP_KIMLIK);
+            degisken payload: tamsayi = 0;
+            degisken payload_tip: *u8 = 0;
+            degisken payload_tip_uzn: tamsayi = 0;
+            eger jeton_tipinde_mi(d, TIP_SOL_PARANTEZ) == 1 ise {
+                ilerle(d); # '('
+                degisken p_tip_j: *Jeton = bekle(d, TIP_KIMLIK);
+                eger p_tip_j != 0 ise {
+                    payload_tip = p_tip_j.baslangic;
+                    payload_tip_uzn = p_tip_j.uzunluk;
+                }
+                bekle(d, TIP_SAG_PARANTEZ); # ')'
+                payload = 1;
+            }
+
+            # Tam isim: EnumIsmi__VaryantIsmi
+            degisken en_uzn: tamsayi = enum_isim_j.uzunluk;
+            degisken va_uzn: tamsayi = var_j.uzunluk;
+            degisken tam_uzn: tamsayi = en_uzn + 2 + va_uzn;
+            degisken tam_buf: *u8 = compiler_tahsis_et(tam_uzn + 1);
+            degisken ti: tamsayi = 0;
+            dongu ti < en_uzn {
+                tam_buf[ti] = enum_isim_j.baslangic[ti];
+                ti = ti + 1;
+            }
+            tam_buf[ti] = 95; # '_'
+            tam_buf[ti + 1] = 95; # '_'
+            ti = ti + 2;
+            degisken vi: tamsayi = 0;
+            dongu vi < va_uzn {
+                tam_buf[ti + vi] = var_j.baslangic[vi];
+                vi = vi + 1;
+            }
+            tam_buf[tam_uzn] = 0;
+
+            # Lexer buffer'i sonraki AST/derleme fazlarinda yeniden kullanilabilir;
+            # short variant adi enum metadata'sinda sahipli kopya olmali.
+            degisken kisa_buf: *u8 = compiler_tahsis_et(va_uzn + 1);
+            degisken kbi: tamsayi = 0;
+            dongu kbi < va_uzn {
+                kisa_buf[kbi] = var_j.baslangic[kbi];
+                kbi = kbi + 1;
+            }
+            kisa_buf[va_uzn] = 0;
+            enum_varyant_ekle(tam_buf, tam_uzn, kisa_buf, va_uzn, disc, payload, payload_tip, payload_tip_uzn);
+            disc = disc + 1;
+
+            eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+            eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        }
+        bekle(d, TIP_SAG_KUSLU); # '}'
+
+        # Enum icin AST_YAPI_TANIMI olustur:
+        # yapi EnumIsmi { durum: tamsayi; deger: tamsayi; }
+        degisken yapi_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_YAPI_TANIMI, enum_isim_j);
+        yapi_dugum.parametreler = ilk_gp;
+
+        # durum: tamsayi
+        degisken alan_durum_j: *Jeton = compiler_tahsis_et(40);
+        alan_durum_j.tip = TIP_KIMLIK;
+        alan_durum_j.baslangic = "durum".ptr;
+        alan_durum_j.uzunluk = 5;
+        alan_durum_j.satir = enum_isim_j.satir;
+        alan_durum_j.sutun = enum_isim_j.sutun;
+        degisken alan_durum: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, alan_durum_j);
+        alan_durum.tip_adi = "tamsayi".ptr;
+        alan_durum.tip_adi_uzunluk = 7;
+
+        # deger: tamsayi veya generic payload tipi (T)
+        degisken alan_deger_j: *Jeton = compiler_tahsis_et(40);
+        alan_deger_j.tip = TIP_KIMLIK;
+        alan_deger_j.baslangic = "deger".ptr;
+        alan_deger_j.uzunluk = 5;
+        alan_deger_j.satir = enum_isim_j.satir;
+        alan_deger_j.sutun = enum_isim_j.sutun;
+        degisken alan_deger: *AstDugum = arena_dugum_yarat(d.arena, AST_KIMLIK, alan_deger_j);
+        eger ilk_gp != 0 ve ilk_gp.tip_adi != 0 ise {
+            alan_deger.tip_adi = ilk_gp.tip_adi;
+            alan_deger.tip_adi_uzunluk = ilk_gp.tip_adi_uzunluk;
+        } yoksa {
+            alan_deger.tip_adi = "tamsayi".ptr;
+            alan_deger.tip_adi_uzunluk = 7;
+        }
+
+        alan_durum.sonraki = alan_deger;
+        yapi_dugum.sol = alan_durum;
+        yapi_dugum.gorunurluk = gorunurluk_aktif;
+        dondu yapi_dugum;
+    }
+
+    # --- ice_aktar ---
+    eger j.tip == TIP_ICE_AKTAR ise {
+        ilerle(d);
+        degisken dosya_j: *Jeton = bekle(d, TIP_METIN);
+        degisken imp: *AstDugum = arena_dugum_yarat(d.arena, AST_ICE_AKTAR, dosya_j);
+        eger jeton_tipinde_mi(d, TIP_OLARAK) == 1 ise {
+            ilerle(d);
+            degisken alias_j: *Jeton = bekle(d, TIP_KIMLIK);
+            imp.tip_adi = alias_j.baslangic;
+            imp.tip_adi_uzunluk = alias_j.uzunluk;
+        }
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        dondu imp;
+    }
+
+    # --- #prompt veya #ai direktifi (Faz 8) ---
+    eger j.tip == 21 ise {
+        ilerle(d); # #prompt / #ai tokenini tuket
+        degisken sorgu_j: *Jeton = bekle(d, TIP_METIN);
+        degisken p_dugum: *AstDugum = arena_dugum_yarat(d.arena, 27, sorgu_j); # 27 = AST_DIREKTIF_PROMPT
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        dondu p_dugum;
+    }
+
+    # --- #c-lib / #cpp-lib / #py-lib / #rs-lib direktifleri (Faz 9) ---
+    # Lexer bu tokenları TIP_MODUL aralığında üretir; bu dal modul
+    # ayracından önce çalışmalıdır. Aksi halde '#c-lib' bir modul gibi
+    # yorumlanıp string literal üzerinde parse hatası üretir.
+    eger (j.tip >= 24 ve j.tip <= 26) veya
+        (j.tip == 23 ve j.baslangic != 0 ve bellek_esit_mi(j.baslangic, "#".ptr, 1) == 1) ise {
+        degisken d_ast_tip: tamsayi = 29 + (j.tip - 23); # 29..32
+        ilerle(d);
+        degisken lib_j: *Jeton = bekle(d, TIP_METIN);
+        degisken lib_dugum: *AstDugum = arena_dugum_yarat(d.arena, d_ast_tip, lib_j);
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        dondu lib_dugum;
+    }
+
+    # --- #C-convert / #PY-convert / #JS-convert direktifleri (FAZ 9.2) ---
+    eger j.tip == TIP_DIREKTIF_CONVERT veya (j.tip == 64 ve j.baslangic != 0 ve j.baslangic[0] == 35) ise { # TIP_DIREKTIF_CONVERT
+        degisken conv_jeton: *Jeton = j;
+        ilerle(d);
+        degisken conv_dugum: *AstDugum = arena_dugum_yarat(d.arena, 38, conv_jeton); # AST_DIREKTIF_CONVERT = 38
+        # Parametreleri parse et: kaynak="...", hedef="...", esik=0.8, mod="...", sadece=[...]
+        dongu jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 0 ve suanki_jeton(d) != 0 ve
+            suanki_jeton(d).tip != TIP_EOF {
+            degisken param_j: *Jeton = suanki_jeton(d);
+            eger param_j == 0 ise { durdur; }
+            ilerle(d); # parametre adi
+            eger jeton_tipinde_mi(d, TIP_ATAMA) == 1 ise {
+                ilerle(d); # =
+                eger suanki_jeton(d) != 0 ise {
+                    ilerle(d); # parametre degeri
+                }
+            }
+            # Virgul varsa atla
+            eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+        }
+        eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+        dondu conv_dugum;
+    }
+
+    # --- #config / #yapilandir direktifleri (FAZ 5) ---
+    eger j.tip == TIP_DIREKTIF_CONFIG veya (j.tip == 66) ise {
+        degisken cfg_jeton: *Jeton = j;
+        ilerle(d);
+        degisken cfg_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_DIREKTIF_CONFIG, cfg_jeton);
+        degisken parantezli: tamsayi = 0;
+        eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 1 ise {
+            ilerle(d); # '{'
+            parantezli = 1;
+        }
+        degisken ilk_kv: *AstDugum = 0;
+        degisken son_kv: *AstDugum = 0;
+        dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF {
+            eger parantezli == 1 ve jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 1 ise {
+                ilerle(d); # '}'
+                eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+                durdur;
+            }
+            eger parantezli == 0 ve jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+                ilerle(d); # ';'
+                durdur;
+            }
+            degisken key_j: *Jeton = suanki_jeton(d);
+            eger key_j == 0 ise { durdur; }
+            ilerle(d); # key
+            eger jeton_tipinde_mi(d, TIP_KOLON) == 1 veya jeton_tipinde_mi(d, TIP_ATAMA) == 1 ise {
+                ilerle(d); # ':' veya '='
+            }
+            degisken val_j: *Jeton = suanki_jeton(d);
+            eger val_j != 0 {
+                ilerle(d); # value
+                degisken kv_dugum: *AstDugum = arena_dugum_yarat(d.arena, AST_ATAMA, key_j);
+                degisken val_dugum: *AstDugum = arena_dugum_yarat(d.arena, val_j.tip, val_j);
+                kv_dugum.sol = val_dugum;
+                eger ilk_kv == 0 ise {
+                    ilk_kv = kv_dugum;
+                    son_kv = kv_dugum;
+                } yoksa {
+                    son_kv.sonraki = kv_dugum;
+                    son_kv = kv_dugum;
+                }
+            }
+            eger jeton_tipinde_mi(d, TIP_VIRGUL) == 1 ise { ilerle(d); }
+            yoksa eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise {
+                eger parantezli == 1 ise { ilerle(d); }
+                yoksa { ilerle(d); durdur; }
+            }
+        }
+        cfg_dugum.sol = ilk_kv;
+        dondu cfg_dugum;
+    }
+
+    # --- modul ---
+    # TIP_MODUL (23) ile #c-lib cakistigi icin direktifler yukarida
+    # tuketildikten sonra kalan TIP_MODUL tokeni gercek modul olarak parse edilir.
+    eger j.tip == TIP_MODUL {
+        ilerle(d);
+        degisken isim_j: *Jeton = bekle(d, TIP_KIMLIK);
+        degisken modul_dugum: *AstDugum = arena_dugum_yarat(d.arena, 35, isim_j); # 35 = AST_MODUL
+        modul_dugum.govde = parse_blok(d);
+
+        # Inline modul uyelerini AST listesinden cikart ve module-qualified
+        # adlari arena'ya yaz. Orijinal (modul, kisa uye) bilgisi AST alanlarinda
+        # ayrica korunur; codegen patch ABI'si bu metadata'yi kullanir.
+        eger isim_j != 0 ve modul_dugum.govde != 0 ise {
+            degisken uye: *AstDugum = modul_dugum.govde.sol;
+            dongu uye != 0 {
+                eger (uye.tip == AST_ISLEV veya uye.tip == AST_GENERIC_TANIM) ve uye.ilk_jeton != 0 ise {
+                    degisken uye_j: *Jeton = uye.ilk_jeton;
+                    degisken uye_kisa_j: *Jeton = compiler_tahsis_et(40);
+                    uye_kisa_j.tip = uye_j.tip;
+                    uye_kisa_j.baslangic = uye_j.baslangic;
+                    uye_kisa_j.uzunluk = uye_j.uzunluk;
+                    uye_kisa_j.satir = uye_j.satir;
+                    uye_kisa_j.sutun = uye_j.sutun;
+                    uye.son_jeton = uye_kisa_j;
+                    degisken modul_meta: *AstDugum = arena_dugum_yarat(d.arena, AST_BOS, isim_j);
+                    uye.yoksa_govde = modul_meta;
+                    degisken yeni_uzunluk: tamsayi = isim_j.uzunluk + 2 + uye_j.uzunluk;
+                    degisken yeni_isim: *u8 = compiler_tahsis_et(yeni_uzunluk + 1);
+                    degisken ni: tamsayi = 0;
+                    dongu ni < isim_j.uzunluk {
+                        yeni_isim[ni] = isim_j.baslangic[ni];
+                        ni = ni + 1;
+                    }
+                    yeni_isim[ni] = 95;
+                    yeni_isim[ni + 1] = 95;
+                    ni = ni + 2;
+                    degisken ui: tamsayi = 0;
+                    dongu ui < uye_j.uzunluk {
+                        yeni_isim[ni + ui] = uye_j.baslangic[ui];
+                        ui = ui + 1;
+                    }
+                    yeni_isim[yeni_uzunluk] = 0;
+                    uye_j.baslangic = yeni_isim;
+                    uye_j.uzunluk = yeni_uzunluk;
+                }
+                uye = uye.sonraki;
+            }
+            dondu modul_dugum.govde.sol;
+        }
+        dondu modul_dugum;
+    }
+
+    # --- Varsayilan: ifade satr ---
+    degisken ifade: *AstDugum = parse_ifade(d, 0);
+    eger ifade == 0 ise {
+        parser_senkronize(d);
+        dondu 0;
+    }
+    eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+    dondu ifade;
+}
+
+# ============================================================
+# Kk modl ayrtrc
+# ============================================================
+isv parser_cozumle(d: *ParserDurumu) -> *AstDugum {
+    g_parser_ifade_derinlik = 0;
+    degisken kok: *AstDugum = arena_dugum_yarat(d.arena, AST_BLOK, 0);
+    degisken ilk: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+
+    dongu d.guncel_index < d.jeton_sayisi ve suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF {
+        degisken onceki_index: tamsayi = d.guncel_index;
+        degisken satir: *AstDugum = parse_satir(d);
+
+        eger satir == 0 ise {
+            parser_senkronize(d);
+            eger d.guncel_index == onceki_index ve suanki_jeton(d) != 0 ve
+                suanki_jeton(d).tip != TIP_SAG_KUSLU ise { ilerle(d); }
+            devam_et;
+        }
+        eger d.guncel_index == onceki_index ise { ilerle(d); }
+        eger ilk == 0 ise { ilk = satir; son = satir; }
+        yoksa { son.sonraki = satir; son = satir; }
+        dongu son.sonraki != 0 { son = son.sonraki; }
+    }
+    kok.sol = ilk;
+    dondu kok;
+}
+
+

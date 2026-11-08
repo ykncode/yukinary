@@ -1,0 +1,26 @@
+# ============================================================
+# YKN keyword registry metadata
+# Runtime resolver src/lexer.ykn içinde tek kez tanımlıdır.
+# Review kaynağı: tools/keyword_registry.json
+# ============================================================
+
+# Gorev 1.2: Degismezlik (sabit / const / let) ve Degisebilirlik (degisken / mut / var) yardimcilari
+isv kelime_sabit_baglama_mi(adres: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger adres == 0 veya uzunluk <= 0 ise { dondu 0; }
+    eger uzunluk == 3 ve bellek_esit_mi(adres, "let".ptr, 3) == 1 ise { dondu 1; }
+    eger uzunluk == 5 ve bellek_esit_mi(adres, "sabit".ptr, 5) == 1 ise { dondu 1; }
+    eger uzunluk == 5 ve bellek_esit_mi(adres, "const".ptr, 5) == 1 ise { dondu 1; }
+    eger uzunluk == 6 ve bellek_esit_mi(adres, "定数".ptr, 6) == 1 ise { dondu 1; }
+    eger uzunluk == 6 ve bellek_esit_mi(adres, "常量".ptr, 6) == 1 ise { dondu 1; }
+    eger uzunluk == 6 ve bellek_esit_mi(adres, "상수".ptr, 6) == 1 ise { dondu 1; }
+    eger uzunluk == 18 ve bellek_esit_mi(adres, "константа".ptr, 18) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv kelime_degisebilir_baglama_mi(adres: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger adres == 0 veya uzunluk <= 0 ise { dondu 0; }
+    eger uzunluk == 3 ve bellek_esit_mi(adres, "mut".ptr, 3) == 1 ise { dondu 1; }
+    eger uzunluk == 3 ve bellek_esit_mi(adres, "var".ptr, 3) == 1 ise { dondu 1; }
+    eger uzunluk == 8 ve bellek_esit_mi(adres, "degisken".ptr, 8) == 1 ise { dondu 1; }
+    dondu 0;
+}

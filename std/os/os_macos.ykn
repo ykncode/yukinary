@@ -1,0 +1,81 @@
+# ============================================================
+# Yukinary (YKN) Standart Kutuphanesi - macOS Mach-O & BSD Syscall Sabitleri
+# Modul: std/os_macos.ykn
+# ============================================================
+
+# macOS BSD Syscall Base (Class: 0x2000000)
+degisken DARWIN_SYS_BASE           = 0x2000000;
+degisken SYS_DARWIN_EXIT           = 0x2000001;
+degisken SYS_DARWIN_READ           = 0x2000003;
+degisken SYS_DARWIN_WRITE          = 0x2000004;
+degisken SYS_DARWIN_OPEN           = 0x2000005;
+degisken SYS_DARWIN_CLOSE          = 0x2000006;
+degisken SYS_DARWIN_LSEEK          = 0x20000C7; # 199
+degisken SYS_DARWIN_MMAP           = 0x20000C5; # 197
+degisken SYS_DARWIN_MUNMAP         = 0x2000049; # 73
+degisken SYS_DARWIN_MPROTECT       = 0x200004A; # 74
+
+# macOS BSD Dosya Acilis Bayraklari
+degisken DARWIN_O_RDONLY           = 0;
+degisken DARWIN_O_WRONLY           = 1;
+degisken DARWIN_O_RDWR             = 2;
+degisken DARWIN_O_CREAT            = 0x200;  # 0200 octal = 512
+degisken DARWIN_O_TRUNC            = 0x400;  # 0400 octal = 1024
+degisken DARWIN_O_EXCL             = 0x800;  # 0800 octal = 2048
+degisken DARWIN_O_APPEND           = 8;      # 010 octal
+
+# Sik Kullanilan Bayrak Kombinasyonlari (macOS)
+# O_WRONLY(1) | O_CREAT(0x200) | O_TRUNC(0x400) = 0x601
+degisken DARWIN_O_WRONLY_CREAT_TRUNC = 0x601;
+
+# Dosya Konumlandirma
+degisken DARWIN_SEEK_SET           = 0;
+degisken DARWIN_SEEK_CUR           = 1;
+degisken DARWIN_SEEK_END           = 2;
+
+# Dosya Izin Modlari (mode_t)
+degisken DARWIN_MODE_644           = 420;  # 0644 octal = rw-r--r--
+degisken DARWIN_MODE_755           = 493;  # 0755 octal = rwxr-xr-x
+
+# mmap Bellek Koruma Bayraklari
+degisken DARWIN_PROT_NONE          = 0;
+degisken DARWIN_PROT_READ          = 1;
+degisken DARWIN_PROT_WRITE         = 2;
+degisken DARWIN_PROT_EXEC          = 4;
+degisken DARWIN_PROT_READ_WRITE    = 3;   # PROT_READ | PROT_WRITE
+degisken DARWIN_PROT_READ_EXEC     = 5;   # PROT_READ | PROT_EXEC
+
+# macOS mmap Bayraklari
+degisken DARWIN_MAP_SHARED         = 1;
+degisken DARWIN_MAP_PRIVATE        = 2;
+degisken DARWIN_MAP_ANON           = 0x1000; # MAP_ANONYMOUS (macOS'a ozgu)
+# MAP_PRIVATE(2) | MAP_ANON(0x1000) = 0x1002
+degisken DARWIN_MAP_PRIVATE_ANON   = 0x1002;
+
+# mmap fd degeri (MAP_ANON icin -1)
+degisken DARWIN_MMAP_FD_NONE       = 0xFFFFFFFF; # MAP_ANON ile -1 kullanilir
+
+# Mach-O 64 Header Sabitleri
+degisken MACHO_MH_MAGIC_64         = 0xfeedfacf;
+degisken MACHO_CPU_TYPE_X86_64     = 0x01000007;
+degisken MACHO_CPU_TYPE_ARM64      = 0x0100000C;
+degisken MACHO_CPU_SUBTYPE_ALL     = 3;
+degisken MACHO_MH_EXECUTE          = 2;
+degisken MACHO_MH_NOUNDEFS         = 0x01;
+degisken MACHO_MH_PIE              = 0x200000;
+
+# Mach-O Load Commands
+degisken MACHO_LC_SEGMENT_64       = 0x19;
+degisken MACHO_LC_MAIN             = 0x80000028;
+degisken MACHO_LC_LOAD_DYLINKER    = 0x0E;
+degisken MACHO_LC_LOAD_DYLIB       = 0x0C;
+degisken MACHO_LC_SYMTAB           = 0x02;
+degisken MACHO_LC_DYSYMTAB         = 0x0B;
+degisken MACHO_LC_UUID             = 0x1B;
+
+# Mach-O Segment Koruma Bayraklari (VM Protection)
+degisken MACHO_VM_PROT_NONE        = 0;
+degisken MACHO_VM_PROT_READ        = 1;
+degisken MACHO_VM_PROT_WRITE       = 2;
+degisken MACHO_VM_PROT_EXECUTE     = 4;
+degisken MACHO_VM_PROT_ALL         = 7;   # READ | WRITE | EXECUTE

@@ -1,0 +1,39 @@
+# Generated PE -> native SIMD DLL integration fixture
+harici isv ykn_llm_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_llm_silu_q16(input: *tamsayi, output: *tamsayi, n: tamsayi);
+harici isv ykn_llm_simd_backend() -> tamsayi;
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken n: tamsayi = sayi;
+    degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    dongu i > 0 { i = i - 1; degisken one: [2]u8; one[0] = buf[i]; one[1] = 0; ekrana_yaz(one); }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken a: [3]tamsayi;
+    degisken b: [3]tamsayi;
+    degisken o: [3]tamsayi;
+    a[0] = 65536;
+    a[1] = 131072;
+    a[2] = 65536;
+    b[0] = 65536;
+    b[1] = 65536;
+    b[2] = 65536;
+    degisken dot: tamsayi = ykn_llm_dot_q16(a, b, 3);
+    ykn_llm_silu_q16(a, o, 3);
+    degisken backend: tamsayi = ykn_llm_simd_backend();
+    # YKN tamsayi arrays are 64-bit; 1.0 + 2.0 + 1.0 normalized products sum to 262144.
+    eger o[0] != 47910 veya o[1] != 115447 veya o[2] != 47910 ise {
+        ekrana_yaz("SILU-FAIL".ptr); dondu 2;
+    }
+    ekrana_yaz("DOT=".ptr); sayiyi_yazdir(dot); ekrana_yaz(" ".ptr);
+    eger dot == 262144 ise { ekrana_yaz("DOT-PASS".ptr); }
+    yoksa { ekrana_yaz("DOT-FAIL".ptr); }
+    eger backend == 0 veya backend == 1 veya backend == 2 veya backend == 3 ise { ekrana_yaz(" BACKEND-PASS".ptr); }
+    yoksa { ekrana_yaz(" BACKEND-FAIL".ptr); }
+    dondu dot + backend;
+}

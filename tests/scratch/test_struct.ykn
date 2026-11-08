@@ -1,0 +1,23 @@
+ice_aktar "std/metin.ykn"
+
+yapi Dizi {
+    ptr: *tamsayi;
+    boyut: tamsayi;
+    kapasite: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi = bellek_tahsis_et(24);
+    d.boyut = 42;
+    d.kapasite = 99;
+    
+    ekrana_yaz("boyut = ".ptr);
+    ekrana_yaz_tamsayi(d.boyut);
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("kapasite = ".ptr);
+    ekrana_yaz_tamsayi(d.kapasite);
+    ekrana_yaz("\n".ptr);
+    
+    dondu 0;
+}

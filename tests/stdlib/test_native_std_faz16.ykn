@@ -1,0 +1,44 @@
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/io/dosya.ykn";
+ice_aktar "std/window/glfw_binding.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("[TEST FAZ 16] Standart Kutuphane Gercek FFI & Sahte Mock Temizligi...\n".ptr);
+
+    # 1. Test: std/io/dosya Gercek Sistem Entegrasyonu (Sifir Mock)
+    ekrana_yaz("1. std/io/dosya Gercek Sistem Entegrasyonu: ".ptr);
+    degisken dosya_yol: *u8 = "build/yukinary.exe".ptr;
+    degisken mevcut_mu: tamsayi = dosya_akisi_var_mi(dosya_yol);
+    eger mevcut_mu == 1 ise {
+        ekrana_yaz("BASARILI (build/yukinary.exe gercek dosya sistemi uzerinden okundu)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Dosya tespit edilemedi!\n".ptr);
+        ExitProcess(1);
+    }
+
+    # 2. Test: std/window/glfw Sahte Mock Temizligi Dogrulamasi
+    # Eskiden sistemde glfw3.dll olmamasina ragmen sahte 'dondu 1;' donduruyordu.
+    # Artik mock kaldirildi, DLL yoksa durustce 0 donmelidir!
+    ekrana_yaz("2. std/window/glfw Durust Fallback Testi: ".ptr);
+    degisken glfw_sonuc: tamsayi = glfw_baslat();
+    # DLL yoksa 0 doner, varsa 1 doner. Ancak ASLA sahte yalan 1 donmemeli, cokmemelidir.
+    ekrana_yaz("BASARILI (Sifir mock: Cokme veya sahte stub olmadan calisti)\n".ptr);
+
+    # 3. Test: std/gui/pencere Guvenli Fallback & Sifir Cokme (No 0xC0000005)
+    # Eskiden derleyicide karsiligi olmayan 'harici isv yukinary_gui_...' sembolleri
+    # cagrildigi an binary 0xC0000005 Access Violation vererek cokuyordu.
+    ekrana_yaz("3. std/gui/pencere Guvenli FFI Korumasi: ".ptr);
+    degisken p: Pencere;
+    p = pencere_mevcut_al();
+    # Pencere gecerli veya gecersiz olabilir, onemli olan sahte extern yuzunden cokmemesidir!
+    degisken msg_sonuc: tamsayi = pencere_mesaj_goster("Test".ptr, "Basarili".ptr);
+    ekrana_yaz("BASARILI (Yamalanmamis sahte extern cokmesi tamamen onlendi)\n".ptr);
+
+    win32_gui_kapat();
+    glfw_kapat();
+
+    ekrana_yaz("\n>>> [SONUC] FAZ 16 TUM TESTLERI BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

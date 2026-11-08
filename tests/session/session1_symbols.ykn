@@ -1,0 +1,6 @@
+# Session 1: defines global_oturum_degeri
+degisken global_oturum_degeri: tamsayi = 42;
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    dondu global_oturum_degeri;
+}

@@ -1,0 +1,79 @@
+# Test Faz 4: Multi-Task Asynchronous Pool
+ice_aktar "std/io.ykn";
+ice_aktar "std/async.ykn";
+
+isv islem_faktoriyel(n: tamsayi, b: tamsayi) -> tamsayi {
+    degisken res: tamsayi = 1;
+    degisken i: tamsayi = 1;
+    dongu i <= n {
+        res = res * i;
+        i = i + 1;
+    }
+    dondu res;
+}
+
+isv islem_kare(n: tamsayi, b: tamsayi) -> tamsayi {
+    dondu n * n;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 4 Asenkron Gorev Havuzu Testi Basliyor...\n".ptr);
+
+    degisken havuz: *GorevHavuzu = gorev_havuzu_olustur(4);
+    eger havuz == 0 ise {
+        ekrana_yaz("HATA: Gorev havuzu olusturulamadi!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("Gorev Havuzu Basariyla Olusturuldu (4 Worker).\n".ptr);
+
+    # 5 adet faktoriyel, 5 adet kare gorevi ekleyelim
+    degisken fn_fakt: tamsayi = islem_faktoriyel as tamsayi;
+    degisken fn_kare: tamsayi = islem_kare as tamsayi;
+
+    # 1! = 1, 2! = 2, 3! = 6, 4! = 24, 5! = 120
+    gorev_havuzu_ekle(havuz, fn_fakt, 1); # id 0
+    gorev_havuzu_ekle(havuz, fn_fakt, 2); # id 1
+    gorev_havuzu_ekle(havuz, fn_fakt, 3); # id 2
+    gorev_havuzu_ekle(havuz, fn_fakt, 4); # id 3
+    gorev_havuzu_ekle(havuz, fn_fakt, 5); # id 4
+
+    # 1^2 = 1, 2^2 = 4, 3^2 = 9, 4^2 = 16, 5^2 = 25
+    gorev_havuzu_ekle(havuz, fn_kare, 1); # id 5
+    gorev_havuzu_ekle(havuz, fn_kare, 2); # id 6
+    gorev_havuzu_ekle(havuz, fn_kare, 3); # id 7
+    gorev_havuzu_ekle(havuz, fn_kare, 4); # id 8
+    gorev_havuzu_ekle(havuz, fn_kare, 5); # id 9
+
+    ekrana_yaz("10 Asenkron Gorev Kuyruga Eklendi, Havuz Bekleniyor...\n".ptr);
+    degisken biten: tamsayi = gorev_havuzu_bekle(havuz);
+
+    eger biten != 10 ise {
+        ekrana_yaz("HATA: Tum gorevler tamamlanamadi!\n".ptr);
+        dondu 2;
+    }
+
+    # Sonuclari kontrol et
+    eger gorev_havuzu_sonuc_al(havuz, 3) != 24 ise {
+        ekrana_yaz("HATA: 4! degeri yanlis!\n".ptr);
+        dondu 3;
+    }
+    eger gorev_havuzu_sonuc_al(havuz, 4) != 120 ise {
+        ekrana_yaz("HATA: 5! degeri yanlis!\n".ptr);
+        dondu 4;
+    }
+    eger gorev_havuzu_sonuc_al(havuz, 8) != 16 ise {
+        ekrana_yaz("HATA: 4^2 degeri yanlis!\n".ptr);
+        dondu 5;
+    }
+    eger gorev_havuzu_sonuc_al(havuz, 9) != 25 ise {
+        ekrana_yaz("HATA: 5^2 degeri yanlis!\n".ptr);
+        dondu 6;
+    }
+
+    ekrana_yaz("Gorev Sonuclari Basariyla Dogrulandi!\n".ptr);
+    gorev_havuzu_serbest_birak(havuz);
+
+    ekrana_yaz("FAZ 4 ASENKRON GOREV HAVUZU TESTI TAMAMLANDI!\n".ptr);
+    dondu 0;
+}
+

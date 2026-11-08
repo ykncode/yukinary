@@ -1,0 +1,29 @@
+# ============================================================
+# Örnek 27: Konsol Tabanlı TCP Port Tarayıcı (Port Scanner)
+# ============================================================
+ice_aktar "std/ag/soket.ykn";
+
+isv port_tara(hedef_ip: *u8, port: tamsayi) {
+    ekrana_yaz("Taranıyor: Port ");
+    sayiyi_ekrana_yaz(port);
+
+    # Simüle edilen tarama mantığı
+    eger port == 80 veya port == 443 veya port == 22 ise {
+        ekrana_yaz(" -> [ ACIK ]\n".ptr);
+    } yoksa {
+        ekrana_yaz(" -> [ KAPALI ]\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken ip: *u8 = "127.0.0.1".ptr;
+    ekrana_yaz("=== YKN Port Tarama Araci ===\n".ptr);
+    ekrana_yaz("Hedef Sunucu: "); ekrana_yaz(ip); ekrana_yaz("\n\n".ptr);
+
+    port_tara(ip, 21);  # FTP
+    port_tara(ip, 22);  # SSH
+    port_tara(ip, 80);  # HTTP
+    port_tara(ip, 443); # HTTPS
+    port_tara(ip, 8080);
+    dondu 0;
+}

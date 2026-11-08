@@ -1,0 +1,15 @@
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { ekrana_yaz("INIT_FAIL\n".ptr); dondu 10; }
+    ekrana_yaz("INIT_OK\n".ptr);
+    degisken s: tamsayi = sunucu_olustur(18083);
+    eger s < 0 ise { ekrana_yaz("SERVER_FAIL\n".ptr); dondu 11; }
+    ekrana_yaz("LISTEN_OK\n".ptr);
+    degisken c: tamsayi = sunucu_kabul(s);
+    eger c < 0 ise { ekrana_yaz("ACCEPT_FAIL\n".ptr); dondu 12; }
+    ekrana_yaz("ACCEPT_OK\n".ptr);
+    soket_kapat(c);
+    soket_kapat(s);
+    dondu 0;
+}

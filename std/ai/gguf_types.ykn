@@ -1,0 +1,111 @@
+# ============================================================
+# Yukinary std/ai/gguf_types.ykn
+# GGUF veri sozlesmeleri ve sabitleri.
+# Bu modul runtime veya dosya import etmez.
+# ============================================================
+
+yapi GGUFTensorInfo {
+    isim: *u8;
+    ndim: tamsayi;
+    dim_0: tamsayi;
+    dim_1: tamsayi;
+    dim_2: tamsayi;
+    dim_3: tamsayi;
+    ggml_type: tamsayi;
+    bayt_sayisi: tamsayi;
+    veri_offset: tamsayi;
+}
+
+yapi GGUFGemma4Profile {
+    shared_kv_layers: tamsayi;
+    swa_window: tamsayi;
+    swa_key_length: tamsayi;
+    swa_value_length: tamsayi;
+    full_key_length: tamsayi;
+    full_value_length: tamsayi;
+    rope_freq_base_swa_q16: tamsayi;
+    logit_softcap_q16: tamsayi;
+    sliding_window_pattern_bits: tamsayi;
+    sliding_window_pattern_count: tamsayi;
+    swa_rope_dimension: tamsayi;
+    per_layer_input_length: tamsayi;
+}
+
+yapi GGUFDurum {
+    dosya_adi: *u8;
+    buffer: *u8;
+    buffer_uzunluk: tamsayi;
+    versiyon: tamsayi;
+    tensor_sayisi: tamsayi;
+    meta_kv_sayisi: tamsayi;
+    tensor_list: *GGUFTensorInfo;
+    ilk_veri_offset: tamsayi;
+    # Runtime dispatch için doğrulanmış GGUF metadata özeti.
+    mimari_adi: *u8;
+    quant_tipi: tamsayi;
+    vocab_boyutu: tamsayi;
+    gizli_boyut: tamsayi;
+    katman_sayisi: tamsayi;
+    expert_sayisi: tamsayi;
+    top_k: tamsayi;
+    context_boyutu: tamsayi;
+    metadata_model_hazir: tamsayi;
+    # Transformer metadata; eski ABI alanlarının sonuna eklenmiştir.
+    kafa_sayisi: tamsayi;
+    kv_kafa_sayisi: tamsayi;
+    kafa_boyutu: tamsayi;
+    ffn_boyutu: tamsayi;
+    rope_boyutu: tamsayi;
+    rope_freq_base_q16: tamsayi;
+    norm_eps_q16: tamsayi;
+    bos_token_id: tamsayi;
+    eos_token_id: tamsayi;
+    # Tokenizer prompt sözleşmesi metadata'dan gelir.
+    chat_sablon_tipi: tamsayi;
+    tokenizer_add_bos: tamsayi;
+    # Gemma-4 architecture profile. Pattern is retained per layer, not
+    # collapsed to one global attention mode.
+    gemma4: *GGUFGemma4Profile;
+}
+
+
+degisken GGUF_MAGIC = 0x46554747;
+degisken GGUF_V3 = 3;
+degisken GGUF_TENSOR_STRIDE = 72;
+degisken GGUF_DEFAULT_ALIGNMENT = 32;
+
+degisken GGUF_VT_UINT8 = 0;
+degisken GGUF_VT_INT8 = 1;
+degisken GGUF_VT_UINT16 = 2;
+degisken GGUF_VT_INT16 = 3;
+degisken GGUF_VT_UINT32 = 4;
+degisken GGUF_VT_INT32 = 5;
+degisken GGUF_VT_FLOAT32 = 6;
+degisken GGUF_VT_BOOL = 7;
+degisken GGUF_VT_STRING = 8;
+degisken GGUF_VT_ARRAY = 9;
+degisken GGUF_VT_UINT64 = 10;
+degisken GGUF_VT_INT64 = 11;
+degisken GGUF_VT_FLOAT64 = 12;
+
+degisken GGML_TYPE_F32 = 0;
+degisken GGML_TYPE_F16 = 1;
+degisken GGML_TYPE_Q4_0 = 2;
+degisken GGML_TYPE_Q4_K = 12;
+degisken GGML_TYPE_Q6_K = 14;
+degisken GGML_TYPE_IQ4_NL = 20;
+degisken GGML_TYPE_BF16 = 30;
+# GGML_TYPE_Q1_0: 128 eleman / (f16 d + 16 sign byte) = 18 byte.
+degisken GGML_TYPE_Q1_0 = 41;
+# Current upstream GGML enum: IQ2_S=22, TQ1_0=34.
+degisken GGML_TYPE_IQ2_S_GGML = 22;
+degisken GGML_TYPE_TQ1_0 = 34;
+degisken GGML_TYPE_TQ2_0 = 35;
+# The model in models/bitnet-b1.58-2B-4T uses Microsoft's I2_S GGUF
+# extension ID 36: 2-bit packed tensor bytes plus a 32-byte scale trailer.
+# It is distinct from upstream GGML IQ2_S (type 22, 82 bytes per block).
+degisken GGML_TYPE_I2_S = 36;
+# Backward-compatible internal alias; new code must distinguish I2_S from IQ2_S.
+degisken GGML_TYPE_IQ2_S = 36;
+# Internal-only legacy fixture sentinel; never a valid GGML enum ID.
+degisken GGML_TYPE_IQ2_S_LEGACY = 1000;

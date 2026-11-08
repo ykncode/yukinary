@@ -1,0 +1,28 @@
+# ============================================================
+# F11.2: Gercek Async/Await Coroutine Lowering & AsyncFrame Dogrulamasi
+# Future ve AsyncFrame 160-bayt bellek duzeni, magic 0x594B4E46,
+# trampoline poll cagirisi ve await unwrap testi.
+# ============================================================
+
+async isv deger_uret() -> tamsayi {
+    dondu 1337;
+}
+
+async isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+async isv zincir() -> tamsayi {
+    degisken x: tamsayi = await deger_uret();
+    degisken y: tamsayi = await topla(x, 63);
+    dondu y;
+}
+
+async isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = await zincir();
+    eger sonuc == 1400 ise {
+        ekrana_yaz("F11.2 PASS: Async/Await Coroutine Lowering Basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

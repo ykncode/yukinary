@@ -1,0 +1,12 @@
+﻿yapi Y {
+    kaynak: *u8;
+}
+
+islev ana() {
+    degisken a: u8 = 0x42;
+    degisken d: Y;
+    d.kaynak = &a;
+    degisken okunan: *u8 = d.kaynak;
+    cikis( okunan[0] );
+}
+

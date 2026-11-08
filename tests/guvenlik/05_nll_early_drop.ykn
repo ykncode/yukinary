@@ -1,0 +1,48 @@
+# ============================================================
+# tests/guvenlik/05_nll_early_drop.ykn
+# FAZ 30: Non-Lexical Lifetimes (NLL) & Early-Drop Dogrulamasi
+#
+# NLL Kurali: Bir degiskenin odunc alinmasi (borrow), o degiskenin
+# ifadedeki son kullanim noktasinda (last-use point) otomatik olarak sona erer.
+# Boylece ayni kapsamda ardil satirlarda tekrar guvenle odunc alinabilir.
+# ============================================================
+
+isv deger_oku(ptr: *tamsayi) -> tamsayi {
+    dondu ptr[0];
+}
+
+isv deger_yaz(ptr: *tamsayi, yeni_deger: tamsayi) -> tamsayi {
+    ptr[0] = yeni_deger;
+    dondu ptr[0];
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 30: NLL & Early-Drop Testi Basliyor...\n".ptr);
+
+    degisken x: tamsayi = 42;
+
+    # 1. Adim: x odunc aliniyor (immutable borrow) ve fonksiyon bittiginde NLL ile serbest kaliyor
+    degisken v1: tamsayi = deger_oku(&x);
+    eger v1 != 42 ise {
+        ekrana_yaz("HATA: NLL adim 1 basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Adim: Onceki borrow sona erdigi icin x simdi tekrar guvenle odunc alinabilir
+    degisken v2: tamsayi = deger_yaz(&x, 100);
+    eger v2 != 100 ise {
+        ekrana_yaz("HATA: NLL adim 2 basarisiz!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Adim: Yeni degeri tekrar oku
+    degisken v3: tamsayi = deger_oku(&x);
+    eger v3 != 100 ise {
+        ekrana_yaz("HATA: NLL adim 3 basarisiz!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("NLL_EARLY_DROP_PASS\n".ptr);
+    dondu 0;
+}
+

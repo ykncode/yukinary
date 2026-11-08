@@ -1,0 +1,135 @@
+# ============================================================
+# std/ai/spirv_emitter.ykn
+# FAZ 33 & FAZ 5: Saf SPIR-V Ikili Shader Ureticisi
+# AMD Radeon, Intel Arc, Apple Metal ve Mali GPU'larda calisabilen
+# SPIR-V bayt kodunu dogrudan bellek uzerinde derler.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# SPIR-V Sabitleri
+degisken SPIRV_MAGIC_NUMBER   = 119734787; # 0x07230203
+degisken SPIRV_VERSION_1_0    = 65536;     # 0x00010000
+degisken SPIRV_GENERATOR_YKN  = 1337;
+degisken SPIRV_SCHEMA         = 0;
+
+# SPIR-V Opcodelari
+degisken SPIRV_OP_CAPABILITY      = 17;
+degisken SPIRV_OP_MEMORY_MODEL    = 14;
+degisken SPIRV_OP_ENTRY_POINT     = 15;
+degisken SPIRV_OP_EXECUTION_MODE  = 16;
+degisken SPIRV_OP_TYPE_VOID       = 19;
+degisken SPIRV_OP_TYPE_FUNCTION   = 33;
+degisken SPIRV_OP_FUNCTION        = 54;
+degisken SPIRV_OP_FUNCTION_END    = 56;
+degisken SPIRV_OP_RETURN          = 253;
+
+# SPIR-V Modul Temsili
+yapi SpirvModulu {
+    kelimeler:   *tamsayi; # 32-bit uint32 dizisi
+    kapasite:    tamsayi;
+    kullanilan:  tamsayi;
+    id_sayaci:   tamsayi;
+}
+
+isv spirv_modulu_olustur(kapasite_kelime: tamsayi) -> *SpirvModulu {
+    degisken m: *SpirvModulu = bellek_tahsis_et(32);
+    degisken kap: tamsayi = kapasite_kelime;
+    eger kap < 64 ise { kap = 64; }
+    m.kelimeler = bellek_tahsis_et(kap * 8);
+    m.kapasite = kap;
+    m.kullanilan = 0;
+    m.id_sayaci = 1;
+
+    # 1. 5-kelimelik standart SPIR-V basligi
+    m.kelimeler[0] = SPIRV_MAGIC_NUMBER;
+    m.kelimeler[1] = SPIRV_VERSION_1_0;
+    m.kelimeler[2] = SPIRV_GENERATOR_YKN;
+    m.kelimeler[3] = 20; # Bound (azami ID)
+    m.kelimeler[4] = SPIRV_SCHEMA;
+    m.kullanilan = 5;
+
+    dondu m;
+}
+
+isv spirv_komut_yaz(m: *SpirvModulu, opcode: tamsayi, kelime_sayisi: tamsayi) {
+    degisken baslik: tamsayi = (kelime_sayisi << 16) | (opcode & 65535);
+    eger m.kullanilan < m.kapasite ise {
+        m.kelimeler[m.kullanilan] = baslik;
+        m.kullanilan = m.kullanilan + 1;
+    }
+}
+
+isv spirv_operand_yaz(m: *SpirvModulu, deger: tamsayi) {
+    eger m.kullanilan < m.kapasite ise {
+        m.kelimeler[m.kullanilan] = deger;
+        m.kullanilan = m.kullanilan + 1;
+    }
+}
+
+# Standart bir GPU Compute Shader Iskeleti Uretir:
+# OpCapability Shader
+# OpMemoryModel Logical GLSL450
+# OpEntryPoint GLCompute %1 "main"
+# OpExecutionMode %1 LocalSize 64 1 1
+isv spirv_compute_iskelet_uret(m: *SpirvModulu) -> tamsayi {
+    eger m == 0 ise { dondu 0; }
+
+    # OpCapability Shader (kelime=2: baslik + Capability(1=Shader))
+    spirv_komut_yaz(m, SPIRV_OP_CAPABILITY, 2);
+    spirv_operand_yaz(m, 1);
+
+    # OpMemoryModel Logical(0) GLSL450(1) (kelime=3)
+    spirv_komut_yaz(m, SPIRV_OP_MEMORY_MODEL, 3);
+    spirv_operand_yaz(m, 0);
+    spirv_operand_yaz(m, 1);
+
+    # OpEntryPoint GLCompute(5) %main(1) "main\0" (kelime=4)
+    # "main\0" = 'm' | 'a'<<8 | 'i'<<16 | 'n'<<24 = 0x6E69616D = 1852400237
+    spirv_komut_yaz(m, SPIRV_OP_ENTRY_POINT, 4);
+    spirv_operand_yaz(m, 5); # GLCompute
+    spirv_operand_yaz(m, 1); # Entry ID %1
+    spirv_operand_yaz(m, 1852400237); # "main"
+
+    # OpExecutionMode %1 LocalSize 64 1 1 (kelime=6)
+    spirv_komut_yaz(m, SPIRV_OP_EXECUTION_MODE, 6);
+    spirv_operand_yaz(m, 1);  # %1
+    spirv_operand_yaz(m, 17); # LocalSize
+    spirv_operand_yaz(m, 64); # X=64
+    spirv_operand_yaz(m, 1);  # Y=1
+    spirv_operand_yaz(m, 1);  # Z=1
+
+    # OpTypeVoid %2 (kelime=2)
+    spirv_komut_yaz(m, SPIRV_OP_TYPE_VOID, 2);
+    spirv_operand_yaz(m, 2);
+
+    # OpTypeFunction %3 %2 (kelime=3: id=%3, return=%2)
+    spirv_komut_yaz(m, SPIRV_OP_TYPE_FUNCTION, 3);
+    spirv_operand_yaz(m, 3);
+    spirv_operand_yaz(m, 2);
+
+    # OpFunction %2 %1 None(0) %3 (kelime=5)
+    spirv_komut_yaz(m, SPIRV_OP_FUNCTION, 5);
+    spirv_operand_yaz(m, 2); # return type %2
+    spirv_operand_yaz(m, 1); # function id %1
+    spirv_operand_yaz(m, 0); # function control None
+    spirv_operand_yaz(m, 3); # function type %3
+
+    # OpReturn (kelime=1)
+    spirv_komut_yaz(m, SPIRV_OP_RETURN, 1);
+
+    # OpFunctionEnd (kelime=1)
+    spirv_komut_yaz(m, SPIRV_OP_FUNCTION_END, 1);
+
+    dondu m.kullanilan;
+}
+
+# Modulu bellekten serbest birakir
+isv spirv_modulu_serbest_birak(m: *SpirvModulu) {
+    eger m == 0 ise { dondu; }
+    eger m.kelimeler != 0 ise {
+        os_bellek_serbest(m.kelimeler as *u8);
+    }
+    os_bellek_serbest(m as *u8);
+}

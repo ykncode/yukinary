@@ -1,0 +1,6 @@
+# Session 2: uses global_oturum_degeri without defining it.
+# Must fail with TC HATA (tanimsiz degisken) because session 1 state was isolated.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = global_oturum_degeri + 1;
+    dondu x;
+}

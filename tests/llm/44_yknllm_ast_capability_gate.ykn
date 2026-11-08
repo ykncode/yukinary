@@ -1,0 +1,179 @@
+# Gercek parser AST tipleri uzerinde YKNLLM capability gate acceptance.
+# Bu test metin taramasi degil; dogrudan compiler AST dugumlerini kurup
+# codegen oncesi policy kararini dogrular.
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/sandbox_gate.ykn";
+
+isv sayiyi_yazdir(sayi: tamsayi) {}
+
+isv test_safe_function(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_KIMLIK;
+    j.baslangic = "ana".ptr;
+    j.uzunluk = 3;
+    j.satir = 1;
+    j.sutun = 1;
+    degisken fonk: *AstDugum = arena_dugum_yarat(arena, AST_ISLEV, &j);
+    fonk.govde = arena_dugum_yarat(arena, AST_BLOK, &j);
+    dondu yknllm_sandbox_ast_dogrula(fonk);
+}
+
+isv test_c_directive(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_METIN;
+    j.baslangic = "libc.h".ptr;
+    j.uzunluk = 6;
+    j.satir = 2;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_DIREKTIF_C_LIB, &j);
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_escape_import(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_METIN;
+    j.baslangic = "../escape.ykn".ptr;
+    j.uzunluk = 12;
+    j.satir = 3;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_ICE_AKTAR, &j);
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_method_call(arena: *AstArena) -> tamsayi {
+    degisken root_j: Jeton;
+    root_j.tip = TIP_KIMLIK;
+    root_j.baslangic = "nesne".ptr;
+    root_j.uzunluk = 5;
+    root_j.satir = 4;
+    root_j.sutun = 1;
+    degisken method_j: Jeton;
+    method_j.tip = TIP_KIMLIK;
+    method_j.baslangic = "socket".ptr;
+    method_j.uzunluk = 6;
+    method_j.satir = 4;
+    method_j.sutun = 7;
+    degisken root: *AstDugum = arena_dugum_yarat(arena, AST_KIMLIK, &root_j);
+    degisken method: *AstDugum = arena_dugum_yarat(arena, AST_KIMLIK, &method_j);
+    degisken call: *AstDugum = arena_dugum_yarat(arena, AST_ISLEV_CAGRISI, &root_j);
+    call.sol = root;
+    call.sag = method;
+    dondu yknllm_sandbox_ast_dogrula(call);
+}
+
+isv test_asm_node(arena: *AstArena) -> tamsayi {
+    degisken asm_j: Jeton;
+    asm_j.tip = TIP_ASM;
+    asm_j.baslangic = "asm".ptr;
+    asm_j.uzunluk = 3;
+    asm_j.satir = 5;
+    asm_j.sutun = 1;
+    degisken body_j: Jeton;
+    body_j.tip = TIP_METIN;
+    body_j.baslangic = "mov rax, rbx".ptr;
+    body_j.uzunluk = 12;
+    body_j.satir = 5;
+    body_j.sutun = 7;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_DIREKTIF_PROMPT, &asm_j);
+    n.ilk_jeton = &body_j;
+    n.son_jeton = &asm_j;
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_external_declaration(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_KIMLIK;
+    j.baslangic = "CreateFileA".ptr;
+    j.uzunluk = 11;
+    j.satir = 6;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_ISLEV, &j);
+    n.govde = 0;
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_standard_import(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_METIN;
+    j.baslangic = "std/ai/tokenizer.ykn".ptr;
+    j.uzunluk = 20;
+    j.satir = 4;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_ICE_AKTAR, &j);
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_workspace_import(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_METIN;
+    j.baslangic = "evil.ykn".ptr;
+    j.uzunluk = 8;
+    j.satir = 4;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_ICE_AKTAR, &j);
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv test_direct_call(arena: *AstArena) -> tamsayi {
+    degisken j: Jeton;
+    j.tip = TIP_KIMLIK;
+    j.baslangic = "CreateProcessW".ptr;
+    j.uzunluk = 14;
+    j.satir = 7;
+    j.sutun = 1;
+    degisken n: *AstDugum = arena_dugum_yarat(arena, AST_ISLEV_CAGRISI, &j);
+    degisken target: *AstDugum = arena_dugum_yarat(arena, AST_KIMLIK, &j);
+    n.sol = target;
+    dondu yknllm_sandbox_ast_dogrula(n);
+}
+
+isv ana() -> tamsayi {
+    degisken arena: AstArena;
+    arena.bellek = bellek_tahsis_et(65536);
+    arena.kapasite = 65536;
+    arena.kullanilan = 0;
+    eger arena.bellek == 0 ise { dondu 10; }
+    diagnostics_renkleri_baslat(0);
+
+    eger test_safe_function(&arena) != 1 ise {
+        ekrana_yaz("FAIL: safe AST reddedildi\n".ptr);
+        dondu 1;
+    }
+    eger test_c_directive(&arena) != 0 ise {
+        ekrana_yaz("FAIL: C directive kabul edildi\n".ptr);
+        dondu 2;
+    }
+    eger test_escape_import(&arena) != 0 ise {
+        ekrana_yaz("FAIL: escape import kabul edildi\n".ptr);
+        dondu 3;
+    }
+    eger test_workspace_import(&arena) != 0 ise {
+        ekrana_yaz("FAIL: allowlist disi import kabul edildi\n".ptr);
+        dondu 4;
+    }
+    eger test_standard_import(&arena) != 1 ise {
+        ekrana_yaz("FAIL: std allowlist import reddedildi\n".ptr);
+        dondu 5;
+    }
+    eger test_method_call(&arena) != 0 ise {
+        ekrana_yaz("FAIL: method capability call kabul edildi\n".ptr);
+        dondu 6;
+    }
+    eger test_direct_call(&arena) != 0 ise {
+        ekrana_yaz("FAIL: direct capability call kabul edildi\n".ptr);
+        dondu 7;
+    }
+    eger test_asm_node(&arena) != 0 ise {
+        ekrana_yaz("FAIL: asm AST kabul edildi\n".ptr);
+        dondu 8;
+    }
+    eger test_external_declaration(&arena) != 0 ise {
+        ekrana_yaz("FAIL: harici declaration kabul edildi\n".ptr);
+        dondu 9;
+    }
+    ekrana_yaz("YKNLLM_AST_CAPABILITY_GATE_PASS\n".ptr);
+    dondu 0;
+}

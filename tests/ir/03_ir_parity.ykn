@@ -1,0 +1,70 @@
+# ============================================================
+# IR Parity Testi — Tüm opcode türleri test edilir
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/ir.ykn";
+
+isv ana() -> tamsayi {
+    degisken motor: *IrMotoru = ir_motoru_olustur(2097152);
+    eger motor == 0 ise { ekrana_yaz("FAIL: alloc\n".ptr); dondu 1; }
+
+    ir_fonksiyon_baslat(motor, 999);
+
+    # Aritmetik opcode'lar
+    degisken r1: tamsayi = ir_yeni_reg(motor);
+    degisken r2: tamsayi = ir_yeni_reg(motor);
+    degisken r3: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CONST, r1, 10, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_CONST, r2, 3,  0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_ADD,   r3, r1, r2, YKN_IR_TID_INT);
+    degisken r4: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_SUB, r4, r1, r2, YKN_IR_TID_INT);
+    degisken r5: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_MUL, r5, r1, r2, YKN_IR_TID_INT);
+    degisken r6: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_DIV, r6, r1, r2, YKN_IR_TID_INT);
+    degisken r7: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_MOD, r7, r1, r2, YKN_IR_TID_INT);
+
+    # Bitwise
+    degisken r8: tamsayi = ir_yeni_reg(motor);
+    degisken r9: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_SHL, r8, r1, r2, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_SHR, r9, r1, r2, YKN_IR_TID_INT);
+
+    # Karşılaştırma
+    degisken ra: tamsayi = ir_yeni_reg(motor);
+    degisken rb: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CMP_EQ, ra, r1, r2, YKN_IR_TID_BOOL);
+    ir_komut_ekle(motor, YKN_IR_CMP_LT, rb, r1, r2, YKN_IR_TID_BOOL);
+
+    # Bellek
+    degisken rc: tamsayi = ir_yeni_reg(motor);
+    degisken rd: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_ALLOCA,  rc, 1234, 8, YKN_IR_TID_PTR);
+    ir_komut_ekle(motor, YKN_IR_STORE,   rc, r1,   0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_LOAD,    rd, rc,   0, YKN_IR_TID_INT);
+
+    # Kontrol akışı
+    ir_komut_ekle(motor, YKN_IR_RET, 0, rd, 0, YKN_IR_TID_INT);
+
+    # Verifier: tüm komutlar geçerli
+    degisken hata: tamsayi = ir_verifier_calistir(motor);
+    eger hata != 0 ise {
+        ekrana_yaz("FAIL: Parity verifier hatasi\n".ptr);
+        dondu 1;
+    }
+
+    # Register sayısı: 1'den başlayan 13 register kullandık
+    degisken ilk_f: *IrFonksiyonu = motor.ilk_fonksiyon;
+    eger ilk_f.sanal_reg_sayisi < 12 ise {
+        ekrana_yaz("FAIL: Yetersiz register sayisi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("IR_PARITY_PASS\n".ptr);
+    dondu 0;
+}

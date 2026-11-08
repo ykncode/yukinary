@@ -1,0 +1,37 @@
+# Linux generated ELF DNS acceptance: Docker embedded resolver is a real DNS server.
+ice_aktar "std/ag/soket.ykn";
+
+isv dns_ipv4_metin(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu -1; }
+    degisken parca: tamsayi = 0;
+    degisken alan: tamsayi = 0;
+    degisken deger: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        eger metin[i] == 46 ise {
+            eger parca > 255 ise { dondu -1; }
+            eger alan >= 3 ise { dondu -1; }
+            deger = deger + (parca << (8 * alan));
+            alan = alan + 1;
+            parca = 0;
+        } yoksa eger metin[i] >= 48 ve metin[i] <= 57 ise {
+            parca = parca * 10 + metin[i] - 48;
+        } yoksa { dondu -1; }
+        i = i + 1;
+    }
+    eger alan != 3 veya parca > 255 ise { dondu -1; }
+    deger = deger + (parca << 24);
+    dondu deger;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger arguman_sayisi < 2 ise { dondu 12; }
+    degisken dns_adres: tamsayi = dns_ipv4_metin(argumanlar[1]);
+    eger dns_adres < 0 ise { dondu 13; }
+    degisken adres: [4]u8;
+    # Resolver address is discovered from Docker's live /etc/resolv.conf.
+    degisken sonuc: tamsayi = dns_coz_sunucu("example.com".ptr, dns_adres, 53, adres);
+    eger sonuc != 0 ise { dondu 10; }
+    eger adres[0] == 0 ve adres[1] == 0 ve adres[2] == 0 ve adres[3] == 0 ise { dondu 11; }
+    dondu 0;
+}

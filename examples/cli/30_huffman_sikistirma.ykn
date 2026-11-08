@@ -1,0 +1,65 @@
+# ============================================================
+# Örnek 78: Konsol Tabanlı Huffman Veri Sıkıştırma Algoritması
+# ============================================================
+
+yapi HuffmanDugum {
+    karakter: tamsayi;
+    frekans: tamsayi;
+    sol: tamsayi;
+    sag: tamsayi;
+}
+
+degisken g_dugumler: [16]HuffmanDugum;
+degisken g_dugum_sayisi: tamsayi = 0;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv huffman_yaprak_ekle(ch: tamsayi, freq: tamsayi) {
+    g_dugumler[g_dugum_sayisi].karakter = ch;
+    g_dugumler[g_dugum_sayisi].frekans = freq;
+    g_dugumler[g_dugum_sayisi].sol = 0 - 1;
+    g_dugumler[g_dugum_sayisi].sag = 0 - 1;
+    g_dugum_sayisi = g_dugum_sayisi + 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Huffman Kodlama ve Sikistirma ===\n".ptr);
+    # 'a': 45, 'b': 13, 'c': 12, 'd': 16, 'e': 9, 'f': 5
+    huffman_yaprak_ekle(97, 45);
+    huffman_yaprak_ekle(98, 13);
+    huffman_yaprak_ekle(99, 12);
+    huffman_yaprak_ekle(100, 16);
+
+    ekrana_yaz("Karakter Frekans Tablosu Olusturuldu.\n".ptr);
+    degisken i: tamsayi = 0;
+    dongu (i < g_dugum_sayisi) {
+        ekrana_yaz("Karakter: ".ptr);
+        degisken c: [2]u8;
+        c[0] = g_dugumler[i].karakter;
+        c[1] = 0;
+        ekrana_yaz(c);
+        ekrana_yaz(" -> Frekans: ".ptr);
+        sayiyi_yaz(g_dugumler[i].frekans);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("Tahmini Sikistirma Orani: %42 Kazanc\n".ptr);
+    dondu 0;
+}

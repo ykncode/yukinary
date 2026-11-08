@@ -1,0 +1,8 @@
+# FIX-13 olumlu: p != bos daraltmasi block icinde indeks erisimini acar.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        p[0] = 66;
+    }
+    dondu 0;
+}

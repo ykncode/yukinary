@@ -1,0 +1,8 @@
+﻿ice_aktar "src/safety.ykn";
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken x: tamsayi = 42;
+    ekrana_yaz("x=".ptr);
+    sayiyi_yazdir(x);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

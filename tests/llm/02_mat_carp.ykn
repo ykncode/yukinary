@@ -1,0 +1,60 @@
+# FAZ 8 Test 2: BitLinear Matrix Multiplication Test
+# 2x3 Matrix (W ternary {-1, 0, 1}) x 3x2 Matrix (X int8)
+
+isv bitlinear_matris_carp_test(w_ptr: *u8, x_ptr: *u8, out_ptr: *tamsayi, M: tamsayi, K: tamsayi, N: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken x_val: tamsayi = x_ptr[(i * K) + k];
+                degisken w_val: u8 = w_ptr[(k * N) + j];
+                eger w_val == 1 ise {
+                    toplam = toplam + x_val;
+                } yoksa eger w_val == 2 ise {
+                    toplam = toplam - x_val;
+                }
+                k = k + 1;
+            }
+            out_ptr[(i * N) + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken W: [6]u8;
+    # W (3x2):
+    # [ 1,  2]  (+1, -1)
+    # [ 0,  1]  ( 0, +1)
+    # [ 2,  0]  (-1,  0)
+    W[0] = 1; W[1] = 2;
+    W[2] = 0; W[3] = 1;
+    W[4] = 2; W[5] = 0;
+
+    degisken X: [6]u8;
+    # X (2x3):
+    # [ 10, 20, 30 ]
+    # [  5, 15, 25 ]
+    X[0] = 10; X[1] = 20; X[2] = 30;
+    X[3] = 5;  X[4] = 15; X[5] = 25;
+
+    degisken Out: [4]tamsayi;
+    # Out (2x2) = X * W:
+    # Out[0,0] = 10*1 + 20*0 + 30*(-1) = 10 - 30 = -20
+    # Out[0,1] = 10*(-1) + 20*1 + 30*0 = -10 + 20 = 10
+    # Out[1,0] = 5*1 + 15*0 + 25*(-1) = 5 - 25 = -20
+    # Out[1,1] = 5*(-1) + 15*1 + 25*0 = -5 + 15 = 10
+
+    bitlinear_matris_carp_test(W.ptr, X.ptr, Out.ptr, 2, 3, 2);
+
+    eger Out[0] == -20 ve Out[1] == 10 ve Out[2] == -20 ve Out[3] == 10 ise {
+        ekrana_yaz("TEST 02 FAZ 8: BITLINEAR MATMUL OK (-20, 10, -20, 10)\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 02 FAZ 8: FAILED\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,19 @@
+# FAZ 2.4 NEGATIF TEST: Eksik metod
+ozellik Toplanabilir {
+    isv topla(self: Self, diger: tamsayi) -> tamsayi;
+    isv carp(self: Self, diger: tamsayi) -> tamsayi;
+}
+
+yapi Sayac {
+    deger: tamsayi;
+}
+
+uygula Toplanabilir Sayac {
+    isv topla(self: Sayac, diger: tamsayi) -> tamsayi {
+        dondu self.deger + diger;
+    }
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

@@ -1,0 +1,10 @@
+# FIX-13: loop kosulunda guard edilmemis nullable erisimi E033 hatasi vermelidir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = "A".ptr;
+    degisken i: tamsayi = 0;
+    dongu i < 10 {
+        p[0] = 65;
+        i = i + 1;
+    }
+    dondu 0;
+}

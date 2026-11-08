@@ -1,0 +1,6 @@
+# English Test: Functions & Output
+fn main(argc: int, argv: **u8) -> int {
+    var greeting: *u8 = "Hello from English Yukinary!\n".ptr;
+    ekrana_yaz(greeting);
+    return 0;
+}

@@ -1,0 +1,13 @@
+# FIX-13: fonksiyon cagrisi sonrasi eski narrowing korunmaz.
+isv dokun(p: ?*u8) -> tamsayi {
+    dondu 0;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        dokun(p);
+        dondu p[0];
+    }
+    dondu 0;
+}

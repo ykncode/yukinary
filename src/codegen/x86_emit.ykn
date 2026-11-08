@@ -1,0 +1,327 @@
+# ============================================================
+# Yukinary Codegen - x86_64 Opcode ve Ham Bellek Yazicilari
+# Modul: src/codegen/x86_emit.ykn
+# ============================================================
+
+yapi MakineKoduArenasi {
+    bellek: *u8;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+}
+
+# ============================================================
+# Ham bellek yazicilari
+# ============================================================
+isv byte_yaz(a: *MakineKoduArenasi, b: u8) {
+    a.bellek[a.kullanilan] = b;
+    a.kullanilan = a.kullanilan + 1;
+}
+
+isv u16_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, v & 255);
+    byte_yaz(a, (v >> 8) & 255);
+}
+
+isv int32_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, v & 255);
+    byte_yaz(a, (v >> 8) & 255);
+    byte_yaz(a, (v >> 16) & 255);
+    byte_yaz(a, (v >> 24) & 255);
+}
+
+isv int64_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, v & 255);
+    byte_yaz(a, (v >> 8) & 255);
+    byte_yaz(a, (v >> 16) & 255);
+    byte_yaz(a, (v >> 24) & 255);
+    byte_yaz(a, (v >> 32) & 255);
+    byte_yaz(a, (v >> 40) & 255);
+    byte_yaz(a, (v >> 48) & 255);
+    byte_yaz(a, (v >> 56) & 255);
+}
+
+isv sifir_doldur(a: *MakineKoduArenasi, adet: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        byte_yaz(a, 0);
+        i = i + 1;
+    }
+}
+
+isv str_yaz(a: *MakineKoduArenasi, s: *u8) {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        byte_yaz(a, s[i]);
+        i = i + 1;
+    }
+    byte_yaz(a, 0);
+}
+
+isv hizala_yukari(deger: tamsayi, hizalama: tamsayi) -> tamsayi {
+    eger deger == 0 ise { dondu hizalama; }
+    degisken sonuc: tamsayi = ((deger + hizalama - 1) / hizalama) * hizalama;
+    dondu sonuc;
+}
+
+isv wasm_leb128_s32_yaz(a: *MakineKoduArenasi, val: tamsayi) {
+    degisken v: tamsayi = val;
+    degisken devam: tamsayi = 1;
+    dongu devam == 1 {
+        degisken b: tamsayi = v & 127;
+        v = v >> 7;
+        eger (v == 0 ve (b & 64) == 0) veya (v == (0 - 1) ve (b & 64) != 0) ise {
+            devam = 0;
+        } yoksa {
+            b = b | 128;
+        }
+        byte_yaz(a, b);
+    }
+}
+
+# ============================================================
+# Opcode uretcileri
+# ============================================================
+isv emit_push_rbp(a: *MakineKoduArenasi) { byte_yaz(a, 0x55); }
+isv emit_pop_rbp(a: *MakineKoduArenasi)  { byte_yaz(a, 0x5D); }
+
+isv emit_ret(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        arm64_emit_ret(a);
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_i_type(RV_OP_JALR, 0, RV_ZERO, RV_RA, 0));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x0F);
+    } yoksa {
+        byte_yaz(a, 0xC3);
+    }
+}
+
+isv emit_mov_rbp_rsp(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xE5);
+}
+
+isv emit_sub_rsp(a: *MakineKoduArenasi, n: tamsayi) {
+    eger n <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, n);
+    } yoksa eger n <= 4096 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xEC); int32_yaz(a, n);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xE0);
+        degisken remaining: tamsayi = n;
+        dongu remaining > 0 {
+            degisken chunk: tamsayi = 4096;
+            eger remaining < 4096 ise { chunk = remaining; }
+            byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xE8); int32_yaz(a, chunk);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x00);
+            remaining = remaining - chunk;
+        }
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xEC); int32_yaz(a, n);
+    }
+}
+
+isv emit_add_rsp(a: *MakineKoduArenasi, n: tamsayi) {
+    eger n <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, n);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xC4); int32_yaz(a, n);
+    }
+}
+
+isv emit_xor_rax_rax(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        arm64_emit_movz_x0_imm(a, 0);
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_A0, RV_ZERO, 0));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x41);
+        byte_yaz(a, 0x00);
+    } yoksa {
+        byte_yaz(a, 0x33); byte_yaz(a, 0xC0);
+    }
+}
+
+isv emit_mov_rax_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    eger platform_arm64_mi() == 1 ise {
+        eger v < 0 ve v >= (0 - 65536) ise {
+            # MOVN X0, #((~v) & 0xFFFF) => 0x92800000 | (imm16 << 5)
+            degisken inv16: tamsayi = ((0 - 1) - v) & 65535;
+            a64_int32_yaz(a, 0x92800000 + (inv16 * 32));
+        } yoksa {
+            degisken imm16_lo: tamsayi = v & 65535;
+            arm64_emit_movz_x0_imm(a, imm16_lo);
+            degisken imm16_hi: tamsayi = (v >> 16) & 65535;
+            eger imm16_hi != 0 ise {
+                # MOVK X0, #imm16_hi, LSL #16 => 0xF2A00000 | (imm16_hi << 5)
+                a64_int32_yaz(a, 0xF2A00000 + (imm16_hi * 32));
+            }
+        }
+    } yoksa eger g_target_platform == 6 ise {
+        eger v >= (0 - 2048) ve v <= 2047 ise {
+            int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_A0, RV_ZERO, v));
+        } yoksa {
+            degisken lo12: tamsayi = v & 4095;
+            degisken hi20: tamsayi = (v + 2048) >> 12;
+            int32_yaz(a, riscv_encode_u_type(RV_OP_LUI, RV_A0, hi20));
+            eger lo12 != 0 ise {
+                int32_yaz(a, riscv_encode_i_type(RV_OP_IMM, 0, RV_A0, RV_A0, lo12));
+            }
+        }
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x41);
+        wasm_leb128_s32_yaz(a, v);
+    } yoksa {
+        eger v > 2147483647 veya v < 0 - 2147483648 ise {
+            byte_yaz(a, 0x48);
+            byte_yaz(a, 0xB8);
+            int64_yaz(a, v);
+        } yoksa {
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0);
+            int32_yaz(a, v);
+        }
+    }
+}
+
+isv emit_mov_rcx_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    eger v > 2147483647 veya v < 0 - 2147483648 ise {
+        byte_yaz(a, 0x48);
+        byte_yaz(a, 0xB9);
+        int64_yaz(a, v);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC1);
+        int32_yaz(a, v);
+    }
+}
+
+isv emit_mov_rdx_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2);
+    int32_yaz(a, v);
+}
+
+isv emit_add_rax_rcx(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        arm64_emit_add_reg(a, 0, 0, 1);
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_r_type(RV_OP_REG, 0, 0, RV_A0, RV_A0, RV_A1));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x6A); # i32.add
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x01); byte_yaz(a, 0xC8);
+    }
+}
+
+isv emit_sub_rax_rcx(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        arm64_emit_sub_reg(a, 0, 0, 1);
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_r_type(RV_OP_REG, 0, 32, RV_A0, RV_A0, RV_A1));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x6B); # i32.sub
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x29); byte_yaz(a, 0xC8);
+    }
+}
+
+isv emit_imul_rax_rcx(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        arm64_emit_mul_reg(a, 0, 0, 1);
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_r_type(RV_OP_REG, 0, 1, RV_A0, RV_A0, RV_A1));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x6C); # i32.mul
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xAF); byte_yaz(a, 0xC1);
+    }
+}
+
+isv emit_div_rax_rcx(a: *MakineKoduArenasi) {
+    eger platform_arm64_mi() == 1 ise {
+        a64_int32_yaz(a, 0x9AC10C00); # SDIV X0, X0, X1
+    } yoksa eger g_target_platform == 6 ise {
+        int32_yaz(a, riscv_encode_r_type(RV_OP_REG, 4, 1, RV_A0, RV_A0, RV_A1));
+    } yoksa eger g_target_platform == 5 ise {
+        byte_yaz(a, 0x6D); # i32.div_s
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x99); # CQO
+        byte_yaz(a, 0x48); byte_yaz(a, 0xF7); byte_yaz(a, 0xF9); # IDIV RCX
+    }
+}
+
+isv emit_mod_rax_rcx(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x99); # CQO
+    byte_yaz(a, 0x48); byte_yaz(a, 0xF7); byte_yaz(a, 0xF9); # IDIV RCX
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD0); # MOV RAX, RDX
+}
+
+# call [rip+offset32] - IAT indirect call
+isv emit_call_rip_rel(a: *MakineKoduArenasi, rel32: tamsayi) {
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    int32_yaz(a, rel32);
+}
+
+# lea rcx, [rip+offset32] - string pointer
+isv emit_lea_rcx_rip(a: *MakineKoduArenasi, rel32: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x0D);
+    int32_yaz(a, rel32);
+}
+
+# mov r8d, imm32
+isv emit_mov_r8d_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x41); byte_yaz(a, 0xB8);
+    int32_yaz(a, v);
+}
+
+# xor r9d, r9d
+isv emit_xor_r9d_r9d(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x45); byte_yaz(a, 0x33); byte_yaz(a, 0xC9);
+}
+
+# ============================================================
+# Karsilastirma Operatorleri: CMP + SETcc + MOVZX
+# ============================================================
+isv emit_cmp_rax_rcx(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x3B); byte_yaz(a, 0xC1);
+}
+
+isv emit_sete_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x94); byte_yaz(a, 0xC0);
+}
+
+isv emit_setne_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x95); byte_yaz(a, 0xC0);
+}
+
+isv emit_setl_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9C); byte_yaz(a, 0xC0);
+}
+
+isv emit_setg_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9F); byte_yaz(a, 0xC0);
+}
+
+isv emit_setle_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9E); byte_yaz(a, 0xC0);
+}
+
+isv emit_setge_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9D); byte_yaz(a, 0xC0);
+}
+
+isv emit_movzx_rax_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0xC0);
+}
+
+isv emit_setb_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x92); byte_yaz(a, 0xC0);
+}
+
+isv emit_setae_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x93); byte_yaz(a, 0xC0);
+}
+
+isv emit_setbe_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x96); byte_yaz(a, 0xC0);
+}
+
+isv emit_seta_al(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x97); byte_yaz(a, 0xC0);
+}

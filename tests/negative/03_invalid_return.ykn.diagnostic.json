@@ -1,0 +1,12 @@
+{
+  "schema": "yukinary.diagnostic-oracle.v1",
+  "exit_code": 1,
+  "diagnostic_code": "TC_INVALID_RETURN",
+  "error_class": "typechecker",
+  "message_pattern": "TC_FAIL_RET",
+  "error_count": 1,
+  "location": {
+    "line": 5,
+    "column": 11
+  }
+}

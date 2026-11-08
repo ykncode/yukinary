@@ -1,0 +1,15 @@
+ice_aktar "std/sonuc.ykn";
+ice_aktar "std/enum.ykn";
+
+isv sayi_ver() -> sonuc<tamsayi> {
+    dondu sonuc_tamam(42);
+}
+
+isv ana() -> tamsayi {
+    degisken x: tamsayi = sayi_ver()?;
+    degisken secim: *Secenek = secenek_var(x);
+    eger secenek_var_mi(secim) == 1 ise {
+        dondu secenek_deger_al(secim, 0);
+    }
+    dondu 0;
+}

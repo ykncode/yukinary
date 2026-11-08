@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 44: Win32 Arayüzlü Dosya Şifreleyici ve Güvenlik Kasası
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv dosya_sifrele_xor(veri: *u8, len: tamsayi, anahtar: u8) {
+    degisken i: tamsayi = 0;
+    dongu (i < len) {
+        veri[i] = veri[i] ^ anahtar;
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Dosya Kasasi".ptr, 600, 440);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Dosya Secim ve Sifreleme Anahtari
+    metin_kutusu_olustur(p_h, 101, 30, 20, 380, 35);
+    buton_olustur(p_h, "Dosya Sec".ptr, 201, 430, 20, 130, 35);
+
+    metin_kutusu_olustur(p_h, 102, 30, 70, 380, 35); # Sifre Anahtari Kutusu
+
+    # Islem Butonlari
+    buton_olustur(p_h, "Dosyayi Sifrele (Lock)".ptr, 202, 30, 120, 240, 45);
+    buton_olustur(p_h, "Sifreyi Coz (Unlock)".ptr, 203, 300, 120, 240, 45);
+
+    # Guvenlik Log Penceresi
+    metin_kutusu_olustur(p_h, 301, 30, 190, 530, 180);
+
+    ekrana_yaz("Guvenlik Kasasi hazir. XOR 256-bit blok modu aktif.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

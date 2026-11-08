@@ -1,0 +1,9 @@
+# await can only be used inside async function body
+isv senkron() -> tamsayi {
+    degisken x: tamsayi = await 123;
+    dondu x;
+}
+
+isv ana() -> tamsayi {
+    dondu senkron();
+}

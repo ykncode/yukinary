@@ -1,0 +1,2635 @@
+# ============================================================
+# YKN std/ai/transformer_forward.ykn
+# GGUF tensor tablosundan çok katmanlı referans transformer forward.
+# ============================================================
+
+ice_aktar "std/ai/cuda_backend.ykn";
+
+yapi LLMTransformerExecution {
+    loader: *LLMModelLoader;
+    adapter: *LLMArchitectureAdapter;
+    spec: *LLMModelSpec;
+    hidden: *tamsayi;
+    residual: *tamsayi;
+    q: *tamsayi;
+    key: *tamsayi;
+    value: *tamsayi;
+    attention: *tamsayi;
+    ffn: *tamsayi;
+    logits: *tamsayi;
+    logits_kapasitesi: tamsayi;
+    # Prefill ara tokenlarında output projection gereksizdir; yalnız son
+    # prompt tokenı ve decode adımları logits üretir.
+    logits_aktif: tamsayi;
+    agirlik_buffer: *u8;
+    agirlik_kapasitesi: tamsayi;
+    kv_anahtar: *tamsayi;
+    kv_deger: *tamsayi;
+    kafa_sayisi: tamsayi;
+    kv_kafa_sayisi: tamsayi;
+    kv_kafa_boyutu: tamsayi;
+    kv_kapasitesi: tamsayi;
+    token_konumu: tamsayi;
+    ffn_boyutu: tamsayi;
+    # FFN gate/up scratch alanları transformer yaşam döngüsünde bir kez
+    # tahsis edilir; her token/layer için heap tahsisi yapılmaz.
+    ffn_gate_scratch: *tamsayi;
+    ffn_up_scratch: *tamsayi;
+    # Spec pointer'a ek olarak ABI-stabil primitive metadata snapshot.
+    model_mimari: tamsayi;
+    model_vocab_boyutu: tamsayi;
+    model_gizli_boyutu: tamsayi;
+    model_katman_sayisi: tamsayi;
+    model_rope_boyutu: tamsayi;
+    model_rope_freq_base_q16: tamsayi;
+    model_norm_eps_q16: tamsayi;
+}
+
+# Windows x64 shadow-space/stack argümanı sınırına takılmamak için
+# transformer kurulumu mevcut execution kaydı üzerinden taşınır.
+yapi LLMTensorIleriPaket {
+    icra: *LLMTransformerExecution;
+    tensor: *GGUFTensorInfo;
+    girdi: *tamsayi;
+    cikti: *tamsayi;
+    K: tamsayi;
+    N: tamsayi;
+}
+yapi LLMFFNIleriPaket {
+    icra: *LLMTransformerExecution;
+    durum: *GGUFDurum;
+    katman: tamsayi;
+}
+
+yapi LLMGreedyGenerationRequest {
+    icra: *LLMTransformerExecution;
+    durum: *GGUFDurum;
+    prompt_tokenleri: *tamsayi;
+    prompt_adedi: tamsayi;
+    uretilen_tokenler: *tamsayi;
+    uretilen_kapasitesi: tamsayi;
+    max_yeni_token: tamsayi;
+}
+
+degisken TRANSFORMER_FORWARD_HATASI: tamsayi = 0;
+degisken TRANSFORMER_FORWARD_SON_SONUC: tamsayi = -999;
+degisken TRANSFORMER_TENSOR_HATASI: tamsayi = 0;
+degisken TRANSFORMER_CUDA_KERNEL_CALLS: tamsayi = 0;
+degisken TRANSFORMER_CUDA_FALLBACKS: tamsayi = 0;
+degisken LLM_REPETITION_PENALTY_Q16: tamsayi = 65536;
+degisken LLM_RECENT_TOKENS: [256]tamsayi;
+degisken LLM_RECENT_COUNT: tamsayi = 0;
+degisken g_llm_gemma4_per_layer_input: *tamsayi = 0;
+degisken g_llm_gemma4_per_layer_input_count: tamsayi = 0;
+degisken TRANSFORMER_TIME_ATTN_NS: tamsayi = 0;
+degisken TRANSFORMER_TIME_NORM_NS: tamsayi = 0;
+degisken TRANSFORMER_TIME_FFN_NS: tamsayi = 0;
+degisken TRANSFORMER_TIME_ROPE_NS: tamsayi = 0;
+degisken TRANSFORMER_TIME_QKV_NS: tamsayi = 0;
+degisken TRANSFORMER_TIME_OPROJ_NS: tamsayi = 0;
+# Temporary per-layer diagnostic capture for strict BitNet parity tracing.
+degisken TRANSFORMER_TRACE_POSITION: tamsayi = -1;
+
+degisken TRANSFORMER_TRACE_SUM: [966]tamsayi;
+degisken TRANSFORMER_TRACE_SQSUM: [966]tamsayi;
+degisken TRANSFORMER_TRACE_MAX: [966]tamsayi;
+degisken TRANSFORMER_TRACE_MAX_INDEX: [966]tamsayi;
+degisken TRANSFORMER_TRACE_FIRST: [3864]tamsayi;
+degisken TRANSFORMER_TRACE_FFN_INPUT: [2560]tamsayi;
+degisken TRANSFORMER_TRACE_GATE_3998: tamsayi = 0;
+degisken TRANSFORMER_TRACE_LAYER_SCALE: tamsayi = -1;
+
+degisken TRANSFORMER_TRACE_ATTN_SUBNORM: [2560]tamsayi;
+degisken G_ALL_LAYERS_READY_CACHED: tamsayi = -1;
+degisken TRANSFORMER_TRACE_ATTN_OUT: [2560]tamsayi;
+degisken TRANSFORMER_TRACE_ATTN_CONTEXT: [10752]tamsayi;
+degisken TRANSFORMER_TRACE_LAYER0_INPUT: [2560]tamsayi;
+degisken TRANSFORMER_TRACE_LAYER0_RESIDUAL: [2560]tamsayi;
+degisken TRANSFORMER_TRACE_LAYER0_V_RAW: [1024]tamsayi;
+degisken TRANSFORMER_TRACE_LAYER0_V_NORM: [1024]tamsayi;
+degisken TRANSFORMER_TRACE_FINAL_HIDDEN: [2560]tamsayi;
+degisken TRANSFORMER_TRACE_LOGITS: [128256]tamsayi;
+# Full Q16 snapshots for the first four layers; used to compare each stage
+# against independent llama.cpp graph callback tensors.
+degisken TRANSFORMER_TRACE_FULL: [393216]tamsayi;
+# Layer-0 FFN projection traces, isolated to avoid large multi-layer snapshots.
+degisken TRANSFORMER_TRACE_GATE0: [10240]tamsayi;
+degisken TRANSFORMER_TRACE_UP0: [10240]tamsayi;
+
+
+isv llm_transformer_trace_q16(data: *tamsayi, count: tamsayi,
+                              stage: tamsayi, layer: tamsayi) {
+    eger data == 0 veya count <= 0 veya stage < 0 veya stage >= 24 or
+       layer < 0 veya layer >= 42 ise { dondu; }
+    degisken slot: tamsayi = stage * 42 + layer;
+    degisken i: tamsayi = 0;
+    eger layer < 4 and count <= 4096 {
+        degisken full_base: tamsayi = (stage * 4 + layer) * 4096;
+        dongu i < count {
+            TRANSFORMER_TRACE_FULL[full_base + i] = data[i];
+            i = i + 1;
+        }
+        i = 0;
+    }
+
+    eger stage == 4 ve layer == 0 ve count == 2560 {
+        dongu i < count { TRANSFORMER_TRACE_ATTN_SUBNORM[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 5 ve layer == 0 ve count == 2560 {
+        dongu i < count { TRANSFORMER_TRACE_ATTN_OUT[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 21 ve layer == 0 ve count == 2560 {
+        dongu i < count { TRANSFORMER_TRACE_FINAL_HIDDEN[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 0 ve layer == 0 ve count == 2560 {
+        dongu i < count { TRANSFORMER_TRACE_LAYER0_INPUT[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 3 ve layer == 0 ve count <= 1024 {
+        dongu i < count { TRANSFORMER_TRACE_LAYER0_V_NORM[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 12 ve layer == 0 ve count <= 10752 {
+        dongu i < count { TRANSFORMER_TRACE_ATTN_CONTEXT[i] = data[i]; i = i + 1; }
+        i = 0;
+    }
+    eger stage == 7 and layer == 0 and count == 2560 {
+        degisken copy_i: tamsayi = 0;
+        dongu copy_i < 2560 { TRANSFORMER_TRACE_FFN_INPUT[copy_i] = data[copy_i]; copy_i = copy_i + 1; }
+    }
+    eger stage == 13 and layer == 0 and count > 3998 { TRANSFORMER_TRACE_GATE_3998 = data[3998]; }
+    eger stage == 13 and layer == 0 and count <= 10240 {
+        degisken gate_trace_i: tamsayi = 0;
+        dongu gate_trace_i < count { TRANSFORMER_TRACE_GATE0[gate_trace_i] = data[gate_trace_i]; gate_trace_i = gate_trace_i + 1; }
+    }
+    eger stage == 14 and layer == 0 and count <= 10240 {
+        degisken up_trace_i: tamsayi = 0;
+        dongu up_trace_i < count { TRANSFORMER_TRACE_UP0[up_trace_i] = data[up_trace_i]; up_trace_i = up_trace_i + 1; }
+    }
+    degisken sum: tamsayi = 0;
+    degisken square_sum: tamsayi = 0;
+    degisken max_abs: tamsayi = 0;
+    degisken max_index: tamsayi = 0;
+    dongu i < count {
+        degisken value: tamsayi = data[i];
+        sum = sum + value;
+        degisken scaled_value: tamsayi = value / 256;
+        square_sum = square_sum + scaled_value * scaled_value;
+        degisken abs_value: tamsayi = value;
+        eger abs_value < 0 { abs_value = 0 - abs_value; }
+        eger abs_value > max_abs { max_abs = abs_value; max_index = i; }
+        eger i < 4 { TRANSFORMER_TRACE_FIRST[slot * 4 + i] = value; }
+        i = i + 1;
+    }
+    TRANSFORMER_TRACE_SUM[slot] = sum;
+    TRANSFORMER_TRACE_SQSUM[slot] = square_sum;
+    TRANSFORMER_TRACE_MAX[slot] = max_abs;
+    TRANSFORMER_TRACE_MAX_INDEX[slot] = max_index;
+}
+
+
+degisken g_llm_forward_ffn_buffer: *tamsayi = 0;
+# Struct field pointer ABI'sini kritik matmul output hedeflerinden ayırır.
+degisken g_llm_transformer_hidden: *tamsayi = 0;
+degisken g_llm_transformer_residual: *tamsayi = 0;
+degisken g_llm_transformer_q: *tamsayi = 0;
+degisken g_llm_transformer_key: *tamsayi = 0;
+degisken g_llm_transformer_value: *tamsayi = 0;
+degisken g_llm_transformer_attention: *tamsayi = 0;
+
+degisken G_LLM_ROPE_COS_TAB: [256]tamsayi;
+degisken G_LLM_ROPE_SIN_TAB: [256]tamsayi;
+
+degisken G_CACHED_NORM_OFFSETS: [256]tamsayi;
+degisken G_CACHED_NORM_PTRS: [256]*tamsayi;
+degisken G_CACHED_NORM_ADET: [256]tamsayi;
+degisken G_CACHED_NORM_COUNT: tamsayi = 0;
+
+degisken G_CACHED_LAYER_TENSORS: [1024]*GGUFTensorInfo;
+degisken G_CACHED_LAYER_TENSORS_INIT: [1024]tamsayi;
+
+degisken G_CACHED_FINAL_NORM: *GGUFTensorInfo = 0;
+degisken G_CACHED_FINAL_NORM_INIT: tamsayi = 0;
+degisken G_CACHED_CIKIS_TENSOR: *GGUFTensorInfo = 0;
+degisken G_CACHED_CIKIS_TENSOR_INIT: tamsayi = 0;
+degisken G_CPU_LMHEAD_BUFFER: *u8 = 0;
+degisken G_CPU_LMHEAD_OFFSET: tamsayi = -1;
+degisken G_CPU_LMHEAD_BYTES: tamsayi = 0;
+degisken G_CACHED_EMBD_TENSOR: *GGUFTensorInfo = 0;
+degisken G_CACHED_EMBD_TENSOR_INIT: tamsayi = 0;
+
+degisken G_TIME_ATTN_NS: tamsayi = 0;
+degisken G_TIME_MATVEC_NS: tamsayi = 0;
+degisken G_TIME_NORM_NS: tamsayi = 0;
+degisken G_TIME_LMHEAD_NS: tamsayi = 0;
+degisken G_TIME_SWIGLU_NS: tamsayi = 0;
+degisken G_TIME_GATEUP_NS: tamsayi = 0;
+degisken G_TIME_SUBNORM_NS: tamsayi = 0;
+degisken G_TIME_DOWN_NS: tamsayi = 0;
+degisken G_PROF_EMBD_NS: tamsayi = 0;
+degisken G_PROF_LAYERS_NS: tamsayi = 0;
+degisken G_PROF_HEAD_NS: tamsayi = 0;
+
+isv llm_cached_layer_tensor_bul(durum: *GGUFDurum, katman: tamsayi, slot: tamsayi, alt_suffix: *u8, suffix: *u8) -> *GGUFTensorInfo {
+    degisken idx: tamsayi = katman * 16 + slot;
+    eger idx >= 0 and idx < 1024 {
+        eger G_CACHED_LAYER_TENSORS_INIT[idx] == 1 {
+            dondu G_CACHED_LAYER_TENSORS[idx];
+        }
+        g_llm_arch_alt_suffix = alt_suffix;
+        degisken t: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(durum, 0, katman, suffix);
+        G_CACHED_LAYER_TENSORS[idx] = t;
+        G_CACHED_LAYER_TENSORS_INIT[idx] = 1;
+        dondu t;
+    }
+    g_llm_arch_alt_suffix = alt_suffix;
+    dondu llm_architecture_tensor_bul_sade(durum, 0, katman, suffix);
+}
+
+# Forward döngüsünde struct scratch yerine primitive scratch kullanılır.
+# Bu alanlar self-hosted Stage-1'in Win64 local/global struct ABI farklarını
+# ortadan kaldırır; LLMTensorIleriPaket API'si dış çağrılar için korunur.
+degisken g_llm_tensor_icra: *LLMTransformerExecution = 0;
+degisken g_llm_tensor_bilgi: *GGUFTensorInfo = 0;
+degisken g_llm_tensor_girdi: *tamsayi = 0;
+degisken g_llm_tensor_cikti: *tamsayi = 0;
+degisken g_llm_tensor_K: tamsayi = 0;
+degisken g_llm_tensor_N: tamsayi = 0;
+degisken g_llm_ffn_icra: *LLMTransformerExecution = 0;
+degisken g_llm_ffn_durum: *GGUFDurum = 0;
+degisken g_llm_ffn_katman: tamsayi = 0;
+degisken g_llm_tensor_op: LLMTensorIleriPaket;
+degisken g_llm_ffn_op: LLMFFNIleriPaket;
+
+# Read spec fields with a direct typed pointer. Nested package->spec->field
+# reads miscompile in the stage-0 Win64 ABI and silently zero metadata.
+isv llm_transformer_spec_snapshot(icra: *LLMTransformerExecution,
+                                  spec: *LLMModelSpec) -> tamsayi {
+    eger icra == 0 veya spec == 0 ise { dondu 0; }
+    icra->model_mimari = spec->mimari;
+    icra->model_vocab_boyutu = spec->vocab_boyutu;
+    icra->model_gizli_boyutu = spec->gizli_boyut;
+    icra->model_katman_sayisi = spec->katman_sayisi;
+    icra->model_rope_boyutu = spec->rope_boyutu;
+    icra->model_rope_freq_base_q16 = spec->rope_freq_base_q16;
+    icra->model_norm_eps_q16 = spec->norm_eps_q16;
+    dondu 1;
+}
+
+isv llm_q16_kopyala(kaynak: *tamsayi, hedef: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya hedef == 0 veya adet <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    eger adet % 4 == 0 {
+        dongu i < adet {
+            hedef[i] = kaynak[i];
+            hedef[i + 1] = kaynak[i + 1];
+            hedef[i + 2] = kaynak[i + 2];
+            hedef[i + 3] = kaynak[i + 3];
+            i = i + 4;
+        }
+        dondu 1;
+    }
+    dongu i < adet { hedef[i] = kaynak[i]; i = i + 1; }
+    dondu 1;
+}
+
+isv llm_q16_topla(cikti: *tamsayi, ek: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger cikti == 0 veya ek == 0 veya adet <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    eger adet % 4 == 0 {
+        dongu i < adet {
+            cikti[i] = cikti[i] + ek[i];
+            cikti[i + 1] = cikti[i + 1] + ek[i + 1];
+            cikti[i + 2] = cikti[i + 2] + ek[i + 2];
+            cikti[i + 3] = cikti[i + 3] + ek[i + 3];
+            i = i + 4;
+        }
+        dondu 1;
+    }
+    dongu i < adet { cikti[i] = cikti[i] + ek[i]; i = i + 1; }
+    dondu 1;
+}
+
+# Basit fixed-point SiLU yerine taşma güvenli ReLU referans aktivasyonu.
+isv llm_q16_relu(veri: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger veri == 0 veya adet <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet { eger veri[i] < 0 ise { veri[i] = 0; } i = i + 1; }
+    dondu 1;
+}
+
+isv llm_transformer_durum_kur(icra: *LLMTransformerExecution,
+                              loader: *LLMModelLoader,
+                              adapter: *LLMArchitectureAdapter,
+                              spec: *LLMModelSpec,
+                              hidden: *tamsayi,
+                              residual: *tamsayi,
+                              q: *tamsayi,
+                              key: *tamsayi,
+                              value: *tamsayi,
+                              attention: *tamsayi,
+                              ffn: *tamsayi,
+                              logits: *tamsayi,
+                              logits_kapasitesi: tamsayi,
+                              agirlik_buffer: *u8,
+                              agirlik_kapasitesi: tamsayi,
+                              kv_anahtar: *tamsayi,
+                              kv_deger: *tamsayi,
+                              kafa_sayisi: tamsayi,
+                              kafa_boyutu: tamsayi,
+                              kv_kapasitesi: tamsayi,
+                              ffn_boyutu: tamsayi) -> tamsayi {
+    TRANSFORMER_FORWARD_HATASI = 0;
+    # Birleşik koşul yerine ayrıştırılmış kontroller: CLI/session reddi
+    # gerçek kök nedeni kaybetmeden dışarı taşır.
+    eger icra == 0 veya loader == 0 veya adapter == 0 veya spec == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 1;
+        dondu 0;
+    }
+    eger hidden == 0 veya residual == 0 veya q == 0 veya key == 0 veya value == 0 veya
+       attention == 0 veya ffn == 0 veya logits == 0 veya logits_kapasitesi <= 0 veya
+       agirlik_buffer == 0 veya agirlik_kapasitesi <= 0 veya kv_anahtar == 0 veya
+       kv_deger == 0 veya kafa_sayisi <= 0 veya kafa_boyutu <= 0 veya
+       kv_kapasitesi <= 0 veya ffn_boyutu <= 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 2;
+        dondu 0;
+    }
+    eger kafa_sayisi * kafa_boyutu != spec->gizli_boyut ise {
+        TRANSFORMER_FORWARD_HATASI = 3;
+        dondu 0;
+    }
+    eger spec->kafa_sayisi > 0 ve spec->kafa_sayisi != kafa_sayisi ise {
+        TRANSFORMER_FORWARD_HATASI = 4;
+        dondu 0;
+    }
+    eger spec->kafa_boyutu > 0 ve spec->kafa_boyutu != kafa_boyutu ise {
+        TRANSFORMER_FORWARD_HATASI = 5;
+        dondu 0;
+    }
+    eger spec->kv_kafa_sayisi > 0 ve kafa_sayisi % spec->kv_kafa_sayisi != 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 6;
+        dondu 0;
+    }
+    icra->loader = loader;
+    icra->adapter = adapter;
+    icra->spec = spec;
+    icra->hidden = hidden;
+    icra->residual = residual;
+    g_llm_transformer_hidden = hidden;
+    g_llm_transformer_residual = residual;
+    g_llm_transformer_q = q;
+    g_llm_transformer_key = key;
+    g_llm_transformer_value = value;
+    g_llm_transformer_attention = attention;
+    icra->q = q;
+    icra->key = key;
+    icra->value = value;
+    icra->attention = attention;
+    icra->ffn = ffn;
+    g_llm_forward_ffn_buffer = ffn;
+    icra->logits = logits;
+    icra->logits_kapasitesi = logits_kapasitesi;
+    icra->logits_aktif = 1;
+    icra->agirlik_buffer = agirlik_buffer;
+    icra->agirlik_kapasitesi = agirlik_kapasitesi;
+    icra->kv_anahtar = kv_anahtar;
+    icra->kv_deger = kv_deger;
+    icra->kafa_sayisi = kafa_sayisi;
+    icra->kv_kafa_sayisi = spec->kv_kafa_sayisi;
+    eger icra->kv_kafa_sayisi <= 0 ise { icra->kv_kafa_sayisi = kafa_sayisi; }
+    icra->kv_kafa_boyutu = kafa_boyutu;
+    icra->kv_kapasitesi = kv_kapasitesi;
+    icra->token_konumu = 0;
+    icra->ffn_boyutu = ffn_boyutu;
+    icra->ffn_gate_scratch = 0;
+    icra->ffn_up_scratch = 0;
+    # Her buffer ffn boyutunun 8-byte Q16 elemanlarını taşır.
+    eger ffn_boyutu > 0 ve ffn_boyutu <= 65536 ise {
+        icra->ffn_gate_scratch = bellek_tahsis_et(ffn_boyutu * 8 * 2);
+        icra->ffn_up_scratch = icra->ffn_gate_scratch + ffn_boyutu * 8;
+    }
+    icra->model_mimari = spec->mimari;
+    icra->model_vocab_boyutu = spec->vocab_boyutu;
+    icra->model_gizli_boyutu = spec->gizli_boyut;
+    icra->model_katman_sayisi = spec->katman_sayisi;
+    icra->model_rope_boyutu = spec->rope_boyutu;
+    icra->model_rope_freq_base_q16 = spec->rope_freq_base_q16;
+    icra->model_norm_eps_q16 = spec->norm_eps_q16;
+    dondu 1;
+}
+
+# Paketli kurulum yolu: eski çok-argümanlı ABI korunur, gerçek CLI ve yeni
+# çağıranlar bu fonksiyonu kullanır.
+isv llm_transformer_durum_kur_paketli(icra: *LLMTransformerExecution,
+                                      paket: *LLMTransformerExecution) -> tamsayi {
+    TRANSFORMER_FORWARD_HATASI = 0;
+    eger icra == 0 veya paket == 0 veya paket->loader == 0 veya
+       paket->adapter == 0 veya paket->spec == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 1;
+        dondu 0;
+    }
+    eger paket->hidden == 0 veya paket->residual == 0 veya paket->q == 0 veya
+       paket->key == 0 veya paket->value == 0 veya paket->attention == 0 veya
+       paket->ffn == 0 veya paket->logits == 0 veya paket->logits_kapasitesi <= 0 veya
+       paket->agirlik_buffer == 0 veya paket->agirlik_kapasitesi <= 0 veya
+       paket->kv_anahtar == 0 veya paket->kv_deger == 0 veya
+       paket->kafa_sayisi <= 0 veya paket->kv_kafa_boyutu <= 0 veya
+       paket->kv_kapasitesi <= 0 veya paket->ffn_boyutu <= 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 2;
+        dondu 0;
+    }
+    # Head geometrisi model spec'inin canonical metadata'sıdır; paket yalnız
+    # buffer/cache taşır. Böylece çok-argümanlı eski ABI'den kalan alan
+    # sapmaları GQA doğrulamasını etkileyemez.
+    # Validate through runtime's direct spec-pointer path. Nested struct-pointer
+    # field reads from the package are unreliable in the stage-0 Win64 ABI.
+    eger llm_runtime_spec_dogrula(paket->spec) == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 3;
+        dondu 0;
+    }
+    icra->loader = paket->loader;
+    icra->adapter = paket->adapter;
+    icra->spec = paket->spec;
+    icra->hidden = paket->hidden;
+    icra->residual = paket->residual;
+    g_llm_transformer_hidden = paket->hidden;
+    g_llm_transformer_residual = paket->residual;
+    g_llm_transformer_q = paket->q;
+    g_llm_transformer_key = paket->key;
+    g_llm_transformer_value = paket->value;
+    g_llm_transformer_attention = paket->attention;
+    icra->q = paket->q;
+    icra->key = paket->key;
+    icra->value = paket->value;
+    icra->attention = paket->attention;
+    icra->ffn = paket->ffn;
+    g_llm_forward_ffn_buffer = paket->ffn;
+    icra->logits = paket->logits;
+    icra->logits_kapasitesi = paket->logits_kapasitesi;
+    icra->logits_aktif = 1;
+    icra->agirlik_buffer = paket->agirlik_buffer;
+    icra->agirlik_kapasitesi = paket->agirlik_kapasitesi;
+    icra->kv_anahtar = paket->kv_anahtar;
+    icra->kv_deger = paket->kv_deger;
+    icra->kafa_sayisi = paket->kafa_sayisi;
+    icra->kv_kafa_sayisi = paket->kv_kafa_sayisi;
+    icra->kv_kafa_boyutu = paket->kv_kafa_boyutu;
+    icra->kv_kapasitesi = paket->kv_kapasitesi;
+    icra->token_konumu = 0;
+    icra->ffn_boyutu = paket->ffn_boyutu;
+    icra->ffn_gate_scratch = 0;
+    icra->ffn_up_scratch = 0;
+    eger paket->ffn_boyutu > 0 ve paket->ffn_boyutu <= 65536 ise {
+        icra->ffn_gate_scratch = bellek_tahsis_et(paket->ffn_boyutu * 8 * 2);
+        icra->ffn_up_scratch = icra->ffn_gate_scratch + paket->ffn_boyutu * 8;
+    }
+    eger llm_transformer_spec_snapshot(icra, paket->spec) == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 4;
+        dondu 0;
+    }
+    g_llm_tensor_icra = icra;
+    llm_cuda_preload_if_ready();
+    dondu 1;
+}
+
+isv llm_cuda_preload_if_ready() {
+    eger YKN_CUDA_READY != 1 or g_llm_tensor_icra == 0 { dondu; }
+    degisken icra: *LLMTransformerExecution = g_llm_tensor_icra;
+    degisken loader: *LLMModelLoader = icra->loader;
+    eger loader == 0 or icra->agirlik_buffer == 0 { dondu; }
+    degisken durum: *GGUFDurum = loader->durum;
+    eger durum == 0 { dondu; }
+    degisken ti: tamsayi = 0;
+    dongu ti < durum->tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum->tensor_list + ti * GGUF_TENSOR_STRIDE;
+        eger tensor->ggml_type == GGML_TYPE_I2_S and tensor->ndim == 2 and
+           tensor->bayt_sayisi <= icra->agirlik_kapasitesi {
+            eger ykn_cuda_has_weight(tensor->veri_offset, tensor->bayt_sayisi) == 0 {
+                eger llm_model_tensor_oku(icra->loader, tensor, icra->agirlik_buffer, icra->agirlik_kapasitesi) == tensor->bayt_sayisi {
+                    ykn_cuda_cache_i2s_weight(icra->agirlik_buffer, tensor->dim_0, tensor->dim_1, tensor->bayt_sayisi, tensor->veri_offset);
+                }
+            }
+        } yoksa eger tensor->ggml_type == GGML_TYPE_F32 and tensor->ndim == 1 and tensor->dim_0 <= 65536 {
+            degisken p_norm: *tamsayi = llm_transformer_cached_norm_vektor(icra, tensor, tensor->dim_0);
+            eger p_norm != 0 {
+                ykn_cuda_get_or_upload_norm_weight(tensor->veri_offset, p_norm, tensor->dim_0);
+            }
+        } yoksa eger tensor->ggml_type == GGML_TYPE_F16 and tensor->ndim == 2 and
+                     tensor->dim_0 == icra->model_gizli_boyutu and tensor->dim_1 == icra->model_vocab_boyutu {
+            eger YKN_CUDA_LMHEAD_DEVICE == 0 {
+                degisken f16_row_bytes: tamsayi = tensor->dim_0 * 2;
+                degisken f16_chunk_cap: tamsayi = icra->agirlik_kapasitesi / f16_row_bytes;
+                degisken new_lmhead_gpu: tamsayi = 0;
+                eger f16_chunk_cap > 0 and cuda_buffer_alloc(YKN_CUDA_CONTEXT_PTR, tensor->bayt_sayisi, &new_lmhead_gpu) == CUDA_SUCCESS and new_lmhead_gpu != 0 {
+                    degisken upload_ok: tamsayi = 1;
+                    degisken j: tamsayi = 0;
+                    dongu j < tensor->dim_1 {
+                        degisken upload_rows: tamsayi = f16_chunk_cap;
+                        eger upload_rows > tensor->dim_1 - j { upload_rows = tensor->dim_1 - j; }
+                        degisken upload_bytes: tamsayi = upload_rows * f16_row_bytes;
+                        eger llm_model_aralik_oku(icra->loader, tensor->veri_offset + j * f16_row_bytes, icra->agirlik_buffer, upload_bytes) != upload_bytes {
+                            upload_ok = 0; durdur;
+                        }
+                        eger cuda_copy_to_device(YKN_CUDA_CONTEXT_PTR, new_lmhead_gpu + j * f16_row_bytes, icra->agirlik_buffer, upload_bytes) != CUDA_SUCCESS {
+                            upload_ok = 0; durdur;
+                        }
+                        j = j + upload_rows;
+                    }
+                    eger upload_ok == 1 {
+                        YKN_CUDA_LMHEAD_DEVICE = new_lmhead_gpu;
+                        YKN_CUDA_LMHEAD_OFFSET = tensor->veri_offset;
+                        YKN_CUDA_LMHEAD_BYTES = tensor->bayt_sayisi;
+                    } yoksa {
+                        cuda_buffer_free(YKN_CUDA_CONTEXT_PTR, new_lmhead_gpu);
+                    }
+                }
+            }
+        }
+        ti = ti + 1;
+    }
+    degisken kv_bytes: tamsayi = icra->kv_kapasitesi * icra->model_katman_sayisi * icra->kv_kafa_sayisi * icra->kv_kafa_boyutu * 8;
+    degisken cift_preload: tamsayi = icra->kv_kafa_boyutu / 2;
+    degisken rope_boyutu_p: tamsayi = icra->model_rope_boyutu;
+    eger rope_boyutu_p <= 0 { rope_boyutu_p = cift_preload * 2; }
+    degisken rope_freq_p: tamsayi = icra->model_rope_freq_base_q16;
+    eger rope_freq_p <= 0 { rope_freq_p = 655360000; }
+    degisken rope_bytes: tamsayi = icra->kv_kapasitesi * cift_preload * 8;
+    eger kv_bytes > 0 and cift_preload > 0 and rope_bytes * 2 <= icra->agirlik_kapasitesi {
+        degisken h_cos: *tamsayi = icra->agirlik_buffer;
+        degisken h_sin: *tamsayi = icra->agirlik_buffer + rope_bytes;
+        degisken pos_i: tamsayi = 0;
+        dongu pos_i < icra->kv_kapasitesi {
+            bitnet_rope_tablosu_uret(bitnet_tamsayi_ptr_at(h_cos, pos_i * cift_preload),
+                bitnet_tamsayi_ptr_at(h_sin, pos_i * cift_preload),
+                cift_preload, pos_i, rope_boyutu_p, rope_freq_p);
+            pos_i = pos_i + 1;
+        }
+        ykn_cuda_init_kv_and_rope(kv_bytes, h_cos, h_sin, rope_bytes);
+    }
+    TRANSFORMER_TIME_NORM_NS = 0;
+    YKN_CUDA_I2S_GPU_NS = 0;
+    YKN_CUDA_F16_GPU_NS = 0;
+}
+
+isv llm_transformer_tensor_ileri_paket(paket: *LLMTensorIleriPaket) -> tamsayi {
+    eger paket == 0 veya paket->icra == 0 veya paket->tensor == 0 veya
+       paket->girdi == 0 veya paket->cikti == 0 veya paket->K <= 0 veya paket->N <= 0 veya
+       paket->tensor->dim_0 != paket->K veya paket->tensor->dim_1 != paket->N ise { dondu 10; }
+    degisken icra_local: *LLMTransformerExecution = paket->icra;
+    degisken tensor_local: *GGUFTensorInfo = paket->tensor;
+    degisken girdi_local: *tamsayi = paket->girdi;
+    degisken cikti_local: *tamsayi = paket->cikti;
+    # Struct pointer alanında doğrudan byte-index codegen'i tamsayi stride'ına
+    # düşebilir; local *u8 alias byte ABI'sini korur.
+    degisken agirlik_local: *u8 = icra_local->agirlik_buffer;
+    degisken need_read_local: tamsayi = 1;
+    eger icra_local->loader != 0 and icra_local->loader->pencere != 0 and icra_local->loader->pencere_bayti > 0 and
+       tensor_local->veri_offset >= icra_local->loader->pencere_ofseti and
+       tensor_local->veri_offset + tensor_local->bayt_sayisi <= icra_local->loader->pencere_ofseti + icra_local->loader->pencere_bayti {
+        agirlik_local = icra_local->loader->pencere + (tensor_local->veri_offset - icra_local->loader->pencere_ofseti);
+        need_read_local = 0;
+    } yoksa eger YKN_CUDA_READY == 1 ve ykn_cuda_has_weight(tensor_local->veri_offset, tensor_local->bayt_sayisi) == 1 {
+        need_read_local = 0;
+    }
+    eger need_read_local == 1 {
+        eger llm_model_tensor_oku(icra_local->loader, tensor_local, agirlik_local,
+            icra_local->agirlik_kapasitesi) <= 0 ise { dondu 11; }
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_I2_S ve YKN_CUDA_READY == 1 ise {
+        eger ykn_cuda_bitnet_i2s_matvec(agirlik_local, girdi_local, cikti_local,
+            paket->K, paket->N, tensor_local->bayt_sayisi,
+            tensor_local->veri_offset) == 1 {
+            TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+            dondu 1;
+        }
+        TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_IQ2_S_GGML ise {
+        eger g_llm_native_simd_aktif == 1 ise {
+            degisken satir_bayti_native: tamsayi = tensor_local->bayt_sayisi / paket->N;
+            eger satir_bayti_native <= 0 veya satir_bayti_native * paket->N > icra_local->agirlik_kapasitesi ise { dondu 12; }
+            degisken native_j: tamsayi = 0;
+            dongu native_j < paket->N {
+                cikti_local[native_j] = ykn_llm_iq2s_dot_q16(
+                    agirlik_local, girdi_local, paket->K,
+                    native_j * satir_bayti_native);
+                native_j = native_j + 1;
+            }
+            dondu 1;
+        }
+        eger bitnet_iq2s_paketli_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N) == 0 ise { dondu 12; }
+        dondu 1;
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_IQ2_S_LEGACY ise {
+        dondu bitnet_i2s_paketli_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_IQ4_NL ise {
+        dondu llm_iq4_nl_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_Q6_K ise {
+        dondu llm_q6_k_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_Q4_K ise {
+        dondu llm_q4_k_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_Q1_0 ise {
+        eger YKN_CUDA_READY == 1 {
+            eger ykn_cuda_q1_matvec_cached(agirlik_local, girdi_local, cikti_local,
+                paket->K, paket->N, tensor_local->bayt_sayisi,
+                tensor_local->veri_offset) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                dondu 1;
+            }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+        eger g_llm_native_simd_aktif == 1 ise {
+            degisken q1_satir_bayti: tamsayi = tensor_local->bayt_sayisi / paket->N;
+            eger q1_satir_bayti <= 0 ise { dondu 12; }
+            degisken q1_j: tamsayi = 0;
+            dongu q1_j < paket->N {
+                cikti_local[q1_j] = ykn_llm_q1_0_dot_q16(
+                    agirlik_local + q1_j * q1_satir_bayti,
+                    girdi_local, paket->K);
+                q1_j = q1_j + 1;
+            }
+            dondu 1;
+        }
+        dondu llm_q1_0_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_TQ2_0 ise {
+        dondu llm_tq2_0_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_F16 ise {
+        dondu llm_architecture_adapter_ileri(icra_local->adapter, LLM_QUANT_F16,
+            agirlik_local, tensor_local->bayt_sayisi,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_BF16 ise {
+        dondu llm_bf16_matris_carp(agirlik_local,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    eger tensor_local->ggml_type == GGML_TYPE_F32 ise {
+        dondu llm_architecture_adapter_ileri(icra_local->adapter, LLM_QUANT_F32,
+            agirlik_local, tensor_local->bayt_sayisi,
+            girdi_local, cikti_local, 1, paket->K, paket->N);
+    }
+    dondu 0;
+}
+
+# Forward iç dispatcher: tüm çağrı durumu primitive global slotlarda taşınır.
+# Dışarıya açık paketli API yukarıdaki fonksiyonda aynen korunur.
+isv llm_transformer_tensor_ileri_global() -> tamsayi {
+    TRANSFORMER_TENSOR_HATASI = 0;
+    eger g_llm_tensor_icra == 0 veya g_llm_tensor_bilgi == 0 veya
+       g_llm_tensor_girdi == 0 veya g_llm_tensor_cikti == 0 veya
+       g_llm_tensor_K <= 0 veya g_llm_tensor_N <= 0 ise {
+        TRANSFORMER_TENSOR_HATASI = 10; dondu 0;
+    }
+    degisken icra: *LLMTransformerExecution = g_llm_tensor_icra;
+    degisken tensor: *GGUFTensorInfo = g_llm_tensor_bilgi;
+    degisken girdi: *tamsayi = g_llm_tensor_girdi;
+    degisken cikti: *tamsayi = g_llm_tensor_cikti;
+    degisken K: tamsayi = g_llm_tensor_K;
+    degisken N: tamsayi = g_llm_tensor_N;
+    eger tensor->dim_0 != K veya tensor->dim_1 != N {
+        TRANSFORMER_TENSOR_HATASI = 10; dondu 0;
+    }
+    degisken agirlik: *u8 = icra->agirlik_buffer;
+    eger agirlik == 0 { TRANSFORMER_TENSOR_HATASI = 11; dondu 0; }
+    # K-quant tensors are processed in row chunks so a large Gemma/Qwen matrix
+    # never has to fit in the host scratch buffer at once.
+    eger tensor->ggml_type == GGML_TYPE_Q4_K veya tensor->ggml_type == GGML_TYPE_Q6_K {
+        eger K % 256 != 0 veya tensor->bayt_sayisi % N != 0 {
+            TRANSFORMER_TENSOR_HATASI = 14; dondu 0;
+        }
+        degisken row_bytes_k: tamsayi = tensor->bayt_sayisi / N;
+        eger row_bytes_k <= 0 veya row_bytes_k > icra->agirlik_kapasitesi {
+            TRANSFORMER_TENSOR_HATASI = 15; dondu 0;
+        }
+        degisken chunk_capacity: tamsayi = icra->agirlik_kapasitesi / row_bytes_k;
+        eger chunk_capacity <= 0 { TRANSFORMER_TENSOR_HATASI = 15; dondu 0; }
+        degisken first_row: tamsayi = 0;
+        dongu first_row < N {
+            degisken chunk_rows: tamsayi = chunk_capacity;
+            eger chunk_rows > N - first_row { chunk_rows = N - first_row; }
+            degisken chunk_bytes: tamsayi = chunk_rows * row_bytes_k;
+            eger llm_model_aralik_oku(icra->loader,
+                tensor->veri_offset + first_row * row_bytes_k,
+                agirlik, chunk_bytes) != chunk_bytes {
+                TRANSFORMER_TENSOR_HATASI = 16; dondu 0;
+            }
+            degisken cuda_done: tamsayi = 0;
+            eger YKN_CUDA_READY == 1 {
+                eger tensor->ggml_type == GGML_TYPE_Q4_K {
+                    eger ykn_cuda_q4_k_matvec(agirlik, girdi, bitnet_tamsayi_ptr_at(cikti, first_row),
+                        K, chunk_rows, chunk_bytes) == 1 {
+                        TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                        cuda_done = 1;
+                    }
+                } yoksa {
+                    eger ykn_cuda_q6_k_matvec(agirlik, girdi, bitnet_tamsayi_ptr_at(cikti, first_row),
+                        K, chunk_rows, chunk_bytes) == 1 {
+                        TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                        cuda_done = 1;
+                    }
+                }
+                eger cuda_done == 0 {
+                    TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+                }
+            }
+            eger cuda_done == 0 {
+                degisken cpu_ok: tamsayi = 0;
+                eger tensor->ggml_type == GGML_TYPE_Q4_K {
+                    cpu_ok = llm_q4_k_matris_carp(agirlik, girdi,
+                        bitnet_tamsayi_ptr_at(cikti, first_row), 1, K, chunk_rows);
+                } yoksa {
+                    cpu_ok = llm_q6_k_matris_carp(agirlik, girdi,
+                        bitnet_tamsayi_ptr_at(cikti, first_row), 1, K, chunk_rows);
+                }
+                eger cpu_ok != 1 { TRANSFORMER_TENSOR_HATASI = 17; dondu 0; }
+            }
+            first_row = first_row + chunk_rows;
+        }
+        dondu 1;
+    }
+    # Dense floating-point matrices can exceed the bounded scratch buffer too
+    # (Gemma-4's BF16 PLE projection is tens of MiB). Stream output rows just
+    # like K-quant tensors instead of requiring the whole matrix in RAM.
+    eger tensor->ggml_type == GGML_TYPE_F16 or tensor->ggml_type == GGML_TYPE_BF16 or
+       tensor->ggml_type == GGML_TYPE_F32 {
+        degisken element_bytes: tamsayi = 2;
+        eger tensor->ggml_type == GGML_TYPE_F32 { element_bytes = 4; }
+        degisken float_row_bytes: tamsayi = K * element_bytes;
+        eger float_row_bytes <= 0 or tensor->bayt_sayisi != float_row_bytes * N {
+            TRANSFORMER_TENSOR_HATASI = 12; dondu 0;
+        }
+        degisken rows_per_chunk: tamsayi = icra->agirlik_kapasitesi / float_row_bytes;
+        eger rows_per_chunk <= 0 { TRANSFORMER_TENSOR_HATASI = 15; dondu 0; }
+        degisken row_start: tamsayi = 0;
+        dongu row_start < N {
+            degisken rows: tamsayi = rows_per_chunk;
+            eger rows > N - row_start { rows = N - row_start; }
+            degisken chunk_bytes: tamsayi = rows * float_row_bytes;
+            eger llm_model_aralik_oku(icra->loader,
+                tensor->veri_offset + row_start * float_row_bytes,
+                agirlik, chunk_bytes) != chunk_bytes {
+                TRANSFORMER_TENSOR_HATASI = 16; dondu 0;
+            }
+            degisken chunk_ok: tamsayi = 0;
+            eger tensor->ggml_type == GGML_TYPE_BF16 {
+                chunk_ok = llm_bf16_matris_carp(agirlik, girdi,
+                    bitnet_tamsayi_ptr_at(cikti, row_start), 1, K, rows);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_F16 {
+                chunk_ok = llm_architecture_adapter_ileri(icra->adapter,
+                    LLM_QUANT_F16, agirlik, chunk_bytes, girdi,
+                    bitnet_tamsayi_ptr_at(cikti, row_start), 1, K, rows);
+            } yoksa {
+                chunk_ok = llm_architecture_adapter_ileri(icra->adapter,
+                    LLM_QUANT_F32, agirlik, chunk_bytes, girdi,
+                    bitnet_tamsayi_ptr_at(cikti, row_start), 1, K, rows);
+            }
+            eger chunk_ok != 1 { TRANSFORMER_TENSOR_HATASI = 17; dondu 0; }
+            row_start = row_start + rows;
+        }
+        dondu 1;
+    }
+    degisken need_read_global: tamsayi = 1;
+    eger icra->loader != 0 and icra->loader->pencere != 0 and icra->loader->pencere_bayti > 0 and
+       tensor->veri_offset >= icra->loader->pencere_ofseti and
+       tensor->veri_offset + tensor->bayt_sayisi <= icra->loader->pencere_ofseti + icra->loader->pencere_bayti {
+        agirlik = icra->loader->pencere + (tensor->veri_offset - icra->loader->pencere_ofseti);
+        need_read_global = 0;
+    } yoksa eger YKN_CUDA_READY == 1 ve ykn_cuda_has_weight(tensor->veri_offset, tensor->bayt_sayisi) == 1 {
+        need_read_global = 0;
+    }
+    eger need_read_global == 1 {
+        eger llm_model_tensor_oku(icra->loader, tensor,
+           agirlik, icra->agirlik_kapasitesi) <= 0 {
+            TRANSFORMER_TENSOR_HATASI = 11; dondu 0;
+        }
+    }
+    degisken sonuc: tamsayi = 0;
+    eger tensor->ggml_type == GGML_TYPE_I2_S ise {
+        eger YKN_CUDA_READY == 1 {
+            eger ykn_cuda_bitnet_i2s_matvec(agirlik, girdi, cikti, K, N,
+                tensor->bayt_sayisi, tensor->veri_offset) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+
+                dondu 1;
+            }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+        sonuc = bitnet_i2s_paketli_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML ise {
+        eger g_llm_native_simd_aktif == 1 ise {
+            degisken row_bytes: tamsayi = tensor->bayt_sayisi / N;
+            eger row_bytes <= 0 veya row_bytes * N > icra->agirlik_kapasitesi {
+                TRANSFORMER_TENSOR_HATASI = 12; dondu 0;
+            }
+            degisken row: tamsayi = 0;
+            dongu row < N {
+                cikti[row] = ykn_llm_iq2s_dot_q16(agirlik, girdi, K, row * row_bytes);
+                row = row + 1;
+            }
+            dondu 1;
+        }
+        sonuc = bitnet_iq2s_paketli_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_IQ2_S_LEGACY {
+        TRANSFORMER_TENSOR_HATASI = 13; dondu 0;
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_IQ4_NL {
+        sonuc = llm_iq4_nl_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q6_K {
+        sonuc = llm_q6_k_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q4_K {
+        sonuc = llm_q4_k_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q1_0 {
+        eger YKN_CUDA_READY == 1 {
+            eger ykn_cuda_q1_matvec_cached(agirlik, girdi, cikti, K, N,
+                tensor->bayt_sayisi, tensor->veri_offset) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                dondu 1;
+            }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+        eger g_llm_native_simd_aktif == 1 ise {
+            degisken row_bytes_q1: tamsayi = tensor->bayt_sayisi / N;
+            eger row_bytes_q1 <= 0 veya row_bytes_q1 * N > icra->agirlik_kapasitesi {
+                TRANSFORMER_TENSOR_HATASI = 12; dondu 0;
+            }
+            degisken row_q1: tamsayi = 0;
+            dongu row_q1 < N {
+                cikti[row_q1] = ykn_llm_q1_0_dot_q16(
+                    agirlik + row_q1 * row_bytes_q1, girdi, K);
+                row_q1 = row_q1 + 1;
+            }
+            dondu 1;
+        }
+        sonuc = llm_q1_0_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_TQ2_0 {
+        sonuc = llm_tq2_0_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_F16 {
+        sonuc = llm_architecture_adapter_ileri(icra->adapter, LLM_QUANT_F16,
+            agirlik, tensor->bayt_sayisi, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_BF16 {
+        sonuc = llm_bf16_matris_carp(agirlik, girdi, cikti, 1, K, N);
+    }
+    yoksa eger tensor->ggml_type == GGML_TYPE_F32 {
+        sonuc = llm_architecture_adapter_ileri(icra->adapter, LLM_QUANT_F32,
+            agirlik, tensor->bayt_sayisi, girdi, cikti, 1, K, N);
+    }
+    yoksa { TRANSFORMER_TENSOR_HATASI = 13; dondu 0; }
+    eger sonuc != 1 { TRANSFORMER_TENSOR_HATASI = 14; dondu 0; }
+    dondu 1;
+}
+
+# FFN zinciri primitive scratch alanları üzerinden yürütülür.
+isv llm_transformer_ffn_ileri_global() -> tamsayi {
+    eger g_llm_ffn_icra == 0 veya g_llm_ffn_durum == 0 veya
+       g_llm_ffn_katman < 0 ise { dondu 0; }
+    # Scratch alanları setup aşamasında ayrılır ve tüm katman/token
+    # çağrılarında yeniden kullanılır. Eski yolun her FFN'de iki adet 1 MiB
+    # VirtualAlloc yapması 2B modelde belirgin latency oluşturuyordu.
+    eger g_llm_ffn_icra->ffn_gate_scratch == 0 veya
+       g_llm_ffn_icra->ffn_up_scratch == 0 ise {
+        g_llm_ffn_icra->ffn_gate_scratch = bellek_tahsis_et(g_llm_ffn_icra->ffn_boyutu * 8 * 2);
+        g_llm_ffn_icra->ffn_up_scratch = g_llm_ffn_icra->ffn_gate_scratch + g_llm_ffn_icra->ffn_boyutu * 8;
+    }
+    degisken ara_gate: *tamsayi = g_llm_ffn_icra->ffn_gate_scratch;
+    degisken ara_up: *tamsayi = g_llm_ffn_icra->ffn_up_scratch;
+    eger ara_gate == 0 veya ara_up == 0 ise { dondu 0; }
+
+    degisken gate_tensor: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+        g_llm_ffn_durum, g_llm_ffn_katman, 9, "mlp.gate_proj.weight".ptr, ".ffn_gate.weight".ptr);
+    eger gate_tensor == 0 ise { dondu 0; }
+    degisken up_tensor: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+        g_llm_ffn_durum, g_llm_ffn_katman, 10, "mlp.up_proj.weight".ptr, ".ffn_up.weight".ptr);
+    eger up_tensor == 0 ise { dondu 0; }
+
+    degisken ffn_fused: tamsayi = 0;
+    eger YKN_CUDA_READY == 1 and gate_tensor->ggml_type == GGML_TYPE_I2_S and up_tensor->ggml_type == GGML_TYPE_I2_S {
+        degisken down_tensor_check: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+            g_llm_ffn_durum, g_llm_ffn_katman, 12, "mlp.down_proj.weight".ptr, ".ffn_down.weight".ptr);
+        degisken sub_norm_check: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+            g_llm_ffn_durum, g_llm_ffn_katman, 11, "ffn_sub_norm.weight".ptr, ".ffn_sub_norm.weight".ptr);
+        eger down_tensor_check != 0 and down_tensor_check->ggml_type == GGML_TYPE_I2_S and sub_norm_check != 0 {
+            degisken subnorm_ptr: *tamsayi = llm_transformer_cached_norm_vektor(g_llm_ffn_icra, sub_norm_check, g_llm_ffn_icra->ffn_boyutu);
+            eger subnorm_ptr != 0 {
+                degisken t_ffn0: tamsayi = ykn_llm_clock_ns();
+                ffn_fused = ykn_cuda_bitnet_i2s_ffn_fused(
+                    gate_tensor->veri_offset, gate_tensor->bayt_sayisi,
+                    up_tensor->veri_offset, up_tensor->bayt_sayisi,
+                    down_tensor_check->veri_offset, down_tensor_check->bayt_sayisi,
+                    sub_norm_check->veri_offset, subnorm_ptr,
+                    g_llm_ffn_icra->ffn_boyutu, g_llm_ffn_icra->model_gizli_boyutu,
+                    g_llm_ffn_icra->model_norm_eps_q16,
+                    g_llm_transformer_attention, g_llm_transformer_hidden);
+                degisken t_ffn1: tamsayi = ykn_llm_clock_ns();
+                eger ffn_fused == 1 {
+                    G_TIME_GATEUP_NS = G_TIME_GATEUP_NS + (t_ffn1 - t_ffn0);
+                    TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 5;
+                    dondu 1;
+                }
+            }
+        }
+    }
+
+    degisken gate_up_batched: tamsayi = 0;
+    degisken t_gu0: tamsayi = ykn_llm_clock_ns();
+    eger YKN_CUDA_READY == 1 and gate_tensor->ggml_type == GGML_TYPE_I2_S and up_tensor->ggml_type == GGML_TYPE_I2_S {
+        gate_up_batched = ykn_cuda_bitnet_i2s_gate_up(
+            gate_tensor->veri_offset, gate_tensor->bayt_sayisi,
+            up_tensor->veri_offset, up_tensor->bayt_sayisi,
+            g_llm_ffn_icra->ffn_boyutu, ara_gate, ara_up,
+            g_llm_transformer_attention, g_llm_ffn_icra->model_gizli_boyutu);
+    }
+    eger gate_up_batched == 0 {
+        g_llm_tensor_icra = g_llm_ffn_icra;
+        g_llm_tensor_bilgi = gate_tensor;
+        g_llm_tensor_girdi = g_llm_transformer_attention;
+        g_llm_tensor_cikti = ara_gate;
+        g_llm_tensor_K = g_llm_ffn_icra->model_gizli_boyutu;
+        g_llm_tensor_N = g_llm_ffn_icra->ffn_boyutu;
+        eger llm_transformer_tensor_ileri_global() == 0 ise { dondu 0; }
+
+        g_llm_tensor_bilgi = up_tensor;
+        g_llm_tensor_cikti = ara_up;
+        eger llm_transformer_tensor_ileri_global() == 0 ise { dondu 0; }
+    }
+    degisken t_gu1: tamsayi = ykn_llm_clock_ns();
+    G_TIME_GATEUP_NS = G_TIME_GATEUP_NS + (t_gu1 - t_gu0);
+
+    eger g_llm_ffn_icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(ara_gate, g_llm_ffn_icra->ffn_boyutu, 13, g_llm_ffn_katman);
+        llm_transformer_trace_q16(ara_up, g_llm_ffn_icra->ffn_boyutu, 14, g_llm_ffn_katman);
+    }
+    # Gemma4 uses parallel gate/up with GELU(gate) * up; the established
+    # Qwen/BitNet path uses SiLU(gate) * up.
+    degisken t_sw0: tamsayi = ykn_llm_clock_ns();
+    eger gate_up_batched != 2 {
+        eger g_llm_ffn_icra->model_mimari == LLM_MIMARI_GEMMA {
+            eger bitnet_q16_gelu_product(ara_gate, ara_up, ara_gate,
+                g_llm_ffn_icra->ffn_boyutu) == 0 ise { dondu 0; }
+        } yoksa {
+            eger bitnet_q16_swiglu(ara_gate, ara_up, ara_gate,
+                g_llm_ffn_icra->ffn_boyutu) == 0 ise { dondu 0; }
+        }
+    }
+    degisken t_sw1: tamsayi = ykn_llm_clock_ns();
+    G_TIME_SWIGLU_NS = G_TIME_SWIGLU_NS + (t_sw1 - t_sw0);
+
+    eger g_llm_ffn_icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(ara_gate, g_llm_ffn_icra->ffn_boyutu, 8, g_llm_ffn_katman);
+    }
+
+    # BitNet FFN alt normu aktivasyon ve down projection arasındadır.
+    degisken t_sn0: tamsayi = ykn_llm_clock_ns();
+    degisken ffn_sub_norm: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+        g_llm_ffn_durum, g_llm_ffn_katman, 11, "ffn_sub_norm.weight".ptr, ".ffn_sub_norm.weight".ptr);
+    eger ffn_sub_norm != 0 {
+        eger llm_transformer_norm_vektor_uygula(g_llm_ffn_icra, ffn_sub_norm,
+            ara_gate, ara_gate, g_llm_ffn_icra->ffn_boyutu) == 0 ise { dondu 0; }
+    }
+    degisken t_sn1: tamsayi = ykn_llm_clock_ns();
+    G_TIME_SUBNORM_NS = G_TIME_SUBNORM_NS + (t_sn1 - t_sn0);
+
+    eger g_llm_ffn_icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(ara_gate, g_llm_ffn_icra->ffn_boyutu, 9, g_llm_ffn_katman);
+    }
+
+    degisken t_dw0: tamsayi = ykn_llm_clock_ns();
+    degisken down_tensor: *GGUFTensorInfo = llm_cached_layer_tensor_bul(
+        g_llm_ffn_durum, g_llm_ffn_katman, 12, "mlp.down_proj.weight".ptr, ".ffn_down.weight".ptr);
+    eger down_tensor == 0 ise { dondu 0; }
+    g_llm_tensor_bilgi = down_tensor;
+    g_llm_tensor_girdi = ara_gate;
+    g_llm_tensor_cikti = g_llm_transformer_hidden;
+    g_llm_tensor_K = g_llm_ffn_icra->ffn_boyutu;
+    g_llm_tensor_N = g_llm_ffn_icra->model_gizli_boyutu;
+    eger llm_transformer_tensor_ileri_global() == 0 ise { dondu 0; }
+    degisken t_dw1: tamsayi = ykn_llm_clock_ns();
+    G_TIME_DOWN_NS = G_TIME_DOWN_NS + (t_dw1 - t_dw0);
+
+    dondu 1;
+}
+
+# Dış ABI uyumluluğu: paket yalnızca primitive scratch alanlarını doldurur.
+isv llm_transformer_ffn_ileri_paket(paket: *LLMFFNIleriPaket) -> tamsayi {
+    eger paket == 0 veya paket->icra == 0 veya paket->durum == 0 ise { dondu 0; }
+    g_llm_ffn_icra = paket->icra;
+    g_llm_ffn_durum = paket->durum;
+    g_llm_ffn_katman = paket->katman;
+    dondu llm_transformer_ffn_ileri_global();
+}
+
+# Eski kaynak uyumluluğu için çok-argümanlı API; yeni forward yolu paketliyi kullanır.
+isv llm_transformer_tensor_ileri(icra: *LLMTransformerExecution,
+                                 tensor: *GGUFTensorInfo,
+                                 girdi: *tamsayi,
+                                 cikti: *tamsayi,
+                                 K: tamsayi,
+                                 N: tamsayi) -> tamsayi {
+    degisken paket: LLMTensorIleriPaket;
+    paket.icra = icra;
+    paket.tensor = tensor;
+    paket.girdi = girdi;
+    paket.cikti = cikti;
+    paket.K = K;
+    paket.N = N;
+    dondu llm_transformer_tensor_ileri_paket(&paket);
+}
+
+# Ortak tensor varyantları: GGML, Llama HF ve Phi/Qwen exportları.
+isv llm_transformer_tek_tensor_bul(durum: *GGUFDurum, bir: *u8, iki: *u8, uc: *u8) -> *GGUFTensorInfo {
+    degisken sonuc: *GGUFTensorInfo = 0;
+    eger bir != 0 ise { sonuc = gguf_tensor_bul_adi_ile(durum, bir); }
+    eger sonuc == 0 ve iki != 0 ise { sonuc = gguf_tensor_bul_adi_ile(durum, iki); }
+    eger sonuc == 0 ve uc != 0 ise { sonuc = gguf_tensor_bul_adi_ile(durum, uc); }
+    dondu sonuc;
+}
+
+isv llm_transformer_tensor_vektor_oku(icra: *LLMTransformerExecution,
+                                     tensor: *GGUFTensorInfo,
+                                     ofset: tamsayi,
+                                     cikti: *tamsayi,
+                                     adet: tamsayi) -> tamsayi {
+    eger icra == 0 veya tensor == 0 veya cikti == 0 veya adet <= 0 veya
+       ofset < tensor->veri_offset veya icra->agirlik_buffer == 0 ise { dondu 0; }
+    degisken agirlik_local: *u8 = icra->agirlik_buffer;
+    degisken eleman_bayti: tamsayi = 0;
+    eger tensor->ggml_type == GGML_TYPE_F16 veya tensor->ggml_type == GGML_TYPE_BF16 ise { eleman_bayti = 2; }
+    eger tensor->ggml_type == GGML_TYPE_F32 ise { eleman_bayti = 4; }
+    eger tensor->ggml_type == GGML_TYPE_Q1_0 ise {
+        eger adet % 128 != 0 ise { dondu 0; }
+        eleman_bayti = 0;
+    }
+    eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML ise {
+        eger adet % 256 != 0 ise { dondu 0; }
+        eleman_bayti = 0;
+    }
+    eger tensor->ggml_type == GGML_TYPE_Q4_K veya tensor->ggml_type == GGML_TYPE_Q6_K ise {
+        eger adet % 256 != 0 ise { dondu 0; }
+        eleman_bayti = 0;
+    }
+    eger tensor->ggml_type == GGML_TYPE_IQ4_NL ise {
+        eger adet % 32 != 0 ise { dondu 0; }
+        eleman_bayti = 0;
+    }
+    eger tensor->ggml_type != GGML_TYPE_IQ2_S_GGML ve tensor->ggml_type != GGML_TYPE_Q1_0 ve
+       tensor->ggml_type != GGML_TYPE_Q4_K ve tensor->ggml_type != GGML_TYPE_Q6_K ve
+       tensor->ggml_type != GGML_TYPE_IQ4_NL ve eleman_bayti == 0 ise { dondu 0; }
+    degisken bayt: tamsayi = tensor->bayt_sayisi;
+    eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML { bayt = (adet / 256) * 82; }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q1_0 { bayt = (adet / 128) * 18; }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q4_K { bayt = (adet / 256) * 144; }
+    yoksa eger tensor->ggml_type == GGML_TYPE_Q6_K { bayt = (adet / 256) * 210; }
+    yoksa eger tensor->ggml_type == GGML_TYPE_IQ4_NL { bayt = (adet / 32) * 18; }
+    yoksa { bayt = adet * eleman_bayti; }
+    eger bayt > icra->agirlik_kapasitesi veya agirlik_local == 0 veya
+        llm_model_aralik_oku(icra->loader, ofset,
+        agirlik_local, bayt) != bayt ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        eger tensor->ggml_type == GGML_TYPE_F16 ise {
+            cikti[i] = llm_f16_q16_coz(agirlik_local[i * 2], agirlik_local[i * 2 + 1]);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_BF16 ise {
+            cikti[i] = llm_bf16_q16_coz(agirlik_local[i * 2], agirlik_local[i * 2 + 1]);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_F32 ise {
+            cikti[i] = llm_f32_q16_coz(agirlik_local[i * 4], agirlik_local[i * 4 + 1],
+                agirlik_local[i * 4 + 2], agirlik_local[i * 4 + 3]);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_Q1_0 ise {
+            cikti[i] = llm_q1_0_eleman_q16(agirlik_local, (i / 128) * 18, i % 128);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_Q4_K ise {
+            cikti[i] = llm_q4_k_eleman_q16(agirlik_local, (i / 256) * 144, i % 256);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_Q6_K ise {
+            cikti[i] = llm_q6_k_eleman_q16(agirlik_local, (i / 256) * 210, i % 256);
+        } yoksa eger tensor->ggml_type == GGML_TYPE_IQ4_NL ise {
+            cikti[i] = llm_iq4_nl_eleman_q16(agirlik_local, (i / 32) * 18, i % 32);
+        } yoksa {
+            cikti[i] = bitnet_iq2s_eleman_q16(agirlik_local + (i / 256) * 82, i % 256);
+        }
+        i = i + 1;
+    }
+    dondu adet;
+}
+
+isv llm_transformer_embedding_oku(icra: *LLMTransformerExecution,
+                                  durum: *GGUFDurum, token: tamsayi) -> tamsayi {
+    eger icra == 0 veya durum == 0 veya token < 0 veya token >= icra->model_vocab_boyutu ise { dondu 0; }
+    # Adapter içindeki nested string pointer'ı yerine sabit canonical isimleri
+    # doğrudan dene. Bu yol Stage-1/Win64 pointer ABI'sinde kararlıdır.
+    degisken tensor: *GGUFTensorInfo = 0;
+    eger G_CACHED_EMBD_TENSOR_INIT == 1 {
+        tensor = G_CACHED_EMBD_TENSOR;
+    } yoksa {
+        tensor = gguf_tensor_bul_adi_ile(durum, "token_embd.weight".ptr);
+        eger tensor == 0 ise { tensor = gguf_tensor_bul_adi_ile(durum, "model.embed_tokens.weight".ptr); }
+        eger tensor == 0 ise { tensor = gguf_tensor_bul_adi_ile(durum, "transformer.wte.weight".ptr); }
+        eger tensor == 0 ise { tensor = gguf_tensor_bul_adi_ile(durum, "tok_embeddings.weight".ptr); }
+        G_CACHED_EMBD_TENSOR = tensor;
+        G_CACHED_EMBD_TENSOR_INIT = 1;
+    }
+    eger tensor == 0 veya tensor->dim_0 != icra->model_gizli_boyutu veya tensor->dim_1 <= token ise { dondu 0; }
+    degisken satir_bayti: tamsayi = tensor->bayt_sayisi / tensor->dim_1;
+    eger YKN_CUDA_READY == 1 and YKN_CUDA_LMHEAD_DEVICE != 0 and
+       YKN_CUDA_LMHEAD_OFFSET == tensor->veri_offset and tensor->ggml_type == GGML_TYPE_F16 and
+       icra->model_mimari != LLM_MIMARI_GEMMA and icra->token_konumu != TRANSFORMER_TRACE_POSITION {
+        eger ykn_cuda_f16_embd_to_q16_gpu(YKN_CUDA_LMHEAD_DEVICE + token * satir_bayti, icra->model_gizli_boyutu) == 1 {
+            dondu 1;
+        }
+    }
+    eger llm_transformer_tensor_vektor_oku(icra, tensor, tensor->veri_offset + token * satir_bayti,
+        g_llm_transformer_hidden, icra->model_gizli_boyutu) != icra->model_gizli_boyutu ise { dondu 0; }
+    # Gemma4 scales token embeddings by sqrt(model hidden width); its
+    # per-layer input embedding has a separate scale handled in the Gemma path.
+    eger icra->model_mimari == LLM_MIMARI_GEMMA {
+        degisken scale_q16: tamsayi = bitnet_q16_karekoku(
+            icra->model_gizli_boyutu * BITNET_Q16_BIR * BITNET_Q16_BIR);
+        eger scale_q16 <= 0 { dondu 0; }
+        degisken ei: tamsayi = 0;
+        dongu ei < icra->model_gizli_boyutu {
+            g_llm_transformer_hidden[ei] =
+                (g_llm_transformer_hidden[ei] * scale_q16) / BITNET_Q16_BIR;
+            ei = ei + 1;
+        }
+    }
+    dondu 1;
+}
+
+# Build Gemma-4 per-layer input: projected/scaled input embedding plus the
+# selected token's learned per-layer embedding, followed by 1/sqrt(2).
+isv llm_transformer_gemma4_prepare_per_layer_input(icra: *LLMTransformerExecution,
+                                                    durum: *GGUFDurum,
+                                                    token_id: tamsayi) -> tamsayi {
+    eger icra == 0 or durum == 0 or token_id < 0 or
+       token_id >= icra->model_vocab_boyutu or durum->gemma4 == 0 { dondu 0; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    degisken width: tamsayi = profile->per_layer_input_length;
+    degisken layers: tamsayi = durum->katman_sayisi;
+    degisken total: tamsayi = width * layers;
+    eger width <= 0 or layers <= 0 or total <= 0 or total > 65536 { dondu 0; }
+    degisken token_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_token_embd.weight".ptr);
+    degisken model_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_model_proj.weight".ptr);
+    degisken norm_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_proj_norm.weight".ptr);
+    eger token_tensor == 0 or model_tensor == 0 or norm_tensor == 0 or
+       token_tensor->dim_0 != total or token_tensor->dim_1 != icra->model_vocab_boyutu or
+       model_tensor->dim_0 != icra->model_gizli_boyutu or model_tensor->dim_1 != total or
+       norm_tensor->dim_0 != width or icra->attention == 0 or icra->q == 0 or
+       icra->ffn == 0 { dondu 0; }
+    eger g_llm_gemma4_per_layer_input == 0 or
+       g_llm_gemma4_per_layer_input_count != total {
+        g_llm_gemma4_per_layer_input = bellek_tahsis_et(total * 8);
+        g_llm_gemma4_per_layer_input_count = total;
+    }
+    degisken projected: *tamsayi = g_llm_gemma4_per_layer_input;
+    g_llm_tensor_icra = icra; g_llm_tensor_bilgi = model_tensor;
+    g_llm_tensor_girdi = g_llm_transformer_hidden;
+    g_llm_tensor_cikti = projected;
+    g_llm_tensor_K = icra->model_gizli_boyutu; g_llm_tensor_N = total;
+    eger llm_transformer_tensor_ileri_global() == 0 { dondu 0; }
+
+    degisken inv_hidden_sqrt: tamsayi = bitnet_q16_karekoku(
+        icra->model_gizli_boyutu * BITNET_Q16_BIR * BITNET_Q16_BIR);
+    degisken per_layer_sqrt: tamsayi = bitnet_q16_karekoku(
+        width * BITNET_Q16_BIR * BITNET_Q16_BIR);
+    degisken inv_two_sqrt: tamsayi = bitnet_q16_karekoku(2 * BITNET_Q16_BIR * BITNET_Q16_BIR);
+    eger inv_hidden_sqrt <= 0 or per_layer_sqrt <= 0 or inv_two_sqrt <= 0 { dondu 0; }
+    degisken inv_hidden: tamsayi = (BITNET_Q16_BIR * BITNET_Q16_BIR) / inv_hidden_sqrt;
+    degisken inv_two: tamsayi = (BITNET_Q16_BIR * BITNET_Q16_BIR) / inv_two_sqrt;
+    degisken norm_weights: *tamsayi = icra->ffn;
+    eger llm_transformer_tensor_vektor_oku(icra, norm_tensor,
+        norm_tensor->veri_offset, norm_weights, width) != width { dondu 0; }
+    degisken layer: tamsayi = 0;
+    dongu layer < layers {
+        degisken offset: tamsayi = layer * width;
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(bitnet_tamsayi_ptr_at(projected, offset), width, 23, layer);
+        }
+        degisken i: tamsayi = 0;
+        dongu i < width {
+            projected[offset + i] = (projected[offset + i] * inv_hidden) / BITNET_Q16_BIR;
+            i = i + 1;
+        }
+        eger bitnet_rmsnorm_q16(bitnet_tamsayi_ptr_at(projected, offset), norm_weights, icra->q,
+            width, icra->model_norm_eps_q16) == 0 { dondu 0; }
+        degisken j: tamsayi = 0;
+        dongu j < width {
+            projected[offset + j] = icra->q[j];
+            j = j + 1;
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(bitnet_tamsayi_ptr_at(projected, offset), width, 22, layer);
+        }
+        layer = layer + 1;
+    }
+    degisken token_row_bytes: tamsayi = token_tensor->bayt_sayisi / token_tensor->dim_1;
+    eger token_row_bytes <= 0 or llm_transformer_tensor_vektor_oku(icra,
+        token_tensor, token_tensor->veri_offset + token_id * token_row_bytes,
+        icra->q, total) != total { dondu 0; }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        degisken token_trace_layer: tamsayi = 0;
+        dongu token_trace_layer < layers {
+            llm_transformer_trace_q16(bitnet_tamsayi_ptr_at(icra->q, token_trace_layer * width),
+                width, 21, token_trace_layer);
+            token_trace_layer = token_trace_layer + 1;
+        }
+    }
+    degisken k: tamsayi = 0;
+    dongu k < total {
+        degisken token_scaled: tamsayi = (icra->q[k] * per_layer_sqrt) / BITNET_Q16_BIR;
+        projected[k] = ((projected[k] + token_scaled) * inv_two) / BITNET_Q16_BIR;
+        k = k + 1;
+    }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        degisken trace_layer: tamsayi = 0;
+        dongu trace_layer < layers {
+            llm_transformer_trace_q16(bitnet_tamsayi_ptr_at(projected, trace_layer * width),
+                width, 20, trace_layer);
+            trace_layer = trace_layer + 1;
+        }
+    }
+    dondu 1;
+}
+
+# Apply one layer's post-FFN PLE residual, matching Gemma-4's gate/GELU/
+# elementwise-product/projection/post-norm sequence.
+isv llm_transformer_gemma4_apply_per_layer(icra: *LLMTransformerExecution,
+                                            durum: *GGUFDurum,
+                                            katman: tamsayi) -> tamsayi {
+    eger icra == 0 or durum == 0 or g_llm_gemma4_per_layer_input == 0 or
+       katman < 0 or katman >= durum->katman_sayisi { dondu 0; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    degisken width: tamsayi = profile->per_layer_input_length;
+    degisken gate: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum, 0, katman, ".inp_gate.weight".ptr);
+    degisken proj: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum, 0, katman, ".proj.weight".ptr);
+    degisken norm: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum, 0, katman, ".post_norm.weight".ptr);
+    eger gate == 0 or proj == 0 or norm == 0 or icra->ffn == 0 or
+       icra->attention == 0 or gate->dim_0 != icra->model_gizli_boyutu or
+       gate->dim_1 != width or proj->dim_0 != width or
+       proj->dim_1 != icra->model_gizli_boyutu or norm->dim_0 != icra->model_gizli_boyutu {
+        dondu 0;
+    }
+    g_llm_tensor_icra = icra; g_llm_tensor_bilgi = gate;
+    g_llm_tensor_girdi = g_llm_transformer_hidden; g_llm_tensor_cikti = icra->ffn;
+    g_llm_tensor_K = icra->model_gizli_boyutu; g_llm_tensor_N = width;
+    eger llm_transformer_tensor_ileri_global() == 0 or
+       bitnet_q16_gelu_vector(icra->ffn, width) == 0 { dondu 0; }
+    degisken offset: tamsayi = katman * width;
+    degisken i: tamsayi = 0;
+    dongu i < width {
+        icra->ffn[i] = (icra->ffn[i] *
+            g_llm_gemma4_per_layer_input[offset + i]) / BITNET_Q16_BIR;
+        i = i + 1;
+    }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(icra->ffn, width, 17, katman);
+    }
+    g_llm_tensor_bilgi = proj; g_llm_tensor_girdi = icra->ffn;
+    g_llm_tensor_cikti = icra->attention;
+    g_llm_tensor_K = width; g_llm_tensor_N = icra->model_gizli_boyutu;
+    eger llm_transformer_tensor_ileri_global() == 0 or
+       llm_transformer_norm_uygula(icra, norm, icra->attention,
+           icra->attention) == 0 { dondu 0; }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(icra->attention, icra->model_gizli_boyutu, 18, katman);
+    }
+    eger llm_q16_topla(g_llm_transformer_hidden, icra->attention,
+        icra->model_gizli_boyutu) == 0 { dondu 0; }
+    dondu 1;
+}
+
+# Gemma4's learned full-attention RoPE tensor is an F32 mask: active
+# frequencies are the leading entries equal to 1.0, followed by 1e30 sentinels.
+isv llm_transformer_gemma4_full_rope_pairs(icra: *LLMTransformerExecution,
+                                            durum: *GGUFDurum) -> tamsayi {
+    eger icra == 0 or durum == 0 { dondu 0 - 1; }
+    degisken tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "rope_freqs.weight".ptr);
+    eger tensor == 0 or tensor->ggml_type != GGML_TYPE_F32 or
+       tensor->dim_0 <= 0 or tensor->dim_0 > 256 or tensor->bayt_sayisi != tensor->dim_0 * 4 {
+        dondu 0 - 1;
+    }
+    degisken raw: *u8 = bellek_tahsis_et(tensor->bayt_sayisi);
+    eger raw == 0 or llm_model_tensor_oku(icra->loader, tensor, raw, tensor->bayt_sayisi) != tensor->bayt_sayisi {
+        dondu 0 - 1;
+    }
+    degisken active: tamsayi = 0;
+    degisken masked: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < tensor->dim_0 {
+        degisken offset: tamsayi = i * 4;
+        degisken exponent: tamsayi = ((raw[offset + 3] * 256 + raw[offset + 2]) / 128) % 256;
+        eger exponent >= 200 {
+            masked = 1;
+        } yoksa {
+            # This implementation currently supports only unity frequency
+            # multipliers; reject any other active factor rather than guess.
+            eger masked == 1 or raw[offset] != 0 or raw[offset + 1] != 0 or
+               raw[offset + 2] != 128 or raw[offset + 3] != 63 {
+                dondu 0 - 1;
+            }
+            active = active + 1;
+        }
+        i = i + 1;
+    }
+    eger active <= 0 { dondu 0 - 1; }
+    dondu active;
+}
+
+
+
+isv llm_transformer_cached_norm_vektor(icra: *LLMTransformerExecution,
+                                        tensor: *GGUFTensorInfo,
+                                        adet: tamsayi) -> *tamsayi {
+    eger tensor == 0 veya adet <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < G_CACHED_NORM_COUNT {
+        eger G_CACHED_NORM_OFFSETS[i] == tensor->veri_offset ve G_CACHED_NORM_ADET[i] == adet {
+            dondu G_CACHED_NORM_PTRS[i];
+        }
+        i = i + 1;
+    }
+    eger G_CACHED_NORM_COUNT >= 256 {
+        eger g_llm_forward_ffn_buffer == 0 ve icra != 0 ise { g_llm_forward_ffn_buffer = icra->ffn; }
+        eger g_llm_forward_ffn_buffer == 0 { dondu 0; }
+        eger llm_transformer_tensor_vektor_oku(icra, tensor, tensor->veri_offset,
+            g_llm_forward_ffn_buffer, adet) != adet { dondu 0; }
+        dondu g_llm_forward_ffn_buffer;
+    }
+    degisken norm_buf: *tamsayi = bellek_tahsis_et(adet * 8);
+    eger norm_buf == 0 { dondu 0; }
+    eger llm_transformer_tensor_vektor_oku(icra, tensor, tensor->veri_offset,
+        norm_buf, adet) != adet { dondu 0; }
+    degisken idx: tamsayi = G_CACHED_NORM_COUNT;
+    G_CACHED_NORM_OFFSETS[idx] = tensor->veri_offset;
+    G_CACHED_NORM_PTRS[idx] = norm_buf;
+    G_CACHED_NORM_ADET[idx] = adet;
+    G_CACHED_NORM_COUNT = idx + 1;
+    dondu norm_buf;
+}
+
+isv llm_transformer_norm_vektor_uygula(icra: *LLMTransformerExecution,
+                                        tensor: *GGUFTensorInfo,
+                                        girdi: *tamsayi, cikti: *tamsayi,
+                                        adet: tamsayi) -> tamsayi {
+    ykn_cuda_clear_act_cache();
+    eger icra == 0 veya tensor == 0 veya girdi == 0 veya cikti == 0 veya adet <= 0 veya
+       tensor->dim_0 != adet ise { dondu 0; }
+    degisken norm_ptr: *tamsayi = llm_transformer_cached_norm_vektor(icra, tensor, adet);
+    eger norm_ptr == 0 ise { dondu 0; }
+    eger bitnet_rmsnorm_q16(girdi, norm_ptr, cikti, adet,
+        icra->model_norm_eps_q16) == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv llm_transformer_norm_uygula(icra: *LLMTransformerExecution,
+                                tensor: *GGUFTensorInfo,
+                                girdi: *tamsayi, cikti: *tamsayi) -> tamsayi {
+    degisken t_n0: tamsayi = ykn_llm_clock_ns();
+    ykn_cuda_clear_act_cache();
+    eger icra == 0 veya tensor == 0 veya girdi == 0 veya cikti == 0 veya
+       tensor->dim_0 != icra->model_gizli_boyutu ise { TRANSFORMER_FORWARD_HATASI = 311; dondu 0; }
+    degisken norm_ptr: *tamsayi = llm_transformer_cached_norm_vektor(icra, tensor, icra->model_gizli_boyutu);
+    eger norm_ptr == 0 ise { TRANSFORMER_FORWARD_HATASI = 312; dondu 0; }
+    eger bitnet_rmsnorm_q16(girdi, norm_ptr,
+        cikti, icra->model_gizli_boyutu, icra->model_norm_eps_q16) == 0 ise { TRANSFORMER_FORWARD_HATASI = 313; dondu 0; }
+    degisken t_n1: tamsayi = ykn_llm_clock_ns();
+    TRANSFORMER_TIME_NORM_NS = TRANSFORMER_TIME_NORM_NS + (t_n1 - t_n0);
+    dondu 1;
+}
+
+# Büyük output/embedding tensorlerinde bütün modeli RAM'e almadan satır
+# bazında range-read + dot product yapar. GGUF [K,N] düzeni için her satır
+# bir output token'ına aittir.
+isv llm_transformer_tensor_aralik_matris(icra: *LLMTransformerExecution,
+                                         tensor: *GGUFTensorInfo,
+                                         girdi: *tamsayi, cikti: *tamsayi,
+                                         K: tamsayi, N: tamsayi) -> tamsayi {
+    eger icra == 0 veya tensor == 0 veya girdi == 0 veya cikti == 0 veya K <= 0 veya N <= 0 veya
+       tensor->dim_0 != K veya tensor->dim_1 != N ise { dondu 0; }
+    degisken agirlik_local: *u8 = icra->agirlik_buffer;
+    degisken satir_bayti: tamsayi = tensor->bayt_sayisi / N;
+    eger satir_bayti <= 0 veya satir_bayti > icra->agirlik_kapasitesi veya agirlik_local == 0 ise { dondu 0; }
+    degisken j: tamsayi = 0;
+    eger tensor->ggml_type == GGML_TYPE_F16 ve YKN_CUDA_READY == 1 ve
+       tensor->bayt_sayisi == K * N * 2 ve icra->agirlik_kapasitesi > 0 {
+        degisken f16_row_bytes: tamsayi = K * 2;
+        degisken f16_chunk_capacity: tamsayi = icra->agirlik_kapasitesi / f16_row_bytes;
+        eger f16_chunk_capacity > 0 ise {
+            eger YKN_CUDA_LMHEAD_DEVICE != 0 ve YKN_CUDA_LMHEAD_OFFSET == tensor->veri_offset ve YKN_CUDA_LMHEAD_BYTES == tensor->bayt_sayisi {
+                eger ykn_cuda_f16_matvec_device(YKN_CUDA_LMHEAD_DEVICE, girdi, cikti, K, N) == 1 {
+                    TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                    dondu 1;
+                }
+            }
+            degisken new_lmhead_gpu: tamsayi = 0;
+            degisken alloc_st: tamsayi = cuda_buffer_alloc(YKN_CUDA_CONTEXT_PTR, tensor->bayt_sayisi, &new_lmhead_gpu);
+            eger alloc_st == CUDA_SUCCESS ve new_lmhead_gpu != 0 {
+                degisken upload_ok: tamsayi = 1;
+                j = 0;
+                dongu j < N {
+                    degisken upload_rows: tamsayi = f16_chunk_capacity;
+                    eger upload_rows > N - j { upload_rows = N - j; }
+                    degisken upload_bytes: tamsayi = upload_rows * f16_row_bytes;
+                    eger llm_model_aralik_oku(icra->loader,
+                        tensor->veri_offset + j * f16_row_bytes,
+                        agirlik_local, upload_bytes) != upload_bytes {
+                        upload_ok = 0;
+                        durdur;
+                    }
+                    degisken copy_st: tamsayi = cuda_copy_to_device(YKN_CUDA_CONTEXT_PTR,
+                        new_lmhead_gpu + j * f16_row_bytes, agirlik_local, upload_bytes);
+                    eger copy_st != CUDA_SUCCESS {
+                        upload_ok = 0;
+                        durdur;
+                    }
+                    j = j + upload_rows;
+                }
+                eger upload_ok == 1 {
+                    eger YKN_CUDA_LMHEAD_DEVICE != 0 {
+                        cuda_buffer_free(YKN_CUDA_CONTEXT_PTR, YKN_CUDA_LMHEAD_DEVICE);
+                    }
+                    YKN_CUDA_LMHEAD_DEVICE = new_lmhead_gpu;
+                    YKN_CUDA_LMHEAD_OFFSET = tensor->veri_offset;
+                    YKN_CUDA_LMHEAD_BYTES = tensor->bayt_sayisi;
+                    eger ykn_cuda_f16_matvec_device(YKN_CUDA_LMHEAD_DEVICE, girdi, cikti, K, N) == 1 {
+                        TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                        dondu 1;
+                    }
+                } eger upload_ok == 0 {
+                    cuda_buffer_free(YKN_CUDA_CONTEXT_PTR, new_lmhead_gpu);
+                }
+            }
+            degisken f16_cuda_complete: tamsayi = 1;
+            j = 0;
+            dongu j < N {
+                degisken f16_chunk_rows: tamsayi = f16_chunk_capacity;
+                eger f16_chunk_rows > N - j { f16_chunk_rows = N - j; }
+                degisken f16_chunk_bytes: tamsayi = f16_chunk_rows * f16_row_bytes;
+                eger llm_model_aralik_oku(icra->loader,
+                    tensor->veri_offset + j * f16_row_bytes,
+                    agirlik_local, f16_chunk_bytes) != f16_chunk_bytes {
+                    dondu 0;
+                }
+                eger g_llm_transformer_attention == 0 or
+                   ykn_cuda_f16_matvec(agirlik_local, girdi,
+                    g_llm_transformer_attention, K, f16_chunk_rows,
+                    f16_chunk_bytes) != 1 {
+                    f16_cuda_complete = 0;
+                    durdur;
+                }
+                degisken f16_copy: tamsayi = 0;
+                dongu f16_copy < f16_chunk_rows {
+                    cikti[j + f16_copy] = g_llm_transformer_attention[f16_copy];
+                    f16_copy = f16_copy + 1;
+                }
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                j = j + f16_chunk_rows;
+            }
+            eger f16_cuda_complete == 1 { dondu 1; }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+    }
+    j = 0;
+    eger tensor->ggml_type == GGML_TYPE_I2_S ve YKN_CUDA_READY == 1 ve
+       K % 128 == 0 ve K * N % 128 == 0 and
+       tensor->bayt_sayisi == K * N / 4 + 32 and
+       icra->agirlik_kapasitesi > 32 {
+        degisken quant_row_bytes: tamsayi = K / 4;
+        eger YKN_CUDA_LMHEAD_DEVICE != 0 ve YKN_CUDA_LMHEAD_OFFSET == tensor->veri_offset ve YKN_CUDA_LMHEAD_BYTES == tensor->bayt_sayisi {
+            eger ykn_cuda_bitnet_i2s_matvec_device(YKN_CUDA_LMHEAD_DEVICE, YKN_CUDA_LMHEAD_SCALE, girdi, cikti, K, N) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                dondu 1;
+            }
+        }
+        degisken new_i2s_gpu: tamsayi = 0;
+        degisken alloc_st: tamsayi = cuda_buffer_alloc(YKN_CUDA_CONTEXT_PTR, tensor->bayt_sayisi, &new_i2s_gpu);
+        eger alloc_st == CUDA_SUCCESS ve new_i2s_gpu != 0 {
+            degisken trailer: [32]u8;
+            degisken read_trailer: tamsayi = llm_model_aralik_oku(icra->loader,
+                tensor->veri_offset + K * N / 4, trailer.ptr, 32);
+            degisken scale_val: tamsayi = 0;
+            eger read_trailer == 32 {
+                scale_val = bitnet_i2s_scale_q16(trailer.ptr, 0);
+            }
+            degisken upload_ok: tamsayi = 1;
+            eger scale_val <= 0 { upload_ok = 0; }
+            j = 0;
+            degisken upload_chunk_cap: tamsayi = icra->agirlik_kapasitesi / quant_row_bytes;
+            dongu j < N ve upload_ok == 1 {
+                degisken upload_rows: tamsayi = upload_chunk_cap;
+                eger upload_rows > N - j { upload_rows = N - j; }
+                degisken upload_bytes: tamsayi = upload_rows * quant_row_bytes;
+                eger llm_model_aralik_oku(icra->loader,
+                    tensor->veri_offset + j * quant_row_bytes,
+                    agirlik_local, upload_bytes) != upload_bytes {
+                    upload_ok = 0;
+                    durdur;
+                }
+                degisken copy_st: tamsayi = cuda_copy_to_device(YKN_CUDA_CONTEXT_PTR,
+                    new_i2s_gpu + j * quant_row_bytes, agirlik_local, upload_bytes);
+                eger copy_st != CUDA_SUCCESS {
+                    upload_ok = 0;
+                    durdur;
+                }
+                j = j + upload_rows;
+            }
+            eger upload_ok == 1 {
+                cuda_copy_to_device(YKN_CUDA_CONTEXT_PTR, new_i2s_gpu + K * N / 4, trailer.ptr, 32);
+                eger YKN_CUDA_LMHEAD_DEVICE != 0 {
+                    cuda_buffer_free(YKN_CUDA_CONTEXT_PTR, YKN_CUDA_LMHEAD_DEVICE);
+                }
+                YKN_CUDA_LMHEAD_DEVICE = new_i2s_gpu;
+                YKN_CUDA_LMHEAD_OFFSET = tensor->veri_offset;
+                YKN_CUDA_LMHEAD_BYTES = tensor->bayt_sayisi;
+                YKN_CUDA_LMHEAD_SCALE = scale_val;
+                eger ykn_cuda_bitnet_i2s_matvec_device(YKN_CUDA_LMHEAD_DEVICE, YKN_CUDA_LMHEAD_SCALE, girdi, cikti, K, N) == 1 {
+                    TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                    dondu 1;
+                }
+            } eger upload_ok == 0 {
+                cuda_buffer_free(YKN_CUDA_CONTEXT_PTR, new_i2s_gpu);
+            }
+        }
+        degisken chunk_capacity: tamsayi = (icra->agirlik_kapasitesi - 32) / quant_row_bytes;
+        eger chunk_capacity > icra->model_gizli_boyutu {
+            chunk_capacity = icra->model_gizli_boyutu;
+        }
+        eger chunk_capacity > 0 ise {
+            degisken cuda_complete: tamsayi = 1;
+            j = 0;
+            dongu j < N {
+                degisken chunk_rows: tamsayi = chunk_capacity;
+                eger chunk_rows > N - j { chunk_rows = N - j; }
+                degisken chunk_payload_bytes: tamsayi = chunk_rows * quant_row_bytes;
+                eger llm_model_aralik_oku(icra->loader,
+                    tensor->veri_offset + j * quant_row_bytes,
+                    agirlik_local, chunk_payload_bytes) != chunk_payload_bytes {
+                    dondu 0;
+                }
+                eger llm_model_aralik_oku(icra->loader,
+                    tensor->veri_offset + K * N / 4,
+                    agirlik_local + chunk_payload_bytes, 32) != 32 {
+                    dondu 0;
+                }
+                eger g_llm_transformer_attention == 0 or
+                   ykn_cuda_bitnet_i2s_matvec(agirlik_local, girdi,
+                    g_llm_transformer_attention, K, chunk_rows,
+                    chunk_payload_bytes + 32,
+                    tensor->veri_offset + j * quant_row_bytes) != 1 {
+                    cuda_complete = 0;
+                    durdur;
+                }
+                degisken i2s_copy: tamsayi = 0;
+                dongu i2s_copy < chunk_rows {
+                    cikti[j + i2s_copy] = g_llm_transformer_attention[i2s_copy];
+                    i2s_copy = i2s_copy + 1;
+                }
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                j = j + chunk_rows;
+            }
+            eger cuda_complete == 1 { dondu 1; }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+    }
+    j = 0;
+    eger tensor->ggml_type == GGML_TYPE_Q1_0 ve YKN_CUDA_READY == 1 ve
+       K % 128 == 0 ve icra->agirlik_kapasitesi > 0 {
+        degisken q1_row_bytes: tamsayi = (K / 128) * 18;
+        degisken q1_chunk_capacity: tamsayi = icra->agirlik_kapasitesi / q1_row_bytes;
+        eger q1_chunk_capacity > icra->model_gizli_boyutu {
+            q1_chunk_capacity = icra->model_gizli_boyutu;
+        }
+        eger q1_chunk_capacity > 0 ise {
+            degisken q1_cuda_complete: tamsayi = 1;
+            j = 0;
+            dongu j < N {
+                degisken q1_chunk_rows: tamsayi = q1_chunk_capacity;
+                eger q1_chunk_rows > N - j { q1_chunk_rows = N - j; }
+                degisken q1_chunk_bytes: tamsayi = q1_chunk_rows * q1_row_bytes;
+                eger llm_model_aralik_oku(icra->loader,
+                    tensor->veri_offset + j * q1_row_bytes,
+                    agirlik_local, q1_chunk_bytes) != q1_chunk_bytes {
+                    dondu 0;
+                }
+                eger g_llm_transformer_attention == 0 or
+                   ykn_cuda_q1_matvec(agirlik_local, girdi,
+                    g_llm_transformer_attention, K, q1_chunk_rows,
+                    q1_chunk_bytes) != 1 {
+                    q1_cuda_complete = 0;
+                    durdur;
+                }
+                degisken q1_copy: tamsayi = 0;
+                dongu q1_copy < q1_chunk_rows {
+                    cikti[j + q1_copy] = g_llm_transformer_attention[q1_copy];
+                    q1_copy = q1_copy + 1;
+                }
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+                j = j + q1_chunk_rows;
+            }
+            eger q1_cuda_complete == 1 { dondu 1; }
+            TRANSFORMER_CUDA_FALLBACKS = TRANSFORMER_CUDA_FALLBACKS + 1;
+        }
+    }
+    eger tensor->ggml_type == GGML_TYPE_I2_S {
+        degisken trailer_buf: [4]u8;
+        eger llm_model_aralik_oku(icra->loader, tensor->veri_offset + (K * N / 4), trailer_buf, 4) == 4 {
+            degisken scale_q16: tamsayi = bitnet_i2s_scale_q16(trailer_buf, 0);
+            eger icra->loader != 0 ve icra->loader->pencere != 0 ve icra->loader->pencere_bayti > 0 ve
+               tensor->veri_offset >= icra->loader->pencere_ofseti ve
+               tensor->veri_offset + tensor->bayt_sayisi <= icra->loader->pencere_ofseti + icra->loader->pencere_bayti {
+                degisken weights_ptr: *u8 = icra->loader->pencere + (tensor->veri_offset - icra->loader->pencere_ofseti);
+                dondu bitnet_i2s_matris_carp_hizli(weights_ptr, scale_q16, girdi, cikti, K, N);
+            }
+        }
+    }
+    eger tensor->ggml_type == GGML_TYPE_F16 {
+        init_fp16_lut();
+        degisken in_pencere: tamsayi = 0;
+        degisken base_pencere: *u8 = 0;
+        degisken ld: *LLMModelLoader = icra->loader;
+        degisken ld_pencere: *u8 = 0;
+        degisken ld_pencere_bayti: tamsayi = 0;
+        degisken ld_pencere_ofseti: tamsayi = 0;
+        eger ld != 0 {
+            ld_pencere = ld->pencere;
+            ld_pencere_bayti = ld->pencere_bayti;
+            ld_pencere_ofseti = ld->pencere_ofseti;
+        }
+        eger ld_pencere != 0 ve ld_pencere_bayti > 0 ve tensor->veri_offset >= ld_pencere_ofseti ve tensor->veri_offset + tensor->bayt_sayisi <= ld_pencere_ofseti + ld_pencere_bayti {
+            in_pencere = 1;
+            base_pencere = ld_pencere + (tensor->veri_offset - ld_pencere_ofseti);
+        }
+
+        eger in_pencere == 0 {
+            eger G_CPU_LMHEAD_BUFFER != 0 ve G_CPU_LMHEAD_OFFSET == tensor->veri_offset ve G_CPU_LMHEAD_BYTES == tensor->bayt_sayisi {
+                in_pencere = 1;
+                base_pencere = G_CPU_LMHEAD_BUFFER;
+            } yoksa {
+                degisken new_lm_buf: *u8 = bellek_tahsis_et(tensor->bayt_sayisi);
+                eger new_lm_buf != 0 {
+                    degisken okunan_toplam: tamsayi = 0;
+                    degisken chunk_sz: tamsayi = 4194304;
+                    dongu okunan_toplam < tensor->bayt_sayisi {
+                        degisken kalan: tamsayi = tensor->bayt_sayisi - okunan_toplam;
+                        eger kalan > chunk_sz { kalan = chunk_sz; }
+                        eger llm_model_aralik_oku(icra->loader, tensor->veri_offset + okunan_toplam, new_lm_buf + okunan_toplam, kalan) != kalan {
+                            durdur;
+                        }
+                        okunan_toplam = okunan_toplam + kalan;
+                    }
+                    eger okunan_toplam == tensor->bayt_sayisi {
+                        G_CPU_LMHEAD_BUFFER = new_lm_buf;
+                        G_CPU_LMHEAD_OFFSET = tensor->veri_offset;
+                        G_CPU_LMHEAD_BYTES = tensor->bayt_sayisi;
+                        in_pencere = 1;
+                        base_pencere = G_CPU_LMHEAD_BUFFER;
+                    }
+                }
+            }
+        }
+
+        eger in_pencere == 1 {
+            dondu bitnet_f16_matvec_hizli(base_pencere, girdi, cikti, K, N, satir_bayti);
+        }
+        j = 0;
+        dongu j < N {
+            degisken row_ptr: *u8 = agirlik_local;
+            eger llm_model_aralik_oku(icra->loader, tensor->veri_offset + j * satir_bayti,
+                agirlik_local, satir_bayti) != satir_bayti ise { dondu 0; }
+            degisken f16_dot_q32: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken lo: tamsayi = row_ptr[k * 2];
+                eger lo < 0 { lo = lo + 256; }
+                degisken hi: tamsayi = row_ptr[k * 2 + 1];
+                eger hi < 0 { hi = hi + 256; }
+                degisken u16: tamsayi = lo | (hi << 8);
+                degisken agirlik: tamsayi = g_fp16_lut[u16];
+                f16_dot_q32 = f16_dot_q32 + girdi[k] * agirlik;
+                k = k + 1;
+            }
+            cikti[j] = f16_dot_q32 / 65536;
+            j = j + 1;
+        }
+        dondu 1;
+    }
+    j = 0;
+    dongu j < N {
+        degisken row_ptr: *u8 = agirlik_local;
+        eger icra->loader != 0 ve icra->loader->pencere != 0 ve icra->loader->pencere_bayti > 0 ve
+           tensor->veri_offset + j * satir_bayti >= icra->loader->pencere_ofseti ve
+           tensor->veri_offset + (j + 1) * satir_bayti <= icra->loader->pencere_ofseti + icra->loader->pencere_bayti {
+            row_ptr = icra->loader->pencere + (tensor->veri_offset - icra->loader->pencere_ofseti) + j * satir_bayti;
+        } yoksa {
+            eger llm_model_aralik_oku(icra->loader, tensor->veri_offset + j * satir_bayti,
+                agirlik_local, satir_bayti) != satir_bayti ise { dondu 0; }
+        }
+        eger tensor->ggml_type == GGML_TYPE_I2_S {
+            eger icra->agirlik_kapasitesi < satir_bayti + 32 ise { dondu 0; }
+            eger llm_model_aralik_oku(icra->loader,
+                tensor->veri_offset + (K * N / 4),
+                agirlik_local + (K / 4), 4) != 4 ise { dondu 0; }
+            eger bitnet_i2s_paketli_matris_carp(row_ptr, girdi,
+                bitnet_tamsayi_ptr_at(cikti, j), 1, K, 1) != 1 ise { dondu 0; }
+            j = j + 1;
+            devam_et;
+        }
+        eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML and g_llm_native_simd_aktif == 1 ise {
+            cikti[j] = ykn_llm_iq2s_dot_q16(row_ptr, girdi, K, 0);
+            j = j + 1;
+            devam_et;
+        }
+        eger tensor->ggml_type == GGML_TYPE_F16 ve g_llm_native_simd_aktif == 1 ise {
+            cikti[j] = ykn_llm_f16_dot_q16(row_ptr, girdi, K);
+            j = j + 1;
+            devam_et;
+        }
+        eger tensor->ggml_type == GGML_TYPE_Q1_0 ve g_llm_native_simd_aktif == 1 ise {
+            cikti[j] = ykn_llm_q1_0_dot_q16(row_ptr, girdi, K);
+            j = j + 1;
+            devam_et;
+        }
+        degisken toplam_q32: tamsayi = 0;
+        degisken f16_dot_q32: tamsayi = 0;
+        degisken k: tamsayi = 0;
+        dongu k < K {
+            degisken agirlik: tamsayi = 0;
+            eger tensor->ggml_type == GGML_TYPE_F16 ise {
+                agirlik = llm_f16_q16_coz(agirlik_local[k * 2], agirlik_local[k * 2 + 1]);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_BF16 ise {
+                agirlik = llm_bf16_q16_coz(agirlik_local[k * 2], agirlik_local[k * 2 + 1]);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_F32 ise {
+                agirlik = llm_f32_q16_coz(agirlik_local[k * 4], agirlik_local[k * 4 + 1],
+                    agirlik_local[k * 4 + 2], agirlik_local[k * 4 + 3]);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML ise {
+                # Satırda birden çok IQ2_S blok varsa doğru blok seçilir.
+                agirlik = bitnet_iq2s_eleman_q16_at(agirlik_local, (k / 256) * 82, k % 256);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_Q1_0 ise {
+                agirlik = llm_q1_0_eleman_q16(agirlik_local, (k / 128) * 18, k % 128);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_Q4_K ise {
+                agirlik = llm_q4_k_eleman_q16(agirlik_local, (k / 256) * 144, k % 256);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_Q6_K ise {
+                agirlik = llm_q6_k_eleman_q16(agirlik_local, (k / 256) * 210, k % 256);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_IQ4_NL ise {
+                agirlik = llm_iq4_nl_eleman_q16(agirlik_local, (k / 32) * 18, k % 32);
+            } yoksa eger tensor->ggml_type == GGML_TYPE_TQ2_0 ise {
+                agirlik = llm_tq2_0_eleman_q16(agirlik_local, (k / 256) * 66, k % 256);
+            } yoksa { dondu 0; }
+            eger tensor->ggml_type == GGML_TYPE_F16 {
+                f16_dot_q32 = f16_dot_q32 + girdi[k] * agirlik;
+            } yoksa {
+                toplam_q32 = toplam_q32 + girdi[k] * agirlik;
+            }
+            k = k + 1;
+        }
+        eger tensor->ggml_type == GGML_TYPE_F16 {
+            cikti[j] = f16_dot_q32 / 65536;
+        } yoksa {
+            cikti[j] = toplam_q32 / 65536;
+        }
+        j = j + 1;
+    }
+    dondu 1;
+}
+
+
+# GGUF layer tensorlerini sırayla yükleyip Q/K/V/O + RMSNorm + RoPE +
+# SwiGLU forward çalıştırır; output.weight üzerinden logits üretir.
+isv llm_transformer_token_uret_token(icra: *LLMTransformerExecution,
+                               durum: *GGUFDurum,
+                               token_id: tamsayi,
+                               katman_adi_tamponu: *u8) -> tamsayi {
+    # 99, aşağıdaki erken dönüşlerden birinin henüz sınıflandırılmadığını
+    # gösterir; başarılı tamamlanmada sıfırlanır.
+    TRANSFORMER_FORWARD_HATASI = 99;
+    TRANSFORMER_FORWARD_SON_SONUC = -998;
+
+    eger icra == 0 veya durum == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 11; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    eger katman_adi_tamponu == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 12; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    eger durum->katman_sayisi <= 0 veya durum->gizli_boyut <= 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 13; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+
+    eger icra->token_konumu < 0 veya icra->token_konumu >= icra->kv_kapasitesi ise {
+        TRANSFORMER_FORWARD_HATASI = 14; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    g_llm_tensor_icra = icra;
+    g_llm_transformer_hidden = icra->hidden;
+    g_llm_transformer_residual = icra->residual;
+    g_llm_transformer_q = icra->q;
+    g_llm_transformer_key = icra->key;
+    g_llm_transformer_value = icra->value;
+    g_llm_transformer_attention = icra->attention;
+    YKN_CUDA_HIDDEN_ON_GPU = 0;
+    degisken t_emb0: tamsayi = ykn_llm_clock_ns();
+    eger token_id >= 0 ve llm_transformer_embedding_oku(icra, durum, token_id) == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 8; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    degisken t_emb1: tamsayi = ykn_llm_clock_ns();
+    G_PROF_EMBD_NS = G_PROF_EMBD_NS + (t_emb1 - t_emb0);
+    eger icra->model_mimari == LLM_MIMARI_GEMMA and token_id >= 0 and
+       llm_transformer_gemma4_prepare_per_layer_input(icra, durum, token_id) == 0 {
+        TRANSFORMER_FORWARD_HATASI = 52; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    degisken gemma4_profile_state: *GGUFGemma4Profile = 0;
+    eger icra->model_mimari == LLM_MIMARI_GEMMA {
+        gemma4_profile_state = durum->gemma4;
+        eger gemma4_profile_state == 0 { TRANSFORMER_FORWARD_HATASI = 49; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+    }
+    degisken gemma_full_rope_pairs: tamsayi = 0;
+    eger icra->model_mimari == LLM_MIMARI_GEMMA {
+        gemma_full_rope_pairs = llm_transformer_gemma4_full_rope_pairs(icra, durum);
+        eger gemma_full_rope_pairs <= 0 { TRANSFORMER_FORWARD_HATASI = 49; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+    }
+    degisken t_layers0: tamsayi = ykn_llm_clock_ns();
+    degisken all_layers_done: tamsayi = 0;
+    degisken layers_ready: tamsayi = G_ALL_LAYERS_READY_CACHED;
+    eger layers_ready != 1 {
+        layers_ready = ykn_cuda_is_all_layers_ready(durum->katman_sayisi);
+        eger layers_ready == 1 {
+            G_ALL_LAYERS_READY_CACHED = 1;
+        }
+    }
+    eger YKN_CUDA_READY == 1 and icra->model_mimari == LLM_MIMARI_BITNET and
+       icra->token_konumu != TRANSFORMER_TRACE_POSITION and layers_ready == 1 {
+        degisken karekok_gpu: tamsayi = G_ATTN_CACHED_SQRT;
+        eger G_ATTN_CACHED_HEAD_DIM != icra->kv_kafa_boyutu {
+            karekok_gpu = bitnet_q16_karekoku(icra->kv_kafa_boyutu * BITNET_Q16_BIR * BITNET_Q16_BIR);
+            G_ATTN_CACHED_SQRT = karekok_gpu;
+            G_ATTN_CACHED_HEAD_DIM = icra->kv_kafa_boyutu;
+        }
+        all_layers_done = ykn_cuda_bitnet_step_all_layers(durum->katman_sayisi, icra->token_konumu, icra->kafa_sayisi, icra->kv_kafa_sayisi,
+                                                          icra->kv_kafa_boyutu, icra->kv_kapasitesi, icra->model_gizli_boyutu,
+                                                          icra->ffn_boyutu, icra->model_norm_eps_q16, karekok_gpu,
+                                                          g_llm_transformer_hidden);
+        eger all_layers_done == 1 {
+            TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + durum->katman_sayisi * 11;
+        }
+    }
+    eger all_layers_done == 0 {
+        degisken katman: tamsayi = 0;
+        dongu katman < durum->katman_sayisi {
+        ykn_cuda_clear_act_cache();
+
+        # Tek bir local tensor pointer yeniden kullanılır; nested function
+        # return değerlerini doğrudan beş+ argümanlı çağrıya gömmek Win64
+        # Stage-1 ABI'sinde güvenilir değildir.
+        degisken layer_tensor: *GGUFTensorInfo = 0;
+
+
+        # Pre-norm attention: residual saklanır, normalized hidden attention'da tutulur.
+
+        eger g_llm_transformer_hidden == 0 ise { TRANSFORMER_FORWARD_HATASI = 301; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+        eger g_llm_transformer_residual == 0 ise { TRANSFORMER_FORWARD_HATASI = 302; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+        eger icra->model_gizli_boyutu <= 0 ise { TRANSFORMER_FORWARD_HATASI = 303; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+
+        degisken layer_head_dim: tamsayi = icra->kv_kafa_boyutu;
+        degisken q_boyutu: tamsayi = icra->kafa_sayisi * layer_head_dim;
+        degisken kv_boyutu: tamsayi = icra->kv_kafa_sayisi * layer_head_dim;
+
+        eger YKN_CUDA_READY == 1 and icra->model_mimari == LLM_MIMARI_BITNET and
+           icra->token_konumu != TRANSFORMER_TRACE_POSITION and G_BITNET_LAYER_READY[katman] == 1 {
+            degisken karekok_gpu: tamsayi = G_ATTN_CACHED_SQRT;
+            eger G_ATTN_CACHED_HEAD_DIM != layer_head_dim {
+                karekok_gpu = bitnet_q16_karekoku(layer_head_dim * BITNET_Q16_BIR * BITNET_Q16_BIR);
+                G_ATTN_CACHED_SQRT = karekok_gpu;
+                G_ATTN_CACHED_HEAD_DIM = layer_head_dim;
+            }
+            eger ykn_cuda_bitnet_step_layer(katman, icra->token_konumu, icra->kafa_sayisi, icra->kv_kafa_sayisi,
+                                            layer_head_dim, icra->kv_kapasitesi, icra->model_gizli_boyutu,
+                                            icra->ffn_boyutu, icra->model_norm_eps_q16, karekok_gpu,
+                                            g_llm_transformer_hidden) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 11;
+                katman = katman + 1;
+                devam_et;
+            }
+        }
+
+        degisken gemma_swa: tamsayi = 0;
+        degisken gemma_writes_kv: tamsayi = 1;
+        degisken gemma_cache_source: tamsayi = katman;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            degisken gemma_q_width: [1]tamsayi;
+            degisken gemma_kv_width: [1]tamsayi;
+            degisken gemma_head_width: [1]tamsayi;
+            gemma_swa = gguf_gemma4_katman_swa_mi(durum, katman);
+            gemma_writes_kv = gguf_gemma4_kv_yazan_katman_mi(durum, katman);
+            gemma_cache_source = gguf_gemma4_kv_kaynak_katman(durum, katman);
+            eger gemma_swa < 0 or gemma_writes_kv < 0 or gemma_cache_source < 0 or
+               gguf_gemma4_katman_geometrisi(durum, katman,
+                   gemma_q_width, gemma_kv_width, gemma_head_width) != 1 {
+                TRANSFORMER_FORWARD_HATASI = 46; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+            layer_head_dim = gemma_head_width[0];
+            q_boyutu = gemma_q_width[0];
+            kv_boyutu = gemma_kv_width[0];
+            eger q_boyutu > icra->kafa_sayisi * icra->kv_kafa_boyutu or
+               kv_boyutu > icra->kv_kafa_sayisi * icra->kv_kafa_boyutu {
+                TRANSFORMER_FORWARD_HATASI = 47; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        }
+
+        degisken tensor_q: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 1, "self_attn.q_proj.weight".ptr, ".attn_q.weight".ptr);
+        eger tensor_q == 0 ise { TRANSFORMER_FORWARD_HATASI = 41; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+        degisken tensor_k: *GGUFTensorInfo = 0;
+        degisken tensor_v: *GGUFTensorInfo = 0;
+        eger gemma_writes_kv == 1 {
+            tensor_k = llm_cached_layer_tensor_bul(durum, katman, 2, "self_attn.k_proj.weight".ptr, ".attn_k.weight".ptr);
+            tensor_v = llm_cached_layer_tensor_bul(durum, katman, 3, "self_attn.v_proj.weight".ptr, ".attn_v.weight".ptr);
+        }
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 0, "input_layernorm.weight".ptr, ".attn_norm.weight".ptr);
+        degisken qkv_batched: tamsayi = 0;
+        eger YKN_CUDA_READY == 1 and icra->model_mimari != LLM_MIMARI_GEMMA and
+           icra->token_konumu != TRANSFORMER_TRACE_POSITION and layer_tensor != 0 and
+           tensor_q != 0 and tensor_k != 0 and tensor_v != 0 and
+           tensor_q->ggml_type == GGML_TYPE_I2_S and tensor_k->ggml_type == GGML_TYPE_I2_S and tensor_v->ggml_type == GGML_TYPE_I2_S {
+            degisken p_an: *tamsayi = llm_transformer_cached_norm_vektor(icra, layer_tensor, icra->model_gizli_boyutu);
+            eger p_an != 0 {
+                G_YKN_CUDA_CURRENT_LAYER = katman;
+                degisken nqkv_st: tamsayi = ykn_cuda_bitnet_norm_qkv(
+                    layer_tensor->veri_offset, p_an,
+                    tensor_q->veri_offset, tensor_q->bayt_sayisi, q_boyutu, g_llm_transformer_q,
+                    tensor_k->veri_offset, tensor_k->bayt_sayisi, kv_boyutu, g_llm_transformer_key,
+                    tensor_v->veri_offset, tensor_v->bayt_sayisi, kv_boyutu, g_llm_transformer_value,
+                    g_llm_transformer_hidden, icra->model_gizli_boyutu, icra->model_norm_eps_q16);
+                eger nqkv_st >= 1 {
+                    qkv_batched = nqkv_st;
+                    TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 3;
+                }
+            }
+        }
+        eger qkv_batched == 0 {
+            eger YKN_CUDA_HIDDEN_ON_GPU == 1 {
+                cuda_copy_to_host(YKN_CUDA_CONTEXT_PTR, g_llm_transformer_hidden, YKN_CUDA_RESIDUAL_DEVICE, icra->model_gizli_boyutu * 8);
+                YKN_CUDA_HIDDEN_ON_GPU = 0;
+            }
+            eger llm_q16_kopyala(g_llm_transformer_hidden, g_llm_transformer_residual, icra->model_gizli_boyutu) == 0 ise { TRANSFORMER_FORWARD_HATASI = 304; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+            eger katman == 0 and icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+                degisken residual_trace_i: tamsayi = 0;
+                dongu residual_trace_i < 2560 {
+                    TRANSFORMER_TRACE_LAYER0_RESIDUAL[residual_trace_i] = g_llm_transformer_residual[residual_trace_i];
+                    residual_trace_i = residual_trace_i + 1;
+                }
+            }
+            eger layer_tensor != 0 ise {
+                eger llm_transformer_norm_uygula(icra, layer_tensor,
+                    g_llm_transformer_hidden, g_llm_transformer_attention) == 0 {
+                    eger TRANSFORMER_FORWARD_HATASI == 0 { TRANSFORMER_FORWARD_HATASI = 31; }
+                    dondu 0 - TRANSFORMER_FORWARD_HATASI;
+                }
+            } yoksa { eger llm_q16_kopyala(g_llm_transformer_hidden, g_llm_transformer_attention, icra->model_gizli_boyutu) == 0 ise { TRANSFORMER_FORWARD_HATASI = 32; dondu 0 - TRANSFORMER_FORWARD_HATASI; } }
+            eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+                llm_transformer_trace_q16(g_llm_transformer_attention, icra->model_gizli_boyutu, 0, katman);
+            }
+        }
+        degisken t_qkv0: tamsayi = ykn_llm_clock_ns();
+        eger qkv_batched == 0 and YKN_CUDA_READY == 1 and tensor_q != 0 and tensor_k != 0 and tensor_v != 0 and
+           tensor_q->ggml_type == GGML_TYPE_I2_S and tensor_k->ggml_type == GGML_TYPE_I2_S and tensor_v->ggml_type == GGML_TYPE_I2_S {
+            eger ykn_cuda_bitnet_i2s_qkv(
+                tensor_q->veri_offset, tensor_q->bayt_sayisi, q_boyutu, g_llm_transformer_q,
+                tensor_k->veri_offset, tensor_k->bayt_sayisi, kv_boyutu, g_llm_transformer_key,
+                tensor_v->veri_offset, tensor_v->bayt_sayisi, kv_boyutu, g_llm_transformer_value,
+                g_llm_transformer_attention, icra->model_gizli_boyutu) == 1 {
+                qkv_batched = 1;
+            }
+        }
+        eger qkv_batched == 0 {
+            g_llm_tensor_icra = icra; g_llm_tensor_bilgi = tensor_q;
+            g_llm_tensor_girdi = g_llm_transformer_attention; g_llm_tensor_cikti = g_llm_transformer_q;
+            g_llm_tensor_K = icra->model_gizli_boyutu; g_llm_tensor_N = q_boyutu;
+            eger llm_transformer_tensor_ileri_global() == 0 ise { TRANSFORMER_FORWARD_HATASI = 42; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+
+            eger gemma_writes_kv == 1 {
+                g_llm_tensor_bilgi = tensor_k;
+                g_llm_tensor_cikti = g_llm_transformer_key;
+                g_llm_tensor_K = icra->model_gizli_boyutu; g_llm_tensor_N = kv_boyutu;
+                eger llm_transformer_tensor_ileri_global() == 0 ise { TRANSFORMER_FORWARD_HATASI = 4; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+
+                g_llm_tensor_bilgi = tensor_v;
+                g_llm_tensor_cikti = g_llm_transformer_value;
+                g_llm_tensor_K = icra->model_gizli_boyutu; g_llm_tensor_N = kv_boyutu;
+                eger tensor_v != 0 and llm_transformer_tensor_ileri_global() == 0 {
+                    TRANSFORMER_FORWARD_HATASI = 4; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+                }
+            }
+        }
+        TRANSFORMER_TIME_QKV_NS = TRANSFORMER_TIME_QKV_NS + (ykn_llm_clock_ns() - t_qkv0);
+        eger tensor_v != 0 and icra->token_konumu == TRANSFORMER_TRACE_POSITION and katman == 0 {
+            degisken v_capture_i: tamsayi = 0;
+            dongu v_capture_i < kv_boyutu {
+                TRANSFORMER_TRACE_LAYER0_V_RAW[v_capture_i] = g_llm_transformer_value[v_capture_i];
+                v_capture_i = v_capture_i + 1;
+            }
+        }
+        eger tensor_v == 0 {
+            eger llm_q16_kopyala(g_llm_transformer_key, g_llm_transformer_value, kv_boyutu) == 0 {
+                TRANSFORMER_FORWARD_HATASI = 48; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        }
+
+
+
+        # Qwen3: projeksiyon sonrası head başına RMSNorm. Bu tensorler
+        # olmayan Llama/Mistral/Phi profillerinde yol bilinçli olarak pas geçer.
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 4, "self_attn.q_norm.weight".ptr, ".attn_q_norm.weight".ptr);
+        eger layer_tensor != 0 ise {
+            degisken qh_norm: tamsayi = 0;
+            dongu qh_norm < icra->kafa_sayisi {
+                eger llm_transformer_norm_vektor_uygula(icra, layer_tensor,
+                    bitnet_tamsayi_ptr_at(g_llm_transformer_q, qh_norm * layer_head_dim),
+                    bitnet_tamsayi_ptr_at(g_llm_transformer_q, qh_norm * layer_head_dim),
+                    layer_head_dim) == 0 ise { TRANSFORMER_FORWARD_HATASI = 9; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+                qh_norm = qh_norm + 1;
+            }
+        }
+
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 5, "self_attn.k_norm.weight".ptr, ".attn_k_norm.weight".ptr);
+        eger layer_tensor != 0 and gemma_writes_kv == 1 {
+            degisken kh_norm: tamsayi = 0;
+            dongu kh_norm < icra->kv_kafa_sayisi {
+                eger llm_transformer_norm_vektor_uygula(icra, layer_tensor,
+                    bitnet_tamsayi_ptr_at(g_llm_transformer_key, kh_norm * layer_head_dim),
+                    bitnet_tamsayi_ptr_at(g_llm_transformer_key, kh_norm * layer_head_dim),
+                    layer_head_dim) == 0 ise { TRANSFORMER_FORWARD_HATASI = 10; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+                kh_norm = kh_norm + 1;
+            }
+        }
+        # Gemma-4 applies an unweighted RMSNorm to V after projection. Its
+        # learned K norm is separate and must not be reused here.
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            degisken vh: tamsayi = 0;
+            dongu vh < icra->kv_kafa_sayisi {
+                degisken v_head: *tamsayi = bitnet_tamsayi_ptr_at(
+                    g_llm_transformer_value, vh * layer_head_dim);
+                eger bitnet_rmsnorm_q16(v_head, 0, v_head,
+                    layer_head_dim, icra->model_norm_eps_q16) == 0 {
+                    TRANSFORMER_FORWARD_HATASI = 56; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+                }
+                vh = vh + 1;
+            }
+        }
+
+        eger qkv_batched == 2 {
+            degisken karekok_gpu: tamsayi = G_ATTN_CACHED_SQRT;
+            eger G_ATTN_CACHED_HEAD_DIM != layer_head_dim {
+                karekok_gpu = bitnet_q16_karekoku(layer_head_dim * BITNET_Q16_BIR * BITNET_Q16_BIR);
+                G_ATTN_CACHED_SQRT = karekok_gpu;
+                G_ATTN_CACHED_HEAD_DIM = layer_head_dim;
+            }
+            eger ykn_cuda_rope_kv_attention(katman, icra->token_konumu, icra->kafa_sayisi,
+                icra->kv_kafa_sayisi, layer_head_dim, icra->kv_kapasitesi, karekok_gpu) == 1 {
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 2;
+            } yoksa {
+                qkv_batched = 1;
+            }
+        }
+        eger qkv_batched != 2 {
+        degisken cift: tamsayi = layer_head_dim / 2;
+        degisken rope_boyutu_aktif: tamsayi = icra->model_rope_boyutu;
+        degisken rope_freq_aktif: tamsayi = icra->model_rope_freq_base_q16;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            degisken profile: *GGUFGemma4Profile = durum->gemma4;
+            eger gemma_swa == 1 {
+                rope_boyutu_aktif = profile->swa_rope_dimension;
+                cift = rope_boyutu_aktif / 2;
+                rope_freq_aktif = profile->rope_freq_base_swa_q16;
+            } yoksa {
+                rope_boyutu_aktif = durum->rope_boyutu;
+                rope_freq_aktif = durum->rope_freq_base_q16;
+                cift = gemma_full_rope_pairs;
+            }
+        }
+        # Eksik/bozuk metadata'da standart head-dimension fallback'i kullan.
+        eger rope_boyutu_aktif <= 0 or rope_boyutu_aktif % 2 != 0 or
+           cift * 2 > rope_boyutu_aktif { rope_boyutu_aktif = cift * 2; }
+        eger rope_freq_aktif <= 0 ise { rope_freq_aktif = 655360000; }
+        degisken cos_tab: *tamsayi = G_LLM_ROPE_COS_TAB.ptr;
+        degisken sin_tab: *tamsayi = G_LLM_ROPE_SIN_TAB.ptr;
+        degisken t_rope0: tamsayi = ykn_llm_clock_ns();
+        eger cift > 0 ve cift <= 256 ve cos_tab != 0 ve sin_tab != 0 ise {
+
+            eger bitnet_rope_tablosu_uret(cos_tab, sin_tab, cift, icra->token_konumu,
+                rope_boyutu_aktif, rope_freq_aktif) == 0 ise { TRANSFORMER_FORWARD_HATASI = 33; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+
+            degisken rh: tamsayi = 0;
+            eger icra->model_mimari == LLM_MIMARI_QWEN or
+               icra->model_mimari == LLM_MIMARI_BITNET or
+               icra->model_mimari == LLM_MIMARI_BITNET_MOE or
+               icra->model_mimari == LLM_MIMARI_GEMMA {
+                dongu rh < icra->kafa_sayisi { bitnet_rope_neox_q16(bitnet_tamsayi_ptr_at(g_llm_transformer_q, rh * layer_head_dim), cos_tab, sin_tab, cift); rh = rh + 1; }
+                rh = 0;
+                eger gemma_writes_kv == 1 {
+                    dongu rh < icra->kv_kafa_sayisi { bitnet_rope_neox_q16(bitnet_tamsayi_ptr_at(g_llm_transformer_key, rh * layer_head_dim), cos_tab, sin_tab, cift); rh = rh + 1; }
+                }
+            } yoksa {
+                dongu rh < icra->kafa_sayisi { bitnet_rope_q16(bitnet_tamsayi_ptr_at(g_llm_transformer_q, rh * layer_head_dim), cos_tab, sin_tab, cift); rh = rh + 1; }
+                rh = 0;
+                dongu rh < icra->kv_kafa_sayisi { bitnet_rope_q16(bitnet_tamsayi_ptr_at(g_llm_transformer_key, rh * layer_head_dim), cos_tab, sin_tab, cift); rh = rh + 1; }
+            }
+        }
+        degisken t_rope1: tamsayi = ykn_llm_clock_ns();
+        TRANSFORMER_TIME_ROPE_NS = TRANSFORMER_TIME_ROPE_NS + (t_rope1 - t_rope0);
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_q, q_boyutu, 1, katman);
+            llm_transformer_trace_q16(g_llm_transformer_key, kv_boyutu, 2, katman);
+            llm_transformer_trace_q16(g_llm_transformer_value, kv_boyutu, 3, katman);
+        }
+
+        degisken t_attn0: tamsayi = ykn_llm_clock_ns();
+        degisken cache_stride_head_dim: tamsayi = icra->kv_kafa_boyutu;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            cache_stride_head_dim = gemma4_profile_state->full_key_length;
+        }
+        degisken layer_stride: tamsayi = icra->kv_kapasitesi * icra->kv_kafa_sayisi * cache_stride_head_dim;
+        degisken cache_layer: tamsayi = katman;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA { cache_layer = gemma_cache_source; }
+        degisken cache_key: *tamsayi = bitnet_tamsayi_ptr_at(icra->kv_anahtar, cache_layer * layer_stride);
+        degisken cache_value: *tamsayi = bitnet_tamsayi_ptr_at(icra->kv_deger, cache_layer * layer_stride);
+        g_llm_kv_window_start = 0;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA and gemma_swa == 1 {
+            # Before the configured window fills, include every causal token.
+            # A zero/missing profile value is treated as unbounded here; strict
+            # profile validation must reject it for production model loading.
+            g_llm_kv_window_start = 0;
+            eger gemma4_profile_state->swa_window > 0 and
+               icra->token_konumu + 1 > gemma4_profile_state->swa_window {
+                g_llm_kv_window_start = icra->token_konumu -
+                    gemma4_profile_state->swa_window + 1;
+            }
+        }
+        g_llm_kv_attention_scale_q16 = 0;
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            g_llm_kv_attention_scale_q16 = BITNET_Q16_BIR;
+        }
+        g_llm_kv_anahtar_cache = cache_key;
+        g_llm_kv_deger_cache = cache_value;
+        g_llm_kv_kafa_sayisi = icra->kv_kafa_sayisi;
+        g_llm_kv_kafa_boyutu = layer_head_dim;
+        g_llm_kv_kapasitesi = icra->kv_kapasitesi;
+        g_llm_kv_token = icra->token_konumu;
+
+        eger gemma_writes_kv == 1 {
+            degisken kvk: tamsayi = 0;
+            dongu kvk < icra->kv_kafa_sayisi {
+                g_llm_kv_kafa = kvk;
+                g_llm_kv_anahtar_girdi = bitnet_tamsayi_ptr_at(g_llm_transformer_key, kvk * layer_head_dim);
+                g_llm_kv_deger_girdi = bitnet_tamsayi_ptr_at(g_llm_transformer_value, kvk * layer_head_dim);
+                eger bitnet_kv_cache_yaz_global() == 0 {
+                    TRANSFORMER_FORWARD_HATASI = 54; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+                }
+                kvk = kvk + 1;
+            }
+        }
+
+        degisken kafa: tamsayi = 0;
+        degisken kafa_grubu: tamsayi = icra->kafa_sayisi / icra->kv_kafa_sayisi;
+        dongu kafa < icra->kafa_sayisi {
+            degisken kv_kafa: tamsayi = kafa / kafa_grubu;
+            g_llm_kv_kafa = kv_kafa;
+            g_llm_kv_sorgu = bitnet_tamsayi_ptr_at(g_llm_transformer_q, kafa * layer_head_dim);
+            g_llm_kv_cikti = bitnet_tamsayi_ptr_at(g_llm_transformer_attention, kafa * layer_head_dim);
+            eger bitnet_kv_dikkat_q16_global() == 0 ise {
+                TRANSFORMER_FORWARD_HATASI = 55; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+            kafa = kafa + 1;
+        }
+        degisken t_attn1: tamsayi = ykn_llm_clock_ns();
+        TRANSFORMER_TIME_ATTN_NS = TRANSFORMER_TIME_ATTN_NS + (t_attn1 - t_attn0);
+        }
+
+
+
+
+
+
+        # BitNet-B1.58 attention alt normu, attention çıktısı ile output
+        # projection arasında zorunludur. Llama/Mistral gibi profillerde bu
+        # tensor yoksa yol bilinçli olarak pas geçer.
+
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_attention, icra->model_gizli_boyutu, 12, katman);
+        }
+        degisken post_attn_ffn_done: tamsayi = 0;
+        eger YKN_CUDA_READY == 1 and icra->model_mimari != LLM_MIMARI_GEMMA and
+           q_boyutu == icra->model_gizli_boyutu and icra->token_konumu != TRANSFORMER_TRACE_POSITION {
+            degisken t_asn: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 15, "attn_sub_norm.weight".ptr, ".attn_sub_norm.weight".ptr);
+            degisken t_o: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 6, "self_attn.o_proj.weight".ptr, ".attn_output.weight".ptr);
+            degisken t_fn: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 8, "post_attention_layernorm.weight".ptr, ".ffn_norm.weight".ptr);
+            degisken t_g: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 9, "mlp.gate_proj.weight".ptr, ".ffn_gate.weight".ptr);
+            degisken t_u: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 10, "mlp.up_proj.weight".ptr, ".ffn_up.weight".ptr);
+            degisken t_fsn: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 11, "ffn_sub_norm.weight".ptr, ".ffn_sub_norm.weight".ptr);
+            degisken t_d: *GGUFTensorInfo = llm_cached_layer_tensor_bul(durum, katman, 12, "mlp.down_proj.weight".ptr, ".ffn_down.weight".ptr);
+            eger t_asn != 0 and t_o != 0 and t_fn != 0 and t_g != 0 and t_u != 0 and t_fsn != 0 and t_d != 0 and
+               t_o->ggml_type == GGML_TYPE_I2_S and t_g->ggml_type == GGML_TYPE_I2_S and
+               t_u->ggml_type == GGML_TYPE_I2_S and t_d->ggml_type == GGML_TYPE_I2_S {
+                degisken p_asn: *tamsayi = llm_transformer_cached_norm_vektor(icra, t_asn, icra->model_gizli_boyutu);
+                degisken p_fn: *tamsayi = llm_transformer_cached_norm_vektor(icra, t_fn, icra->model_gizli_boyutu);
+                degisken p_fsn: *tamsayi = llm_transformer_cached_norm_vektor(icra, t_fsn, icra->ffn_boyutu);
+                eger p_asn != 0 and p_fn != 0 and p_fsn != 0 {
+                    degisken copy_out: tamsayi = 0;
+                    eger katman + 1 == durum->katman_sayisi and icra->logits_aktif == 1 {
+                        eger YKN_CUDA_READY != 1 or YKN_CUDA_LMHEAD_DEVICE == 0 or
+                           icra->model_mimari == LLM_MIMARI_GEMMA or icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+                            copy_out = 1;
+                        }
+                    }
+                    degisken t_paf0: tamsayi = ykn_llm_clock_ns();
+                    G_YKN_CUDA_CURRENT_LAYER = katman;
+                    post_attn_ffn_done = ykn_cuda_bitnet_post_attn_ffn_fused(
+                        t_asn->veri_offset, p_asn,
+                        t_o->veri_offset, t_o->bayt_sayisi,
+                        t_fn->veri_offset, p_fn,
+                        t_g->veri_offset, t_g->bayt_sayisi,
+                        t_u->veri_offset, t_u->bayt_sayisi,
+                        t_fsn->veri_offset, p_fsn,
+                        t_d->veri_offset, t_d->bayt_sayisi,
+                        icra->model_gizli_boyutu, icra->ffn_boyutu, icra->model_norm_eps_q16,
+                        g_llm_transformer_attention, g_llm_transformer_residual, g_llm_transformer_hidden,
+                        copy_out);
+                    degisken t_paf1: tamsayi = ykn_llm_clock_ns();
+                    eger post_attn_ffn_done == 1 {
+                        TRANSFORMER_TIME_FFN_NS = TRANSFORMER_TIME_FFN_NS + (t_paf1 - t_paf0);
+                        G_TIME_GATEUP_NS = G_TIME_GATEUP_NS + (t_paf1 - t_paf0);
+                        TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 6;
+                    }
+                }
+            }
+        }
+        eger post_attn_ffn_done == 0 {
+        eger YKN_CUDA_HIDDEN_ON_GPU == 1 {
+            cuda_copy_to_host(YKN_CUDA_CONTEXT_PTR, g_llm_transformer_residual, YKN_CUDA_RESIDUAL_DEVICE, icra->model_gizli_boyutu * 8);
+            YKN_CUDA_HIDDEN_ON_GPU = 0;
+        }
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 15, "attn_sub_norm.weight".ptr, ".attn_sub_norm.weight".ptr);
+        eger layer_tensor != 0 {
+            eger llm_transformer_norm_uygula(icra, layer_tensor,
+                g_llm_transformer_attention, g_llm_transformer_attention) == 0 ise {
+                TRANSFORMER_FORWARD_HATASI = 35; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        }
+        degisken t_oproj0: tamsayi = ykn_llm_clock_ns();
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 6, "self_attn.o_proj.weight".ptr, ".attn_output.weight".ptr);
+        g_llm_tensor_icra = icra; g_llm_tensor_bilgi = layer_tensor;
+        g_llm_tensor_girdi = g_llm_transformer_attention; g_llm_tensor_cikti = g_llm_transformer_hidden;
+        # Gemma Q projection width may exceed hidden width; O projects from Q width.
+        g_llm_tensor_K = q_boyutu; g_llm_tensor_N = icra->model_gizli_boyutu;
+        eger llm_transformer_tensor_ileri_global() == 0 ise {
+            TRANSFORMER_FORWARD_HATASI = 7; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+        TRANSFORMER_TIME_OPROJ_NS = TRANSFORMER_TIME_OPROJ_NS + (ykn_llm_clock_ns() - t_oproj0);
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 5, katman);
+        }
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 7, 0,
+                ".post_attention_norm.weight".ptr);
+            eger layer_tensor == 0 or llm_transformer_norm_uygula(icra,
+                layer_tensor, g_llm_transformer_hidden, g_llm_transformer_hidden) == 0 {
+                TRANSFORMER_FORWARD_HATASI = 43; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_hidden,
+                icra->model_gizli_boyutu, 4, katman);
+        }
+
+        eger llm_q16_topla(g_llm_transformer_hidden, g_llm_transformer_residual, icra->model_gizli_boyutu) == 0 ise {
+            TRANSFORMER_FORWARD_HATASI = 15; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 6, katman);
+        }
+
+        # Pre-norm SwiGLU: gate -> SiLU(gate)*up -> down -> residual.
+        eger llm_q16_kopyala(g_llm_transformer_hidden, g_llm_transformer_residual, icra->model_gizli_boyutu) == 0 ise {
+            TRANSFORMER_FORWARD_HATASI = 21; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+        layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 8, "post_attention_layernorm.weight".ptr, ".ffn_norm.weight".ptr);
+        eger layer_tensor == 0 ise {
+            eger llm_q16_kopyala(g_llm_transformer_hidden, g_llm_transformer_attention, icra->model_gizli_boyutu) == 0 ise {
+                TRANSFORMER_FORWARD_HATASI = 23; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        } yoksa {
+            eger llm_transformer_norm_uygula(icra, layer_tensor,
+                g_llm_transformer_hidden, g_llm_transformer_attention) == 0 ise {
+                TRANSFORMER_FORWARD_HATASI = 26; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_attention, icra->model_gizli_boyutu, 7, katman);
+        }
+
+        g_llm_ffn_icra = icra; g_llm_ffn_durum = durum; g_llm_ffn_katman = katman;
+        degisken t_ffn0: tamsayi = ykn_llm_clock_ns();
+        eger llm_transformer_ffn_ileri_global() == 0 ise {
+            TRANSFORMER_FORWARD_HATASI = 16; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+        degisken t_ffn1: tamsayi = ykn_llm_clock_ns();
+        TRANSFORMER_TIME_FFN_NS = TRANSFORMER_TIME_FFN_NS + (t_ffn1 - t_ffn0);
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 10, katman);
+        }
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 13, 0,
+                ".post_ffw_norm.weight".ptr);
+            eger layer_tensor == 0 or llm_transformer_norm_uygula(icra,
+                layer_tensor, g_llm_transformer_hidden, g_llm_transformer_hidden) == 0 {
+                TRANSFORMER_FORWARD_HATASI = 44; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+            eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+                llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 15, katman);
+            }
+        }
+
+        eger llm_q16_topla(g_llm_transformer_hidden, g_llm_transformer_residual, icra->model_gizli_boyutu) == 0 ise {
+            TRANSFORMER_FORWARD_HATASI = 20; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION and icra->model_mimari == LLM_MIMARI_GEMMA {
+            llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 16, katman);
+        }
+        eger icra->model_mimari == LLM_MIMARI_GEMMA {
+            eger llm_transformer_gemma4_apply_per_layer(icra, durum, katman) == 0 {
+                TRANSFORMER_FORWARD_HATASI = 53; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+            # Gemma-4 applies an optional learned scalar after its PLE residual.
+            layer_tensor = llm_cached_layer_tensor_bul(durum, katman, 14, 0,
+                ".layer_output_scale.weight".ptr);
+            eger layer_tensor != 0 {
+                eger llm_transformer_tensor_vektor_oku(icra, layer_tensor,
+                    layer_tensor->veri_offset, icra->q, 1) != 1 {
+                    TRANSFORMER_FORWARD_HATASI = 54; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+                }
+                TRANSFORMER_TRACE_LAYER_SCALE = icra->q[0];
+                degisken scale_i: tamsayi = 0;
+                dongu scale_i < icra->model_gizli_boyutu {
+                    g_llm_transformer_hidden[scale_i] =
+                        (g_llm_transformer_hidden[scale_i] * icra->q[0]) / BITNET_Q16_BIR;
+                    scale_i = scale_i + 1;
+                }
+            }
+            eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+                llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 19, katman);
+            }
+        }
+        eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+            llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 11, katman);
+        }
+
+        katman = katman + 1;
+    }
+    }
+    eger YKN_CUDA_READY == 1 {
+        cuda_ctx_synchronize(YKN_CUDA_CONTEXT_PTR);
+    }
+    degisken t_layers1: tamsayi = ykn_llm_clock_ns();
+    G_PROF_LAYERS_NS = G_PROF_LAYERS_NS + (t_layers1 - t_layers0);
+    degisken t_head0: tamsayi = ykn_llm_clock_ns();
+    eger icra->logits_aktif == 0 and icra->token_konumu != TRANSFORMER_TRACE_POSITION {
+        icra->token_konumu = icra->token_konumu + 1;
+        TRANSFORMER_FORWARD_SON_SONUC = token_id;
+        TRANSFORMER_FORWARD_HATASI = 0;
+        dondu token_id;
+    }
+    degisken final_norm: *GGUFTensorInfo = 0;
+    eger G_CACHED_FINAL_NORM_INIT == 1 {
+        final_norm = G_CACHED_FINAL_NORM;
+    } yoksa {
+        final_norm = llm_transformer_tek_tensor_bul(durum,
+            "output_norm.weight".ptr, "norm.weight".ptr, "model.norm.weight".ptr);
+        G_CACHED_FINAL_NORM = final_norm;
+        G_CACHED_FINAL_NORM_INIT = 1;
+    }
+    degisken final_norm_on_gpu: tamsayi = 0;
+    eger YKN_CUDA_READY == 1 ve YKN_CUDA_HIDDEN_ON_GPU == 1 ve final_norm != 0 ve
+       YKN_CUDA_LMHEAD_DEVICE != 0 ve
+       icra->model_mimari != LLM_MIMARI_GEMMA ve icra->token_konumu != TRANSFORMER_TRACE_POSITION {
+        degisken p_fn: *tamsayi = llm_transformer_cached_norm_vektor(icra, final_norm, icra->model_gizli_boyutu);
+        eger p_fn != 0 {
+            degisken t_fn0: tamsayi = ykn_llm_clock_ns();
+            final_norm_on_gpu = ykn_cuda_bitnet_final_norm(final_norm->veri_offset, p_fn, icra->model_gizli_boyutu, icra->model_norm_eps_q16);
+            degisken t_fn1: tamsayi = ykn_llm_clock_ns();
+            
+            eger final_norm_on_gpu == 1 {
+                TRANSFORMER_TIME_NORM_NS = TRANSFORMER_TIME_NORM_NS + (t_fn1 - t_fn0);
+                TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+            }
+        }
+    }
+    eger final_norm_on_gpu == 0 and final_norm != 0 {
+        eger YKN_CUDA_HIDDEN_ON_GPU == 1 {
+            cuda_copy_to_host(YKN_CUDA_CONTEXT_PTR, g_llm_transformer_hidden, YKN_CUDA_RESIDUAL_DEVICE, icra->model_gizli_boyutu * 8);
+            YKN_CUDA_HIDDEN_ON_GPU = 0;
+        }
+        eger llm_transformer_norm_uygula(icra, final_norm, g_llm_transformer_hidden, g_llm_transformer_hidden) == 0 ise { TRANSFORMER_FORWARD_HATASI = 34; dondu 0 - TRANSFORMER_FORWARD_HATASI; }
+    }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION {
+        llm_transformer_trace_q16(g_llm_transformer_hidden, icra->model_gizli_boyutu, 21, 0);
+    }
+
+    eger icra->logits_aktif == 0 ise {
+        icra->token_konumu = icra->token_konumu + 1;
+        TRANSFORMER_FORWARD_SON_SONUC = token_id;
+        TRANSFORMER_FORWARD_HATASI = 0;
+        dondu token_id;
+    }
+    degisken cikis_tensor: *GGUFTensorInfo = 0;
+    eger G_CACHED_CIKIS_TENSOR_INIT == 1 {
+        cikis_tensor = G_CACHED_CIKIS_TENSOR;
+    } yoksa {
+        cikis_tensor = llm_transformer_tek_tensor_bul(durum,
+            icra->adapter->output_adi, "lm_head.weight".ptr, "output.weight".ptr);
+        eger cikis_tensor == 0 ise { cikis_tensor = gguf_tensor_bul_adi_ile(durum, "token_embd.weight".ptr); }
+        G_CACHED_CIKIS_TENSOR = cikis_tensor;
+        G_CACHED_CIKIS_TENSOR_INIT = 1;
+    }
+    eger YKN_CUDA_READY == 1 ve cikis_tensor != 0 ve cikis_tensor->ggml_type == GGML_TYPE_F16 ve
+       YKN_CUDA_LMHEAD_DEVICE != 0 ve YKN_CUDA_LMHEAD_OFFSET == cikis_tensor->veri_offset ve
+       icra->model_mimari != LLM_MIMARI_GEMMA ve icra->token_konumu != TRANSFORMER_TRACE_POSITION {
+        degisken gpu_token: tamsayi = -1;
+        degisken act_ptr: *tamsayi = g_llm_transformer_hidden;
+        eger final_norm_on_gpu == 1 { act_ptr = 0; }
+        eger ykn_cuda_f16_matvec_device_argmax(YKN_CUDA_LMHEAD_DEVICE, act_ptr,
+            icra->model_gizli_boyutu, icra->model_vocab_boyutu,
+            LLM_RECENT_TOKENS, LLM_RECENT_COUNT,
+            LLM_REPETITION_PENALTY_Q16, &gpu_token) == 1 {
+            TRANSFORMER_CUDA_KERNEL_CALLS = TRANSFORMER_CUDA_KERNEL_CALLS + 1;
+            degisken sonuc: tamsayi = gpu_token;
+            eger sonuc >= 0 {
+                eger LLM_RECENT_COUNT < 256 {
+                    LLM_RECENT_TOKENS[LLM_RECENT_COUNT] = sonuc;
+                    LLM_RECENT_COUNT = LLM_RECENT_COUNT + 1;
+                } yoksa {
+                    degisken kaydir_idx: tamsayi = 0;
+                    dongu kaydir_idx < 255 {
+                        LLM_RECENT_TOKENS[kaydir_idx] = LLM_RECENT_TOKENS[kaydir_idx + 1];
+                        kaydir_idx = kaydir_idx + 1;
+                    }
+                    LLM_RECENT_TOKENS[255] = sonuc;
+                }
+            }
+            eger sonuc < 0 ise {
+                TRANSFORMER_FORWARD_HATASI = 51;
+                TRANSFORMER_FORWARD_SON_SONUC = sonuc;
+                dondu 0 - TRANSFORMER_FORWARD_HATASI;
+            }
+            TRANSFORMER_FORWARD_SON_SONUC = sonuc;
+            TRANSFORMER_FORWARD_HATASI = 0;
+            icra->token_konumu = icra->token_konumu + 1;
+            G_PROF_HEAD_NS = G_PROF_HEAD_NS + (ykn_llm_clock_ns() - t_head0);
+            dondu sonuc;
+        }
+    }
+    eger cikis_tensor == 0 veya icra->logits_kapasitesi < icra->model_vocab_boyutu or
+       llm_transformer_tensor_aralik_matris(icra, cikis_tensor, g_llm_transformer_hidden, icra->logits,
+          icra->model_gizli_boyutu, icra->model_vocab_boyutu) == 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 7; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    eger icra->model_mimari == LLM_MIMARI_GEMMA {
+        degisken gemma_profile: *GGUFGemma4Profile = durum->gemma4;
+        eger gemma_profile == 0 or gemma_profile->logit_softcap_q16 <= 0 or
+           bitnet_q16_softcap_vector(icra->logits, icra->model_vocab_boyutu,
+               gemma_profile->logit_softcap_q16) == 0 {
+            TRANSFORMER_FORWARD_HATASI = 45; dondu 0 - TRANSFORMER_FORWARD_HATASI;
+        }
+    }
+    eger icra->token_konumu == TRANSFORMER_TRACE_POSITION and
+       icra->model_vocab_boyutu <= 128256 {
+        degisken trace_logit_i: tamsayi = 0;
+        dongu trace_logit_i < icra->model_vocab_boyutu {
+            TRANSFORMER_TRACE_LOGITS[trace_logit_i] = icra->logits[trace_logit_i];
+            trace_logit_i = trace_logit_i + 1;
+        }
+    }
+    eger LLM_REPETITION_PENALTY_Q16 > 65536 ve LLM_RECENT_COUNT > 0 {
+        degisken rpi: tamsayi = 0;
+        dongu rpi < LLM_RECENT_COUNT {
+            degisken rptok: tamsayi = LLM_RECENT_TOKENS[rpi];
+            eger rptok >= 0 ve rptok < icra->model_vocab_boyutu {
+                degisken lval: tamsayi = icra->logits[rptok];
+                eger lval > 0 {
+                    icra->logits[rptok] = (lval * 65536) / LLM_REPETITION_PENALTY_Q16;
+                } yoksa {
+                    icra->logits[rptok] = (lval * LLM_REPETITION_PENALTY_Q16) / 65536;
+                }
+            }
+            rpi = rpi + 1;
+        }
+    }
+    degisken sonuc: tamsayi = bitnet_argmax(icra->logits, icra->model_vocab_boyutu);
+    eger sonuc >= 0 {
+        eger LLM_RECENT_COUNT < 256 {
+            LLM_RECENT_TOKENS[LLM_RECENT_COUNT] = sonuc;
+            LLM_RECENT_COUNT = LLM_RECENT_COUNT + 1;
+        } yoksa {
+            degisken kaydir_idx: tamsayi = 0;
+            dongu kaydir_idx < 255 {
+                LLM_RECENT_TOKENS[kaydir_idx] = LLM_RECENT_TOKENS[kaydir_idx + 1];
+                kaydir_idx = kaydir_idx + 1;
+            }
+            LLM_RECENT_TOKENS[255] = sonuc;
+        }
+    }
+    eger sonuc < 0 ise {
+        TRANSFORMER_FORWARD_HATASI = 51;
+        TRANSFORMER_FORWARD_SON_SONUC = sonuc;
+        dondu 0 - TRANSFORMER_FORWARD_HATASI;
+    }
+    TRANSFORMER_FORWARD_SON_SONUC = sonuc;
+    TRANSFORMER_FORWARD_HATASI = 0;
+    G_PROF_HEAD_NS = G_PROF_HEAD_NS + (ykn_llm_clock_ns() - t_head0);
+    icra->token_konumu = icra->token_konumu + 1;
+    dondu sonuc;
+}
+
+# Önceki API: caller hidden'i kendisi hazırlıyorsa embedding yapmadan tek adım.
+isv llm_transformer_token_uret(icra: *LLMTransformerExecution,
+                               durum: *GGUFDurum,
+                               katman_adi_tamponu: *u8,
+                               katman_adi_kapasitesi: tamsayi) -> tamsayi {
+    dondu llm_transformer_token_uret_token(icra, durum, 0 - 1,
+        katman_adi_tamponu);
+}
+
+# Greedy autoregressive decode. prompt_tokenleri must already include any
+# architecture-specific BOS/chat template tokens; emitted IDs are real logits
+# argmax results. Return count or a negative error, never placeholder text.
+isv llm_transformer_greedy_generate(request: *LLMGreedyGenerationRequest) -> tamsayi {
+    eger request == 0 veya request->icra == 0 veya request->durum == 0 veya
+       request->prompt_tokenleri == 0 veya request->uretilen_tokenler == 0 veya
+       request->prompt_adedi <= 0 veya request->max_yeni_token <= 0 veya
+       request->uretilen_kapasitesi < request->max_yeni_token ise { dondu 0 - 1; }
+    degisken icra: *LLMTransformerExecution = request->icra;
+    degisken durum: *GGUFDurum = request->durum;
+    degisken prompt: *tamsayi = request->prompt_tokenleri;
+    degisken output: *tamsayi = request->uretilen_tokenler;
+    degisken spec: *LLMModelSpec = icra->spec;
+    eger spec == 0 veya icra->kv_kapasitesi <= 0 veya
+       request->prompt_adedi > icra->kv_kapasitesi veya
+       request->max_yeni_token > icra->kv_kapasitesi - request->prompt_adedi veya
+       request->prompt_adedi + request->max_yeni_token > spec->context_boyutu ise {
+        dondu 0 - 2;
+    }
+    LLM_RECENT_COUNT = 0;
+    degisken i: tamsayi = 0;
+    icra->logits_aktif = 0;
+    dongu i + 1 < request->prompt_adedi {
+        degisken prefill: tamsayi = llm_transformer_token_uret_token(
+            icra, durum, prompt[i], "blk.0".ptr);
+        eger prefill != prompt[i] veya TRANSFORMER_FORWARD_HATASI != 0 {
+            dondu 0 - 3;
+        }
+        i = i + 1;
+    }
+    icra->logits_aktif = 1;
+    degisken predicted: tamsayi = llm_transformer_token_uret_token(
+        icra, durum, prompt[request->prompt_adedi - 1], "blk.0".ptr);
+    eger predicted < 0 veya TRANSFORMER_FORWARD_HATASI != 0 veya
+       predicted >= icra->model_vocab_boyutu {
+        dondu 0 - 4;
+    }
+    output[0] = predicted;
+    degisken generated: tamsayi = 1;
+    dongu generated < request->max_yeni_token {
+        degisken model_spec: *LLMModelSpec = icra->spec;
+        eger model_spec != 0 ve output[generated - 1] == model_spec->eos_token_id { durdur; }
+        predicted = llm_transformer_token_uret_token(
+            icra, durum, output[generated - 1], "blk.0".ptr);
+        eger predicted < 0 veya TRANSFORMER_FORWARD_HATASI != 0 veya
+           predicted >= icra->model_vocab_boyutu {
+            dondu 0 - 5;
+        }
+        output[generated] = predicted;
+        generated = generated + 1;
+    }
+    dondu generated;
+}

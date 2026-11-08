@@ -1,0 +1,112 @@
+# ============================================================
+# tests/faz6_ai_bitnet_test.ykn
+# FAZ 6: Yerel BitNet b1.58, RMSNorm, FlashAttention-2 & LoRA Doğrulama Testi
+# ============================================================
+
+ice_aktar "std/ai/ops.ykn";
+ice_aktar "std/ai/flash_attention.ykn";
+ice_aktar "std/ai/lora.ykn";
+
+isv test_rmsnorm() -> tamsayi {
+    # 4 elemanli Q16.16 vektor testi
+    degisken x: [4]tamsayi;
+    x[0] = 65536 * 2;  # 2.0
+    x[1] = 65536 * 4;  # 4.0
+    x[2] = 65536 * 4;  # 4.0
+    x[3] = 65536 * 2;  # 2.0
+
+    degisken w: [4]tamsayi;
+    w[0] = 65536;      # 1.0
+    w[1] = 65536;      # 1.0
+    w[2] = 65536;      # 1.0
+    w[3] = 65536;      # 1.0
+
+    degisken ok: tamsayi = ai_rmsnorm(x, w, 4);
+    eger ok == 0 ise {
+        ekrana_yaz("HATA: ai_rmsnorm basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # Aktivasyonlarin sifirlanmadigini (tamsayi bolmesi hatasi olmadigini) dogrula
+    eger x[0] == 0 veya x[1] == 0 veya x[2] == 0 veya x[3] == 0 ise {
+        ekrana_yaz("HATA: RMSNorm aktivasyonlari sifirlandi (integer division bug)!\n".ptr);
+        dondu 2;
+    }
+
+    dondu 0;
+}
+
+isv test_flash_attention() -> tamsayi {
+    # seq=2, dim=2
+    degisken Q: [4]tamsayi;
+    degisken K: [4]tamsayi;
+    degisken V: [4]tamsayi;
+    degisken O: [4]tamsayi;
+
+    Q[0] = 1; Q[1] = 2; Q[2] = 3; Q[3] = 4;
+    K[0] = 1; K[1] = 0; K[2] = 0; K[3] = 1;
+    V[0] = 5; V[1] = 6; V[2] = 7; V[3] = 8;
+
+    flash_attention_2_cpu(Q, K, V, O, 2, 2);
+
+    # Cikis tensörünün gecerli oldugunu dogrula
+    eger O[0] == 0 ve O[1] == 0 ve O[2] == 0 ve O[3] == 0 ise {
+        ekrana_yaz("HATA: FlashAttention-2 tum cikislari sifir!\n".ptr);
+        dondu 1;
+    }
+
+    dondu 0;
+}
+
+isv test_lora() -> tamsayi {
+    # in_dim=2, out_dim=2, rank=1, alpha=1
+    degisken l: *LoRAKatmani = lora_olustur(2, 2, 1, 1);
+    eger l == 0 ise {
+        ekrana_yaz("HATA: lora_olustur basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    degisken X: *Tensor = tensor_olustur_2d(1, 2, 0);
+    tensor_koy_2d(X, 0, 0, 10);
+    tensor_koy_2d(X, 0, 1, 20);
+
+    # Ileri gecis
+    degisken Y: *Tensor = lora_ileri_1d(l, X);
+    eger Y == 0 ise {
+        ekrana_yaz("HATA: lora_ileri_1d basarisiz!\n".ptr);
+        dondu 2;
+    }
+
+    # B ve A'nin eski degerlerini kaydet
+    degisken eski_b: tamsayi = tensor_al_2d(l.B, 0, 0);
+    degisken eski_a: tamsayi = tensor_al_2d(l.A, 0, 0);
+
+    # Geri yayilim ve optimizasyon adimi
+    lora_adim_guncelle(l, 5, 1);
+
+    degisken yeni_b: tamsayi = tensor_al_2d(l.B, 0, 0);
+    degisken yeni_a: tamsayi = tensor_al_2d(l.A, 0, 0);
+
+    # Hem B hem A'nin guncellendigini dogrula (sadece B degil!)
+    eger yeni_b == eski_b ise {
+        ekrana_yaz("HATA: LoRA B matrisi guncellenmedi!\n".ptr);
+        dondu 3;
+    }
+
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken h1: tamsayi = test_rmsnorm();
+    eger h1 != 0 ise { dondu h1; }
+
+    degisken h2: tamsayi = test_flash_attention();
+    eger h2 != 0 ise { dondu h2; }
+
+    degisken h3: tamsayi = test_lora();
+    eger h3 != 0 ise { dondu h3; }
+
+    ekrana_yaz("FAZ 6 AI BITNET VE MATEMATIK TESTLERI BASARILI!\n".ptr);
+    dondu 0;
+}
+

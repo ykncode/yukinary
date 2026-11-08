@@ -1,0 +1,37 @@
+# Gerçek YKN HTTP POST server: request framing ve body doğrulama.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu 60; }
+    degisken sunucu: tamsayi = sunucu_olustur(18083);
+    eger sunucu < 0 ise { dondu 61; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { soket_kapat(sunucu); dondu 62; }
+    degisken istek: [4096]u8;
+    degisken okunan: tamsayi = 0;
+    degisken govde_bas: tamsayi = -1;
+    dongu okunan < 4095 ve govde_bas < 0 {
+        degisken parca: tamsayi = soket_al(istemci, istek + okunan, 4095 - okunan);
+        eger parca <= 0 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 63; }
+        okunan = okunan + parca;
+        istek[okunan] = 0;
+        degisken tarama: tamsayi = 0;
+        dongu tarama + 3 < okunan {
+            eger istek[tarama] == 13 ve istek[tarama + 1] == 10 ve istek[tarama + 2] == 13 ve istek[tarama + 3] == 10 ise { govde_bas = tarama + 4; tarama = okunan; }
+            yoksa { tarama = tarama + 1; }
+        }
+    }
+    eger govde_bas < 0 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 64; }
+    degisken req: Istek;
+    eger http_ayristir(istek, okunan, &req) != 1 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 64; }
+    eger istek[0] != 80 veya istek[1] != 79 veya istek[2] != 83 veya istek[3] != 84 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 65; }
+    eger govde_bas + 5 > okunan veya istek[govde_bas] != 104 veya
+       istek[govde_bas + 1] != 101 veya istek[govde_bas + 2] != 108 veya istek[govde_bas + 3] != 108 veya istek[govde_bas + 4] != 111 ise {
+        soket_kapat(istemci); soket_kapat(sunucu); dondu 66;
+    }
+    degisken cevap: *u8 = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK".ptr;
+    degisken uzunluk: tamsayi = 0;
+    dongu cevap[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    eger soket_gonder_tam(istemci, cevap, uzunluk) != uzunluk ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 67; }
+    soket_kapat(istemci); soket_kapat(sunucu); dondu 0;
+}

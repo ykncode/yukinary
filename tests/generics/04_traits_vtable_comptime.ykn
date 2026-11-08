@@ -1,0 +1,85 @@
+# ============================================================
+# tests/generics/04_traits_vtable_comptime.ykn
+# FAZ 37: Dinamik Traits, VTable ve Comptime Dogrulama Testi
+# ============================================================
+
+ice_aktar "src/vtable.ykn";
+ice_aktar "src/comptime.ykn";
+
+# İki farklı struct tanımı
+yapi Kare {
+    kenar: tamsayi;
+}
+
+yapi Daire {
+    yaricap: tamsayi;
+}
+
+# "AlanHesapla" arayüzü fonksiyonları (slot 0)
+isv kare_alan(self_ptr: *u8) -> tamsayi {
+    degisken k: *Kare = self_ptr;
+    dondu k.kenar * k.kenar;
+}
+
+isv daire_alan(self_ptr: *u8) -> tamsayi {
+    degisken d: *Daire = self_ptr;
+    dondu 3 * d.yaricap * d.yaricap; # pi ~ 3
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 37: Traits, VTable & Comptime Testi Basliyor...\n".ptr);
+
+    # 1. Comptime Hesaplama Testleri
+    degisken fak5: tamsayi = comptime_faktoriyel(5);
+    eger fak5 != 120 ise {
+        ekrana_yaz("HATA: Comptime faktoriyel hatali!\n".ptr);
+        dondu 1;
+    }
+
+    degisken h: tamsayi = comptime_string_hash("YUKINARY".ptr, 8);
+    eger h <= 0 ise {
+        ekrana_yaz("HATA: Comptime string hash gecersiz!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. VTable ve Trait Object Dinamik Dispatch Testi
+    degisken vt_kare: *VTable = vtable_olustur(101, 1);
+    vtable_yontem_kaydet(vt_kare, 0, kare_alan);
+
+    degisken vt_daire: *VTable = vtable_olustur(102, 1);
+    vtable_yontem_kaydet(vt_daire, 0, daire_alan);
+
+    degisken k: Kare;
+    k.kenar = 6;
+    degisken obj_kare: *TraitNesnesi = trait_nesnesi_olustur(&k, vt_kare);
+
+    degisken d: Daire;
+    d.yaricap = 5;
+    degisken obj_daire: *TraitNesnesi = trait_nesnesi_olustur(&d, vt_daire);
+
+    # Dinamik cagri: vtable[0](obj.veri)
+    # yontemler[0] pointer'i fonksiyon olarak cagirilir
+    # Yukinary'de dynamic call: ykn_dyn_call_ptr_3(fn, arg1, 0, 0)
+    degisken vt_k: *VTable = obj_kare.vtable;
+    degisken yk: *tamsayi = vt_k.yontemler;
+    degisken fn_kare: *u8 = yk[0] as *u8;
+
+    degisken vt_d: *VTable = obj_daire.vtable;
+    degisken yd: *tamsayi = vt_d.yontemler;
+    degisken fn_daire: *u8 = yd[0] as *u8;
+
+    degisken alan1: tamsayi = fn_kare(obj_kare.veri_isaretcisi);
+    eger alan1 != 36 ise {
+        ekrana_yaz("HATA: Dinamik VTable Kare alani hatali!\n".ptr);
+        dondu 3;
+    }
+
+    degisken alan2: tamsayi = fn_daire(obj_daire.veri_isaretcisi);
+    eger alan2 != 75 ise {
+        ekrana_yaz("HATA: Dinamik VTable Daire alani hatali!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("TRAITS_VTABLE_COMPTIME_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,52 @@
+# ============================================================
+# IR Verifier Temel Testi
+# ir.ykn modülünü kullanarak verifier'ın çalıştığını doğrular
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/ir.ykn";
+
+isv ana() -> tamsayi {
+    # IR motoru oluştur
+    degisken motor: *IrMotoru = ir_motoru_olustur(1048576); # 1MB
+    eger motor == 0 ise {
+        ekrana_yaz("FAIL: IR motor olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # Bir fonksiyon başlat
+    degisken fonk: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 12345);
+    eger fonk == 0 ise {
+        ekrana_yaz("FAIL: Fonksiyon olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # Bazı komutlar ekle: CONST r1, 42
+    degisken r1: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CONST, r1, 42, 0, YKN_IR_TID_INT);
+
+    # ADD r2, r1, r1
+    degisken r2: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_ADD, r2, r1, r1, YKN_IR_TID_INT);
+
+    # RET r2
+    ir_komut_ekle(motor, YKN_IR_RET, 0, r2, 0, YKN_IR_TID_INT);
+
+    # Verifier çalıştır — hata olmamalı
+    degisken hata_sayisi: tamsayi = ir_verifier_calistir(motor);
+    eger hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: Gecerli IR'da verifier hata raporladi\n".ptr);
+        dondu 1;
+    }
+
+    # Fonksiyon register sayısı doğru mu?
+    eger fonk.sanal_reg_sayisi != 2 ise {
+        ekrana_yaz("FAIL: Yanlis register sayisi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("IR_VERIFIER_PASS\n".ptr);
+    dondu 0;
+}

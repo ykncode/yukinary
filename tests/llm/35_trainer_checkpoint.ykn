@@ -1,0 +1,115 @@
+# Saf YKN YKCP v1 trainer checkpoint acceptance.
+ice_aktar "std/ai/trainer_checkpoint.ykn";
+
+degisken CP_BYTES: tamsayi = 17904;
+degisken CP_HEADER: tamsayi = 96;
+
+isv baytlar_ayni(a: *u8, b: *u8, n: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ai_egitim_baslat();
+    # Negatif agirlik ve optimizer state'i de round-trip'e dahil et.
+    g_ai_w1[0] = -123456;
+    g_ai_m1_w1[0] = -2222;
+    g_ai_m2_w2[191] = -3333;
+    g_ai_m2_b2[5] = -4444;
+    g_ai_adam_adim = 7;
+    g_ai_beta1_pow = 1234;
+    g_ai_beta2_pow = 5678;
+
+    degisken yol_a: *u8 = "build/test-work/trainer-checkpoint-a.ykcp".ptr;
+    degisken yol_b: *u8 = "build/test-work/trainer-checkpoint-b.ykcp".ptr;
+    degisken yol_bad: *u8 = "build/test-work/trainer-checkpoint-bad.ykcp".ptr;
+    degisken yol_short: *u8 = "build/test-work/trainer-checkpoint-short.ykcp".ptr;
+    eger trainer_checkpoint_save(yol_a) != CP_BYTES ise {
+        ekrana_yaz("FAIL: checkpoint save A\n".ptr);
+        dondu 1;
+    }
+    eger trainer_checkpoint_save(yol_b) != CP_BYTES ise {
+        ekrana_yaz("FAIL: checkpoint save B\n".ptr);
+        dondu 2;
+    }
+
+    degisken a: *u8 = bellek_tahsis_et(CP_BYTES);
+    degisken b: *u8 = bellek_tahsis_et(CP_BYTES);
+    eger a == 0 veya b == 0 ise {
+        ekrana_yaz("FAIL: checkpoint buffers\n".ptr);
+        dondu 3;
+    }
+    eger dosya_oku(yol_a, a, CP_BYTES) != CP_BYTES veya
+       dosya_oku(yol_b, b, CP_BYTES) != CP_BYTES veya
+       baytlar_ayni(a, b, CP_BYTES) == 0 ise {
+        ekrana_yaz("FAIL: deterministic checkpoint bytes\n".ptr);
+        dondu 4;
+    }
+    eger trainer_checkpoint_hash_dogrula(a, CP_BYTES) == 0 veya
+       trainer_checkpoint_hash_dogrula(b, CP_BYTES) == 0 ise {
+        ekrana_yaz("FAIL: valid checkpoint hash\n".ptr);
+        dondu 5;
+    }
+
+    # Dosyadaki mutasyonlar yuklenmeden once bellekte degistiriliyor.
+    g_ai_w1[0] = 777;
+    g_ai_m1_w1[0] = 888;
+    g_ai_m2_w2[191] = 999;
+    g_ai_m2_b2[5] = 1111;
+    g_ai_adam_adim = 0;
+    g_ai_beta1_pow = 0;
+    g_ai_beta2_pow = 0;
+    eger trainer_checkpoint_load(yol_a) == 0 ise {
+        ekrana_yaz("FAIL: valid checkpoint load\n".ptr);
+        dondu 6;
+    }
+    eger g_ai_w1[0] != -123456 veya g_ai_m1_w1[0] != -2222 veya
+       g_ai_m2_w2[191] != -3333 veya g_ai_m2_b2[5] != -4444 veya
+       g_ai_adam_adim != 7 ise {
+        ekrana_yaz("FAIL: checkpoint state restore\n".ptr);
+        dondu 7;
+    }
+
+    # Header bozulmasi hash/format kapisindan gecmemeli.
+    degisken saved: u8 = a[0];
+    a[0] = 0;
+    eger trainer_checkpoint_hash_dogrula(a, CP_BYTES) != 0 ise {
+        ekrana_yaz("FAIL: bad magic accepted\n".ptr);
+        dondu 8;
+    }
+    a[0] = saved;
+
+    # Payload bozulmasi SHA-256 ile reddedilmeli.
+    saved = a[CP_HEADER + 17];
+    a[CP_HEADER + 17] = a[CP_HEADER + 17] ^ 1;
+    eger trainer_checkpoint_hash_dogrula(a, CP_BYTES) != 0 ise {
+        ekrana_yaz("FAIL: payload corruption accepted\n".ptr);
+        dondu 9;
+    }
+    eger diske_bas_ve_kapat(yol_bad, a, CP_BYTES) != CP_BYTES ise {
+        ekrana_yaz("FAIL: corrupt checkpoint write\n".ptr);
+        dondu 10;
+    }
+    a[CP_HEADER + 17] = saved;
+    eger trainer_checkpoint_load(yol_bad) != 0 ise {
+        ekrana_yaz("FAIL: corrupt checkpoint loaded\n".ptr);
+        dondu 11;
+    }
+
+    # Fiziksel truncation da bounded loader tarafindan reddedilmeli.
+    eger diske_bas_ve_kapat(yol_short, a, CP_BYTES - 1) != CP_BYTES - 1 ise {
+        ekrana_yaz("FAIL: truncated checkpoint write\n".ptr);
+        dondu 12;
+    }
+    eger trainer_checkpoint_load(yol_short) != 0 ise {
+        ekrana_yaz("FAIL: truncated checkpoint loaded\n".ptr);
+        dondu 13;
+    }
+
+    ekrana_yaz("YKN_TRAINER_CHECKPOINT_PASS\n".ptr);
+    dondu 0;
+}

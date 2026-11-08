@@ -1,0 +1,326 @@
+# ============================================================
+# tests/ai/test_neural_autonomous_bonsai.ykn
+# FAZ 3: Bonsai-8B (Qwen Mimarisi) Kapsamli Noral Otonom Yetenekler Testi
+# NVIDIA GeForce RTX 3060 CUDA uzerinde gercek agirlik cikarimi.
+#
+# 3 Temel Otonom Yetenek (6 Kapsamli Gercek Dunya Senaryosu):
+#   1. Noral Kod Sentezi:
+#      - Gorev 1: Ikili Arama (Binary Search) - Serbest Muhakeme (<think>)
+#      - Gorev 2: Ozyinelemeli Faktoriyel - Dogrudan Kod Uretimi
+#   2. Otonom Kod Onarimi (Self-Healing):
+#      - Gorev 3: E002 Eksik Donus ve Degisken Hatasi Onarimi
+#      - Gorev 4: Dizi Sinir / Dongu Tasmasi (Off-by-one) Onarimi
+#   3. Polyglot Kod Cevirisi (Python -> Yukinary Transpilation):
+#      - Gorev 5: Python Oklid EBOB -> Yukinary
+#      - Gorev 6: Python Dizi Maksimum Arama -> Yukinary Isaretci Dongusu
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+degisken G_DURUM_PTR: *GGUFDurum = 0;
+degisken G_TOKEN_OFFSETS: *tamsayi = 0;
+degisken G_TOKEN_LENGTHS: *tamsayi = 0;
+degisken G_MERGE_OFFSETS: *tamsayi = 0;
+degisken G_MERGE_LENGTHS: *tamsayi = 0;
+degisken G_TOKEN_COUNT: tamsayi = 0;
+degisken G_MERGE_COUNT: tamsayi = 0;
+degisken G_SPEC: LLMModelSpec;
+degisken G_LOADER: LLMModelLoader;
+degisken G_ADAPTER: LLMArchitectureAdapter;
+degisken G_ICRA: LLMTransformerExecution;
+
+isv noral_gorev_calistir_bonsai(gorev_no: tamsayi, gorev_adi: *u8, prompt_text: *u8, max_token: tamsayi) {
+    ekrana_yaz("======================================================\n".ptr);
+    ekrana_yaz("[GOREV ".ptr); sayi_yaz(gorev_no); ekrana_yaz("] ".ptr); ekrana_yaz(gorev_adi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("[GIRDI PROMPT]:\n\"".ptr); ekrana_yaz(prompt_text); ekrana_yaz("\"\n\n".ptr);
+
+    degisken prompt_ids: [256]tamsayi;
+    degisken prompt_length: tamsayi = 0;
+    dongu prompt_text[prompt_length] != 0 { prompt_length = prompt_length + 1; }
+
+    degisken prompt_count: tamsayi = bitnet_bpe_ascii_kodla(
+        G_DURUM_PTR->buffer, G_TOKEN_OFFSETS, G_TOKEN_LENGTHS, G_TOKEN_COUNT,
+        G_MERGE_OFFSETS, G_MERGE_LENGTHS, G_MERGE_COUNT, prompt_text, prompt_length,
+        prompt_ids, 256);
+
+    eger prompt_count <= 0 {
+        ekrana_yaz("HATA: Tokenizer prompt kodlayamadi! Kod: ".ptr);
+        sayi_yaz(prompt_count);
+        ekrana_yaz("\n".ptr);
+        dondu;
+    }
+
+    ekrana_yaz("[TOKENIZER]: Girdi promptu ".ptr);
+    sayi_yaz(prompt_count);
+    ekrana_yaz(" token olarak kodlandi.\n".ptr);
+
+    # Her gorev icin sequence konumu sifirlanir
+    G_ICRA.token_konumu = 0;
+
+    degisken generated_tokens: [256]tamsayi;
+    degisken generation_request: LLMGreedyGenerationRequest;
+    generation_request.icra = &G_ICRA;
+    generation_request.durum = G_DURUM_PTR;
+    generation_request.prompt_tokenleri = prompt_ids;
+    generation_request.prompt_adedi = prompt_count;
+    generation_request.uretilen_tokenler = generated_tokens;
+    generation_request.uretilen_kapasitesi = 256;
+    generation_request.max_yeni_token = max_token;
+
+    LLM_REPETITION_PENALTY_Q16 = 78643; # 1.2x Tekrar Cezasi
+    degisken t_gen_start: tamsayi = ykn_llm_clock_ns();
+    degisken generated_count: tamsayi = llm_transformer_greedy_generate(&generation_request);
+    degisken t_gen_end: tamsayi = ykn_llm_clock_ns();
+
+    eger generated_count <= 0 {
+        ekrana_yaz("HATA: Token uretim hatasi kod=".ptr);
+        sayi_yaz(generated_count);
+        ekrana_yaz("\n".ptr);
+        dondu;
+    }
+
+    ekrana_yaz("[NORAL CIKTI (NVIDIA GeForce RTX 3060 CUDA - Bonsai-8B)]:\n------------------------------------------------------\n".ptr);
+    degisken generated_text: [8192]u8;
+    degisken generated_text_len: tamsayi = 0;
+    degisken token_i: tamsayi = 0;
+    dongu token_i < generated_count {
+        degisken piece_raw: [256]u8;
+        degisken piece_raw_len: tamsayi = bitnet_token_kopyala(
+            G_DURUM_PTR->buffer, G_TOKEN_OFFSETS, G_TOKEN_LENGTHS, G_TOKEN_COUNT,
+            generated_tokens[token_i], piece_raw, 256);
+        degisken piece_decoded: [256]u8;
+        degisken piece_len: tamsayi = bitnet_gpt2_byte_decode(
+            piece_raw, piece_raw_len, piece_decoded, 256);
+        eger piece_raw_len > 0 ve piece_len >= 0 ve generated_text_len + piece_len < 8192 {
+            degisken piece_i: tamsayi = 0;
+            dongu piece_i < piece_len {
+                generated_text[generated_text_len] = piece_decoded[piece_i];
+                generated_text_len = generated_text_len + 1;
+                piece_i = piece_i + 1;
+            }
+        }
+        token_i = token_i + 1;
+    }
+    generated_text[generated_text_len] = 0;
+    ekrana_yaz(generated_text.ptr);
+    ekrana_yaz("\n------------------------------------------------------\n".ptr);
+
+    degisken sure_ms: tamsayi = (t_gen_end - t_gen_start) / 1000000;
+    degisken hiz_tok_s: tamsayi = 0;
+    eger t_gen_end > t_gen_start {
+        hiz_tok_s = (generated_count * 1000000000) / (t_gen_end - t_gen_start);
+    }
+    ekrana_yaz("[TELEMETRI]: Uretilen: ".ptr); sayi_yaz(generated_count);
+    ekrana_yaz(" token | Sure: ".ptr); sayi_yaz(sure_ms);
+    ekrana_yaz(" ms | Hiz: ".ptr); sayi_yaz(hiz_tok_s);
+    ekrana_yaz(" tok/s\n\n".ptr);
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("=== BONSAI-8B (QWEN) KAPSAMLI NORAL OTONOM YETENEKLER - CUDA TESTI ===\n".ptr);
+    ekrana_yaz("[DURUM] 1.15 GB Bonsai-8B modeli RTX 3060 CUDA uzerinde calistiriliyor...\n\n".ptr);
+
+    degisken model_yolu: *u8 = "models/bonsai-8b/Bonsai-8B.gguf".ptr;
+    G_DURUM_PTR = bellek_tahsis_et(1024);
+    eger G_DURUM_PTR == 0 { ekrana_yaz("HATA: Bellek tahsis edilemedi\n".ptr); dondu 1; }
+    eger gguf_yukle(model_yolu, G_DURUM_PTR) == 0 {
+        ekrana_yaz("HATA: GGUF yuklenemedi\n".ptr); dondu 2;
+    }
+
+    G_TOKEN_OFFSETS = bellek_tahsis_et(151669 * 8);
+    G_TOKEN_LENGTHS = bellek_tahsis_et(151669 * 8);
+    G_MERGE_OFFSETS = bellek_tahsis_et(151387 * 8);
+    G_MERGE_LENGTHS = bellek_tahsis_et(151387 * 8);
+    eger bitnet_tokenizer_metadata_yukle(G_DURUM_PTR, G_TOKEN_OFFSETS, G_TOKEN_LENGTHS, 151669,
+           G_MERGE_OFFSETS, G_MERGE_LENGTHS, 151387, &G_TOKEN_COUNT, &G_MERGE_COUNT) == 0 {
+        ekrana_yaz("HATA: Tokenizer metadata okunamadi\n".ptr); dondu 3;
+    }
+
+    llm_runtime_spec_sifirla(&G_SPEC);
+    G_SPEC.model_adi = G_DURUM_PTR->mimari_adi;
+    G_SPEC.mimari = LLM_MIMARI_QWEN;
+    G_SPEC.quant_tipi = G_DURUM_PTR->quant_tipi;
+    G_SPEC.vocab_boyutu = G_DURUM_PTR->vocab_boyutu;
+    G_SPEC.gizli_boyut = G_DURUM_PTR->gizli_boyut;
+    G_SPEC.katman_sayisi = G_DURUM_PTR->katman_sayisi;
+    G_SPEC.context_boyutu = G_DURUM_PTR->context_boyutu;
+    G_SPEC.kafa_sayisi = G_DURUM_PTR->kafa_sayisi;
+    G_SPEC.kv_kafa_sayisi = G_DURUM_PTR->kv_kafa_sayisi;
+    G_SPEC.kafa_boyutu = G_DURUM_PTR->kafa_boyutu;
+    G_SPEC.ffn_boyutu = G_DURUM_PTR->ffn_boyutu;
+    G_SPEC.rope_boyutu = G_DURUM_PTR->rope_boyutu;
+    G_SPEC.rope_freq_base_q16 = G_DURUM_PTR->rope_freq_base_q16;
+    G_SPEC.norm_eps_q16 = G_DURUM_PTR->norm_eps_q16;
+    G_SPEC.bos_token_id = G_DURUM_PTR->bos_token_id;
+    G_SPEC.eos_token_id = G_DURUM_PTR->eos_token_id;
+
+    eger llm_model_loader_baslat(&G_LOADER, model_yolu, G_DURUM_PTR) == 0 {
+        ekrana_yaz("HATA: Model loader baslatilamadi\n".ptr); dondu 4;
+    }
+    eger llm_architecture_adapter_kur(G_SPEC.mimari, &G_ADAPTER) == 0 {
+        ekrana_yaz("HATA: Architecture adapter baslatilamadi\n".ptr); dondu 5;
+    }
+
+    # KV Onbellegi Kapasitesi (512 token: 256 prompt + 128-256 cikti rahatlikla sigar)
+    degisken cache_capacity: tamsayi = 512;
+    degisken hidden_bytes: tamsayi = G_SPEC.gizli_boyut * 8;
+    degisken kv_width: tamsayi = G_SPEC.kv_kafa_sayisi * G_SPEC.kafa_boyutu;
+    degisken kv_bytes: tamsayi = cache_capacity * G_SPEC.katman_sayisi * kv_width * 8;
+    degisken max_weight_bytes: tamsayi = 8388608;
+    degisken logits_bytes: tamsayi = G_SPEC.vocab_boyutu * 8;
+
+    degisken hidden: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken key: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken value: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken attention: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn: *tamsayi = bellek_tahsis_et(G_SPEC.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &G_LOADER;
+    paket.adapter = &G_ADAPTER;
+    paket.spec = &G_SPEC;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn;
+    paket.logits = logits;
+    paket.logits_kapasitesi = G_SPEC.vocab_boyutu;
+    paket.logits_aktif = 1;
+    paket.agirlik_buffer = weights;
+    paket.agirlik_kapasitesi = max_weight_bytes;
+    paket.kv_anahtar = key_cache;
+    paket.kv_deger = value_cache;
+    paket.kafa_sayisi = G_SPEC.kafa_sayisi;
+    paket.kv_kafa_sayisi = G_SPEC.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = G_SPEC.kafa_boyutu;
+    paket.kv_kapasitesi = cache_capacity;
+    paket.token_konumu = 0;
+    paket.ffn_boyutu = G_SPEC.ffn_boyutu;
+
+    eger llm_transformer_durum_kur_paketli(&G_ICRA, &paket) == 0 {
+        ekrana_yaz("HATA: Transformer durumu kurulamadi\n".ptr); dondu 6;
+    }
+
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("HATA: CUDA backend baslatilamadi\n".ptr); dondu 7;
+    }
+    ekrana_yaz("[CUDA] Backend basariyla aktif edildi.\n".ptr);
+
+    degisken dev_name: [256]u8;
+    degisken dev_mem: tamsayi = 0;
+    cuda_device_query(YKN_CUDA_CONTEXT_PTR, 0, dev_name, &dev_mem);
+    ekrana_yaz("[CUDA CIHAZI] Model: ".ptr); ekrana_yaz(dev_name.ptr);
+    ekrana_yaz(" | Toplam VRAM: ".ptr); sayi_yaz(dev_mem / 1048576); ekrana_yaz(" MB\n\n".ptr);
+
+    # ==============================================================
+    # KATEGORI 1: NORAL KOD SENTEZI (#prompt)
+    # ==============================================================
+
+    # GOREV 1: Algoritmik Ikili Arama (Binary Search) - Serbest Muhakeme Zinciri
+    noral_gorev_calistir_bonsai(
+        1,
+        "Noral Kod Sentezi: Ikili Arama (Binary Search - Serbest Muhakeme)".ptr,
+        "<|im_start|>user\nWrite an efficient binary search function in Yukinary language:\nisv ikili_ara(dizi: *tamsayi, n: tamsayi, hedef: tamsayi) -> tamsayi<|im_end|>\n<|im_start|>assistant\n".ptr,
+        45
+    );
+
+    # GOREV 2: Ozyinelemeli Faktoriyel - Dogrudan Kod Uretimi
+    noral_gorev_calistir_bonsai(
+        2,
+        "Noral Kod Sentezi: Ozyinelemeli Faktoriyel (Dogrudan Sentez)".ptr,
+        "<|im_start|>user\nImplement a recursive factorial function in Yukinary:\nisv faktoriyel(n: tamsayi) -> tamsayi<|im_end|>\n<|im_start|>assistant\n<think>\nDirect recursive implementation in Yukinary:\n</think>\n".ptr,
+        45
+    );
+
+    # ==============================================================
+    # KATEGORI 2: OTONOM KOD ONARIMI (SELF-HEALING)
+    # ==============================================================
+
+    # GOREV 3: E002 Eksik Donus ve Degisken Hatasi Onarimi
+    noral_gorev_calistir_bonsai(
+        3,
+        "Otonom Kod Onarimi: Eksik Donus Hatasi (Missing Return Fix)".ptr,
+        "<|im_start|>user\nFix this broken Yukinary function that fails to return a value:\nisv topla_ve_carp(a: tamsayi, b: tamsayi) -> tamsayi {\n    degisken c = a + b;\n    degisken sonuc = c * 2;\n}\nCorrected code:<|im_end|>\n<|im_start|>assistant\n<think>\nAdd the missing return statement.\n</think>\n".ptr,
+        45
+    );
+
+    # GOREV 4: Dizi Sinir / Dongu Tasmasi (Off-by-One Loop) Onarimi
+    noral_gorev_calistir_bonsai(
+        4,
+        "Otonom Kod Onarimi: Dizi Sinir Hatasi (Off-by-One Loop Fix)".ptr,
+        "<|im_start|>user\nFix the out-of-bounds loop condition in this Yukinary function:\nisv dizi_toplam(dizi: *tamsayi, n: tamsayi) -> tamsayi {\n    degisken top: tamsayi = 0;\n    degisken i: tamsayi = 0;\n    dongu i <= n {\n        top = top + dizi[i];\n        i = i + 1;\n    }\n    dondu top;\n}\nCorrected code:<|im_end|>\n<|im_start|>assistant\n<think>\nChange i <= n to i < n to prevent buffer overflow.\n</think>\n".ptr,
+        45
+    );
+
+    # ==============================================================
+    # KATEGORI 3: POLYGLOT KOD CEVIRISI (PYTHON -> YUKINARY)
+    # ==============================================================
+
+    # GOREV 5: Python Oklid EBOB Fonksiyonunun Yukinary'ye Cevrilmesi
+    noral_gorev_calistir_bonsai(
+        5,
+        "Polyglot Transpiler: Python Oklid EBOB -> Yukinary Cevirisi".ptr,
+        "<|im_start|>user\nConvert this Python GCD function to native Yukinary:\ndef ebob(a: int, b: int) -> int:\n    while b != 0:\n        t = b\n        b = a % b\n        a = t\n    return a\n<|im_end|>\n<|im_start|>assistant\n<think>\nConvert Python while loop and modulo arithmetic to Yukinary syntax.\n</think>\n".ptr,
+        45
+    );
+
+    # GOREV 6: Python Dizi Maksimum Arama -> Yukinary Isaretci Dongusu
+    noral_gorev_calistir_bonsai(
+        6,
+        "Polyglot Transpiler: Python Dizi Maksimum -> Yukinary Isaretci Dongusu".ptr,
+        "<|im_start|>user\nConvert this Python array max search to native Yukinary:\ndef dizi_maks(arr, n):\n    m = arr[0]\n    for i in range(1, n):\n        if arr[i] > m:\n            m = arr[i]\n    return m\n<|im_end|>\n<|im_start|>assistant\n<think>\nConvert array traversal loop to Yukinary syntax.\n</think>\n".ptr,
+        45
+    );
+
+    ekrana_yaz("======================================================\n".ptr);
+    ekrana_yaz("[CUDA ISTATISTIKLERI] Toplam Kernel Cagrisi: ".ptr); sayi_yaz(TRANSFORMER_CUDA_KERNEL_CALLS);
+    ekrana_yaz(" | CPU Fallback: ".ptr); sayi_yaz(TRANSFORMER_CUDA_FALLBACKS);
+    ekrana_yaz("\n=== BONSAI-8B KAPSAMLI NORAL OTONOM YETENEKLER CUDA TESTI BASARIYLA TAMAMLANDI ===\n".ptr);
+
+    ykn_cuda_backend_stop();
+    dondu 0;
+}

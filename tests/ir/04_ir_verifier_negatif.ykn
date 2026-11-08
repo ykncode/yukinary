@@ -1,0 +1,29 @@
+# ============================================================
+# IR Verifier Negatif Testi
+# Geçersiz IR'ın verifier'da hata ürettiğini doğrular
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/ir.ykn";
+
+isv ana() -> tamsayi {
+    degisken motor: *IrMotoru = ir_motoru_olustur(1048576);
+    eger motor == 0 ise { ekrana_yaz("FAIL\n".ptr); dondu 1; }
+
+    ir_fonksiyon_baslat(motor, 777);
+
+    # HATALI: ADD komutu sol operand eksik (sol=0, sag=0, hedef=0)
+    ir_komut_ekle(motor, YKN_IR_ADD, 0, 0, 0, YKN_IR_TID_INT);
+
+    # Verifier: en az 1 hata raporlamalı
+    degisken hata: tamsayi = ir_verifier_calistir(motor);
+    eger hata == 0 ise {
+        ekrana_yaz("FAIL: Gecersiz IR'da hata raporlanmadi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("IR_VERIFIER_NEGATIF_PASS\n".ptr);
+    dondu 0;
+}

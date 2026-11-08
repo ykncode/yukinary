@@ -1,0 +1,70 @@
+# ============================================================
+# std/is_parcacigi/thread_posix.ykn
+# POSIX pthread sarmalayicilari (Linux/macOS)
+# ============================================================
+
+# pthread tiplerinin boyutlari (platform bagimsiz temsil)
+degisken PTHREAD_T_BOYUT: tamsayi = 8;
+degisken PTHREAD_MUTEX_T_BOYUT: tamsayi = 40;
+
+harici isv pthread_create(
+    thread: *tamsayi,
+    attr: *u8,
+    start_routine: *u8,
+    arg: *u8
+) -> tamsayi;
+
+harici isv pthread_join(thread: tamsayi, retval: **u8) -> tamsayi;
+harici isv pthread_mutex_init(mutex: *u8, attr: *u8) -> tamsayi;
+harici isv pthread_mutex_destroy(mutex: *u8) -> tamsayi;
+harici isv pthread_mutex_lock(mutex: *u8) -> tamsayi;
+harici isv pthread_mutex_unlock(mutex: *u8) -> tamsayi;
+harici isv pthread_mutex_trylock(mutex: *u8) -> tamsayi;
+
+yapi PosixThread {
+    thread_id: tamsayi;
+    baslatildi: tamsayi;
+}
+
+isv posix_thread_olustur(islev_ptr: *u8, parametre: *u8) -> *PosixThread {
+    degisken t: *PosixThread = bellek_tahsis_et(16);
+    eger t == 0 ise { dondu 0; }
+    degisken id_tampon: [1]tamsayi;
+    degisken sonuc: tamsayi = pthread_create(id_tampon, 0, islev_ptr, parametre);
+    t.thread_id = id_tampon[0];
+    t.baslatildi = eger sonuc == 0 ise { 1 } yoksa { 0 };
+    dondu t;
+}
+
+isv posix_thread_bekle(t: *PosixThread) -> tamsayi {
+    eger t == 0 veya t.baslatildi == 0 ise { dondu -1; }
+    dondu pthread_join(t.thread_id, 0);
+}
+
+yapi PosixMutex {
+    mutex_bellek: *u8;
+}
+
+isv posix_mutex_olustur() -> *PosixMutex {
+    degisken m: *PosixMutex = bellek_tahsis_et(8);
+    eger m == 0 ise { dondu 0; }
+    m.mutex_bellek = bellek_tahsis_et(PTHREAD_MUTEX_T_BOYUT);
+    eger m.mutex_bellek == 0 ise { dondu 0; }
+    pthread_mutex_init(m.mutex_bellek, 0);
+    dondu m;
+}
+
+isv posix_mutex_kilitle(m: *PosixMutex) -> tamsayi {
+    eger m == 0 veya m.mutex_bellek == 0 ise { dondu -1; }
+    dondu pthread_mutex_lock(m.mutex_bellek);
+}
+
+isv posix_mutex_kilit_ac(m: *PosixMutex) -> tamsayi {
+    eger m == 0 veya m.mutex_bellek == 0 ise { dondu -1; }
+    dondu pthread_mutex_unlock(m.mutex_bellek);
+}
+
+isv posix_mutex_yok_et(m: *PosixMutex) {
+    eger m == 0 veya m.mutex_bellek == 0 ise { dondu; }
+    pthread_mutex_destroy(m.mutex_bellek);
+}

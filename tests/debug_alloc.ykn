@@ -1,0 +1,13 @@
+islev ana(): tamsayi {
+    degisken buf: *u8 = bellek_tahsis_et(2097152);
+    eger buf == 0 ise {
+        ekrana_yaz("bellek_tahsis_et basarisiz!\n".ptr);
+        dondu 1;
+    }
+    buf[0] = 65;
+    buf[1] = 10;
+    buf[2] = 0;
+    ekrana_yaz(buf);
+    ekrana_yaz("tamam\n".ptr);
+    dondu 0;
+}

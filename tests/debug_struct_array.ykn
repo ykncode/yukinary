@@ -1,0 +1,8 @@
+degisken g_dizi: [10]tamsayi;
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Basladi\n".ptr);
+    g_dizi[0] = 42;
+    ekrana_yaz("Atandi\n".ptr);
+    dondu 0;
+}

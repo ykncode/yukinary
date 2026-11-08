@@ -1,0 +1,8 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv ana() -> tamsayi {
+    ekrana_yaz("merhaba\n".ptr);
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken ptr_d: tamsayi = d;
+    dondu ptr_d;
+}

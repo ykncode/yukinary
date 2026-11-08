@@ -1,0 +1,43 @@
+# ============================================================
+# Örnek 4: Konsol Tabanlı Rastgele Güçlü Şifre Üretici
+# ============================================================
+
+degisken g_prng_durum: tamsayi = 123456789;
+
+isv lcg_rastgele(maks: tamsayi) -> tamsayi {
+    g_prng_durum = (g_prng_durum * 1103515245 + 12345) % 2147483648;
+    degisken pozitif: tamsayi = g_prng_durum;
+    eger pozitif < 0 ise { pozitif = 0 - pozitif; }
+    eger maks <= 0 ise { dondu 0; }
+    dondu pozitif % maks;
+}
+
+isv sifre_uret(uzunluk: tamsayi) {
+    degisken havuz: *u8 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*".ptr;
+    degisken havuz_boyut: tamsayi = 70;
+
+    degisken tampon: [64]u8;
+    eger uzunluk > 60 ise { uzunluk = 60; }
+    eger uzunluk < 4 ise { uzunluk = 4; }
+
+    degisken i: tamsayi = 0;
+    dongu (i < uzunluk) {
+        degisken secim: tamsayi = lcg_rastgele(havuz_boyut);
+        tampon[i] = havuz[secim];
+        i = i + 1;
+    }
+    tampon[uzunluk] = 0;
+
+    ekrana_yaz("Uretilen Guclu Sifre: ".ptr);
+    ekrana_yaz(tampon);
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("--- Rastgele Sifre Ureteci ---\n".ptr);
+    sifre_uret(8);
+    sifre_uret(12);
+    sifre_uret(16);
+    sifre_uret(24);
+    dondu 0;
+}

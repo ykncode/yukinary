@@ -1,0 +1,18 @@
+﻿ice_aktar "lexer.ykn";
+ice_aktar "ast.ykn";
+ice_aktar "parser.ykn";
+ice_aktar "macros.ykn";
+ice_aktar "typechecker.ykn";
+ice_aktar "generics.ykn";
+ice_aktar "optimizer.ykn";
+ice_aktar "codegen.ykn";
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) {}
+
+isv ana(n: tamsayi, a: **u8) -> tamsayi {
+    ekrana_yaz("All modules OK\n".ptr);
+    dondu 42;
+}

@@ -1,0 +1,2155 @@
+# ============================================================
+# Yukinary LSP Sunucusu - Language Server Protocol
+# JSON-RPC 2.0 uzerinden stdio haberlesmesi
+# ============================================================
+
+ice_aktar "utils.ykn";
+ice_aktar "diagnostics.ykn";
+ice_aktar "lexer.ykn";
+ice_aktar "ast.ykn";
+ice_aktar "parser.ykn";
+ice_aktar "typechecker.ykn";
+ice_aktar "self_healing.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "context.ykn";
+ice_aktar "ai_micro_engine.ykn";
+
+# ============================================================
+# Bellek Sabitleri
+# LSP_TAMPON_BOYUTU/LSP_JSON_BOYUTU: buyuk dosyalari desteklemek icin 2 MB.
+# LSP_MAX_DOSYA: ayni anda acik tutulabilecek dokuman sayisi.
+# LSP_SEMBOL_LIMDI: completion listesi basina max sembol.
+# ============================================================
+degisken LSP_TAMPON_BOYUTU: tamsayi   = 2097152;   # 2 MB (buyuk dosya destegi)
+degisken LSP_JSON_BOYUTU: tamsayi     = 1048576;   # 1 MB
+degisken LSP_MAX_DOSYA: tamsayi       = 32;        # acik dosya sayisi limiti
+degisken LSP_SEMBOL_LIMDI: tamsayi    = 512;       # tamamlama basina max sembol
+
+# ============================================================
+# Acik Dokuman Deposu
+# ============================================================
+yapi LspDokuman {
+    uri: *u8;
+    uri_uzunluk: tamsayi;
+    icerik: *u8;
+    icerik_uzunluk: tamsayi;
+    surum: tamsayi;
+    ctx: *CompilerContext;
+}
+
+degisken g_lsp_dokumanlar: [32]*LspDokuman;
+degisken g_lsp_dokuman_sayisi: tamsayi = 0;
+
+# Global tamponlar (LSP bellekte tahsis edilecek)
+degisken g_lsp_tampon: *u8 = 0;
+degisken g_lsp_json: *u8 = 0;
+degisken g_lsp_yanit: *u8 = 0;
+degisken g_lsp_yanit_uzunluk: tamsayi = 0;
+degisken g_lsp_cikti_uzunluk: tamsayi = 0;
+degisken g_lsp_json_ara: *u8 = 0;   # lsp_json_str/sayi_cek icin tekrar kullanilan ara tampon
+# Aktif doküman, parser'ın scalar sütunlarını LSP UTF-16 sütununa çevirmek için.
+degisken g_lsp_aktif_icerik: *u8 = 0;
+degisken g_lsp_aktif_icerik_uzunluk: tamsayi = 0;
+
+# ============================================================
+# Bellek tahsisi: os_* soyutlama katmani uzerinden
+# ============================================================
+
+isv lsp_bel_tahsis(boyut: tamsayi) -> *u8 {
+    dondu os_bellek_tahsis(boyut);
+}
+
+# ============================================================
+# Dusuk Seviye I/O — os_* soyutlama katmani (FIX 10)
+# Dogrudan Win32 GetStdHandle/ReadFile/WriteFile yerine
+# os_standart_handle_al + os_dosya_oku_handle + os_dosya_yaz kullanilir.
+# Bu degisim LSP'nin platform-agnostik stdio'ya gecisini saglar.
+# ============================================================
+isv lsp_ham_oku(tampon: *u8, maks: tamsayi) -> tamsayi {
+    # WIN_STD_INPUT_HANDLE sabiti kullan (platform-agnostik)
+    degisken h: tamsayi = os_standart_handle_al(WIN_STD_INPUT_HANDLE);
+    eger h == 0 veya h == (0 - 1) ise { dondu 0; }
+    degisken okunan: tamsayi = 0;
+    os_dosya_oku(h, tampon, maks, &okunan);
+    dondu okunan;
+}
+
+isv lsp_ham_yaz(veri: *u8, uzunluk: tamsayi) {
+    # WIN_STD_OUTPUT_HANDLE sabiti kullan (platform-agnostik)
+    degisken h: tamsayi = os_standart_handle_al(WIN_STD_OUTPUT_HANDLE);
+    eger h == 0 veya h == (0 - 1) ise { dondu; }
+    degisken yazilan_bayt: tamsayi = 0;
+    os_dosya_yaz(h, veri, uzunluk, &yazilan_bayt);
+}
+
+isv lsp_log(mesaj: *u8) {
+    degisken h: tamsayi = os_standart_handle_al(WIN_STD_ERROR_HANDLE);
+    degisken uz: tamsayi = 0;
+    dongu mesaj[uz] != 0 { uz = uz + 1; }
+    degisken yazilan_bayt: tamsayi = 0;
+    os_dosya_yaz(h, mesaj, uz, &yazilan_bayt);
+}
+
+isv lsp_log_sayi(etiket: *u8, sayi: tamsayi) {
+    lsp_log(etiket);
+    degisken buf: [32]u8;
+    degisken n: tamsayi = lsp_sayi_str(buf, sayi);
+    buf[n] = 0;
+    lsp_log(buf);
+    lsp_log("\n".ptr);
+}
+
+# ============================================================
+# String Yardimcilari (LSP icin - metin.* yerine ozellestirilmis)
+# ============================================================
+isv lsp_str_uzunluk(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv lsp_str_esit(s1: *u8, s2: *u8, n: tamsayi) -> tamsayi {
+    eger s1 == 0 veya s2 == 0 ise {
+        eger s1 == s2 ise { dondu 1; }
+        dondu 0;
+    }
+    eger n <= 0 ise {
+        degisken k: tamsayi = 0;
+        dongu s1[k] != 0 ve s2[k] != 0 {
+            eger s1[k] != s2[k] ise { dondu 0; }
+            k = k + 1;
+        }
+        eger s1[k] == 0 ve s2[k] == 0 ise { dondu 1; }
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger s1[i] != s2[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv lsp_str_icinde(ana: *u8, ana_n: tamsayi, ara: *u8, ara_n: tamsayi) -> tamsayi {
+    eger ara_n == 0 ise { dondu -1; }
+    degisken i: tamsayi = 0;
+    dongu i + ara_n <= ana_n {
+        eger lsp_str_esit(ana + i, ara, ara_n) == 1 ise { dondu i; }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+# u8* uzerine string kopyala (null-terminated), kopyalanan byte sayisini dondur
+isv lsp_str_kopyala(hedef: *u8, kaynak: *u8, kaynak_n: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < kaynak_n {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[i] = 0;
+    dondu i;
+}
+
+# C-string olarak kopyala
+isv lsp_cstr_kopyala(hedef: *u8, kaynak: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu kaynak[i] != 0 {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[i] = 0;
+    dondu i;
+}
+
+# Sayiyi stringe cevir (10 tabaninda), basilan karakter sayisini dondur
+isv lsp_sayi_str(hedef: *u8, sayi: tamsayi) -> tamsayi {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n < 0 ise { n = 0 - n; }
+    eger n == 0 ise {
+        buf[0] = 48;
+        i = 1;
+    } yoksa {
+        dongu n > 0 {
+            buf[i] = (n % 10) + 48;
+            n = n / 10;
+            i = i + 1;
+        }
+    }
+    degisken j: tamsayi = 0;
+    eger sayi < 0 ise {
+        hedef[j] = 45;
+        j = j + 1;
+    }
+    dongu i > 0 {
+        hedef[j] = buf[i - 1];
+        j = j + 1;
+        i = i - 1;
+    }
+    hedef[j] = 0;
+    dondu j;
+}
+
+# ============================================================
+# JSON-RPC Header Parser: "Content-Length: N" + 13,10,13,10
+# ============================================================
+# CR=13 LF=10 => 13,10,13,10 dizisini ara (Stage0 escape desteklemedigi icin)
+isv lsp_crlfcrlf_bul(tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i + 4 <= uzunluk {
+        eger tampon[i]     == 13 ve
+             tampon[i + 1] == 10 ve
+             tampon[i + 2] == 13 ve
+             tampon[i + 3] == 10 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+# Content-Length: dizisini bul (case-sensitive, 16 karakter)
+isv lsp_contentlength_bul(tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken kl: [16]u8;
+    kl[0]=67; kl[1]=111; kl[2]=110; kl[3]=116; kl[4]=101; kl[5]=110; kl[6]=116; kl[7]=45;
+    kl[8]=76; kl[9]=101; kl[10]=110; kl[11]=103; kl[12]=116; kl[13]=104; kl[14]=58; kl[15]=32;
+    degisken i: tamsayi = 0;
+    dongu i + 16 <= uzunluk {
+        degisken j: tamsayi = 0;
+        degisken esit: tamsayi = 1;
+        dongu j < 16 {
+            eger tampon[i + j] != kl[j] ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu i; }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+isv lsp_header_oku(tampon: *u8, tampon_uzunluk: *tamsayi, content_len: *tamsayi) -> tamsayi {
+    # Tamponda 13,10,13,10 (CRLF CRLF) ara
+    degisken sinir: tamsayi = lsp_crlfcrlf_bul(tampon, tampon_uzunluk[0]);
+    eger sinir < 0 ise {
+        dondu 0;
+    }
+
+    # Content-Length: degerini ara (ASCII 16 karakter karsilastirma)
+    degisken cl_konum: tamsayi = lsp_contentlength_bul(tampon, sinir);
+    eger cl_konum < 0 ise {
+        content_len[0] = sinir + 4;
+        tampon_uzunluk[0] = tampon_uzunluk[0] - (sinir + 4);
+        dondu 1;
+    }
+    # Content-Length: 'dan sonraki sayiyi parse et
+    degisken sayi_basla: tamsayi = cl_konum + 16;
+    degisken toplam: tamsayi = 0;
+    degisken s: tamsayi = sayi_basla;
+    dongu s < sinir {
+        eger tampon[s] >= 48 ve tampon[s] <= 57 ise {
+            toplam = (toplam * 10) + (tampon[s] - 48);
+        } yoksa eger tampon[s] == 32 veya tampon[s] == 9 ise {
+            s = s + 1;
+            devam_et;
+        } yoksa {
+            durdur;
+        }
+        s = s + 1;
+    }
+    content_len[0] = toplam;
+
+    # Tampondaki header + body oncesini at, body'yi basa tasi
+    degisken body_basla: tamsayi = sinir + 4;
+    degisken kalan: tamsayi = tampon_uzunluk[0] - body_basla;
+    eger kalan > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i < kalan {
+            tampon[i] = tampon[body_basla + i];
+            i = i + 1;
+        }
+    }
+    tampon_uzunluk[0] = kalan;
+    dondu 1;
+}
+
+# ============================================================
+# Dusuk seviye JSON alan cekici (string tabanli, guvenli)
+# "method": "NAME"  -> NAME'i cek
+# "id": N           -> N'i cek
+# "textDocument":{"uri":"FILE"} -> uri cek
+# "position":{"line":L,"character":C} -> L,C cek
+# ============================================================
+
+isv lsp_hex_degeri(c: u8) -> tamsayi {
+    eger c >= 48 ve c <= 57 ise { dondu c - 48; }
+    eger c >= 97 ve c <= 102 ise { dondu (c - 97) + 10; }
+    eger c >= 65 ve c <= 70 ise { dondu (c - 65) + 10; }
+    dondu 0;
+}
+
+# Tirnak isareti arasindaki stringi cek, pozisyondan basla, son konumu dondur
+isv lsp_json_str_cek(json: *u8, j_uzunluk: tamsayi, anahtar: *u8, anahtar_n: tamsayi,
+                     cikti: *u8, maks_cikti: tamsayi) -> tamsayi {
+    degisken ara: [64]u8;
+    degisken ai: tamsayi = 0;
+    ara[ai] = 34; ai = ai + 1;  # "
+    degisken ki: tamsayi = 0;
+    dongu ki < anahtar_n ve ai < 60 { ara[ai] = anahtar[ki]; ai = ai + 1; ki = ki + 1; }
+    ara[ai] = 34; ai = ai + 1;  # "
+    ara[ai] = 58; ai = ai + 1;  # :
+    ara[ai] = 0;
+
+    degisken konum: tamsayi = lsp_str_icinde(json, j_uzunluk, ara, ai);
+    eger konum < 0 ise { dondu 0; }
+
+    # : dan sonra bosluklari atla ve sonraki " veya sayiyi bul
+    degisken p: tamsayi = konum + ai;
+    dongu p < j_uzunluk ve (json[p] == 32 veya json[p] == 9 veya json[p] == 13 veya json[p] == 10) {
+        p = p + 1;
+    }
+
+    eger p >= j_uzunluk ise { dondu 0; }
+
+    # Eger " ile basliyorsa tirnaklar arasi string al
+    eger json[p] == 34 ise {
+        p = p + 1;
+        degisken ci: tamsayi = 0;
+        dongu p < j_uzunluk ve ci < maks_cikti - 1 {
+            eger json[p] == 34 ise { durdur; }
+            eger json[p] == 92 ise {  # backslash escape
+                p = p + 1;
+                eger p >= j_uzunluk ise { durdur; }
+                # JSON escape'lerini dokumanin gercek byte'larina cevir.
+                eger json[p] == 110 ise { cikti[ci] = 10; }
+                yoksa eger json[p] == 114 ise { cikti[ci] = 13; }
+                yoksa eger json[p] == 116 ise { cikti[ci] = 9; }
+                yoksa eger json[p] == 92 ise { cikti[ci] = 92; }
+                yoksa eger json[p] == 34 ise { cikti[ci] = 34; }
+                yoksa eger json[p] == 117 ise {  # \uXXXX
+                    eger p + 4 < j_uzunluk ise {
+                        degisken cp: tamsayi = (lsp_hex_degeri(json[p + 1]) * 4096) +
+                                              (lsp_hex_degeri(json[p + 2]) * 256) +
+                                              (lsp_hex_degeri(json[p + 3]) * 16) +
+                                              lsp_hex_degeri(json[p + 4]);
+                        p = p + 4;
+                        eger cp < 128 ise {
+                            cikti[ci] = cp;
+                        } yoksa eger cp < 2048 ise {
+                            cikti[ci] = 192 + (cp / 64);
+                            ci = ci + 1;
+                            cikti[ci] = 128 + (cp % 64);
+                        } yoksa {
+                            eger cp >= 55296 ve cp <= 56319 ve p + 6 < j_uzunluk ise {
+                                eger json[p + 1] == 92 ve json[p + 2] == 117 ise {
+                                    degisken cp2: tamsayi = (lsp_hex_degeri(json[p + 3]) * 4096) +
+                                                           (lsp_hex_degeri(json[p + 4]) * 256) +
+                                                           (lsp_hex_degeri(json[p + 5]) * 16) +
+                                                           lsp_hex_degeri(json[p + 6]);
+                                    eger cp2 >= 56320 ve cp2 <= 57343 ise {
+                                        cp = 65536 + ((cp - 55296) * 1024) + (cp2 - 56320);
+                                        p = p + 6;
+                                    }
+                                }
+                            }
+                            eger cp < 65536 ise {
+                                cikti[ci] = 224 + (cp / 4096);
+                                ci = ci + 1;
+                                cikti[ci] = 128 + ((cp / 64) % 64);
+                                ci = ci + 1;
+                                cikti[ci] = 128 + (cp % 64);
+                            } yoksa {
+                                cikti[ci] = 240 + (cp / 262144);
+                                ci = ci + 1;
+                                cikti[ci] = 128 + ((cp / 4096) % 64);
+                                ci = ci + 1;
+                                cikti[ci] = 128 + ((cp / 64) % 64);
+                                ci = ci + 1;
+                                cikti[ci] = 128 + (cp % 64);
+                            }
+                        }
+                    }
+                }
+                yoksa { cikti[ci] = json[p]; }
+            } yoksa {
+                cikti[ci] = json[p];
+            }
+            ci = ci + 1;
+            p = p + 1;
+        }
+        cikti[ci] = 0;
+        dondu ci;
+    }
+    # degilse 0 dondur (bu fonk sadece string icindir)
+    dondu 0;
+}
+
+# Sayi cek: "key": 123
+isv lsp_json_sayi_cek(json: *u8, j_uzunluk: tamsayi, anahtar: *u8, anahtar_n: tamsayi,
+                      cikti: *tamsayi) -> tamsayi {
+    degisken ara: [64]u8;
+    degisken ai: tamsayi = 0;
+    ara[ai] = 34; ai = ai + 1;
+    degisken ki: tamsayi = 0;
+    dongu ki < anahtar_n ve ai < 60 { ara[ai] = anahtar[ki]; ai = ai + 1; ki = ki + 1; }
+    ara[ai] = 34; ai = ai + 1;
+    ara[ai] = 58; ai = ai + 1;
+    ara[ai] = 0;
+
+    degisken konum: tamsayi = lsp_str_icinde(json, j_uzunluk, ara, ai);
+    eger konum < 0 ise { dondu 0; }
+
+    degisken p: tamsayi = konum + ai;
+    dongu p < j_uzunluk ve (json[p] == 32 veya json[p] == 9 veya json[p] == 13 veya json[p] == 10) {
+        p = p + 1;
+    }
+    eger p >= j_uzunluk ise { dondu 0; }
+
+    degisken negatif: tamsayi = 0;
+    eger json[p] == 45 ise { negatif = 1; p = p + 1; }
+    degisken toplam: tamsayi = 0;
+    dongu p < j_uzunluk {
+        eger json[p] >= 48 ve json[p] <= 57 ise {
+            toplam = (toplam * 10) + (json[p] - 48);
+        } yoksa {
+            durdur;
+        }
+        p = p + 1;
+    }
+    eger negatif == 1 ise { toplam = 0 - toplam; }
+    cikti[0] = toplam;
+    dondu 1;
+}
+
+# ============================================================
+# LSP Yanit Hazirlama
+# ============================================================
+
+# g_lsp_yanit buffer'ina sifirdan yazmaya basla
+isv lsp_yanit_sifirla() {
+    g_lsp_yanit_uzunluk = 0;
+}
+
+# LSP yanitina bytes ekle
+isv lsp_yanit_ekle(veri: *u8, uzunluk: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        g_lsp_yanit[g_lsp_yanit_uzunluk + i] = veri[i];
+        i = i + 1;
+    }
+    g_lsp_yanit_uzunluk = g_lsp_yanit_uzunluk + uzunluk;
+    g_lsp_yanit[g_lsp_yanit_uzunluk] = 0;
+}
+
+isv lsp_yanit_cstr(veri: *u8) {
+    degisken n: tamsayi = lsp_str_uzunluk(veri);
+    lsp_yanit_ekle(veri, n);
+}
+
+isv lsp_yanit_sayi(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken n: tamsayi = lsp_sayi_str(buf, sayi);
+    lsp_yanit_ekle(buf, n);
+}
+
+# Escape icin ASCII tamponlari (hicbir \\ veya \" icermez - Stage 0 guvenli)
+isv lsp_yanit_tirnak() {
+    degisken q: [2]u8;
+    q[0] = 34;    # "
+    q[1] = 0;
+    lsp_yanit_ekle(q, 1);
+}
+
+isv lsp_yanit_iki_ch(ch1: u8, ch2: u8) {
+    degisken b: [3]u8;
+    b[0] = ch1;
+    b[1] = ch2;
+    b[2] = 0;
+    lsp_yanit_ekle(b, 2);
+}
+
+isv lsp_yanit_tek_ch(ch: u8) {
+    g_lsp_yanit[g_lsp_yanit_uzunluk] = ch;
+    g_lsp_yanit_uzunluk = g_lsp_yanit_uzunluk + 1;
+    g_lsp_yanit[g_lsp_yanit_uzunluk] = 0;
+}
+
+# JSON string escape: ", \, \n, \r, \t gibi karakterleri cevirerek yanita ekle
+# (Stage 0 C++ lexer \" ve \\ escape desteklemedigi icin ASCII kodlari ile)
+isv lsp_yanit_json_str(icerik: *u8, uzunluk: tamsayi) {
+    lsp_yanit_tirnak();
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken c: u8 = icerik[i];
+        eger c == 34 ise {            # "  -> \"
+            lsp_yanit_iki_ch(92, 34);
+        } yoksa eger c == 92 ise {     # \  -> \\
+            lsp_yanit_iki_ch(92, 92);
+        } yoksa eger c == 10 ise {     # \n -> \ + n (110)
+            lsp_yanit_iki_ch(92, 110);
+        } yoksa eger c == 13 ise {     # \r -> \ + r (114)
+            lsp_yanit_iki_ch(92, 114);
+        } yoksa eger c == 9 ise {      # \t -> \ + t (116)
+            lsp_yanit_iki_ch(92, 116);
+        } yoksa eger c == 8 ise {      # \b -> \ + b (98)
+            lsp_yanit_iki_ch(92, 98);
+        } yoksa eger c == 12 ise {     # \f -> \ + f (102)
+            lsp_yanit_iki_ch(92, 102);
+        } yoksa eger c < 32 ise {
+            degisken qb: [2]u8;
+            qb[0] = 63; qb[1] = 0;
+            lsp_yanit_ekle(qb, 1);
+        } yoksa {
+            g_lsp_yanit[g_lsp_yanit_uzunluk] = c;
+            g_lsp_yanit_uzunluk = g_lsp_yanit_uzunluk + 1;
+            g_lsp_yanit[g_lsp_yanit_uzunluk] = 0;
+        }
+        i = i + 1;
+    }
+    lsp_yanit_tirnak();
+}
+
+isv lsp_yanit_json_cstr(icerik: *u8) {
+    degisken n: tamsayi = lsp_str_uzunluk(icerik);
+    lsp_yanit_json_str(icerik, n);
+}
+
+# Yaniti Content-Length header'i ile gonder
+isv lsp_yanit_gonder() {
+    # Once Content-Length header yaz
+    degisken header: *u8 = lsp_bel_tahsis(64);
+    eger header == 0 ise { dondu; }
+
+    degisken hi: tamsayi = lsp_cstr_kopyala(header, "Content-Length: ".ptr);
+    hi = hi + lsp_sayi_str(header + hi, g_lsp_yanit_uzunluk);
+    header[hi] = 13; hi = hi + 1;
+    header[hi] = 10; hi = hi + 1;
+    header[hi] = 13; hi = hi + 1;
+    header[hi] = 10; hi = hi + 1;
+
+    lsp_ham_yaz(header, hi);
+    lsp_ham_yaz(g_lsp_yanit, g_lsp_yanit_uzunluk);
+}
+
+# ============================================================
+# Dokuman Yonetimi
+# ============================================================
+isv lsp_dokuman_bul(uri: *u8, uri_uzn: tamsayi) -> *LspDokuman {
+    degisken i: tamsayi = 0;
+    dongu i < g_lsp_dokuman_sayisi {
+        degisken d: *LspDokuman = g_lsp_dokumanlar[i];
+        eger d == 0 ise { i = i + 1; devam_et; }
+        eger d.uri_uzunluk == uri_uzn ise {
+            eger lsp_str_esit(d.uri, uri, uri_uzn) == 1 ise {
+                dondu d;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv lsp_dokuman_ekle(uri: *u8, uri_uzn: tamsayi, icerik: *u8, icerik_uzn: tamsayi) -> *LspDokuman {
+    degisken mevcut: *LspDokuman = lsp_dokuman_bul(uri, uri_uzn);
+    eger mevcut != 0 ise {
+        # Icerik guncelleme: mevcut arabellek yeterliyse yerinde kopyala,
+        # degilse yeni bellek al (document lifecycle: textDocument/didChange).
+        eger icerik_uzn > mevcut.icerik_uzunluk ise {
+            degisken yeni_buf: *u8 = lsp_bel_tahsis(icerik_uzn + 256);
+            eger yeni_buf == 0 ise { dondu mevcut; }
+            mevcut.icerik = yeni_buf;
+        }
+        degisken i: tamsayi = 0;
+        dongu i < icerik_uzn {
+            mevcut.icerik[i] = icerik[i];
+            i = i + 1;
+        }
+        mevcut.icerik[icerik_uzn] = 0;
+        mevcut.icerik_uzunluk = icerik_uzn;
+        mevcut.surum = mevcut.surum + 1;
+        dondu mevcut;
+    }
+    eger g_lsp_dokuman_sayisi >= LSP_MAX_DOSYA ise { dondu 0; }
+
+    degisken d: *LspDokuman = lsp_bel_tahsis(256);
+    eger d == 0 ise { dondu 0; }
+
+    d.uri = lsp_bel_tahsis(uri_uzn + 1);
+    eger d.uri != 0 {
+        lsp_str_kopyala(d.uri, uri, uri_uzn);
+    }
+    d.uri_uzunluk = uri_uzn;
+
+    d.icerik = lsp_bel_tahsis(icerik_uzn + 256);
+    eger d.icerik != 0 {
+        lsp_str_kopyala(d.icerik, icerik, icerik_uzn);
+    }
+    d.icerik_uzunluk = icerik_uzn;
+    d.surum = 1;
+    d.ctx = compiler_context_olustur();
+
+    g_lsp_dokumanlar[g_lsp_dokuman_sayisi] = d;
+    g_lsp_dokuman_sayisi = g_lsp_dokuman_sayisi + 1;
+    dondu d;
+}
+
+# textDocument/didClose: dokumani listeden cikar (slot'u 0 yap).
+# Bellek serbest birakilmaz (arena tablanli LSP), slot yeniden kullanilir.
+isv lsp_dokuman_kapat(uri: *u8, uri_uzn: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < g_lsp_dokuman_sayisi {
+        degisken d: *LspDokuman = g_lsp_dokumanlar[i];
+        eger d != 0 ve d.uri_uzunluk == uri_uzn ise {
+            eger lsp_str_esit(d.uri, uri, uri_uzn) == 1 ise {
+                eger d.ctx != 0 ise {
+                    compiler_context_sifirla(d.ctx);
+                }
+                g_lsp_dokumanlar[i] = 0;
+                dondu;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+# Satır + UTF-16 sütunundan byte offset hesapla (0-based line/character).
+# LSP Position.character UTF-16 code unit sözleşmesine göre yorumlanır.
+isv lsp_pozisyon_offset(icerik: *u8, uzn: tamsayi, satir: tamsayi, sutun: tamsayi) -> tamsayi {
+    degisken l: tamsayi = 0;
+    degisken off: tamsayi = 0;
+    dongu off < uzn {
+        eger l == satir ise {
+            degisken kalan_sutun: tamsayi = 0;
+            degisken soff: tamsayi = off;
+            dongu soff < uzn ve kalan_sutun < sutun {
+                eger icerik[soff] == 13 veya icerik[soff] == 10 ise { durdur; }
+                degisken n: tamsayi = utf8_bayt_sayisi(icerik[soff]);
+                degisken cp: tamsayi = utf8_kod_noktasi_oku(icerik, uzn, soff);
+                eger n <= 0 veya soff + n > uzn veya cp < 0 ise { n = 1; }
+                soff = soff + n;
+                eger cp > 65535 ise { kalan_sutun = kalan_sutun + 2; } yoksa { kalan_sutun = kalan_sutun + 1; }
+            }
+            dondu soff;
+        }
+        eger icerik[off] == 10 ise { l = l + 1; }
+        off = off + 1;
+    }
+    dondu off;
+}
+
+# Scalar sütununu LSP'nin UTF-16 code unit sütununa çevirir.
+# Girdi ve çıktı 0-based'tir; satır da 0-based'tir.
+isv lsp_scalar_sutunu_utf16(satir: tamsayi, scalar_sutun: tamsayi) -> tamsayi {
+    eger g_lsp_aktif_icerik == 0 veya scalar_sutun <= 0 ise { dondu scalar_sutun; }
+    degisken i: tamsayi = 0;
+    degisken aktif_satir: tamsayi = 0;
+    degisken scalar: tamsayi = 0;
+    degisken utf16: tamsayi = 0;
+    dongu i < g_lsp_aktif_icerik_uzunluk {
+        eger aktif_satir == satir ise {
+            eger scalar >= scalar_sutun ise { dondu utf16; }
+            degisken n: tamsayi = utf8_bayt_sayisi(g_lsp_aktif_icerik[i]);
+            degisken cp: tamsayi = utf8_kod_noktasi_oku(g_lsp_aktif_icerik, g_lsp_aktif_icerik_uzunluk, i);
+            eger n <= 0 veya cp < 0 ise { n = 1; cp = g_lsp_aktif_icerik[i]; }
+            i = i + n;
+            scalar = scalar + 1;
+            eger cp > 65535 ise { utf16 = utf16 + 2; } yoksa { utf16 = utf16 + 1; }
+            devam_et;
+        }
+        eger g_lsp_aktif_icerik[i] == 10 ise { aktif_satir = aktif_satir + 1; }
+        i = i + 1;
+    }
+    eger aktif_satir == satir { dondu utf16; }
+    dondu scalar_sutun;
+}
+
+# ============================================================
+# Sembol Listesi (tamamlama ve hover icin)
+# ============================================================
+yapi LspSembol {
+    isim: *u8;
+    isim_uzn: tamsayi;
+    tip: tamsayi;          # LSP CompletionItemKind: 1=text,2=method,3=function,4=constructor,5=field,6=var,7=class,8=iface,9=mod,10=prop,11=unit,12=val,13=enum,14=kw,15=snippet,16=color,17=file,18=ref,19=folder,20=enummember,21=const,22=struct,23=event,24=operator,25=typeparam
+    aciklama: *u8;
+    satir: tamsayi;
+    sutun: tamsayi;
+    uri: *u8;
+    uri_uzn: tamsayi;
+}
+
+degisken g_lsp_semboller: [256]*LspSembol;
+degisken g_lsp_sembol_sayisi: tamsayi = 0;
+degisken g_lsp_aktif_uri: *u8 = 0;
+degisken g_lsp_aktif_uri_uzn: tamsayi = 0;
+
+isv lsp_sembol_ekle(isim: *u8, isim_uzn: tamsayi, tip: tamsayi, aciklama: *u8, satir: tamsayi, sutun: tamsayi) {
+    eger g_lsp_sembol_sayisi >= LSP_SEMBOL_LIMDI ise { dondu; }
+    # AYNI ISME sahip sembol varsa ekleme (tekrar)
+    degisken v: tamsayi = 0;
+    dongu v < g_lsp_sembol_sayisi {
+        degisken es: *LspSembol = g_lsp_semboller[v];
+        eger es != 0 ve es.isim_uzn == isim_uzn ise {
+            eger lsp_str_esit(es.isim, isim, isim_uzn) == 1 { dondu; }
+        }
+        v = v + 1;
+    }
+
+    degisken s: *LspSembol = lsp_bel_tahsis(256);
+    eger s == 0 { dondu; }
+    s.isim = lsp_bel_tahsis(isim_uzn + 1);
+    eger s.isim != 0 { lsp_str_kopyala(s.isim, isim, isim_uzn); }
+    s.isim_uzn = isim_uzn;
+    s.tip = tip;
+    s.aciklama = aciklama;
+    s.satir = satir;
+    s.sutun = lsp_scalar_sutunu_utf16(satir, sutun);
+    s.uri = g_lsp_aktif_uri;
+    s.uri_uzn = g_lsp_aktif_uri_uzn;
+
+    g_lsp_semboller[g_lsp_sembol_sayisi] = s;
+    g_lsp_sembol_sayisi = g_lsp_sembol_sayisi + 1;
+}
+
+isv lsp_sembol_listesini_sifirla() {
+    g_lsp_sembol_sayisi = 0;
+}
+
+# Anahtar kelimeleri sembol listesine ekle (CompletionItemKind=14 Keyword)
+isv lsp_anahtar_kelimeleri_ekle() {
+    # TR anahtar kelimeleri
+    lsp_sembol_ekle("eger".ptr, 4, 14, "Eger (if) kosulu".ptr, 0, 0);
+    lsp_sembol_ekle("ise".ptr, 3, 14, "ise (then) kosul govdesi".ptr, 0, 0);
+    lsp_sembol_ekle("yoksa".ptr, 5, 14, "yoksa (else) alternatif".ptr, 0, 0);
+    lsp_sembol_ekle("dongu".ptr, 5, 14, "dongu (dongu/loop) dongu".ptr, 0, 0);
+    lsp_sembol_ekle("her".ptr, 3, 14, "her (for) her biri icin".ptr, 0, 0);
+    lsp_sembol_ekle("islev".ptr, 5, 14, "islev (fn) fonksiyon tanimi".ptr, 0, 0);
+    lsp_sembol_ekle("yapi".ptr, 4, 14, "yapi (struct) yapi tanimi".ptr, 0, 0);
+    lsp_sembol_ekle("degisken".ptr, 8, 14, "degisken (let) degisken tanimi".ptr, 0, 0);
+    lsp_sembol_ekle("dondu".ptr, 5, 14, "dondu (return) deger dondur".ptr, 0, 0);
+    lsp_sembol_ekle("dondur".ptr, 6, 14, "dondur (return) deger dondur".ptr, 0, 0);
+    lsp_sembol_ekle("durdur".ptr, 6, 14, "durdur (break) donguyu kes".ptr, 0, 0);
+    lsp_sembol_ekle("devam_et".ptr, 8, 14, "devam_et (continue) donguye devam".ptr, 0, 0);
+    lsp_sembol_ekle("dogru".ptr, 5, 21, "dogru (true) boolean sabit".ptr, 0, 0);
+    lsp_sembol_ekle("yanlis".ptr, 6, 21, "yanlis (false) boolean sabit".ptr, 0, 0);
+    lsp_sembol_ekle("ve".ptr, 2, 14, "Mantiksal VE".ptr, 0, 0);
+    lsp_sembol_ekle("veya".ptr, 4, 14, "Mantiksal VEYA".ptr, 0, 0);
+    lsp_sembol_ekle("sonuc".ptr, 5, 22, "sonuc<T> Result tipi".ptr, 0, 0);
+    lsp_sembol_ekle("tamsayi".ptr, 7, 22, "tamsayi (i64) tam sayi tipi".ptr, 0, 0);
+    lsp_sembol_ekle("gercek".ptr, 6, 22, "gercek (f64) kayan nokta tipi".ptr, 0, 0);
+    lsp_sembol_ekle("u8".ptr, 2, 22, "u8 byte tipi".ptr, 0, 0);
+    lsp_sembol_ekle("u16".ptr, 3, 22, "u16 16-bit unsigned".ptr, 0, 0);
+    lsp_sembol_ekle("u32".ptr, 3, 22, "u32 32-bit unsigned".ptr, 0, 0);
+    lsp_sembol_ekle("i32".ptr, 3, 22, "i32 32-bit signed".ptr, 0, 0);
+    lsp_sembol_ekle("i64".ptr, 3, 22, "i64 64-bit signed".ptr, 0, 0);
+    lsp_sembol_ekle("f32".ptr, 3, 22, "f32 32-bit float".ptr, 0, 0);
+    lsp_sembol_ekle("f64".ptr, 3, 22, "f64 64-bit float".ptr, 0, 0);
+    lsp_sembol_ekle("metin".ptr, 5, 22, "metin (*u8) string tipi".ptr, 0, 0);
+    lsp_sembol_ekle("mantik".ptr, 6, 22, "mantik (bool) boolean tipi".ptr, 0, 0);
+    lsp_sembol_ekle("hic".ptr, 3, 22, "hic (void) bos donus".ptr, 0, 0);
+    lsp_sembol_ekle("ice_aktar".ptr, 9, 14, "ice_aktar (import) modul aktar".ptr, 0, 0);
+    lsp_sembol_ekle("makro".ptr, 5, 14, "makro (macro) tanimi".ptr, 0, 0);
+    lsp_sembol_ekle("ozellik".ptr, 7, 14, "ozellik (trait) ozellik tanimi".ptr, 0, 0);
+    lsp_sembol_ekle("uygula".ptr, 6, 14, "uygula (impl) trait uygula".ptr, 0, 0);
+
+    # Built-in fonksiyonlar (kind=3 Function)
+    lsp_sembol_ekle("ekrana_yaz".ptr, 10, 3, "ekrana_yaz(mesaj: *u8) -> hic - Standart ciktiya yaz".ptr, 0, 0);
+    lsp_sembol_ekle("sayiyi_yazdir".ptr, 13, 3, "sayiyi_yazdir(sayi: tamsayi) -> hic - Tam sayi yaz".ptr, 0, 0);
+    lsp_sembol_ekle("bellek_tahsis_et".ptr, 16, 3, "compiler_tahsis_et(boyut: tamsayi) -> *u8 - Bellek ayir".ptr, 0, 0);
+    lsp_sembol_ekle("dosya_oku".ptr, 9, 3, "dosya_oku(dosya_adi, buf, maks) -> tamsayi".ptr, 0, 0);
+    lsp_sembol_ekle("dosya_yaz".ptr, 9, 3, "dosya_yaz(adi, buf, boy) -> tamsayi".ptr, 0, 0);
+    lsp_sembol_ekle("bellek_esit_mi".ptr, 14, 3, "bellek_esit_mi(a, b, n) -> tamsayi - 1=esit".ptr, 0, 0);
+    lsp_sembol_ekle("metin_uzunlugu".ptr, 14, 3, "metin_uzunlugu(s: *u8) -> tamsayi".ptr, 0, 0);
+    lsp_sembol_ekle("djb2_hash".ptr, 9, 3, "djb2_hash(buf, uzn) -> tamsayi - Hash hesapla".ptr, 0, 0);
+}
+
+# ============================================================
+# Dokuman Analizi: Lexer + Parser calistir, sembolleri + hatalari topla
+# ============================================================
+yapi LspHata {
+    satir: tamsayi;
+    sutun: tamsayi;
+    satir_son: tamsayi;
+    sutun_son: tamsayi;
+    mesaj: *u8;
+    mesaj_uzn: tamsayi;
+    siddet: tamsayi;   # 1=error, 2=warning, 3=info, 4=hint
+}
+
+degisken g_lsp_hatalar: [64]*LspHata;
+degisken g_lsp_hata_sayisi: tamsayi = 0;
+
+isv lsp_hata_ekle(satir: tamsayi, sutun: tamsayi, mesaj: *u8, mesaj_uzn: tamsayi, siddet: tamsayi) {
+    eger g_lsp_hata_sayisi >= 64 ise { dondu; }
+    degisken h: *LspHata = lsp_bel_tahsis(256);
+    eger h == 0 { dondu; }
+    h.satir = satir;
+    h.sutun = lsp_scalar_sutunu_utf16(satir, sutun);
+    eger sutun >= 1 { h.sutun_son = lsp_scalar_sutunu_utf16(satir, sutun + 1); } else { h.sutun_son = 1; }
+    h.satir_son = satir;
+    h.mesaj = lsp_bel_tahsis(mesaj_uzn + 64);
+    eger h.mesaj != 0 { lsp_str_kopyala(h.mesaj, mesaj, mesaj_uzn); }
+    h.mesaj_uzn = mesaj_uzn;
+    h.siddet = siddet;
+    g_lsp_hatalar[g_lsp_hata_sayisi] = h;
+    g_lsp_hata_sayisi = g_lsp_hata_sayisi + 1;
+}
+
+isv lsp_analiz_sifirla() {
+    g_lsp_hata_sayisi = 0;
+    lsp_sembol_listesini_sifirla();
+    lsp_anahtar_kelimeleri_ekle();
+}
+
+# AST uzerinden yalin sembol toplama - fonksiyon, degisken, struct tanimlarini bul
+isv lsp_sembol_ast_tara(dugum: *AstDugum) {
+    eger dugum == 0 ise { dondu; }
+
+    # Degisken tanimi: AST_DEGISKEN_TANIMI (7)
+    eger dugum.tip == 7 ise {
+        degisken j: *Jeton = dugum.ilk_jeton;
+        eger j != 0 ise {
+            lsp_sembol_ekle(j.baslangic, j.uzunluk, 6, "Degisken tanimi".ptr,
+                            j.satir - 1, j.sutun - 1);
+        }
+    }
+    # Fonksiyon tanimi: AST_ISLEV (10)
+    eger dugum.tip == AST_ISLEV ise {
+        degisken j: *Jeton = dugum.ilk_jeton;
+        eger j != 0 ise {
+            lsp_sembol_ekle(j.baslangic, j.uzunluk, 3, "Fonksiyon tanimi".ptr,
+                            j.satir - 1, j.sutun - 1);
+        }
+    }
+    # Struct / Yapi tanimi: AST_YAPI_TANIMI (16)
+    eger dugum.tip == AST_YAPI_TANIMI ise {
+        degisken j: *Jeton = dugum.ilk_jeton;
+        eger j != 0 ise {
+            lsp_sembol_ekle(j.baslangic, j.uzunluk, 22, "Yapi (struct) tanimi".ptr,
+                            j.satir - 1, j.sutun - 1);
+        }
+    }
+
+    # ITERATIF linked list traversal - stack overflow onleme.
+    # AstDugum gercek cocuk alanlari: sol, sag, govde, yoksa_govde,
+    # parametreler. `sonraki` her linked-list dugumunde asagida ilerletilir.
+    degisken cocuklar: [8]*AstDugum;
+    degisken cocuk_say: tamsayi = 0;
+    eger dugum.sol != 0 { cocuklar[cocuk_say] = dugum.sol; cocuk_say = cocuk_say + 1; }
+    eger dugum.sag != 0 { cocuklar[cocuk_say] = dugum.sag; cocuk_say = cocuk_say + 1; }
+    eger dugum.govde != 0 { cocuklar[cocuk_say] = dugum.govde; cocuk_say = cocuk_say + 1; }
+    eger dugum.yoksa_govde != 0 { cocuklar[cocuk_say] = dugum.yoksa_govde; cocuk_say = cocuk_say + 1; }
+    eger dugum.parametreler != 0 { cocuklar[cocuk_say] = dugum.parametreler; cocuk_say = cocuk_say + 1; }
+
+    degisken ci: tamsayi = 0;
+    dongu ci < cocuk_say {
+        degisken ilk_dugum: *AstDugum = cocuklar[ci];
+        # sonraki linked listi iter et
+        degisken iter: *AstDugum = ilk_dugum;
+        dongu iter != 0 {
+            lsp_sembol_ast_tara(iter);
+            iter = iter.sonraki;
+        }
+        ci = ci + 1;
+    }
+}
+
+# ============================================================
+# Yeniden Kullanilabilir LSP Analiz Arenalari (Sifir Bellek Sizintisi)
+# ============================================================
+degisken g_lsp_resettable_init: tamsayi = 0;
+degisken g_lsp_resettable_tokens: *u8 = 0;
+degisken g_lsp_resettable_ast: *u8 = 0;
+degisken g_lsp_resettable_lstate: *LexerState = 0;
+degisken g_lsp_resettable_ast_arena: *AstArena = 0;
+degisken g_lsp_resettable_pstate: *ParserDurumu = 0;
+
+# Ana analiz: Dokuman icerigini lexer + parser + typechecker'dan gecir
+isv lsp_dokuman_analiz_et(d: *LspDokuman) {
+    eger d != 0 ise {
+        g_lsp_aktif_icerik = d.icerik;
+        g_lsp_aktif_icerik_uzunluk = d.icerik_uzunluk;
+        g_lsp_aktif_uri = d.uri;
+        g_lsp_aktif_uri_uzn = d.uri_uzunluk;
+    } yoksa {
+        g_lsp_aktif_icerik = 0;
+        g_lsp_aktif_icerik_uzunluk = 0;
+        g_lsp_aktif_uri = 0;
+        g_lsp_aktif_uri_uzn = 0;
+    }
+    lsp_analiz_sifirla();
+
+    eger d == 0 veya d.icerik == 0 veya d.icerik_uzunluk <= 0 ise { dondu; }
+
+    # Bellek arenalarini bir kez tahsis et ve her analizde sifirla
+    eger g_lsp_resettable_init == 0 ise {
+        g_lsp_resettable_tokens = lsp_bel_tahsis(2 * 1024 * 1024);  # 2 MB
+        g_lsp_resettable_ast = lsp_bel_tahsis(8 * 1024 * 1024);     # 8 MB
+        g_lsp_resettable_lstate = lsp_bel_tahsis(256);
+        g_lsp_resettable_ast_arena = lsp_bel_tahsis(128);
+        g_lsp_resettable_pstate = lsp_bel_tahsis(256);
+        eger g_lsp_resettable_tokens == 0 veya g_lsp_resettable_ast == 0 veya g_lsp_resettable_lstate == 0 veya g_lsp_resettable_ast_arena == 0 veya g_lsp_resettable_pstate == 0 ise {
+            dondu;
+        }
+        g_lsp_resettable_ast_arena.bellek = g_lsp_resettable_ast;
+        g_lsp_resettable_ast_arena.kapasite = 8 * 1024 * 1024;
+        g_lsp_resettable_init = 1;
+    }
+
+    degisken jeton_arenasi: *u8 = g_lsp_resettable_tokens;
+    degisken ast_arena: *AstArena = g_lsp_resettable_ast_arena;
+    ast_arena.kullanilan = 0; # Arenayi sifirla
+
+    # === LEXER ===
+    degisken l_durum: *LexerState = g_lsp_resettable_lstate;
+    l_durum.kaynak = d.icerik;
+    l_durum.dosya_boyutu = d.icerik_uzunluk;
+    l_durum.guncel_offset = 0;
+    l_durum.satir = 1;
+    l_durum.sutun = 1;
+    l_durum.jetonlar = jeton_arenasi;
+    l_durum.jeton_sayisi = 0;
+    l_durum.jeton_kapasite = 32768;
+    l_durum.pool = 0;
+
+    degisken jeton_sayisi: tamsayi = tokenize_et(l_durum);
+
+    # UTF-8 doğrulaması lexer tarafından parser'dan önce yapılır.
+    eger g_lexer_hata_sayisi > 0 ise {
+        degisken hata_satir: tamsayi = g_lexer_ilk_hata_satir - 1;
+        degisken hata_sutun: tamsayi = g_lexer_ilk_hata_sutun - 1;
+        eger hata_satir < 0 { hata_satir = 0; }
+        eger hata_sutun < 0 { hata_sutun = 0; }
+        lsp_hata_ekle(hata_satir, hata_sutun, "Lexer: Gecersiz UTF-8 byte dizisi".ptr, 34, 1);
+        dondu;
+    }
+    eger jeton_sayisi <= 0 ise {
+        lsp_hata_ekle(0, 0, "Lexer: Dosya bos veya tokenize edilemedi".ptr, 38, 1);
+        dondu;
+    }
+
+    # === PARSER ===
+    degisken p_durum: *ParserDurumu = g_lsp_resettable_pstate;
+    p_durum.jetonlar = jeton_arenasi;
+    p_durum.jeton_sayisi = jeton_sayisi;
+    p_durum.guncel_index = 0;
+    p_durum.arena = ast_arena;
+    p_durum.hata_sayisi = 0;
+
+    # Parser'in CLI hata ciktisi LSP stdout protokolunu bozamaz.
+    g_parser_son_hata_satir = 0;
+    g_parser_son_hata_sutun = 0;
+    g_parser_son_hata_uzunluk = 1;
+    g_parser_hata_sessiz = 1;
+    degisken ast_koku: *AstDugum = parser_cozumle(p_durum);
+    g_parser_hata_sessiz = 0;
+
+    # Parser hatasini dogrudan hata token'inin konumunda bildir.
+    eger p_durum.hata_sayisi > 0 ise {
+        degisken rapor_satir: tamsayi = 0;
+        degisken rapor_sutun: tamsayi = 0;
+        eger g_parser_son_hata_satir > 0 ise {
+            rapor_satir = g_parser_son_hata_satir - 1;
+            eger g_parser_son_hata_sutun > 0 {
+                rapor_sutun = g_parser_son_hata_sutun - 1;
+            }
+        } yoksa eger p_durum.guncel_index > 0 ise {
+            degisken gidx: tamsayi = p_durum.guncel_index - 1;
+            eger gidx < 0 { gidx = 0; }
+            degisken gj: *Jeton = jeton_arenasi + (gidx * 40);
+            eger gj != 0 {
+                eger gj.satir >= 1 { rapor_satir = gj.satir - 1; }
+                eger gj.sutun >= 1 { rapor_sutun = gj.sutun - 1; }
+            }
+        }
+        lsp_hata_ekle(rapor_satir, rapor_sutun, "Parser: Soz dizimi hatasi".ptr, 25, 1);
+    } yoksa eger ast_koku != 0 ise {
+        # === TYPECHECKER ===
+        g_diagnostics_sessiz = 1;
+        g_diagnostics_hata_sayisi = 0;
+        degisken tc_motor: *TipMotoru = tip_denetimini_baslat_ve_don(ast_arena, ast_koku);
+        g_diagnostics_sessiz = 0;
+        eger tc_motor != 0 ve tc_motor.hata_sayisi > 0 ise {
+            degisken tc_satir: tamsayi = 0;
+            degisken tc_sutun: tamsayi = 0;
+            eger g_diagnostics_son_satir > 0 { tc_satir = g_diagnostics_son_satir - 1; }
+            eger g_diagnostics_son_sutun > 0 { tc_sutun = g_diagnostics_son_sutun - 1; }
+            degisken tc_msg: *u8 = g_diagnostics_son_mesaj;
+            degisken tc_uzn: tamsayi = g_diagnostics_son_mesaj_uzunluk;
+            eger tc_msg == 0 veya tc_uzn <= 0 {
+                tc_msg = "Tip denetimi hatasi".ptr;
+                tc_uzn = 19;
+            }
+            lsp_hata_ekle(tc_satir, tc_sutun, tc_msg, tc_uzn, 1);
+        }
+    }
+
+    # === AST'den sembol cikar ===
+    eger ast_koku != 0 ise {
+        degisken iter: *AstDugum = ast_koku.sol;
+        dongu iter != 0 {
+            lsp_sembol_ast_tara(iter);
+            iter = iter.sonraki;
+        }
+    }
+}
+
+# ============================================================
+# LSP Istek Yoneticileri  (Stage 0 guvenli: hicbir \" veya \\ escape yok)
+# ============================================================
+
+# JSON baslik sabiti: {"jsonrpc":"2.0","id":N
+isv lsp_json_rm_rpc(id_sayi: tamsayi) {
+    lsp_yanit_tek_ch(123);          # {
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("jsonrpc".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);           # :
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("2.0".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(44);           # ,
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("id".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);           # :
+    lsp_yanit_sayi(id_sayi);
+}
+
+# initialize yaniti
+isv lsp_yanit_initialize(id_sayi: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    lsp_yanit_tek_ch(44);           # ,
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("result".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);           # :
+    lsp_yanit_tek_ch(123);          # {
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("capabilities".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);           # :
+    lsp_yanit_tek_ch(123);          # {
+    # textDocumentSync
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("textDocumentSync".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("openClose".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":true,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("change".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":1,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("save".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("includeText".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":false".ptr);
+    lsp_yanit_tek_ch(125);          # } save
+    lsp_yanit_tek_ch(125);          # } textDocumentSync
+    lsp_yanit_tek_ch(44);           # ,
+    # completionProvider
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("completionProvider".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("triggerCharacters".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":[".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(46);           # .
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(95);           # _
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("]".ptr);
+    lsp_yanit_tek_ch(125);          # } completionProvider
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("hoverProvider".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":true,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("definitionProvider".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":true,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("diagnosticProvider".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("interFileDependencies".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":false,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("workspaceDiagnostics".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":false".ptr);
+    lsp_yanit_tek_ch(125);          # } diagnosticProvider
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("documentFormattingProvider".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":false".ptr);
+    lsp_yanit_tek_ch(125);          # } capabilities
+    lsp_yanit_tek_ch(125);          # } result
+    lsp_yanit_tek_ch(125);          # } root
+    lsp_yanit_gonder();
+}
+
+# Boş/Null yanit
+isv lsp_yanit_bos(id_sayi: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("result".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":null".ptr);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# Completion (kod tamamlama) yaniti
+isv lsp_yanit_completion(id_sayi: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("result".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("isIncomplete".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":false,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("items".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":[".ptr);
+
+    degisken ilk_kez: tamsayi = 1;
+    degisken idx: tamsayi = 0;
+    dongu idx < g_lsp_sembol_sayisi {
+        degisken s: *LspSembol = g_lsp_semboller[idx];
+        eger s == 0 ise { idx = idx + 1; devam_et; }
+        eger ilk_kez == 0 ise { lsp_yanit_tek_ch(44); }
+        ilk_kez = 0;
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("label".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_json_str(s.isim, s.isim_uzn);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("kind".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(s.tip);
+        eger s.aciklama != 0 ise {
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("detail".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_json_cstr(s.aciklama);
+        }
+        lsp_yanit_tek_ch(125);
+        idx = idx + 1;
+    }
+
+    # Always-On Micro-LLM Intent Snippet
+    eger ilk_kez == 0 ise { lsp_yanit_tek_ch(44); }
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("label".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("ai_niyet_tamamla".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("kind".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":15,".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("detail".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("Yukinary Always-On BitNet Micro-LLM".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(125);
+
+    lsp_yanit_cstr("]".ptr);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# Hover yaniti: satir,sutun'daki sembolu bul
+isv lsp_yanit_hover(id_sayi: tamsayi, d: *LspDokuman, satir: tamsayi, sutun: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+
+    degisken bulunacak: *u8 = lsp_bel_tahsis(128);
+    degisken buzn: tamsayi = 0;
+    eger d != 0 ve d.icerik != 0 ise {
+        degisken off: tamsayi = lsp_pozisyon_offset(d.icerik, d.icerik_uzunluk, satir, sutun);
+        degisken bas: tamsayi = utf8_kimlik_baslangici(d.icerik, d.icerik_uzunluk, off);
+        degisken son: tamsayi = utf8_kimlik_sonu(d.icerik, d.icerik_uzunluk, off);
+        eger son > bas ise {
+            buzn = son - bas;
+            eger buzn > 127 ise { buzn = 127; }
+            lsp_str_kopyala(bulunacak, d.icerik + bas, buzn);
+        }
+    }
+    degisken bulunan_aciklama: *u8 = 0;
+    degisken idx: tamsayi = 0;
+    dongu idx < g_lsp_sembol_sayisi {
+        degisken s: *LspSembol = g_lsp_semboller[idx];
+        eger s != 0 ve s.isim_uzn == buzn ise {
+            eger buzn == 0 ise { idx = idx + 1; devam_et; }
+            eger lsp_str_esit(s.isim, bulunacak, buzn) == 1 ise {
+                bulunan_aciklama = s.aciklama;
+                durdur;
+            }
+        }
+        idx = idx + 1;
+    }
+
+    eger bulunan_aciklama != 0 ise {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("result".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("contents".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("kind".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("markdown".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("value".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("**Yukinary**  ".ptr);
+        lsp_yanit_iki_ch(92, 110);    # JSON icinde escaped newline.
+        # markdown contents - aciklama
+        lsp_yanit_cstr(bulunan_aciklama);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(125);      # } contents
+        lsp_yanit_tek_ch(125);      # } result
+    } yoksa {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("result".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr(":null".ptr);
+    }
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# Definition yaniti
+isv lsp_yanit_definition(id_sayi: tamsayi, d: *LspDokuman, satir: tamsayi, sutun: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+
+    degisken bulunacak: *u8 = lsp_bel_tahsis(128);
+    degisken buzn: tamsayi = 0;
+    eger d != 0 ve d.icerik != 0 ise {
+        degisken off: tamsayi = lsp_pozisyon_offset(d.icerik, d.icerik_uzunluk, satir, sutun);
+        degisken bas: tamsayi = utf8_kimlik_baslangici(d.icerik, d.icerik_uzunluk, off);
+        degisken son: tamsayi = utf8_kimlik_sonu(d.icerik, d.icerik_uzunluk, off);
+        eger son > bas ise { buzn = son - bas; eger buzn > 127 ise { buzn = 127; } lsp_str_kopyala(bulunacak, d.icerik + bas, buzn); }
+    }
+
+    degisken bulunan: *LspSembol = 0;
+    degisken idx: tamsayi = 0;
+    dongu idx < g_lsp_sembol_sayisi {
+        degisken s: *LspSembol = g_lsp_semboller[idx];
+        eger s != 0 ve s.isim_uzn == buzn ve buzn > 0 ise {
+            eger lsp_str_esit(s.isim, bulunacak, buzn) == 1 ise { bulunan = s; durdur; }
+        }
+        idx = idx + 1;
+    }
+
+    eger bulunan != 0 ve d != 0 ise {
+        degisken hedef_uri: *u8 = d.uri;
+        degisken hedef_uri_uzn: tamsayi = d.uri_uzunluk;
+        eger bulunan.uri != 0 ve bulunan.uri_uzn > 0 ise {
+            hedef_uri = bulunan.uri;
+            hedef_uri_uzn = bulunan.uri_uzn;
+        }
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("result".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("uri".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_json_str(hedef_uri, hedef_uri_uzn);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("range".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("start".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("line".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(bulunan.satir);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("character".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(bulunan.sutun);
+        lsp_yanit_tek_ch(125);      # } start
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("end".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("line".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(bulunan.satir);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("character".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(bulunan.sutun + utf8_utf16_birim_sayisi(bulunan.isim, 0, bulunan.isim_uzn));
+        lsp_yanit_tek_ch(125);      # } end
+        lsp_yanit_tek_ch(125);      # } range
+        lsp_yanit_tek_ch(125);      # } result
+    } yoksa {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("result".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr(":null".ptr);
+    }
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# FAZ 13.3: Sembol Yeniden Adlandirma (prepareRename / rename)
+isv lsp_yanit_prepare_rename(id_sayi: tamsayi, d: *LspDokuman, satir: tamsayi, sutun: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    degisken buzn: tamsayi = 0;
+    degisken bas: tamsayi = 0;
+    degisken son: tamsayi = 0;
+    eger d != 0 ve d.icerik != 0 ise {
+        degisken off: tamsayi = lsp_pozisyon_offset(d.icerik, d.icerik_uzunluk, satir, sutun);
+        bas = utf8_kimlik_baslangici(d.icerik, d.icerik_uzunluk, off);
+        son = utf8_kimlik_sonu(d.icerik, d.icerik_uzunluk, off);
+        eger son > bas { buzn = son - bas; }
+    }
+    eger buzn > 0 {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("result".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("range".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("start".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("line".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58); lsp_yanit_sayi(satir);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("character".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58); lsp_yanit_sayi(sutun);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("end".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("line".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58); lsp_yanit_sayi(satir);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("character".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58); lsp_yanit_sayi(sutun + buzn);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("placeholder".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_json_str(d.icerik + bas, buzn);
+        lsp_yanit_tek_ch(125);
+    } yoksa {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("result".ptr); lsp_yanit_tirnak();
+        lsp_yanit_cstr(":null".ptr);
+    }
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+isv lsp_offset_satir_sutun(icerik: *u8, uzn: tamsayi, hedef_off: tamsayi, out_satir: *tamsayi, out_sutun: *tamsayi) {
+    degisken satir: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < hedef_off ve i < uzn {
+        eger icerik[i] == 10 {
+            satir = satir + 1;
+            sutun = 0;
+        } yoksa {
+            sutun = sutun + 1;
+        }
+        i = i + 1;
+    }
+    *out_satir = satir;
+    *out_sutun = sutun;
+}
+
+isv lsp_yanit_rename(id_sayi: tamsayi, d: *LspDokuman, satir: tamsayi, sutun: tamsayi, yeni_isim: *u8, yeni_uzn: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    degisken buzn: tamsayi = 0;
+    degisken bas: tamsayi = 0;
+    degisken son: tamsayi = 0;
+    eger d != 0 ve d.icerik != 0 ise {
+        degisken off: tamsayi = lsp_pozisyon_offset(d.icerik, d.icerik_uzunluk, satir, sutun);
+        bas = utf8_kimlik_baslangici(d.icerik, d.icerik_uzunluk, off);
+        son = utf8_kimlik_sonu(d.icerik, d.icerik_uzunluk, off);
+        eger son > bas { buzn = son - bas; }
+    }
+    eger buzn > 0 ve yeni_isim != 0 ve yeni_uzn > 0 {
+        degisken eski_isim: *u8 = d.icerik + bas;
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("result".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("changes".ptr); lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+
+        degisken doc_adet: tamsayi = g_lsp_dokuman_sayisi;
+        eger doc_adet <= 0 { doc_adet = 1; }
+        degisken emitted_doc: tamsayi = 0;
+
+        degisken di: tamsayi = 0;
+        dongu di < doc_adet {
+            degisken cur_doc: *LspDokuman = d;
+            eger g_lsp_dokuman_sayisi > 0 ve g_lsp_dokumanlar[di] != 0 {
+                cur_doc = g_lsp_dokumanlar[di];
+            }
+            eger cur_doc != 0 ve cur_doc.icerik != 0 ve cur_doc.icerik_uzunluk >= buzn {
+                degisken txt: *u8 = cur_doc.icerik;
+                degisken txt_uzn: tamsayi = cur_doc.icerik_uzunluk;
+                degisken match_sayisi: tamsayi = 0;
+
+                # Once dokumanda kac eslesme var sayalim
+                degisken ti: tamsayi = 0;
+                dongu ti <= txt_uzn - buzn {
+                    degisken esit: tamsayi = 1;
+                    degisken bi: tamsayi = 0;
+                    dongu bi < buzn {
+                        eger txt[ti + bi] != eski_isim[bi] { esit = 0; durdur; }
+                        bi = bi + 1;
+                    }
+                    eger esit == 1 {
+                        degisken sol_ok: tamsayi = 1;
+                        eger ti > 0 ve utf8_kimlik_kodu_mi(txt[ti - 1]) == 1 { sol_ok = 0; }
+                        degisken sag_ok: tamsayi = 1;
+                        eger ti + buzn < txt_uzn ve utf8_kimlik_kodu_mi(txt[ti + buzn]) == 1 { sag_ok = 0; }
+                        eger sol_ok == 1 ve sag_ok == 1 {
+                            match_sayisi = match_sayisi + 1;
+                        }
+                    }
+                    ti = ti + 1;
+                }
+
+                eger match_sayisi > 0 {
+                    eger emitted_doc > 0 { lsp_yanit_tek_ch(44); } # ','
+                    lsp_yanit_json_str(cur_doc.uri, cur_doc.uri_uzunluk);
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_tek_ch(91); # '['
+
+                    degisken curr_m: tamsayi = 0;
+                    ti = 0;
+                    dongu ti <= txt_uzn - buzn {
+                        degisken esit: tamsayi = 1;
+                        degisken bi: tamsayi = 0;
+                        dongu bi < buzn {
+                            eger txt[ti + bi] != eski_isim[bi] { esit = 0; durdur; }
+                            bi = bi + 1;
+                        }
+                        eger esit == 1 {
+                            degisken sol_ok: tamsayi = 1;
+                            eger ti > 0 ve utf8_kimlik_kodu_mi(txt[ti - 1]) == 1 { sol_ok = 0; }
+                            degisken sag_ok: tamsayi = 1;
+                            eger ti + buzn < txt_uzn ve utf8_kimlik_kodu_mi(txt[ti + buzn]) == 1 { sag_ok = 0; }
+                            eger sol_ok == 1 ve sag_ok == 1 {
+                                eger curr_m > 0 { lsp_yanit_tek_ch(44); } # ','
+                                degisken m_sat: tamsayi = 0;
+                                degisken m_sut: tamsayi = 0;
+                                lsp_offset_satir_sutun(txt, txt_uzn, ti, &m_sat, &m_sut);
+
+                                lsp_yanit_tek_ch(123);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("range".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58);
+                                lsp_yanit_tek_ch(123);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("start".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58);
+                                lsp_yanit_tek_ch(123);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("line".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58); lsp_yanit_sayi(m_sat);
+                                lsp_yanit_tek_ch(44);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("character".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58); lsp_yanit_sayi(m_sut);
+                                lsp_yanit_tek_ch(125);
+                                lsp_yanit_tek_ch(44);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("end".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58);
+                                lsp_yanit_tek_ch(123);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("line".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58); lsp_yanit_sayi(m_sat);
+                                lsp_yanit_tek_ch(44);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("character".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58); lsp_yanit_sayi(m_sut + buzn);
+                                lsp_yanit_tek_ch(125);
+                                lsp_yanit_tek_ch(125);
+                                lsp_yanit_tek_ch(44);
+                                lsp_yanit_tirnak(); lsp_yanit_cstr("newText".ptr); lsp_yanit_tirnak();
+                                lsp_yanit_tek_ch(58);
+                                lsp_yanit_json_str(yeni_isim, yeni_uzn);
+                                lsp_yanit_tek_ch(125);
+
+                                curr_m = curr_m + 1;
+                            }
+                        }
+                        ti = ti + 1;
+                    }
+                    lsp_yanit_tek_ch(93); # ']'
+                    emitted_doc = emitted_doc + 1;
+                }
+            }
+            di = di + 1;
+        }
+
+        lsp_yanit_tek_ch(125); # '}' changes
+        lsp_yanit_tek_ch(125); # '}' result
+        lsp_yanit_tek_ch(125); # '}' root
+    } yoksa {
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak(); lsp_yanit_cstr("result".ptr); lsp_yanit_tirnak();
+        lsp_yanit_cstr(":null".ptr);
+        lsp_yanit_tek_ch(125);
+    }
+    lsp_yanit_gonder();
+}
+
+isv lsp_yanit_workspace_symbols(id_sayi: tamsayi) {
+    lsp_yanit_sifirla();
+    lsp_json_rm_rpc(id_sayi);
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("result".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":[".ptr);
+
+    degisken ilk: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < g_lsp_sembol_sayisi {
+        degisken s: *LspSembol = g_lsp_semboller[i];
+        eger s != 0 ve s.tip != 14 { # Anahtar kelimeleri workspace symbol aramasina dahil etme
+            eger ilk == 0 ise { lsp_yanit_tek_ch(44); }
+            ilk = 0;
+            lsp_yanit_tek_ch(123);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("name".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_json_str(s.isim, s.isim_uzn);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("kind".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_sayi(s.tip);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("location".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_tek_ch(123);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("uri".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            degisken s_uri: *u8 = "file:///workspace".ptr;
+            degisken s_uri_uzn: tamsayi = 17;
+            eger s.uri != 0 ve s.uri_uzn > 0 ise {
+                s_uri = s.uri;
+                s_uri_uzn = s.uri_uzn;
+            }
+            lsp_yanit_json_str(s_uri, s_uri_uzn);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("range".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_tek_ch(123);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("start".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_tek_ch(123);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("line".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_sayi(s.satir);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("character".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_sayi(s.sutun);
+            lsp_yanit_tek_ch(125);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("end".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_tek_ch(123);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("line".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_sayi(s.satir);
+            lsp_yanit_tek_ch(44);
+            lsp_yanit_tirnak();
+            lsp_yanit_cstr("character".ptr);
+            lsp_yanit_tirnak();
+            lsp_yanit_tek_ch(58);
+            lsp_yanit_sayi(s.sutun + s.isim_uzn);
+            lsp_yanit_tek_ch(125);
+            lsp_yanit_tek_ch(125);
+            lsp_yanit_tek_ch(125);
+        }
+        i = i + 1;
+    }
+    lsp_yanit_cstr("]".ptr);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# publishDiagnostics notification (id'siz)
+isv lsp_bildirim_diagnostics(d: *LspDokuman) {
+    eger d == 0 ise { dondu; }
+    lsp_yanit_sifirla();
+    lsp_yanit_tek_ch(123);          # {
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("jsonrpc".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("2.0".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("method".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("textDocument/publishDiagnostics".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("params".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_tek_ch(123);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("uri".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_json_str(d.uri, d.uri_uzunluk);
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("version".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_tek_ch(58);
+    lsp_yanit_sayi(d.surum);
+    lsp_yanit_tek_ch(44);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr("diagnostics".ptr);
+    lsp_yanit_tirnak();
+    lsp_yanit_cstr(":[".ptr);
+
+    degisken ilk_kez: tamsayi = 1;
+    degisken hi: tamsayi = 0;
+    dongu hi < g_lsp_hata_sayisi {
+        degisken h: *LspHata = g_lsp_hatalar[hi];
+        eger h == 0 ise { hi = hi + 1; devam_et; }
+        eger ilk_kez == 0 ise { lsp_yanit_tek_ch(44); }
+        ilk_kez = 0;
+
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("range".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("start".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("line".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(h.satir);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("character".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(h.sutun);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("end".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tek_ch(123);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("line".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(h.satir_son);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("character".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(h.sutun_son);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(125);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("severity".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_sayi(h.siddet);
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("source".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("yukinary".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(44);
+        lsp_yanit_tirnak();
+        lsp_yanit_cstr("message".ptr);
+        lsp_yanit_tirnak();
+        lsp_yanit_tek_ch(58);
+        lsp_yanit_json_str(h.mesaj, h.mesaj_uzn);
+        lsp_yanit_tek_ch(125);
+        hi = hi + 1;
+    }
+
+    lsp_yanit_cstr("]".ptr);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_tek_ch(125);
+    lsp_yanit_gonder();
+}
+
+# ============================================================
+# LSP Ana Dongusu
+# ============================================================
+isv lsp_sunucusu_baslat() -> tamsayi {
+    # Global tamponlari ayir
+    g_lsp_tampon = lsp_bel_tahsis(LSP_TAMPON_BOYUTU);
+    g_lsp_json   = lsp_bel_tahsis(LSP_JSON_BOYUTU);
+    g_lsp_yanit  = lsp_bel_tahsis(LSP_JSON_BOYUTU);
+    g_lsp_json_ara = lsp_bel_tahsis(1024);
+    eger g_lsp_tampon == 0 veya g_lsp_json == 0 veya g_lsp_yanit == 0 veya g_lsp_json_ara == 0 ise {
+        lsp_log("[LSP] tampon tahsis hatasi\n".ptr);
+        dondu 1;
+    }
+
+    # Tek seferlik string tamponlari (her istekte tekrar tahsis ETME - memory leak onle)
+    degisken method_str: *u8 = lsp_bel_tahsis(256);
+    degisken uri_str:    *u8 = lsp_bel_tahsis(2048);
+    degisken text_str:   *u8 = lsp_bel_tahsis(65536);
+    eger method_str == 0 veya uri_str == 0 veya text_str == 0 ise {
+        lsp_log("[LSP] string tampon tahsis hatasi\n".ptr);
+        dondu 1;
+    }
+
+    degisken tampon_dolu: tamsayi = 0;
+    degisken calisiyor: tamsayi = 1;
+    degisken initialized: tamsayi = 0;
+    degisken shutdown_alindi: tamsayi = 0;
+
+    dongu calisiyor == 1 {
+        # 1) Header'i once mevcut tamponda ara, yoksa yeni veri oku.
+        # Bu sira, tek ReadFile ile birden fazla frame geldiginde gereklidir.
+        degisken content_len: tamsayi = 0;
+        degisken header_bulundu: tamsayi = 0;
+        dongu header_bulundu == 0 ve calisiyor == 1 {
+            degisken cl: tamsayi = 0;
+            eger lsp_header_oku(g_lsp_tampon, &tampon_dolu, &cl) == 1 ise {
+                content_len = cl;
+                header_bulundu = 1;
+            } yoksa {
+                degisken header_okunan: tamsayi = lsp_ham_oku(g_lsp_tampon + tampon_dolu, LSP_TAMPON_BOYUTU - tampon_dolu);
+                eger header_okunan > 0 ise {
+                    tampon_dolu = tampon_dolu + header_okunan;
+                } yoksa {
+                    calisiyor = 0;
+                    header_bulundu = 1;
+                }
+            }
+        }
+
+        # 2) Header parser body'yi tamponun basina tasir; eksikse tamamla.
+        degisken istek_hazir: tamsayi = 0;
+        eger calisiyor == 1 ve header_bulundu == 1 ise {
+            istek_hazir = 1;
+            dongu tampon_dolu < content_len ve calisiyor == 1 {
+                degisken oku: tamsayi = content_len - tampon_dolu;
+                eger oku > (LSP_TAMPON_BOYUTU - tampon_dolu) ise { oku = LSP_TAMPON_BOYUTU - tampon_dolu; }
+                eger oku > 0 ise {
+                    degisken body_okunan: tamsayi = lsp_ham_oku(g_lsp_tampon + tampon_dolu, oku);
+                    eger body_okunan > 0 ise {
+                        tampon_dolu = tampon_dolu + body_okunan;
+                    } yoksa {
+                        calisiyor = 0;
+                    }
+                } yoksa {
+                    calisiyor = 0;
+                }
+            }
+            eger tampon_dolu < content_len ise {
+                istek_hazir = 0;
+                calisiyor = 0;
+            }
+        }
+
+        # Body'yi g_lsp_json'a kopyala, kalan baytlari basa tasi (partial buffer tut)
+        eger istek_hazir == 1 ise {
+            degisken json_uzn: tamsayi = content_len;
+            eger json_uzn > LSP_JSON_BOYUTU - 1 ise { json_uzn = LSP_JSON_BOYUTU - 1; }
+            lsp_str_kopyala(g_lsp_json, g_lsp_tampon, json_uzn);
+
+        # Tampondaki islenmis body'yi sil (kalan saga kaydir)
+        degisken kalan: tamsayi = tampon_dolu - content_len;
+        eger kalan > 0 {
+            degisken ki: tamsayi = 0;
+            dongu ki < kalan {
+                g_lsp_tampon[ki] = g_lsp_tampon[content_len + ki];
+                ki = ki + 1;
+            }
+        }
+        tampon_dolu = kalan;
+
+        # === ISTEK/ISLEM ===
+        # Method cek (tek seferlik tamponu kullaniyoruz)
+        method_str[0] = 0;
+        degisken method_n: tamsayi = lsp_json_str_cek(g_lsp_json, json_uzn, "method".ptr, 6, method_str, 256);
+
+        # id cek (int)
+        degisken id_sayi: tamsayi = -1;
+        degisken id_var: tamsayi = lsp_json_sayi_cek(g_lsp_json, json_uzn, "id".ptr, 2, &id_sayi);
+
+        # uri cek (textDocument.uri icin)
+        uri_str[0] = 0;
+        degisken uri_n: tamsayi = lsp_json_str_cek(g_lsp_json, json_uzn, "uri".ptr, 3, uri_str, 2048);
+
+        # textDocument icerik cek (didOpen icin: params.textDocument.text)
+        text_str[0] = 0;
+        degisken text_n: tamsayi = lsp_json_str_cek(g_lsp_json, json_uzn, "text".ptr, 4, text_str, 65536);
+
+        # position line/character cek
+        degisken pos_line: tamsayi = 0;
+        degisken pos_char: tamsayi = 0;
+        lsp_json_sayi_cek(g_lsp_json, json_uzn, "line".ptr, 4, &pos_line);
+        lsp_json_sayi_cek(g_lsp_json, json_uzn, "character".ptr, 9, &pos_char);
+
+        # METHOD ROUTING
+        eger method_n > 0 {
+            # ===== initialize =====
+            eger method_n == 10 ve lsp_str_esit(method_str, "initialize".ptr, 10) == 1 ise {
+                lsp_yanit_initialize(id_sayi);
+                initialized = 1;
+            }
+            # ===== initialized =====
+            yoksa eger method_n == 11 ve lsp_str_esit(method_str, "initialized".ptr, 11) == 1 ise {
+                # notification - yanit yok
+            }
+            # ===== shutdown =====
+            yoksa eger method_n == 8 ve lsp_str_esit(method_str, "shutdown".ptr, 8) == 1 ise {
+                lsp_yanit_bos(id_sayi);
+                shutdown_alindi = 1;
+            }
+            # ===== exit =====
+            yoksa eger method_n == 4 ve lsp_str_esit(method_str, "exit".ptr, 4) == 1 ise {
+                calisiyor = 0;
+            }
+            # ===== textDocument/didOpen =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didOpen".ptr, 7) >= 0 ise {
+                eger uri_n > 0 ve text_n > 0 ise {
+                    degisken dok: *LspDokuman = lsp_dokuman_ekle(uri_str, uri_n, text_str, text_n);
+                    eger dok != 0 ise {
+                        lsp_dokuman_analiz_et(dok);
+                        lsp_bildirim_diagnostics(dok);
+                    }
+                }
+            }
+            # ===== textDocument/didChange =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didChange".ptr, 9) >= 0 ise {
+                # text field didOpen ile ayni sekilde "text":"" altinda de olabilir degilse contentChanges dizisinden cekilmeli
+                eger uri_n > 0 ise {
+                    eger text_n > 0 ise {
+                        lsp_dokuman_ekle(uri_str, uri_n, text_str, text_n);
+                    }
+                    degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                    eger dok != 0 ise {
+                        lsp_dokuman_analiz_et(dok);
+                        lsp_bildirim_diagnostics(dok);
+                    }
+                }
+            }
+            # ===== textDocument/didSave =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didSave".ptr, 7) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    lsp_dokuman_analiz_et(dok);
+                    lsp_bildirim_diagnostics(dok);
+                }
+            }
+            # ===== textDocument/completion =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "completion".ptr, 10) >= 0 ise {
+                # Semboller didOpen/didChange sirasinda guncellenir; her completion'da yeniden parse etme.
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok == 0 ise { lsp_analiz_sifirla(); }
+                lsp_yanit_completion(id_sayi);
+            }
+            # ===== textDocument/hover =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "hover".ptr, 5) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    lsp_dokuman_analiz_et(dok);
+                    lsp_yanit_hover(id_sayi, dok, pos_line, pos_char);
+                } yoksa {
+                    lsp_yanit_bos(id_sayi);
+                }
+            }
+            # ===== textDocument/definition =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "definition".ptr, 10) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    lsp_dokuman_analiz_et(dok);
+                    lsp_yanit_definition(id_sayi, dok, pos_line, pos_char);
+                } yoksa {
+                    lsp_yanit_bos(id_sayi);
+                }
+            }
+            # ===== textDocument/prepareRename =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "prepareRename".ptr, 13) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    lsp_dokuman_analiz_et(dok);
+                    lsp_yanit_prepare_rename(id_sayi, dok, pos_line, pos_char);
+                } yoksa {
+                    lsp_yanit_bos(id_sayi);
+                }
+            }
+            # ===== textDocument/rename =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "rename".ptr, 6) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    degisken yeni_ad: [128]u8;
+                    degisken yeni_uzn: tamsayi = lsp_json_str_cek(g_lsp_json, json_uzn, "newName".ptr, 7, yeni_ad, 128);
+                    lsp_dokuman_analiz_et(dok);
+                    lsp_yanit_rename(id_sayi, dok, pos_line, pos_char, yeni_ad, yeni_uzn);
+                } yoksa {
+                    lsp_yanit_bos(id_sayi);
+                }
+            }
+            # ===== textDocument/diagnostic =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "diagnostic".ptr, 10) >= 0 ise {
+                degisken dok: *LspDokuman = lsp_dokuman_bul(uri_str, uri_n);
+                eger dok != 0 ise {
+                    lsp_dokuman_analiz_et(dok);
+                }
+                # Pull diagnostic - inline yanit
+                lsp_yanit_sifirla();
+                lsp_json_rm_rpc(id_sayi);
+                lsp_yanit_tek_ch(44);
+                lsp_yanit_tirnak();
+                lsp_yanit_cstr("result".ptr);
+                lsp_yanit_tirnak();
+                lsp_yanit_tek_ch(58);
+                lsp_yanit_tek_ch(123);
+                lsp_yanit_tirnak();
+                lsp_yanit_cstr("kind".ptr);
+                lsp_yanit_tirnak();
+                lsp_yanit_tek_ch(58);
+                lsp_yanit_tirnak();
+                lsp_yanit_cstr("full".ptr);
+                lsp_yanit_tirnak();
+                lsp_yanit_tek_ch(44);
+                lsp_yanit_tirnak();
+                lsp_yanit_cstr("items".ptr);
+                lsp_yanit_tirnak();
+                lsp_yanit_cstr(":[".ptr);
+                degisken ilk_kez: tamsayi = 1;
+                degisken hi: tamsayi = 0;
+                dongu hi < g_lsp_hata_sayisi {
+                    degisken h: *LspHata = g_lsp_hatalar[hi];
+                    eger h == 0 ise { hi = hi + 1; devam_et; }
+                    eger ilk_kez == 0 ise { lsp_yanit_tek_ch(44); }
+                    ilk_kez = 0;
+                    lsp_yanit_tek_ch(123);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("range".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_tek_ch(123);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("start".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_tek_ch(123);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("line".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_sayi(h.satir);
+                    lsp_yanit_tek_ch(44);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("character".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_sayi(h.sutun);
+                    lsp_yanit_tek_ch(125);
+                    lsp_yanit_tek_ch(44);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("end".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_tek_ch(123);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("line".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_sayi(h.satir_son);
+                    lsp_yanit_tek_ch(44);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("character".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_sayi(h.sutun_son);
+                    lsp_yanit_tek_ch(125);
+                    lsp_yanit_tek_ch(125);
+                    lsp_yanit_tek_ch(44);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("severity".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_sayi(h.siddet);
+                    lsp_yanit_tek_ch(44);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_cstr("message".ptr);
+                    lsp_yanit_tirnak();
+                    lsp_yanit_tek_ch(58);
+                    lsp_yanit_json_str(h.mesaj, h.mesaj_uzn);
+                    lsp_yanit_tek_ch(125);
+                    hi = hi + 1;
+                }
+                lsp_yanit_cstr("]".ptr);
+                lsp_yanit_tek_ch(125);
+                lsp_yanit_tek_ch(125);
+                lsp_yanit_gonder();
+            }
+            # ===== textDocument/didClose =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didClose".ptr, 8) >= 0 ise {
+                # Dokumani kayit listesinden cikar (lifecycle: textDocument/didClose)
+                eger uri_n > 0 ise {
+                    lsp_dokuman_kapat(uri_str, uri_n);
+                }
+                # didClose notification: yanit gonderilmez
+            }
+            # ===== workspace/didChangeConfiguration =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didChangeConfiguration".ptr, 24) >= 0 ise {
+                # yanit yok - notification
+            }
+            # ===== workspace/didChangeWatchedFiles =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "didChangeWatchedFiles".ptr, 22) >= 0 ise {
+                # yanit yok
+            }
+            # ===== workspace/symbol =====
+            yoksa eger lsp_str_icinde(method_str, method_n, "workspace/symbol".ptr, 16) >= 0 veya lsp_str_icinde(method_str, method_n, "symbol".ptr, 6) >= 0 ise {
+                lsp_yanit_workspace_symbols(id_sayi);
+            }
+            yoksa {
+                # Bilinmeyen method - bos yanit (notification degilse)
+                eger id_var == 1 ve id_sayi >= 0 ise {
+                    lsp_yanit_bos(id_sayi);
+                }
+            }
+        } yoksa {
+            # Method yoksa ama id varsa bos yanit
+            eger id_var == 1 ve id_sayi >= 0 ise {
+                lsp_yanit_bos(id_sayi);
+            }
+        }
+
+        eger shutdown_alindi == 1 ise {
+            # shutdown alindi, cikmak icin exit bekle ama burada da donebiliriz
+        }
+        }  # istek_hazir
+    }  # ana dongu sonu
+
+    dondu 0;
+}

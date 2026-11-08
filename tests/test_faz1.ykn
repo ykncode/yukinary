@@ -1,0 +1,148 @@
+# Test FAZ 1: Async Pointer, Hashmap Rehash Leak, Vec Header & Generic, Arc Cascading Destructor
+ice_aktar "std/async.ykn";
+ice_aktar "std/collection/hashmap.ykn";
+ice_aktar "std/collection/vec.ykn";
+ice_aktar "std/arc.ykn";
+ice_aktar "std/io.ykn";
+
+degisken g_yikici_cagrildi: tamsayi = 0;
+
+isv test_yikici(ptr: *u8) -> tamsayi {
+    g_yikici_cagrildi = g_yikici_cagrildi + 1;
+    dondu 1;
+}
+
+isv test_async_worker(ctx: tamsayi) -> tamsayi {
+    degisken p: *tamsayi = ctx as *tamsayi;
+    p[0] = p[0] + 42;
+    dondu 1; # Tamamlandi
+}
+
+isv log(s: *u8) {
+    ekrana_yaz(s);
+}
+
+isv log_sayi(n: tamsayi) {
+    degisken buf: [32]u8;
+    degisken tmp: [32]u8;
+    eger n == 0 ise {
+        buf[0] = 48; buf[1] = 0;
+        ekrana_yaz(buf);
+        dondu;
+    }
+    degisken v: tamsayi = n;
+    degisken eksi: tamsayi = 0;
+    eger v < 0 ise { eksi = 1; v = 0 - v; }
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        tmp[i] = (v % 10) + 48;
+        v = v / 10;
+        i = i + 1;
+    }
+    degisken j: tamsayi = 0;
+    eger eksi == 1 ise { buf[0] = 45; j = 1; }
+    dongu i > 0 {
+        i = i - 1;
+        buf[j] = tmp[i];
+        j = j + 1;
+    }
+    buf[j] = 0;
+    ekrana_yaz(buf);
+}
+
+isv ana() -> tamsayi {
+    log("=== FAZ 1 TESTLERI BASLIYOR ===\n".ptr);
+
+    # 1. TEST: Async Pointer Truncation Fix
+    log("[1/4] Async Pointer Truncation Testi... ".ptr);
+    degisken gy: *GorevYoneticisi = gorev_yoneticisi_olustur();
+    degisken sonuc_deger: [1]tamsayi;
+    sonuc_deger[0] = 100;
+
+    degisken future_buf: [32]u8;
+    degisken f_words: *tamsayi = future_buf;
+    f_words[0] = test_async_worker as tamsayi; # 64-bit function pointer
+    f_words[1] = sonuc_deger as tamsayi;        # 64-bit context pointer
+    f_words[2] = 0;                  # bekliyor
+    f_words[3] = 0;
+
+    future_gorev_ekle(gy, future_buf);
+    gorev_dongusu_calistir(gy);
+
+    eger sonuc_deger[0] != 142 ise {
+        log("BASARISIZ! Beklenen: 142, Alinan: ".ptr);
+        log_sayi(sonuc_deger[0]);
+        log("\n".ptr);
+        dondu 1;
+    }
+    gorev_yoneticisi_serbest_birak(gy);
+    log("BASARILI!\n".ptr);
+
+    # 2. TEST: Hashmap Rehash & Free
+    log("[2/4] Hashmap Rehash & Serbest Birakma Testi... ".ptr);
+    degisken hm: *HashMap = hashmap_olustur(8);
+    hashmap_ekle(hm, "anahtar_1".ptr, 10);
+    hashmap_ekle(hm, "anahtar_2".ptr, 20);
+    hashmap_ekle(hm, "anahtar_3".ptr, 30);
+    hashmap_ekle(hm, "anahtar_4".ptr, 40);
+    hashmap_ekle(hm, "anahtar_5".ptr, 50);
+    hashmap_ekle(hm, "anahtar_6".ptr, 60);
+    hashmap_ekle(hm, "anahtar_7".ptr, 70);
+    hashmap_ekle(hm, "anahtar_8".ptr, 80);
+    hashmap_ekle(hm, "anahtar_9".ptr, 90);
+    hashmap_ekle(hm, "anahtar_10".ptr, 100);
+
+    eger hashmap_al(hm, "anahtar_1".ptr) != 10 veya hashmap_al(hm, "anahtar_10".ptr) != 100 ise {
+        log("BASARISIZ! Hashmap rehash veri kaybi!\n".ptr);
+        dondu 2;
+    }
+    hashmap_serbest_birak(hm);
+    log("BASARILI!\n".ptr);
+
+    # 3. TEST: Vec Header & Generic Push
+    log("[3/4] Vec Header & Generic Bayt Ekleme Testi... ".ptr);
+    degisken v: *Vec = vec_olustur(4); # 4-byte elemanlar
+    degisken s1: [1]tamsayi; s1[0] = 12345;
+    degisken s2: [1]tamsayi; s2[0] = 67890;
+    vec_push_baytlar(v, s1);
+    vec_push_baytlar(v, s2);
+    vec_push_baytlar(v, s1);
+
+    eger vec_uzunluk(v) != 3 ise {
+        log("BASARISIZ! Vec uzunluk yanlis!\n".ptr);
+        dondu 3;
+    }
+    degisken p_ilk: *tamsayi = vec_get_ptr(v, 0);
+    # alt 32-biti kontrol et
+    eger (p_ilk[0] & 65535) != (12345 & 65535) ise {
+        log("BASARISIZ! Vec bayt degeri hatali!\n".ptr);
+        dondu 3;
+    }
+    vec_serbest_birak(v);
+    log("BASARILI!\n".ptr);
+
+    # 4. TEST: Arc Cascading Destructor
+    log("[4/4] Arc Kademeli Yikici Testi... ".ptr);
+    degisken dummy_payload: *u8 = os_bellek_tahsis(64);
+    degisken arc1: *Arc<u8> = arc_olustur_yikici_ile<u8>(dummy_payload, test_yikici as tamsayi);
+    degisken arc2: *Arc<u8> = arc_klonla<u8>(arc1);
+
+    eger arc_ref_sayisi<u8>(arc1) != 2 ise {
+        log("BASARISIZ! Arc ref sayisi 2 olmali!\n".ptr);
+        dondu 4;
+    }
+    arc_serbest_birak<u8>(arc1);
+    eger g_yikici_cagrildi != 0 ise {
+        log("BASARISIZ! Ref > 0 iken yikici calisti!\n".ptr);
+        dondu 4;
+    }
+    arc_serbest_birak<u8>(arc2);
+    eger g_yikici_cagrildi != 1 ise {
+        log("BASARISIZ! Ref == 0 oldugunda kademeli yikici calismadi!\n".ptr);
+        dondu 4;
+    }
+    log("BASARILI!\n".ptr);
+
+    log(">>> FAZ 1 TUM TESTLERI BASARIYLA GECTI! <<<\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,95 @@
+# ============================================================
+# Test: tests/test_faz1_trait_vtable.ykn
+# FAZ 1 Dogrulama: Trait / VTable Dinamik Arayuz ve Polimorfizm
+# Windows ve Linux uzerinde sifir mock ile tam dogrulama.
+# ============================================================
+
+ice_aktar "std/trait.ykn";
+
+yapi Dikdortgen {
+    en:  tamsayi;
+    boy: tamsayi;
+}
+
+yapi Daire {
+    yaricap: tamsayi;
+}
+
+isv dikdortgen_alan(self: *Dikdortgen, b: tamsayi, c: tamsayi) -> tamsayi {
+    dondu self.en * self.boy;
+}
+
+isv dikdortgen_cevre(self: *Dikdortgen, b: tamsayi, c: tamsayi) -> tamsayi {
+    dondu 2 * (self.en + self.boy);
+}
+
+isv daire_alan(self: *Daire, b: tamsayi, c: tamsayi) -> tamsayi {
+    # Yaklasik pi = 3
+    dondu 3 * self.yaricap * self.yaricap;
+}
+
+isv daire_cevre(self: *Daire, b: tamsayi, c: tamsayi) -> tamsayi {
+    dondu 2 * 3 * self.yaricap;
+}
+
+isv main() -> tamsayi {
+    # 1. Dikdortgen icin VTable kur (0: alan, 1: cevre)
+    degisken vt_dikdortgen: *VTable = vtable_olustur(4);
+    eger vt_dikdortgen == 0 ise { dondu 1; }
+    
+    degisken p_d_alan: tamsayi = dikdortgen_alan as tamsayi;
+    degisken p_d_cevre: tamsayi = dikdortgen_cevre as tamsayi;
+    vtable_islev_ekle(vt_dikdortgen, 0, p_d_alan);
+    vtable_islev_ekle(vt_dikdortgen, 1, p_d_cevre);
+
+    # 2. Daire icin VTable kur (0: alan, 1: cevre)
+    degisken vt_daire: *VTable = vtable_olustur(4);
+    eger vt_daire == 0 ise { dondu 2; }
+    
+    degisken p_c_alan: tamsayi = daire_alan as tamsayi;
+    degisken p_c_cevre: tamsayi = daire_cevre as tamsayi;
+    vtable_islev_ekle(vt_daire, 0, p_c_alan);
+    vtable_islev_ekle(vt_daire, 1, p_c_cevre);
+
+    # 3. Somut nesneler olustur
+    degisken d: *Dikdortgen = bellek_tahsis_et(16);
+    d.en = 10;
+    d.boy = 20;
+
+    degisken c: *Daire = bellek_tahsis_et(8);
+    c.yaricap = 5;
+
+    # 4. Trait nesnelerine bagla (Fat-pointer olustur)
+    degisken sekil1: *TraitNesnesi = trait_nesnesi_olustur(d as *u8, vt_dikdortgen);
+    degisken sekil2: *TraitNesnesi = trait_nesnesi_olustur(c as *u8, vt_daire);
+
+    eger sekil1 == 0 veya sekil2 == 0 ise { dondu 3; }
+
+    # 5. Dinamik polimorfik cagrilar yap
+    degisken alan1: tamsayi = trait_cagir_0(sekil1, 0);
+    degisken cevre1: tamsayi = trait_cagir_0(sekil1, 1);
+
+    degisken alan2: tamsayi = trait_cagir_0(sekil2, 0);
+    degisken cevre2: tamsayi = trait_cagir_0(sekil2, 1);
+
+    # 6. Dogrulama
+    # Dikdortgen: 10 * 20 = 200, 2 * (10 + 20) = 60
+    eger alan1 != 200 veya cevre1 != 60 ise {
+        dondu 10;
+    }
+
+    # Daire: 3 * 5 * 5 = 75, 2 * 3 * 5 = 30
+    eger alan2 != 75 veya cevre2 != 30 ise {
+        dondu 20;
+    }
+
+    # Temizlik
+    trait_nesnesi_serbest_birak(sekil1);
+    trait_nesnesi_serbest_birak(sekil2);
+    vtable_serbest_birak(vt_dikdortgen);
+    vtable_serbest_birak(vt_daire);
+    os_bellek_serbest(d as *u8);
+    os_bellek_serbest(c as *u8);
+
+    dondu 0;
+}

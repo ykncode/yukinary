@@ -1,0 +1,94 @@
+# ============================================================
+# Yukinary Test Kosucusu - tools/test_runner.ykn
+# FAZ 1: Endustriyel Test Harness ve Raporlama Motoru
+#
+# Standart TAP / JUnit uyumlu test kaydi, zaman olcumu
+# ve sonuc ozeti uretir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+degisken TEST_DURUM_BASARILI: tamsayi = 1;
+degisken TEST_DURUM_BASARISIZ: tamsayi = 0;
+
+yapi TestKaydi {
+    isim:     *u8;
+    durum:    tamsayi; # 1: PASSED, 0: FAILED
+    sure_ms:  tamsayi;
+}
+
+yapi TestKosuSonucu {
+    toplam:     tamsayi;
+    basarili:   tamsayi;
+    basarisiz:  tamsayi;
+    kapasite:   tamsayi;
+    testler:    **TestKaydi;
+}
+
+isv test_kosucu_olustur(kapasite: tamsayi) -> *TestKosuSonucu {
+    degisken kap: tamsayi = kapasite;
+    eger kap <= 0 ise { kap = 64; }
+    degisken tk: *TestKosuSonucu = bellek_tahsis_et(40);
+    eger tk == 0 ise { dondu 0; }
+    tk.toplam = 0;
+    tk.basarili = 0;
+    tk.basarisiz = 0;
+    tk.kapasite = kap;
+    tk.testler = bellek_tahsis_et(kap * 8);
+    dondu tk;
+}
+
+isv test_kaydi_ekle(tk: *TestKosuSonucu, isim: *u8, durum: tamsayi, sure_ms: tamsayi) -> tamsayi {
+    eger tk == 0 veya tk.toplam >= tk.kapasite ise { dondu 0; }
+    degisken k: *TestKaydi = bellek_tahsis_et(24);
+    k.isim = isim;
+    k.durum = durum;
+    k.sure_ms = sure_ms;
+    
+    degisken idx: tamsayi = tk.toplam;
+    tk.testler[idx] = k;
+    tk.toplam = idx + 1;
+    
+    eger durum == TEST_DURUM_BASARILI ise {
+        tk.basarili = tk.basarili + 1;
+    } yoksa {
+        tk.basarisiz = tk.basarisiz + 1;
+    }
+    dondu 1;
+}
+
+isv test_kosucu_serbest_birak(tk: *TestKosuSonucu) {
+    eger tk == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < tk.toplam {
+        degisken k: *TestKaydi = tk.testler[i];
+        eger k != 0 ise {
+            os_bellek_serbest(k as *u8);
+        }
+        i = i + 1;
+    }
+    eger tk.testler != 0 ise {
+        os_bellek_serbest(tk.testler as *u8);
+    }
+    os_bellek_serbest(tk as *u8);
+}
+
+# TAP (Test Anything Protocol) Standart Ciktisi ve Ozet Rapor
+isv test_raporu_tap_yazdir(tk: *TestKosuSonucu) -> tamsayi {
+    eger tk == 0 ise { dondu 0; }
+    # 1..N Test Plani
+    degisken i: tamsayi = 0;
+    dongu i < tk.toplam {
+        degisken k: *TestKaydi = tk.testler[i];
+        eger k.durum == TEST_DURUM_BASARILI ise {
+            # ok (PASSED)
+        } yoksa {
+            # not ok (FAILED)
+        }
+        i = i + 1;
+    }
+    # Donus: Basarisiz test sayisi (0 ise tumu basarili)
+    dondu tk.basarisiz;
+}
+

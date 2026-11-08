@@ -1,0 +1,585 @@
+# ============================================================
+# ir_codegen_x64.ykn - IR'den x86_64 Makine Koduna Dönüşüm
+# ============================================================
+
+# Sanal register ID'sini stack offset'ine çevirir. 
+# Örn: R_1 -> -8, R_2 -> -16
+isv ir_codegen_reg_offset(reg_id: tamsayi) -> tamsayi {
+    degisken offset: tamsayi = 0 - (reg_id * 8);
+    dondu offset;
+}
+
+# rel32 alanını doğrudan little-endian patch eder.
+isv ir_codegen_rel32_patch(bellek: *u8, konum: tamsayi, deger: tamsayi) {
+    eger bellek == 0 veya konum < 0 ise { dondu; }
+    degisken u: tamsayi = deger;
+    dongu u < 0 { u = u + 4294967296; }
+    bellek[konum] = u % 256;
+    bellek[konum + 1] = (u / 256) % 256;
+    bellek[konum + 2] = (u / 65536) % 256;
+    bellek[konum + 3] = (u / 16777216) % 256;
+}
+
+isv ir_relocation_ekle(motor: *IrMotoru, arena: *MakineKoduArenasi,
+                       rel32_konumu: tamsayi, hedef_hash: tamsayi) {
+    eger motor == 0 veya arena == 0 veya rel32_konumu < 0 ise { dondu; }
+    degisken kayit: *IrRelocation = ir_arena_tahsis(motor, 32);
+    eger kayit == 0 ise {
+        motor.hata_sayisi = motor.hata_sayisi + 1;
+        dondu;
+    }
+    kayit.arena_bellek = arena.bellek;
+    kayit.rel32_konumu = rel32_konumu;
+    kayit.hedef_hash = hedef_hash;
+    kayit.sonraki = 0;
+    eger motor.ilk_relocation == 0 ise { motor.ilk_relocation = kayit; }
+    yoksa { motor.son_relocation.sonraki = kayit; }
+    motor.son_relocation = kayit;
+    motor.relocation_sayisi = motor.relocation_sayisi + 1;
+}
+
+degisken g_ir_ekrana_yaz_adresi: tamsayi = 0;
+degisken g_ir_aktif_arena: *MakineKoduArenasi = 0;
+
+degisken g_ir_blok_adres: [256]tamsayi;
+degisken g_ir_blok_yama_pos: [256]tamsayi;
+degisken g_ir_blok_yama_hedef: [256]tamsayi;
+degisken g_ir_blok_yama_sayisi: tamsayi = 0;
+
+isv ir_emit_ekrana_yaz_stub(arena: *MakineKoduArenasi) -> tamsayi {
+    degisken a: *MakineKoduArenasi = arena;
+    eger a == 0 ise { a = g_ir_aktif_arena; }
+    eger a == 0 ise { dondu 0; }
+    degisken stub_adresi: tamsayi = a.kullanilan;
+    
+    # Prolog: push rbp; mov rbp, rsp
+    byte_yaz(a, 0x55);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xE5);
+    
+    # R15 = RCX (string ptr parametresi)
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xCF);
+    
+    # GetStdHandle(-11)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20); # SUB RSP, 32
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC1); int32_yaz(a, 0xFFFFFFF5); # MOV RCX, -11
+    windows_iat_cagri(a, 2);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20); # ADD RSP, 32
+
+    # WriteFile(hFile, strPtr, strlen, &written, NULL)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); # MOV RCX, RAX (hFile)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFA); # MOV RDX, R15 (strPtr)
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC0); # XOR R8, R8 (strlen counter)
+    # loop: CMP byte [RDX+R8], 0
+    byte_yaz(a, 0x42); byte_yaz(a, 0x80); byte_yaz(a, 0x3C); byte_yaz(a, 0x02); byte_yaz(a, 0x00);
+    byte_yaz(a, 0x74); byte_yaz(a, 0x05); # JE +5
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0); # INC R8
+    byte_yaz(a, 0xEB); byte_yaz(a, 0xF4); # JMP loop
+    
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x30); # SUB RSP, 48
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x4C); byte_yaz(a, 0x24); byte_yaz(a, 0x28); # LEA R9, [RSP+40]
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 0); # [RSP+32]=NULL
+    windows_iat_cagri(a, 1);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x30); # ADD RSP, 48
+
+    # Epilog: mov rsp, rbp; pop rbp; ret
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xEC);
+    byte_yaz(a, 0x5D);
+    byte_yaz(a, 0xC3);
+    dondu stub_adresi;
+}
+
+isv ir_fonksiyon_kod_adresi_bul(motor: *IrMotoru, hedef_hash: tamsayi) -> tamsayi {
+    eger motor == 0 ise { dondu 0; }
+    degisken fonk: *IrFonksiyonu = motor.ilk_fonksiyon;
+    dongu fonk != 0 {
+        eger fonk.isim_hash == hedef_hash ve fonk.kod_baslangici > 0 ise {
+            dondu fonk.kod_baslangici;
+        }
+        fonk = fonk.sonraki;
+    }
+    dondu 0;
+}
+
+isv ir_relocation_coz(motor: *IrMotoru, arena: *MakineKoduArenasi) -> tamsayi {
+    degisken m: *IrMotoru = motor;
+    eger m == 0 ise { m = g_aktif_ir_motoru; }
+    degisken a: *MakineKoduArenasi = arena;
+    eger a == 0 ise { a = g_ir_aktif_arena; }
+    eger m == 0 veya a == 0 ise { dondu 0; }
+    degisken cozuldu: tamsayi = 0;
+    degisken kayit: *IrRelocation = m.ilk_relocation;
+    degisken ekrana_yaz_h: tamsayi = djb2_hash("ekrana_yaz".ptr, 10);
+    dongu kayit != 0 {
+        degisken hedef: tamsayi = 0;
+        eger kayit.hedef_hash == ekrana_yaz_h ise {
+            eger g_ir_ekrana_yaz_adresi == 0 ise {
+                g_ir_ekrana_yaz_adresi = ir_emit_ekrana_yaz_stub(a);
+            }
+            hedef = g_ir_ekrana_yaz_adresi;
+        } yoksa {
+            hedef = ir_fonksiyon_kod_adresi_bul(m, kayit.hedef_hash);
+            eger hedef == 0 ise {
+                degisken j: tamsayi = 0;
+                dongu j < g_fonk_adet {
+                    eger g_fonk_isim[j] != 0 ise {
+                        degisken h: tamsayi = djb2_hash(g_fonk_isim[j], g_fonk_uzunluk[j]);
+                        eger h == kayit.hedef_hash ve g_fonk_adres[j] > 0 ise {
+                            hedef = g_fonk_adres[j];
+                            durdur;
+                        }
+                    }
+                    j = j + 1;
+                }
+            }
+        }
+        eger hedef == 0 ise {
+            ekrana_yaz("HATA [E014] [ERR_IR_UNRESOLVED_CALL]: IR call sembolu cozulmedi.\n".ptr);
+            motor.hata_sayisi = motor.hata_sayisi + 1;
+        } yoksa {
+            degisken call_end: tamsayi = kayit.rel32_konumu + 4;
+            ir_codegen_rel32_patch(kayit.arena_bellek, kayit.rel32_konumu, hedef - call_end);
+            cozuldu = cozuldu + 1;
+        }
+        kayit = kayit.sonraki;
+    }
+    dondu cozuldu;
+}
+
+isv ir_codegen_fonksiyon(motor: *IrMotoru, fonk: *IrFonksiyonu, arena: *MakineKoduArenasi) {
+    eger fonk == 0 veya arena == 0 { dondu; }
+    fonk.kod_baslangici = arena.kullanilan;
+    eger g_fonk_adet < 1024 ise {
+        g_fonk_isim[g_fonk_adet] = fonk.isim;
+        g_fonk_uzunluk[g_fonk_adet] = fonk.isim_uzunluk;
+        g_fonk_adres[g_fonk_adet] = fonk.kod_baslangici;
+        g_fonk_adet = g_fonk_adet + 1;
+    }
+
+    # 1. Prologue (Frame setup)
+    byte_yaz(arena, 85); # push rbp
+    byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 229); # mov rbp, rsp
+    
+    # Gerçek frame boyutu tahsisi (Aşama 3'ten gelir)
+    degisken stack_boyutu: tamsayi = fonk.frame_boyutu;
+    
+    # Shadow space + alignment (Windows x64)
+    stack_boyutu = stack_boyutu + 32; 
+    eger (stack_boyutu % 16) != 0 {
+        stack_boyutu = stack_boyutu + (16 - (stack_boyutu % 16));
+    }
+    
+    # sub rsp, stack_boyutu
+    byte_yaz(arena, 72); byte_yaz(arena, 129); byte_yaz(arena, 236);
+    int32_yaz(arena, stack_boyutu);
+    
+    # 2. Gövde (Basic Blocks and Instructions)
+    g_ir_blok_yama_sayisi = 0;
+    degisken bi: tamsayi = 0;
+    dongu bi < 256 {
+        g_ir_blok_adres[bi] = 0 - 1;
+        bi = bi + 1;
+    }
+
+    degisken aktif_blok: *IrBloku = fonk.ilk_blok;
+    dongu aktif_blok != 0 {
+        eger aktif_blok.id >= 0 ve aktif_blok.id < 256 ise {
+            g_ir_blok_adres[aktif_blok.id] = arena.kullanilan;
+        }
+        degisken komut: *IrKomutu = aktif_blok.ilk_komut;
+        dongu komut != 0 {
+            ir_codegen_komut(motor, komut, arena);
+            komut = komut.sonraki;
+        }
+        aktif_blok = aktif_blok.sonraki;
+    }
+
+    # Blok dallanma yamalari (JMP / JMP_IF_Z / JMP_IF_NZ rel32)
+    degisken yi: tamsayi = 0;
+    dongu yi < g_ir_blok_yama_sayisi {
+        degisken y_pos: tamsayi = g_ir_blok_yama_pos[yi];
+        degisken h_id: tamsayi = g_ir_blok_yama_hedef[yi];
+        eger h_id >= 0 ve h_id < 256 ve g_ir_blok_adres[h_id] != (0 - 1) ise {
+            degisken h_adres: tamsayi = g_ir_blok_adres[h_id];
+            degisken rel32: tamsayi = h_adres - (y_pos + 4);
+            ir_codegen_rel32_patch(arena.bellek, y_pos, rel32);
+        }
+        yi = yi + 1;
+    }
+    
+    # 3. Epilogue (Cleanup and Return)
+    byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 236); # mov rsp, rbp
+    byte_yaz(arena, 93); # pop rbp
+    byte_yaz(arena, 195); # ret
+    fonk.kod_sonu = arena.kullanilan;
+}
+
+
+isv ir_codegen_komut(motor: *IrMotoru, komut: *IrKomutu, arena: *MakineKoduArenasi) {
+    degisken op: tamsayi = komut.opcode;
+    
+    eger op == YKN_IR_CONST ise {
+        eger komut.tip_id == YKN_IR_TID_PTR ve komut.sag > 0 ise {
+            degisken s_ptr: *u8 = komut.sol as *u8;
+            degisken s_uzn: tamsayi = komut.sag;
+            
+            degisken gercek_uzn: tamsayi = 0;
+            degisken ci: tamsayi = 0;
+            dongu ci < s_uzn {
+                eger s_ptr[ci] == 92 ve (ci + 1) < s_uzn ise {
+                    gercek_uzn = gercek_uzn + 1;
+                    ci = ci + 2;
+                } yoksa {
+                    gercek_uzn = gercek_uzn + 1;
+                    ci = ci + 1;
+                }
+            }
+            
+            byte_yaz(arena, 0xE9);
+            int32_yaz(arena, gercek_uzn + 1);
+            degisken s_pos: tamsayi = arena.kullanilan;
+            
+            ci = 0;
+            dongu ci < s_uzn {
+                eger s_ptr[ci] == 92 ve (ci + 1) < s_uzn ise {
+                    degisken c2: tamsayi = s_ptr[ci + 1];
+                    eger c2 == 110 ise { byte_yaz(arena, 10); }
+                    yoksa eger c2 == 114 ise { byte_yaz(arena, 13); }
+                    yoksa eger c2 == 116 ise { byte_yaz(arena, 9); }
+                    yoksa eger c2 == 92 ise { byte_yaz(arena, 92); }
+                    yoksa eger c2 == 34 ise { byte_yaz(arena, 34); }
+                    yoksa { byte_yaz(arena, c2); }
+                    ci = ci + 2;
+                } yoksa {
+                    byte_yaz(arena, s_ptr[ci]);
+                    ci = ci + 1;
+                }
+            }
+            byte_yaz(arena, 0); # null terminator
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x8D); byte_yaz(arena, 0x05);
+            int32_yaz(arena, s_pos - (arena.kullanilan + 4));
+        } yoksa {
+            # mov rax, IMM
+            byte_yaz(arena, 72); byte_yaz(arena, 184); 
+            int64_yaz(arena, komut.sol);
+        }
+        
+        # mov [rbp - off], rax
+        degisken off: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133);
+        int32_yaz(arena, off);
+    } 
+    yoksa eger op == YKN_IR_MOV {
+        # mov rax, [rbp - sol]
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133);
+        int32_yaz(arena, off_sol);
+        
+        # mov [rbp - hedef], rax
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133);
+        int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == YKN_IR_ADD {
+        # mov rax, [rbp - sol]
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133);
+        int32_yaz(arena, off_sol);
+        
+        # add rax, [rbp - sag]
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 3); byte_yaz(arena, 133);
+        int32_yaz(arena, off_sag);
+        
+        # mov [rbp - hedef], rax
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133);
+        int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == YKN_IR_SUB {
+        # mov rax, [rbp - sol]
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133);
+        int32_yaz(arena, off_sol);
+        
+        # sub rax, [rbp - sag]
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 43); byte_yaz(arena, 133);
+        int32_yaz(arena, off_sag);
+        
+        # mov [rbp - hedef], rax
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133);
+        int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 43 ise { # YKN_IR_CALL
+        # CALL rel32: hedef adresi bu aşamada bilinmiyorsa relocation kaydı tutulur.
+        byte_yaz(arena, 232);
+        degisken rel32_konumu: tamsayi = arena.kullanilan;
+        int32_yaz(arena, 0);
+        ir_relocation_ekle(motor, arena, rel32_konumu, komut.sol);
+        
+        # mov [rbp - hedef], rax (return value)
+        eger komut.hedef != 0 ise {
+            degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+            byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133);
+            int32_yaz(arena, off_hedef);
+        }
+    }
+    yoksa eger op == 12 ise { # YKN_IR_MUL
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 15); byte_yaz(arena, 175); byte_yaz(arena, 133); int32_yaz(arena, off_sag);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 13 ise { # YKN_IR_DIV
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 153); # CQO
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 247); byte_yaz(arena, 189); int32_yaz(arena, off_sag); # IDIV
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 44 ise { # YKN_IR_RET
+        eger komut.sol != 0 ise {
+            degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+            byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        } yoksa {
+            byte_yaz(arena, 72); byte_yaz(arena, 49); byte_yaz(arena, 192);
+        }
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 236); # MOV RSP, RBP
+        byte_yaz(arena, 93); # POP RBP
+        byte_yaz(arena, 195); # RET
+    }
+    yoksa eger op == 4 ise { # YKN_IR_STORE (hedef=ptr_reg, sol=val_reg)
+        eger komut.sol >= 100 ve komut.sol <= 103 ise {
+            eger komut.sol == 100 ise {
+                byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 200); # mov rax, rcx
+            } yoksa eger komut.sol == 101 ise {
+                byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 208); # mov rax, rdx
+            } yoksa eger komut.sol == 102 ise {
+                byte_yaz(arena, 76); byte_yaz(arena, 137); byte_yaz(arena, 192); # mov rax, r8
+            } yoksa {
+                byte_yaz(arena, 76); byte_yaz(arena, 137); byte_yaz(arena, 200); # mov rax, r9
+            }
+        } yoksa {
+            degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+            byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        }
+        degisken off_ptr: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 149); int32_yaz(arena, off_ptr);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 2); # MOV [RDX], RAX
+    }
+    yoksa eger op == 3 ise { # YKN_IR_LOAD (hedef=dst_reg, sol=ptr_reg)
+        degisken off_ptr: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 149); int32_yaz(arena, off_ptr);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 2); # MOV RAX, [RDX]
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 1 ise { # YKN_IR_ALLOCA (hedef=ptr_reg, sol=slot_or_hash, sag=size)
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 141); byte_yaz(arena, 133); int32_yaz(arena, off_hedef); # LEA RAX, [RBP - off_hedef]
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef); # MOV [RBP - off_hedef], RAX
+    }
+    yoksa eger op == 6 ise { # YKN_IR_GET_PTR (hedef=ptr_reg, sol=source_reg)
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 141); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op >= 30 ve op <= 35 ise { # Comparisons
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 59); byte_yaz(arena, 133); int32_yaz(arena, off_sag);
+        byte_yaz(arena, 15);
+        eger op == 30 ise { byte_yaz(arena, 148); }
+        yoksa eger op == 31 ise { byte_yaz(arena, 149); }
+        yoksa eger op == 32 ise { byte_yaz(arena, 156); }
+        yoksa eger op == 33 ise { byte_yaz(arena, 158); }
+        yoksa eger op == 34 ise { byte_yaz(arena, 159); }
+        yoksa { byte_yaz(arena, 157); }
+        byte_yaz(arena, 192);
+        byte_yaz(arena, 72); byte_yaz(arena, 15); byte_yaz(arena, 182); byte_yaz(arena, 192);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 45 ise { # YKN_IR_PARAM (hedef=arg_idx, sol=val_reg)
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        eger komut.hedef == 0 ise {
+            # mov rcx, [rbp - off_sol]
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x8D);
+            int32_yaz(arena, off_sol);
+        } yoksa eger komut.hedef == 1 ise {
+            # mov rdx, [rbp - off_sol]
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x95);
+            int32_yaz(arena, off_sol);
+        } yoksa eger komut.hedef == 2 ise {
+            # mov r8, [rbp - off_sol]
+            byte_yaz(arena, 0x4C); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x85);
+            int32_yaz(arena, off_sol);
+        } yoksa eger komut.hedef == 3 ise {
+            # mov r9, [rbp - off_sol]
+            byte_yaz(arena, 0x4C); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x8D);
+            int32_yaz(arena, off_sol);
+        } yoksa {
+            # mov rax, [rbp - off_sol]
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x85);
+            int32_yaz(arena, off_sol);
+            # mov [rsp + 32 + (arg_idx - 4)*8], rax
+            degisken stack_disp: tamsayi = 32 + (komut.hedef - 4) * 8;
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x89); byte_yaz(arena, 0x84); byte_yaz(arena, 0x24);
+            int32_yaz(arena, stack_disp);
+        }
+    }
+    yoksa eger op == 50 ise { # YKN_IR_FIELD_PTR (hedef=ptr, sol=obj_ptr, sag=offset)
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 0x48); byte_yaz(arena, 0x8B); byte_yaz(arena, 0x85);
+        int32_yaz(arena, off_sol);
+        eger komut.sag != 0 ise {
+            byte_yaz(arena, 0x48); byte_yaz(arena, 0x05);
+            int32_yaz(arena, komut.sag);
+        }
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 0x48); byte_yaz(arena, 0x89); byte_yaz(arena, 0x85);
+        int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 40 ise { # YKN_IR_JMP (sol = hedef_blok_id)
+        byte_yaz(arena, 0xE9);
+        degisken rel32_pos: tamsayi = arena.kullanilan;
+        int32_yaz(arena, 0);
+        eger g_ir_blok_yama_sayisi < 256 ise {
+            g_ir_blok_yama_pos[g_ir_blok_yama_sayisi] = rel32_pos;
+            g_ir_blok_yama_hedef[g_ir_blok_yama_sayisi] = komut.sol;
+            g_ir_blok_yama_sayisi = g_ir_blok_yama_sayisi + 1;
+        }
+    }
+    yoksa eger op == 41 ise { # YKN_IR_JMP_IF_Z (sol = kosul_reg, sag = hedef_blok_id)
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 133); byte_yaz(arena, 192); # TEST RAX, RAX
+        byte_yaz(arena, 15); byte_yaz(arena, 132); # JZ rel32 (0F 84)
+        degisken rel32_pos: tamsayi = arena.kullanilan;
+        int32_yaz(arena, 0);
+        eger g_ir_blok_yama_sayisi < 256 ise {
+            g_ir_blok_yama_pos[g_ir_blok_yama_sayisi] = rel32_pos;
+            g_ir_blok_yama_hedef[g_ir_blok_yama_sayisi] = komut.sag;
+            g_ir_blok_yama_sayisi = g_ir_blok_yama_sayisi + 1;
+        }
+    }
+    yoksa eger op == 42 ise { # YKN_IR_JMP_IF_NZ (sol = kosul_reg, sag = hedef_blok_id)
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 133); byte_yaz(arena, 192); # TEST RAX, RAX
+        byte_yaz(arena, 15); byte_yaz(arena, 133); # JNZ rel32 (0F 85)
+        degisken rel32_pos: tamsayi = arena.kullanilan;
+        int32_yaz(arena, 0);
+        eger g_ir_blok_yama_sayisi < 256 ise {
+            g_ir_blok_yama_pos[g_ir_blok_yama_sayisi] = rel32_pos;
+            g_ir_blok_yama_hedef[g_ir_blok_yama_sayisi] = komut.sag;
+            g_ir_blok_yama_sayisi = g_ir_blok_yama_sayisi + 1;
+        }
+    }
+    yoksa eger op == 14 ise { # YKN_IR_MOD
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 153); # CQO
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 247); byte_yaz(arena, 189); int32_yaz(arena, off_sag); # IDIV
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 149); int32_yaz(arena, off_hedef); # MOV [RBP - off_hedef], RDX
+    }
+    yoksa eger op == 15 ise { # YKN_IR_NEG
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 247); byte_yaz(arena, 216); # NEG RAX
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 20 ise { # YKN_IR_AND
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 35); byte_yaz(arena, 133); int32_yaz(arena, off_sag);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 21 ise { # YKN_IR_OR
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 11); byte_yaz(arena, 133); int32_yaz(arena, off_sag);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 22 ise { # YKN_IR_XOR
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 51); byte_yaz(arena, 133); int32_yaz(arena, off_sag);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 23 ise { # YKN_IR_SHL
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 141); int32_yaz(arena, off_sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 211); byte_yaz(arena, 224);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 24 ise { # YKN_IR_SHR
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 141); int32_yaz(arena, off_sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 211); byte_yaz(arena, 248);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 25 ise { # YKN_IR_NOT
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 247); byte_yaz(arena, 208);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 7 ise { # YKN_IR_ADDR
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 141); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+    yoksa eger op == 51 ise { # YKN_IR_INDEX_PTR
+        degisken off_sol: tamsayi = ir_codegen_reg_offset(komut.sol);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 133); int32_yaz(arena, off_sol);
+        degisken off_sag: tamsayi = ir_codegen_reg_offset(komut.sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 139); byte_yaz(arena, 149); int32_yaz(arena, off_sag);
+        byte_yaz(arena, 72); byte_yaz(arena, 193); byte_yaz(arena, 226); byte_yaz(arena, 3); # SHL RDX, 3
+        byte_yaz(arena, 72); byte_yaz(arena, 1); byte_yaz(arena, 208); # ADD RAX, RDX
+        degisken off_hedef: tamsayi = ir_codegen_reg_offset(komut.hedef);
+        byte_yaz(arena, 72); byte_yaz(arena, 137); byte_yaz(arena, 133); int32_yaz(arena, off_hedef);
+    }
+}
+
+isv ir_codegen_tum_fonksiyonlar(motor: *IrMotoru, arena: *MakineKoduArenasi) -> tamsayi {
+    degisken m: *IrMotoru = motor;
+    eger m == 0 ise { m = g_aktif_ir_motoru; }
+    degisken a: *MakineKoduArenasi = arena;
+    eger a == 0 ise { a = g_ir_aktif_arena; }
+    eger m == 0 veya a == 0 ise { dondu 0; }
+    g_ir_aktif_arena = a;
+    g_fonk_adet = 0;
+    g_ir_ekrana_yaz_adresi = 0;
+    degisken fonk: *IrFonksiyonu = m.ilk_fonksiyon;
+    dongu fonk != 0 {
+        ir_codegen_fonksiyon(m, fonk, a);
+        fonk = fonk.sonraki;
+    }
+    degisken cozuldu: tamsayi = ir_relocation_coz(m, a);
+    dondu cozuldu;
+}

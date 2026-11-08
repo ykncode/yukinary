@@ -1,0 +1,119 @@
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv bellek_serbest_birak(ptr: *u8);
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf.ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    eger n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger neg == 1 ise { buf[i] = 45; i = i + 1; }
+    degisken j: tamsayi = 0;
+    dongu j < i / 2 {
+        degisken t: u8 = buf[j]; buf[j] = buf[i - 1 - j]; buf[i - 1 - j] = t;
+        j = j + 1;
+    }
+    buf[i] = 0;
+    ekrana_yaz(buf.ptr);
+}
+
+degisken M: tamsayi = 64;
+degisken K: tamsayi = 512;
+degisken N: tamsayi = 512;
+degisken ITERATIONS: tamsayi = 100;
+
+isv integer_sqrt(n: tamsayi) -> tamsayi {
+    eger n <= 0 ise { dondu 1; }
+    degisken x: tamsayi = n;
+    degisken y: tamsayi = (x + 1) / 2;
+    dongu y < x {
+        x = y;
+        y = (x + (n / x)) / 2;
+    }
+    dondu x;
+}
+
+isv rmsnorm(x: *tamsayi, size: tamsayi) {
+    degisken sum_sq: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < size {
+        degisken v: tamsayi = x[i] / 256;
+        sum_sq = sum_sq + (v * v);
+        i = i + 1;
+    }
+    degisken mean: tamsayi = sum_sq / size;
+    eger mean <= 0 ise { mean = 1; }
+    degisken sq: tamsayi = integer_sqrt(mean);
+    eger sq <= 0 ise { sq = 1; }
+    degisken scale: tamsayi = 65536 / sq;
+    i = 0;
+    dongu i < size {
+        x[i] = (x[i] * scale) / 65536;
+        i = i + 1;
+    }
+}
+
+isv bitlinear_matmul(W: *u8, X: *tamsayi, Out: *tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken x_row: tamsayi = i * K;
+        degisken out_row: tamsayi = i * N;
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken sum: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken x_val: tamsayi = X[x_row + k];
+                degisken w_val: u8 = W[(k * N) + j];
+                eger w_val == 1 ise {
+                    sum = sum + x_val;
+                } yoksa eger w_val == 2 ise {
+                    sum = sum - x_val;
+                }
+                k = k + 1;
+            }
+            Out[out_row + j] = sum;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken W: *u8 = bellek_tahsis_et(K * N);
+    degisken X: *tamsayi = bellek_tahsis_et(M * K * 8);
+    degisken Out: *tamsayi = bellek_tahsis_et(M * N * 8);
+
+    degisken idx: tamsayi = 0;
+    dongu idx < K * N {
+        W[idx] = (idx * 7 + 3) % 3;
+        idx = idx + 1;
+    }
+
+    idx = 0;
+    dongu idx < M * K {
+        X[idx] = ((idx * 13 + 5) % 256) - 128;
+        idx = idx + 1;
+    }
+
+    degisken iter: tamsayi = 0;
+    dongu iter < ITERATIONS {
+        degisken row: tamsayi = 0;
+        dongu row < M {
+            rmsnorm(X + (row * K), K);
+            row = row + 1;
+        }
+        bitlinear_matmul(W, X, Out);
+        X[0] = Out[0] % 256;
+        iter = iter + 1;
+    }
+
+    degisken chk: tamsayi = Out[0] + Out[M * N - 1];
+    ekrana_yaz("[YUKINARY-NATIVE] 100-iter Tamamlandi! Checksum: ".ptr);
+    sayiyi_yazdir(chk);
+    ekrana_yaz("\n".ptr);
+
+    dondu 0;
+}

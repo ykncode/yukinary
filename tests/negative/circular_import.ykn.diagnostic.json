@@ -1,0 +1,12 @@
+{
+  "schema": "yukinary.diagnostic-oracle.v1",
+  "exit_code": 1,
+  "diagnostic_code": "IMPORT_CYCLE",
+  "error_class": "import",
+  "message_pattern": "import.*(cycle|dongu)|cycle.*import",
+  "error_count": 1,
+  "location": {
+    "line": 1,
+    "column": 1
+  }
+}

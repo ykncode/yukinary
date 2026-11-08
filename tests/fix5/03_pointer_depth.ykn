@@ -1,0 +1,5 @@
+isv ana() -> tamsayi {
+    degisken p: *gercek = 0;
+    degisken q: **gercek = p;
+    dondu 0;
+}

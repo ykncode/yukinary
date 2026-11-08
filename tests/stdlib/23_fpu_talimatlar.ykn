@@ -1,0 +1,187 @@
+# ============================================================
+# tests/stdlib/23_fpu_talimatlar.ykn
+# GOREV 6.2: FPU / SSE Talimatlar Testi
+# - kare_kok / sqrt  → SQRTSD (SSE2)
+# - sinus / sin      → FSIN   (x87)
+# - kosinus / cos    → FCOS   (x87)
+# - gercek_mutlak    → PSLLQ/PSRLQ (IEEE754 abs)
+# - gercek_minimum   → MINSD
+# - gercek_maksimum  → MAXSD
+# - f32 ADDSS/SUBSS/MULSS/DIVSS
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(n: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    eger n < 0 ise { buf[i] = 45; i = i + 1; n = 0 - n; }
+    degisken start: tamsayi = i;
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    buf[i] = 0;
+    degisken j: tamsayi = start; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+ice_aktar "std/matematik.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    # ---- Test 1: kare_kok (SQRTSD) ----
+    # sqrt(4.0) = 2.0
+    degisken d_dort: gercek = 4.0;
+    degisken kok_dort: gercek = kare_kok(d_dort);
+    degisken kok_int: tamsayi = tamsayi(kok_dort);
+    eger kok_int == 2 ise {
+        ekrana_yaz("TEST FPU: sqrt(4.0)=2 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sqrt FAIL got=".ptr);
+        sayiyi_yazdir(kok_int); ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # sqrt(9.0) = 3.0
+    degisken d_dokuz: gercek = 9.0;
+    degisken kok_dokuz: gercek = sqrt(d_dokuz);
+    eger tamsayi(kok_dokuz) == 3 ise {
+        ekrana_yaz("TEST FPU: sqrt(9.0)=3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sqrt(9) FAIL\n".ptr); dondu 1;
+    }
+
+    # sqrt(16.0) = 4.0
+    degisken kok_on_alti: gercek = kare_kok(16.0);
+    eger tamsayi(kok_on_alti) == 4 ise {
+        ekrana_yaz("TEST FPU: sqrt(16.0)=4 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sqrt(16) FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 2: sinus (FSIN) ----
+    # sin(0) = 0.0
+    degisken sifir: gercek = 0.0;
+    degisken sin_sifir: gercek = sinus(sifir);
+    eger tamsayi(sin_sifir) == 0 ise {
+        ekrana_yaz("TEST FPU: sin(0)=0 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sin(0) FAIL\n".ptr); dondu 1;
+    }
+
+    # sin(π/6) ≈ 0.5  (π ≈ 3.14159...)
+    # π/6 ≈ 0.5236 → sin(0.5236) ≈ 0.5  → tamsayi dönüşümü 0
+    # sin(π/2) ≈ 1.0  → *10 → 9 veya 10 (CVTTSD2SI truncate yapar)
+    # π/2 ≈ 1.5708
+    degisken yari_pi: gercek = 1.5708;
+    degisken sin_yarim_pi: gercek = sinus(yari_pi);
+    # sin(π/2) ≈ 0.9999... → * 10 = 9 (truncate)
+    degisken sin_x10: tamsayi = tamsayi(sin_yarim_pi * 10.0);
+    eger sin_x10 >= 9 ise {
+        ekrana_yaz("TEST FPU: sin(pi/2)*10>=9 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sin(pi/2) FAIL got*10=".ptr);
+        sayiyi_yazdir(sin_x10); ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # ---- Test 3: kosinus (FCOS) ----
+    # cos(0) = 1.0
+    degisken cos_sifir: gercek = kosinus(sifir);
+    eger tamsayi(cos_sifir) == 1 ise {
+        ekrana_yaz("TEST FPU: cos(0)=1 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: cos(0) FAIL\n".ptr); dondu 1;
+    }
+
+    # cos(π) ≈ -1.0 → tamsayi = -1
+    # π ≈ 3.14159
+    degisken pi_yaklasik: gercek = 3.14159;
+    degisken cos_pi: gercek = cos(pi_yaklasik);
+    # cos(π) ≈ -0.9999... → *10 ≈ -9.99 → CVTTSD2SI truncate toward zero → 0
+    # Ama mutlak deger *10 >= 9 olmali
+    degisken cos_pi_abs: gercek = gercek_mutlak(cos_pi);
+    degisken cos_pi_x10: tamsayi = tamsayi(cos_pi_abs * 10.0);
+    eger cos_pi_x10 >= 9 ise {
+        ekrana_yaz("TEST FPU: cos(pi) abs*10>=9 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: cos(pi) FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 4: gercek_mutlak / fabs ----
+    # fabs(-3.7) = 3.7 → tamsayi = 3
+    degisken negatif: gercek = 0.0 - 3.7;
+    degisken mutlak: gercek = gercek_mutlak(negatif);
+    eger tamsayi(mutlak) == 3 ise {
+        ekrana_yaz("TEST FPU: fabs(-3.7)=3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fabs FAIL\n".ptr); dondu 1;
+    }
+
+    # fabs(5.0) = 5.0
+    degisken pozitif: gercek = 5.0;
+    degisken mutlak2: gercek = fabs(pozitif);
+    eger tamsayi(mutlak2) == 5 ise {
+        ekrana_yaz("TEST FPU: fabs(5.0)=5 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fabs(pos) FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 5: gercek_minimum / fmin ----
+    # fmin(3.0, 7.0) = 3.0
+    degisken uc: gercek = 3.0;
+    degisken yedi: gercek = 7.0;
+    degisken kucuk: gercek = gercek_minimum(uc, yedi);
+    eger tamsayi(kucuk) == 3 ise {
+        ekrana_yaz("TEST FPU: fmin(3,7)=3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fmin FAIL\n".ptr); dondu 1;
+    }
+
+    # fmin(9.5, 2.1) = 2.1 → tamsayi = 2
+    degisken dokuz_bes: gercek = 9.5;
+    degisken iki_bir: gercek = 2.1;
+    degisken kucuk2: gercek = fmin(dokuz_bes, iki_bir);
+    eger tamsayi(kucuk2) == 2 ise {
+        ekrana_yaz("TEST FPU: fmin(9.5,2.1)=2 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fmin2 FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 6: gercek_maksimum / fmax ----
+    # fmax(3.0, 7.0) = 7.0
+    degisken buyuk: gercek = gercek_maksimum(uc, yedi);
+    eger tamsayi(buyuk) == 7 ise {
+        ekrana_yaz("TEST FPU: fmax(3,7)=7 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fmax FAIL\n".ptr); dondu 1;
+    }
+
+    # fmax(9.5, 2.1) = 9.5 → tamsayi = 9
+    degisken buyuk2: gercek = fmax(dokuz_bes, iki_bir);
+    eger tamsayi(buyuk2) == 9 ise {
+        ekrana_yaz("TEST FPU: fmax(9.5,2.1)=9 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: fmax2 FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 7: Mevcut f64 testleri hala gecerli ----
+    degisken pi: gercek = 3.14;
+    degisken r: gercek = 5.0;
+    degisken alan: gercek = pi * r * r;
+    eger tamsayi(alan) == 78 ise {
+        ekrana_yaz("TEST FPU: f64 carpma(pi*r*r)=78 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: f64 carpma FAIL\n".ptr); dondu 1;
+    }
+
+    # ---- Test 8: sqrt + aritmetik birleşimi ----
+    # sqrt(25.0) + sqrt(4.0) = 5 + 2 = 7
+    degisken toplam_kok: gercek = kare_kok(25.0) + kare_kok(4.0);
+    eger tamsayi(toplam_kok) == 7 ise {
+        ekrana_yaz("TEST FPU: sqrt(25)+sqrt(4)=7 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST FPU: sqrt+aritm FAIL\n".ptr); dondu 1;
+    }
+
+    ekrana_yaz("FPU-TALIMATLARI-PASS\n".ptr);
+    dondu 0;
+}

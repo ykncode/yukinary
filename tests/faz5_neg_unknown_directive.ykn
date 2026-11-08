@@ -1,0 +1,10 @@
+# ============================================================
+# tests/faz5_neg_unknown_directive.ykn
+# Faz 5 Negatif Test: Bilinmeyen direktif derleyici tarafindan reddedilmeli
+# ============================================================
+#bilinmeyen_direktif_xyz_123;
+
+isv ana() -> tamsayi {
+    dondu 0;
+}
+

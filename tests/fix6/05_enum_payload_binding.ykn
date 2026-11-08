@@ -1,0 +1,20 @@
+enum Sonuc {
+    Deger(tamsayi),
+    Hata
+}
+
+isv oku() -> Sonuc {
+    dondu Sonuc.Deger(42);
+}
+
+isv ana() -> tamsayi {
+    degisken sonuc: Sonuc = oku();
+    esles sonuc {
+        Sonuc.Deger(x) ise {
+            dondu x;
+        }
+        varsayilan ise {
+            dondu -1;
+        }
+    }
+}

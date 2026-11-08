@@ -1,0 +1,789 @@
+# ============================================================
+# Yukinary std/ai/tokenizer.ykn
+# GGUF tokenizer.ggml.tokens + tokenizer.ggml.merges okuyucu.
+#
+# Vocab metinleri model buffer icinde tutulur; offset/length tabloları
+# caller tarafindan tahsis edilir. Bu sayede 128K token icin kopya yoktur.
+# ============================================================
+
+isv bitnet_token_anahtar_esit(buffer: *u8,
+                              ofset: tamsayi,
+                              uzunluk: tamsayi,
+                              aranan: *u8,
+                              aranan_uzunluk: tamsayi) -> tamsayi {
+    eger buffer == 0 veya aranan == 0 veya uzunluk != aranan_uzunluk ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger buffer[ofset + i] != aranan[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# token_ofsetleri/token_uzunluklari ve merge tablolarini doldurur.
+isv bitnet_tokenizer_metadata_yukle(durum: *GGUFDurum,
+                                    token_ofsetleri: *tamsayi,
+                                    token_uzunluklari: *tamsayi,
+                                    maks_token: tamsayi,
+                                    merge_ofsetleri: *tamsayi,
+                                    merge_uzunluklari: *tamsayi,
+                                    maks_merge: tamsayi,
+                                    token_sayisi: *tamsayi,
+                                    merge_sayisi: *tamsayi) -> tamsayi {
+    eger durum == 0 veya durum->buffer == 0 veya token_ofsetleri == 0 veya
+       token_uzunluklari == 0 veya merge_ofsetleri == 0 veya
+       merge_uzunluklari == 0 veya token_sayisi == 0 veya merge_sayisi == 0 veya
+       maks_token <= 0 veya maks_merge <= 0 ise { dondu 0; }
+
+    token_sayisi[0] = 0;
+    merge_sayisi[0] = 0;
+    degisken buffer: *u8 = durum->buffer;
+    degisken uzunluk: tamsayi = durum->buffer_uzunluk;
+    degisken ofset: tamsayi = 24;
+    degisken hata: tamsayi = 0;
+    degisken kv: tamsayi = 0;
+    dongu kv < durum->meta_kv_sayisi {
+        degisken anahtar_uzunlugu: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+        degisken anahtar_ofseti: tamsayi = ofset;
+        eger gguf_atla(buffer, uzunluk, &ofset, anahtar_uzunlugu, &hata) == 0 ise { dondu 0; }
+        degisken deger_tipi: tamsayi = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+        degisken deger_icerik_ofseti: tamsayi = ofset;
+        eger hata != 0 ise { dondu 0; }
+
+        degisken token_anahtari: tamsayi = 0;
+        degisken merge_anahtari: tamsayi = 0;
+        eger bitnet_token_anahtar_esit(buffer, anahtar_ofseti, anahtar_uzunlugu,
+                                       "tokenizer.ggml.tokens".ptr, 21) == 1 ise {
+            token_anahtari = 1;
+        }
+        eger bitnet_token_anahtar_esit(buffer, anahtar_ofseti, anahtar_uzunlugu,
+                                       "tokenizer.ggml.merges".ptr, 21) == 1 ise {
+            merge_anahtari = 1;
+        }
+
+        eger (token_anahtari == 1 veya merge_anahtari == 1) ve
+           deger_tipi == GGUF_VT_ARRAY ise {
+            degisken eleman_tipi: tamsayi = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+            degisken adet: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+            eger hata != 0 veya eleman_tipi != GGUF_VT_STRING ise { dondu 0; }
+            degisken i: tamsayi = 0;
+            dongu i < adet {
+                degisken metin_uzunlugu: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+                degisken metin_ofseti: tamsayi = ofset;
+                eger hata != 0 veya gguf_atla(buffer, uzunluk, &ofset, metin_uzunlugu, &hata) == 0 ise { dondu 0; }
+                eger token_anahtari == 1 ve i < maks_token ise {
+                    token_ofsetleri[i] = metin_ofseti;
+                    token_uzunluklari[i] = metin_uzunlugu;
+                }
+                eger merge_anahtari == 1 ve i < maks_merge ise {
+                    merge_ofsetleri[i] = metin_ofseti;
+                    merge_uzunluklari[i] = metin_uzunlugu;
+                }
+                i = i + 1;
+            }
+            eger token_anahtari == 1 ise { token_sayisi[0] = adet; }
+            eger merge_anahtari == 1 ise { merge_sayisi[0] = adet; }
+        } yoksa {
+            ofset = deger_icerik_ofseti;
+            eger gguf_metadata_degeri_atla(buffer, uzunluk, &ofset, &hata, deger_tipi) == 0 ise { dondu 0; }
+        }
+        kv = kv + 1;
+    }
+    eger token_sayisi[0] <= 0 veya merge_sayisi[0] <= 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv bitnet_token_id_bul(buffer: *u8,
+                        ofsetleri: *tamsayi,
+                        uzunluklari: *tamsayi,
+                        adet: tamsayi,
+                        aranan: *u8,
+                        aranan_uzunlugu: tamsayi) -> tamsayi {
+    eger buffer == 0 veya ofsetleri == 0 veya uzunluklari == 0 veya
+       aranan == 0 veya adet <= 0 veya aranan_uzunlugu < 0 ise { dondu 0 - 1; }
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        eger uzunluklari[i] == aranan_uzunlugu ve
+           bitnet_token_anahtar_esit(buffer, ofsetleri[i], uzunluklari[i], aranan, aranan_uzunlugu) == 1 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+isv bitnet_token_kopyala(buffer: *u8,
+                         ofsetleri: *tamsayi,
+                         uzunluklari: *tamsayi,
+                         adet: tamsayi,
+                         token_id: tamsayi,
+                         hedef: *u8,
+                         kapasite: tamsayi) -> tamsayi {
+    eger buffer == 0 veya ofsetleri == 0 veya uzunluklari == 0 veya hedef == 0 veya
+       token_id < 0 veya token_id >= adet veya kapasite <= 0 ise { dondu 0; }
+    degisken n: tamsayi = uzunluklari[token_id];
+    eger n + 1 > kapasite ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        hedef[i] = buffer[ofsetleri[token_id] + i];
+        i = i + 1;
+    }
+    hedef[n] = 0;
+    dondu n;
+}
+
+# Reverse GPT-2's byte-to-Unicode alphabet for generated token text.
+# Token strings in GGUF are UTF-8 renderings of arbitrary bytes; copying them
+# verbatim leaks display glyphs such as Ġ instead of decoding them to space.
+isv bitnet_gpt2_direct_byte(byte_value: tamsayi) -> tamsayi {
+    eger byte_value >= 33 ve byte_value <= 126 ise { dondu 1; }
+    eger byte_value >= 161 ve byte_value <= 172 ise { dondu 1; }
+    eger byte_value >= 174 ve byte_value <= 255 ise { dondu 1; }
+    dondu 0;
+}
+
+isv bitnet_gpt2_byte_decode(source: *u8, source_length: tamsayi,
+                            target: *u8, target_capacity: tamsayi) -> tamsayi {
+    eger source == 0 veya target == 0 veya source_length < 0 veya
+       target_capacity <= 0 ise { dondu 0 - 1; }
+    degisken input_index: tamsayi = 0;
+    degisken output_length: tamsayi = 0;
+    dongu input_index < source_length {
+        eger output_length + 1 >= target_capacity ise { dondu 0 - 1; }
+        degisken first: tamsayi = source[input_index];
+        eger first < 0 ise { first = first + 256; }
+        degisken codepoint: tamsayi = 0;
+        degisken width: tamsayi = 1;
+        eger first < 128 ise {
+            codepoint = first;
+        } yoksa eger first >= 194 ve first <= 223 ise {
+            eger input_index + 1 >= source_length ise { dondu 0 - 2; }
+            degisken second: tamsayi = source[input_index + 1];
+            eger second < 0 ise { second = second + 256; }
+            eger second < 128 veya second > 191 ise { dondu 0 - 2; }
+            codepoint = (first - 192) * 64 + (second - 128);
+            width = 2;
+        } yoksa { dondu 0 - 2; }
+
+        eger codepoint < 128 veya bitnet_gpt2_direct_byte(codepoint) == 1 ise {
+            target[output_length] = codepoint;
+        } yoksa eger codepoint >= 256 ve codepoint <= 323 ise {
+            degisken wanted: tamsayi = codepoint - 256;
+            degisken candidate: tamsayi = 0;
+            degisken missing_index: tamsayi = 0;
+            degisken found: tamsayi = 0;
+            dongu candidate < 256 {
+                eger bitnet_gpt2_direct_byte(candidate) == 0 ise {
+                    eger missing_index == wanted ise {
+                        target[output_length] = candidate;
+                        found = 1;
+                        durdur;
+                    }
+                    missing_index = missing_index + 1;
+                }
+                candidate = candidate + 1;
+            }
+            eger found == 0 ise { dondu 0 - 2; }
+        } yoksa { dondu 0 - 2; }
+        input_index = input_index + width;
+        output_length = output_length + 1;
+    }
+    target[output_length] = 0;
+    dondu output_length;
+}
+
+# Merge rank'i: GGUF merges array'indeki sira, dusuk daha onceliklidir.
+isv bitnet_merge_ranki_bul(buffer: *u8,
+                           ofsetleri: *tamsayi,
+                           uzunluklari: *tamsayi,
+                           adet: tamsayi,
+                           cift: *u8,
+                           cift_uzunlugu: tamsayi) -> tamsayi {
+    eger buffer == 0 veya ofsetleri == 0 veya uzunluklari == 0 veya cift == 0 veya
+       adet <= 0 veya cift_uzunlugu < 0 ise { dondu 0 - 1; }
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        eger uzunluklari[i] == cift_uzunlugu ve
+           bitnet_token_anahtar_esit(buffer, ofsetleri[i], uzunluklari[i], cift, cift_uzunlugu) == 1 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+# GPT2 byte encoder'in ASCII alt kumesi icin gercek BPE merge dongusu.
+# ASCII 33..126 tokenleri dogrudan vocab'da temsil edilir.
+degisken BITNET_BPE_DEBUG: tamsayi = 0;
+degisken BITNET_BPE_ADIM: tamsayi = 0;
+degisken BITNET_BPE_SIRA: tamsayi = 0 - 1;
+degisken BITNET_BPE_YENIID: tamsayi = 0 - 1;
+degisken BITNET_BPE_ENIYI_IDX: tamsayi = 0 - 1;
+degisken BITNET_BPE_ENIYI_ID: tamsayi = 0 - 1;
+degisken BITNET_BPE_ENIYI_SIRA: tamsayi = 0 - 1;
+degisken BITNET_BPE_WORK: [4096]u8;
+degisken BITNET_BPE_GROUPS: [4096]tamsayi;
+degisken BITNET_BPE_CIKTI_WORK: [4096]tamsayi;
+isv bitnet_bpe_ascii_kategori(b: tamsayi) -> tamsayi {
+    eger b == 32 veya b == 9 veya b == 10 veya b == 13 ise { dondu 3; }
+    eger (b >= 65 ve b <= 90) veya (b >= 97 ve b <= 122) ise { dondu 1; }
+    eger b >= 48 ve b <= 57 ise { dondu 2; }
+    dondu 4;
+}
+# Gerçek model çağrısında uzun tokenizer ABI'sini global scratch ile sabitle.
+degisken g_bpe_global_aktif: tamsayi = 0;
+degisken g_bpe_global_buffer: *u8 = 0;
+degisken g_bpe_global_token_ofsetleri: *tamsayi = 0;
+degisken g_bpe_global_token_uzunluklari: *tamsayi = 0;
+degisken g_bpe_global_token_sayisi: tamsayi = 0;
+degisken g_bpe_global_merge_ofsetleri: *tamsayi = 0;
+degisken g_bpe_global_merge_uzunluklari: *tamsayi = 0;
+degisken g_bpe_global_merge_sayisi: tamsayi = 0;
+degisken g_bpe_global_girdi: *u8 = 0;
+degisken g_bpe_global_girdi_uzunlugu: tamsayi = 0;
+degisken g_bpe_global_cikti: *tamsayi = 0;
+degisken g_bpe_global_maks_cikti: tamsayi = 0;
+isv bitnet_bpe_ascii_kodla(buffer: *u8,
+                           token_ofsetleri: *tamsayi,
+                           token_uzunluklari: *tamsayi,
+                           token_sayisi: tamsayi,
+                           merge_ofsetleri: *tamsayi,
+                           merge_uzunluklari: *tamsayi,
+                           merge_sayisi: tamsayi,
+                           girdi: *u8,
+                           girdi_uzunlugu: tamsayi,
+                           cikti: *tamsayi,
+                           maks_cikti: tamsayi) -> tamsayi {
+    eger g_bpe_global_aktif == 1 ise {
+        buffer = g_bpe_global_buffer;
+        token_ofsetleri = g_bpe_global_token_ofsetleri;
+        token_uzunluklari = g_bpe_global_token_uzunluklari;
+        token_sayisi = g_bpe_global_token_sayisi;
+        merge_ofsetleri = g_bpe_global_merge_ofsetleri;
+        merge_uzunluklari = g_bpe_global_merge_uzunluklari;
+        merge_sayisi = g_bpe_global_merge_sayisi;
+        girdi = g_bpe_global_girdi;
+        girdi_uzunlugu = g_bpe_global_girdi_uzunlugu;
+        cikti = g_bpe_global_cikti;
+        maks_cikti = g_bpe_global_maks_cikti;
+    }
+    BITNET_BPE_ADIM = 100;
+    eger buffer == 0 ise { BITNET_BPE_ADIM = 91; dondu 0 - 10; }
+    eger token_ofsetleri == 0 ise { BITNET_BPE_ADIM = 92; dondu 0 - 10; }
+    eger token_uzunluklari == 0 ise { BITNET_BPE_ADIM = 93; dondu 0 - 10; }
+    eger merge_ofsetleri == 0 ise { BITNET_BPE_ADIM = 94; dondu 0 - 10; }
+    eger merge_uzunluklari == 0 ise { BITNET_BPE_ADIM = 95; dondu 0 - 10; }
+    eger girdi == 0 ise { BITNET_BPE_ADIM = 96; dondu 0 - 10; }
+    eger cikti == 0 ise { BITNET_BPE_ADIM = 97; dondu 0 - 10; }
+    eger girdi_uzunlugu <= 0 ise { BITNET_BPE_ADIM = 98; dondu 0 - 10; }
+    eger maks_cikti <= 0 ise { BITNET_BPE_ADIM = 99; dondu 0 - 10; }
+    # Intermediate byte symbols can be much more numerous than final BPE
+    # tokens. Keep them in internal scratch and honor maks_cikti on final copy.
+    degisken cikti_hedefi: *tamsayi = cikti;
+    cikti = BITNET_BPE_CIKTI_WORK.ptr;
+
+    degisken adet: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken grup: tamsayi = 0;
+    # GPT-2's pre-tokenizer must split letter, number, punctuation and whitespace
+    # runs before BPE merges. A single leading ASCII space belongs to the next
+    # non-whitespace run, matching the model's byte-level regex behavior.
+    degisken tek_karakter: [4]u8;
+    degisken special_token: [256]u8;
+    dongu i < girdi_uzunlugu {
+        degisken special_matched: tamsayi = 0;
+        # GGUF vocabularies store control tokens (for example Qwen's
+        # <|im_start|>) as atomic entries, outside ordinary byte-level BPE.
+        # Recognize exact vocab entries before applying the GPT-2 regex.
+        eger girdi[i] == 60 ve i + 1 < girdi_uzunlugu ve girdi[i + 1] == 124 ise {
+            degisken special_end: tamsayi = i + 2;
+            dongu special_end + 1 < girdi_uzunlugu ve special_end - i < 254 ve
+                (girdi[special_end] != 124 veya girdi[special_end + 1] != 62) {
+                special_end = special_end + 1;
+            }
+            eger special_end + 1 < girdi_uzunlugu ve
+               girdi[special_end] == 124 ve girdi[special_end + 1] == 62 ise {
+                degisken special_length: tamsayi = special_end + 2 - i;
+                degisken special_i: tamsayi = 0;
+                dongu special_i < special_length {
+                    special_token[special_i] = girdi[i + special_i];
+                    special_i = special_i + 1;
+                }
+                degisken special_id: tamsayi = bitnet_token_id_bul(buffer,
+                    token_ofsetleri, token_uzunluklari, token_sayisi,
+                    special_token, special_length);
+                eger special_id >= 0 ise {
+                    eger adet >= 4096 ise { dondu 0; }
+                    cikti[adet] = special_id;
+                    BITNET_BPE_GROUPS[adet] = grup;
+                    adet = adet + 1;
+                    grup = grup + 1;
+                    i = special_end + 2;
+                    special_matched = 1;
+                }
+            }
+        }
+        eger special_matched == 0 ise {
+        degisken bas: tamsayi = i;
+        degisken kategori: tamsayi = bitnet_bpe_ascii_kategori(girdi[i]);
+        eger girdi[i] == 32 ve i + 1 < girdi_uzunlugu ve
+           bitnet_bpe_ascii_kategori(girdi[i + 1]) != 3 ise {
+            i = i + 1;
+            kategori = bitnet_bpe_ascii_kategori(girdi[i]);
+        }
+        eger kategori == 3 ise {
+            # GPT-2's `\\s+(?!\\S)|\\s+` first consumes all but the
+            # final whitespace when a non-whitespace character follows.
+            # The remaining single ASCII space may prefix the next lexical
+            # run (handled above); other whitespace starts its own pretoken.
+            degisken whitespace_end: tamsayi = i;
+            dongu whitespace_end < girdi_uzunlugu ve
+                bitnet_bpe_ascii_kategori(girdi[whitespace_end]) == 3 {
+                whitespace_end = whitespace_end + 1;
+            }
+            eger whitespace_end < girdi_uzunlugu ve whitespace_end - bas > 1 ise {
+                i = whitespace_end - 1;
+            } yoksa {
+                i = whitespace_end;
+            }
+        } yoksa {
+            dongu i < girdi_uzunlugu ve bitnet_bpe_ascii_kategori(girdi[i]) == kategori { i = i + 1; }
+        }
+        degisken j: tamsayi = bas;
+        dongu j < i {
+            eger adet >= 4096 ise { dondu 0; }
+            degisken tek_karakter_uzunlugu: tamsayi = 1;
+            eger girdi[j] == 32 ise {
+                tek_karakter[0] = 196; tek_karakter[1] = 160;
+                tek_karakter_uzunlugu = 2;
+            } yoksa eger girdi[j] == 10 ise {
+                tek_karakter[0] = 196; tek_karakter[1] = 138;
+                tek_karakter_uzunlugu = 2;
+            } yoksa eger girdi[j] == 9 ise {
+                tek_karakter[0] = 196; tek_karakter[1] = 137;
+                tek_karakter_uzunlugu = 2;
+            } yoksa {
+                tek_karakter[0] = girdi[j];
+            }
+            degisken id: tamsayi = bitnet_token_id_bul(buffer, token_ofsetleri,
+                token_uzunluklari, token_sayisi, tek_karakter, tek_karakter_uzunlugu);
+            eger id < 0 ise { dondu 0 - 11; }
+            cikti[adet] = id;
+            BITNET_BPE_GROUPS[adet] = grup;
+            adet = adet + 1;
+            j = j + 1;
+        }
+        grup = grup + 1;
+        }
+    }
+    BITNET_BPE_ADIM = 101;
+
+    degisken devam_mi: tamsayi = 1;
+    degisken gecis_sayisi: tamsayi = 0;
+    dongu devam_mi == 1 {
+        devam_mi = 0;
+        gecis_sayisi = gecis_sayisi + 1;
+        BITNET_BPE_ADIM = 102;
+        degisken en_iyi_sira: tamsayi = 0 - 1;
+        degisken en_iyi_index: tamsayi = 0 - 1;
+        degisken en_iyi_id: tamsayi = 0 - 1;
+        i = 0;
+        degisken son_index: tamsayi = adet - 1;
+        dongu i < son_index {
+            BITNET_BPE_ADIM = 103;
+            eger BITNET_BPE_GROUPS[i] != BITNET_BPE_GROUPS[i + 1] ise { i = i + 1; devam_et; }
+            degisken sol_uzunluk: tamsayi = token_uzunluklari[cikti[i]];
+            degisken sag_uzunluk: tamsayi = token_uzunluklari[cikti[i + 1]];
+            eger sol_uzunluk > 1024 ise { sol_uzunluk = 0; }
+            eger sag_uzunluk > 1024 ise { sag_uzunluk = 0; }
+            BITNET_BPE_ADIM = 104;
+            degisken kopya_i: tamsayi = 0;
+            dongu kopya_i < sol_uzunluk {
+                BITNET_BPE_WORK[kopya_i] = buffer[token_ofsetleri[cikti[i]] + kopya_i];
+                kopya_i = kopya_i + 1;
+            }
+            kopya_i = 0;
+            dongu kopya_i < sag_uzunluk {
+                BITNET_BPE_WORK[1024 + kopya_i] = buffer[token_ofsetleri[cikti[i + 1]] + kopya_i];
+                kopya_i = kopya_i + 1;
+            }
+            eger sol_uzunluk > 0 ve sag_uzunluk > 0 ise {
+                BITNET_BPE_ADIM = 105;
+                degisken j: tamsayi = 0;
+                dongu j < sol_uzunluk {
+                    BITNET_BPE_WORK[2048 + j] = BITNET_BPE_WORK[j];
+                    BITNET_BPE_WORK[3072 + j] = BITNET_BPE_WORK[j];
+                    j = j + 1;
+                }
+                BITNET_BPE_WORK[2048 + sol_uzunluk] = 32;
+                j = 0;
+                dongu j < sag_uzunluk {
+                    BITNET_BPE_WORK[2048 + sol_uzunluk + 1 + j] = BITNET_BPE_WORK[1024 + j];
+                    BITNET_BPE_WORK[3072 + sol_uzunluk + j] = BITNET_BPE_WORK[1024 + j];
+                    j = j + 1;
+                }
+                BITNET_BPE_ADIM = 106;
+                degisken cift_uzunlugu: tamsayi = sol_uzunluk + 1 + sag_uzunluk;
+                degisken birlesik_uzunlugu: tamsayi = sol_uzunluk + sag_uzunluk;
+                degisken sira: tamsayi = 0 - 1;
+                degisken k: tamsayi = 0;
+                dongu k < merge_sayisi {
+                    eger merge_uzunluklari[k] == cift_uzunlugu ise {
+                        degisken j2: tamsayi = 0;
+                        degisken esit2: tamsayi = 1;
+                        dongu j2 < cift_uzunlugu {
+                            eger buffer[merge_ofsetleri[k] + j2] != BITNET_BPE_WORK[2048 + j2] ise { esit2 = 0; durdur; }
+                            j2 = j2 + 1;
+                        }
+                        eger esit2 == 1 ise { sira = k; durdur; }
+                    }
+                    k = k + 1;
+                }
+                BITNET_BPE_SIRA = sira;
+                eger sira >= 0 ise {
+                    BITNET_BPE_ADIM = 107;
+                }
+                eger sira >= 0 veya en_iyi_sira < 0 ise {
+                    eger sira >= 0 ve (en_iyi_sira < 0 veya sira < en_iyi_sira) ise {
+                        BITNET_BPE_ADIM = 108;
+                        degisken yeni_id: tamsayi = 0 - 1;
+                        k = 0;
+                        dongu k < token_sayisi {
+                            eger token_uzunluklari[k] == birlesik_uzunlugu ise {
+                                degisken j3: tamsayi = 0;
+                                degisken esit3: tamsayi = 1;
+                                dongu j3 < birlesik_uzunlugu {
+                                    eger buffer[token_ofsetleri[k] + j3] != BITNET_BPE_WORK[3072 + j3] ise { esit3 = 0; durdur; }
+                                    j3 = j3 + 1;
+                                }
+                                eger esit3 == 1 ise { yeni_id = k; durdur; }
+                            }
+                            k = k + 1;
+                        }
+                        BITNET_BPE_YENIID = yeni_id;
+                        eger yeni_id >= 0 ise {
+                            BITNET_BPE_ADIM = 109;
+                            en_iyi_sira = sira;
+                            en_iyi_index = i;
+                            en_iyi_id = yeni_id;
+                        }
+                    }
+                }
+            }
+            i = i + 1;
+        }
+        eger en_iyi_index >= 0 ve en_iyi_id >= 0 ise {
+            BITNET_BPE_ADIM = 110;
+            BITNET_BPE_ENIYI_IDX = en_iyi_index;
+            BITNET_BPE_ENIYI_ID = en_iyi_id;
+            BITNET_BPE_ENIYI_SIRA = en_iyi_sira;
+            cikti[en_iyi_index] = en_iyi_id;
+            i = en_iyi_index + 2;
+            dongu i < adet {
+                cikti[i - 1] = cikti[i];
+                BITNET_BPE_GROUPS[i - 1] = BITNET_BPE_GROUPS[i];
+                i = i + 1;
+            }
+            adet = adet - 1;
+            devam_mi = 1;
+        }
+    }
+    BITNET_BPE_ADIM = 112;
+    eger adet > maks_cikti ise { dondu 0; }
+    degisken final_i: tamsayi = 0;
+    dongu final_i < adet {
+        cikti_hedefi[final_i] = cikti[final_i];
+        final_i = final_i + 1;
+    }
+    eger adet > 0 ise {
+        BITNET_BPE_DEBUG = cikti[0];
+    }
+    dondu adet;
+}
+
+# Gerçek prompt yolu bu tek-parametreli girişten geçer; uzun ABI çağrısı
+# yalnızca scratch alanlarıyla beslenen uyumluluk gövdesine izole edilir.
+isv bitnet_bpe_ascii_global() -> tamsayi {
+    # Self-hosted çağrı ABI'si global pointer slotlarını nested çağrıda
+    # kaybedebildiği için gerçek scratch adreslerini argüman olarak da geçir.
+    # Global override yine korunur; bu yol her iki ABI davranışında da güvenlidir.
+    g_bpe_global_aktif = 1;
+    degisken sonuc: tamsayi = bitnet_bpe_ascii_kodla(
+        g_bpe_global_buffer,
+        g_bpe_global_token_ofsetleri,
+        g_bpe_global_token_uzunluklari,
+        g_bpe_global_token_sayisi,
+        g_bpe_global_merge_ofsetleri,
+        g_bpe_global_merge_uzunluklari,
+        g_bpe_global_merge_sayisi,
+        g_bpe_global_girdi,
+        g_bpe_global_girdi_uzunlugu,
+        g_bpe_global_cikti,
+        g_bpe_global_maks_cikti);
+    g_bpe_global_aktif = 0;
+    dondu sonuc;
+}
+
+# Üretilen token ID'lerini GGUF vocab byte aralıklarından UTF-8 çıktıya
+# çözer. Token metinleri yeniden kopyalanır; vocab tablosu zero-copy kalır.
+isv bitnet_tokenleri_metine_yaz(buffer: *u8,
+                                ofsetleri: *tamsayi,
+                                uzunluklari: *tamsayi,
+                                token_sayisi: tamsayi,
+                                token_ids: *tamsayi,
+                                token_adedi: tamsayi,
+                                cikti: *u8,
+                                cikti_kapasitesi: tamsayi) -> tamsayi {
+    eger buffer == 0 veya ofsetleri == 0 veya uzunluklari == 0 veya
+       token_ids == 0 veya cikti == 0 veya token_sayisi <= 0 veya
+       token_adedi < 0 veya cikti_kapasitesi <= 0 ise { dondu 0; }
+    degisken yazilan: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < token_adedi {
+        degisken id: tamsayi = token_ids[i];
+        eger id < 0 veya id >= token_sayisi ise { dondu 0; }
+        degisken uzunluk: tamsayi = uzunluklari[id];
+        eger uzunluk < 0 veya yazilan + uzunluk + 1 > cikti_kapasitesi ise { dondu 0; }
+        degisken j: tamsayi = 0;
+        dongu j < uzunluk {
+            cikti[yazilan + j] = buffer[ofsetleri[id] + j];
+            j = j + 1;
+        }
+        yazilan = yazilan + uzunluk;
+        i = i + 1;
+    }
+    cikti[yazilan] = 0;
+    dondu yazilan;
+}
+
+# Gemma-4 SPM-style BPE. Normalize ASCII spaces to U+2581, seed symbols
+# with UTF-8 code points, apply GGUF merge ranks, then byte-fallback unknown
+# final symbols using the model's <0xXX> vocabulary entries.
+degisken GEMMA4_BPE_TEXT: [16384]u8;
+degisken GEMMA4_BPE_OFFSETS: [4096]tamsayi;
+degisken GEMMA4_BPE_LENGTHS: [4096]tamsayi;
+degisken GEMMA4_BPE_BYTES: [7]u8;
+degisken GEMMA4_BPE_HEX: *u8 = "0123456789ABCDEF".ptr;
+isv bitnet_gemma4_bpe_kodla(buffer: *u8,
+                            token_ofsetleri: *tamsayi,
+                            token_uzunluklari: *tamsayi,
+                            token_sayisi: tamsayi,
+                            merge_ofsetleri: *tamsayi,
+                            merge_uzunluklari: *tamsayi,
+                            merge_sayisi: tamsayi,
+                            girdi: *u8,
+                            girdi_uzunlugu: tamsayi,
+                            cikti: *tamsayi,
+                            maks_cikti: tamsayi) -> tamsayi {
+    eger buffer == 0 veya token_ofsetleri == 0 veya token_uzunluklari == 0 veya
+       merge_ofsetleri == 0 veya merge_uzunluklari == 0 veya girdi == 0 veya
+       cikti == 0 veya token_sayisi <= 0 veya merge_sayisi <= 0 veya
+       girdi_uzunlugu < 0 veya girdi_uzunlugu > 16383 veya maks_cikti <= 0 ise { dondu 0; }
+
+    degisken text_len: tamsayi = 0;
+    degisken src: tamsayi = 0;
+    dongu src < girdi_uzunlugu {
+        eger girdi[src] == 32 ise {
+            eger text_len + 3 >= 16384 ise { dondu 0; }
+            GEMMA4_BPE_TEXT[text_len] = 226;
+            GEMMA4_BPE_TEXT[text_len + 1] = 150;
+            GEMMA4_BPE_TEXT[text_len + 2] = 129;
+            text_len = text_len + 3;
+            src = src + 1;
+        } yoksa {
+            eger text_len + 1 >= 16384 ise { dondu 0; }
+            GEMMA4_BPE_TEXT[text_len] = girdi[src];
+            text_len = text_len + 1;
+            src = src + 1;
+        }
+    }
+    GEMMA4_BPE_TEXT[text_len] = 0;
+
+    degisken symbol_count: tamsayi = 0;
+    src = 0;
+    dongu src < text_len {
+        eger symbol_count >= 4096 ise { dondu 0; }
+        degisken lead: tamsayi = GEMMA4_BPE_TEXT[src];
+        degisken char_len: tamsayi = 1;
+        eger lead >= 240 ise { char_len = 4; }
+        yoksa eger lead >= 224 ise { char_len = 3; }
+        yoksa eger lead >= 192 ise { char_len = 2; }
+        eger src + char_len > text_len ise { dondu 0; }
+        GEMMA4_BPE_OFFSETS[symbol_count] = src;
+        GEMMA4_BPE_LENGTHS[symbol_count] = char_len;
+        symbol_count = symbol_count + 1;
+        src = src + char_len;
+    }
+
+    degisken merged: tamsayi = 1;
+    dongu merged == 1 {
+        merged = 0;
+        degisken best_rank: tamsayi = 0 - 1;
+        degisken best_index: tamsayi = 0 - 1;
+        degisken i: tamsayi = 0;
+        dongu i + 1 < symbol_count {
+            eger (GEMMA4_BPE_TEXT[GEMMA4_BPE_OFFSETS[i]] == 10) !=
+               (GEMMA4_BPE_TEXT[GEMMA4_BPE_OFFSETS[i + 1]] == 10) {
+                i = i + 1;
+                devam_et;
+            }
+            degisken left_len: tamsayi = GEMMA4_BPE_LENGTHS[i];
+            degisken right_len: tamsayi = GEMMA4_BPE_LENGTHS[i + 1];
+            degisken pair_len: tamsayi = left_len + 1 + right_len;
+            degisken rank: tamsayi = 0;
+            dongu rank < merge_sayisi {
+                eger merge_uzunluklari[rank] == pair_len ise {
+                    degisken j: tamsayi = 0;
+                    degisken same: tamsayi = 1;
+                    dongu j < left_len {
+                        eger buffer[merge_ofsetleri[rank] + j] !=
+                           GEMMA4_BPE_TEXT[GEMMA4_BPE_OFFSETS[i] + j] ise { same = 0; durdur; }
+                        j = j + 1;
+                    }
+                    eger same == 1 ise {
+                        eger buffer[merge_ofsetleri[rank] + left_len] != 32 ise { same = 0; }
+                    }
+                    j = 0;
+                    dongu same == 1 ve j < right_len {
+                        eger buffer[merge_ofsetleri[rank] + left_len + 1 + j] !=
+                           GEMMA4_BPE_TEXT[GEMMA4_BPE_OFFSETS[i] + left_len + j] ise { same = 0; durdur; }
+                        j = j + 1;
+                    }
+                    eger same == 1 ise {
+                        eger best_rank < 0 veya rank < best_rank ise {
+                            best_rank = rank;
+                            best_index = i;
+                        }
+                        durdur;
+                    }
+                }
+                rank = rank + 1;
+            }
+            i = i + 1;
+        }
+        eger best_index >= 0 ise {
+            GEMMA4_BPE_LENGTHS[best_index] = GEMMA4_BPE_LENGTHS[best_index] + GEMMA4_BPE_LENGTHS[best_index + 1];
+            degisken shift: tamsayi = best_index + 1;
+            dongu shift + 1 < symbol_count {
+                GEMMA4_BPE_OFFSETS[shift] = GEMMA4_BPE_OFFSETS[shift + 1];
+                GEMMA4_BPE_LENGTHS[shift] = GEMMA4_BPE_LENGTHS[shift + 1];
+                shift = shift + 1;
+            }
+            symbol_count = symbol_count - 1;
+            merged = 1;
+        }
+    }
+
+    degisken output_count: tamsayi = 0;
+    degisken symbol_i: tamsayi = 0;
+    dongu symbol_i < symbol_count {
+        degisken id: tamsayi = bitnet_token_id_bul(buffer, token_ofsetleri,
+            token_uzunluklari, token_sayisi,
+            GEMMA4_BPE_TEXT + GEMMA4_BPE_OFFSETS[symbol_i], GEMMA4_BPE_LENGTHS[symbol_i]);
+        eger id >= 0 ise {
+            eger output_count >= maks_cikti ise { dondu 0; }
+            cikti[output_count] = id;
+            output_count = output_count + 1;
+        } yoksa {
+            degisken byte_i: tamsayi = 0;
+            dongu byte_i < GEMMA4_BPE_LENGTHS[symbol_i] {
+                degisken byte_val: tamsayi = GEMMA4_BPE_TEXT[GEMMA4_BPE_OFFSETS[symbol_i] + byte_i];
+                GEMMA4_BPE_BYTES[0] = 60; GEMMA4_BPE_BYTES[1] = 48; GEMMA4_BPE_BYTES[2] = 120;
+                GEMMA4_BPE_BYTES[3] = GEMMA4_BPE_HEX[byte_val / 16];
+                GEMMA4_BPE_BYTES[4] = GEMMA4_BPE_HEX[byte_val % 16];
+                GEMMA4_BPE_BYTES[5] = 62; GEMMA4_BPE_BYTES[6] = 0;
+                id = bitnet_token_id_bul(buffer, token_ofsetleri, token_uzunluklari,
+                    token_sayisi, GEMMA4_BPE_BYTES, 6);
+                eger id < 0 veya output_count >= maks_cikti ise { dondu 0; }
+                cikti[output_count] = id;
+                output_count = output_count + 1;
+                byte_i = byte_i + 1;
+            }
+        }
+        symbol_i = symbol_i + 1;
+    }
+    dondu output_count;
+}
+
+# Encode canonical Gemma-4 user-turn prefix and open model-generation prefix.
+# Special marker tokens are emitted by ID, never passed through ordinary BPE.
+degisken GEMMA4_PROMPT_BODY: [8192]u8;
+degisken GEMMA4_BPE_TEMP_IDS: [8192]tamsayi;
+degisken GEMMA4_TOKEN_BUFFER: *u8 = 0;
+degisken GEMMA4_TOKEN_OFFSETS: *tamsayi = 0;
+degisken GEMMA4_TOKEN_LENGTHS: *tamsayi = 0;
+degisken GEMMA4_TOKEN_COUNT: tamsayi = 0;
+degisken GEMMA4_MERGE_OFFSETS: *tamsayi = 0;
+degisken GEMMA4_MERGE_LENGTHS: *tamsayi = 0;
+degisken GEMMA4_MERGE_COUNT: tamsayi = 0;
+degisken GEMMA4_BOS_ID: tamsayi = 0;
+degisken GEMMA4_CHAT_USER_TEXT: *u8 = 0;
+degisken GEMMA4_CHAT_USER_LENGTH: tamsayi = 0;
+degisken GEMMA4_CHAT_OUTPUT: *tamsayi = 0;
+degisken GEMMA4_CHAT_OUTPUT_CAPACITY: tamsayi = 0;
+degisken GEMMA4_CHAT_STAGE: tamsayi = 0;
+isv bitnet_gemma4_chat_prompt_global() -> tamsayi {
+    degisken user_text: *u8 = GEMMA4_CHAT_USER_TEXT;
+    degisken user_length: tamsayi = GEMMA4_CHAT_USER_LENGTH;
+    degisken output: *tamsayi = GEMMA4_CHAT_OUTPUT;
+    degisken output_capacity: tamsayi = GEMMA4_CHAT_OUTPUT_CAPACITY;
+    GEMMA4_CHAT_STAGE = 1;
+    eger user_text == 0 ise { GEMMA4_CHAT_STAGE = 11; dondu 0; }
+    eger output == 0 ise { GEMMA4_CHAT_STAGE = 12; dondu 0; }
+    eger output_capacity < 8 ise { GEMMA4_CHAT_STAGE = 13; dondu 0; }
+    eger GEMMA4_TOKEN_BUFFER == 0 ise { GEMMA4_CHAT_STAGE = 15; dondu 0; }
+    eger GEMMA4_TOKEN_OFFSETS == 0 ise { GEMMA4_CHAT_STAGE = 16; dondu 0; }
+    eger GEMMA4_TOKEN_LENGTHS == 0 ise { GEMMA4_CHAT_STAGE = 17; dondu 0; }
+    eger GEMMA4_MERGE_OFFSETS == 0 ise { GEMMA4_CHAT_STAGE = 18; dondu 0; }
+    eger GEMMA4_MERGE_LENGTHS == 0 ise { GEMMA4_CHAT_STAGE = 19; dondu 0; }
+    eger user_length < 0 veya user_length > 8176 ise { GEMMA4_CHAT_STAGE = 21; dondu 0; }
+    degisken bos_id: tamsayi = bitnet_token_id_bul(GEMMA4_TOKEN_BUFFER, GEMMA4_TOKEN_OFFSETS,
+        GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT, "<bos>".ptr, 5);
+    degisken turn_id: tamsayi = bitnet_token_id_bul(GEMMA4_TOKEN_BUFFER, GEMMA4_TOKEN_OFFSETS,
+        GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT, "<|turn>".ptr, 7);
+    degisken turn_end_id: tamsayi = bitnet_token_id_bul(GEMMA4_TOKEN_BUFFER, GEMMA4_TOKEN_OFFSETS,
+        GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT, "<turn|>".ptr, 7);
+    eger bos_id < 0 veya turn_id < 0 veya turn_end_id < 0 ise { GEMMA4_CHAT_STAGE = 2; dondu 0; }
+    output[0] = bos_id;
+    output[1] = turn_id;
+    degisken body_len: tamsayi = 0;
+    GEMMA4_PROMPT_BODY[body_len] = 117; GEMMA4_PROMPT_BODY[body_len + 1] = 115;
+    GEMMA4_PROMPT_BODY[body_len + 2] = 101; GEMMA4_PROMPT_BODY[body_len + 3] = 114;
+    GEMMA4_PROMPT_BODY[body_len + 4] = 10;
+    body_len = 5;
+    degisken i: tamsayi = 0;
+    dongu i < user_length {
+        GEMMA4_PROMPT_BODY[body_len] = user_text[i];
+        body_len = body_len + 1;
+        i = i + 1;
+    }
+    degisken encoded: tamsayi = bitnet_gemma4_bpe_kodla(GEMMA4_TOKEN_BUFFER,
+        GEMMA4_TOKEN_OFFSETS, GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT,
+        GEMMA4_MERGE_OFFSETS, GEMMA4_MERGE_LENGTHS, GEMMA4_MERGE_COUNT,
+        GEMMA4_PROMPT_BODY, body_len, GEMMA4_BPE_TEMP_IDS, 8192);
+    eger encoded <= 0 veya encoded + 8 > output_capacity ise { GEMMA4_CHAT_STAGE = 3; dondu 0; }
+    degisken cp: tamsayi = 0;
+    dongu cp < encoded { output[cp + 2] = GEMMA4_BPE_TEMP_IDS[cp]; cp = cp + 1; }
+    output[encoded + 2] = turn_end_id;
+    GEMMA4_PROMPT_BODY[0] = 10;
+    degisken newline_count: tamsayi = bitnet_gemma4_bpe_kodla(GEMMA4_TOKEN_BUFFER,
+        GEMMA4_TOKEN_OFFSETS, GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT,
+        GEMMA4_MERGE_OFFSETS, GEMMA4_MERGE_LENGTHS, GEMMA4_MERGE_COUNT,
+        GEMMA4_PROMPT_BODY, 1, GEMMA4_BPE_TEMP_IDS, 8192);
+    eger newline_count <= 0 ise { GEMMA4_CHAT_STAGE = 4; dondu 0; }
+    cp = 0;
+    dongu cp < newline_count { output[encoded + cp + 3] = GEMMA4_BPE_TEMP_IDS[cp]; cp = cp + 1; }
+    output[encoded + newline_count + 3] = turn_id;
+    GEMMA4_PROMPT_BODY[0] = 109; GEMMA4_PROMPT_BODY[1] = 111;
+    GEMMA4_PROMPT_BODY[2] = 100; GEMMA4_PROMPT_BODY[3] = 101;
+    GEMMA4_PROMPT_BODY[4] = 108; GEMMA4_PROMPT_BODY[5] = 10;
+    degisken model_prefix_count: tamsayi = bitnet_gemma4_bpe_kodla(GEMMA4_TOKEN_BUFFER,
+        GEMMA4_TOKEN_OFFSETS, GEMMA4_TOKEN_LENGTHS, GEMMA4_TOKEN_COUNT,
+        GEMMA4_MERGE_OFFSETS, GEMMA4_MERGE_LENGTHS, GEMMA4_MERGE_COUNT,
+        GEMMA4_PROMPT_BODY, 6, GEMMA4_BPE_TEMP_IDS, 8192);
+    eger model_prefix_count <= 0 veya encoded + newline_count + model_prefix_count + 4 > output_capacity ise { GEMMA4_CHAT_STAGE = 5; dondu 0; }
+    cp = 0;
+    dongu cp < model_prefix_count { output[encoded + newline_count + cp + 4] = GEMMA4_BPE_TEMP_IDS[cp]; cp = cp + 1; }
+    GEMMA4_CHAT_STAGE = 6;
+    dondu encoded + newline_count + model_prefix_count + 4;
+}

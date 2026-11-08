@@ -1,0 +1,16 @@
+isv ana() -> tamsayi {
+    ekrana_yaz("BASLA\n".ptr);
+    degisken kaynak: *u8 = komut_satiri_arg1();
+    eger kaynak == 0 ise { dondu 1; }
+    
+    ekrana_yaz("ARG ALINDI\n".ptr);
+    
+    degisken buffer: *u8 = bellek_tahsis_et(200000);
+    degisken bayt: tamsayi = dosya_oku(kaynak, buffer, 200000);
+    eger bayt > 0 ise {
+        ekrana_yaz("BASARILI\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ\n".ptr);
+    }
+    dondu 0;
+}

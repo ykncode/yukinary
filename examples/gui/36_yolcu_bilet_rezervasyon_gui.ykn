@@ -1,0 +1,54 @@
+# ============================================================
+# Örnek 36: Win32 Arayüzlü Tren & Uçak Koltuk Rezervasyon Sistemi
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 24 Koltuk (0: Bos, 1: Dolu, 2: Secildi)
+degisken g_koltuklar: [24]tamsayi;
+degisken g_bilet_fiyati: tamsayi = 350;
+degisken g_secilen_sayisi: tamsayi = 0;
+
+isv koltuk_sec(koltuk_no: tamsayi) -> tamsayi {
+    eger koltuk_no < 0 veya koltuk_no >= 24 ise { dondu 0; }
+    eger g_koltuklar[koltuk_no] == 1 ise {
+        ekrana_yaz("Bu koltuk daha once rezerve edilmis!\n".ptr);
+        dondu 0;
+    }
+    g_koltuklar[koltuk_no] = 2;
+    g_secilen_sayisi = g_secilen_sayisi + 1;
+    ekrana_yaz("Koltuk secildi. Guncel sepet toplami hesaplaniyor...\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Bilet Rezervasyon".ptr, 650, 450);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 4 Sira x 6 Sutun Koltuk Butonlari
+    degisken r: tamsayi = 0;
+    dongu (r < 4) {
+        degisken c: tamsayi = 0;
+        dongu (c < 6) {
+            degisken koridor: tamsayi = 0;
+            eger r >= 2 ise { koridor = 25; } # Orta koridor boslugu
+            degisken x: tamsayi = 30 + (c * 55);
+            degisken y: tamsayi = 30 + (r * 50) + koridor;
+            degisken id: tamsayi = 100 + (r * 6 + c);
+            buton_olustur(p_h, "[ ]".ptr, id, x, y, 48, 42);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    # Sag Bilgi ve Odeme Paneli
+    metin_kutusu_olustur(p_h, 301, 390, 30, 220, 180);
+    buton_olustur(p_h, "Biletleri Onayla (Odeme)".ptr, 401, 390, 230, 220, 45);
+
+    ekrana_yaz("Rezervasyon kabini hazir (24 Koltuk, Fiyat: 350 TL).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

@@ -1,0 +1,6 @@
+isv ana() -> sayi {
+    degisken a: tamsayi = 66;
+    degisken p: *u8 = &a;
+    degisken pp: *tamsayi = &a;
+    dondu *pp;
+}

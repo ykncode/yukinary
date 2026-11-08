@@ -1,0 +1,62 @@
+# ============================================================
+# tests/ecs/test_ecs_engine.ykn
+# FAZ 47: ECS SoA Mimarisi ve Vektorize Fizik Similasyon Testi
+# ============================================================
+
+ice_aktar "std/ecs/system.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 47: ECS SoA Mimarisi & Fizik Motoru Testi Basliyor...\n".ptr);
+
+    degisken d: *EcsDunya = ecs_dunya_olustur(32);
+
+    # 1. Varliklari ekle
+    # Varlik 0: (10, 20), hiz: (2, 3)
+    degisken id0: tamsayi = ecs_varlik_olustur(d, 10, 20, 2, 3);
+    # Varlik 1: (100, 50), hiz: (5, -2)
+    degisken id1: tamsayi = ecs_varlik_olustur(d, 100, 50, 5, 0 - 2);
+
+    eger d.varlik_sayisi != 2 ise {
+        ekrana_yaz("HATA: Varlik sayisi 2 olmali!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. 5 adim fizik guncellemesi
+    degisken adim: tamsayi = 0;
+    dongu adim < 5 {
+        ecs_fizik_sistemi(d);
+        adim = adim + 1;
+    }
+
+    # 3. Konumlari kontrol et
+    degisken kx: *tamsayi = d.konum_x;
+    degisken ky: *tamsayi = d.konum_y;
+
+    # Varlik 0: 10 + 5*2 = 20, 20 + 5*3 = 35
+    eger kx[0] != 20 veya ky[0] != 35 ise {
+        ekrana_yaz("HATA: Varlik 0 nihai konumu hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # Varlik 1: 100 + 5*5 = 125, 50 + 5*(-2) = 40
+    eger kx[1] != 125 veya ky[1] != 40 ise {
+        ekrana_yaz("HATA: Varlik 1 nihai konumu hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # 4. Sinir denetimi (max_x = 120 ise Varlik 1 (125) seker, dx: 5 -> -5 olur)
+    degisken sekme: tamsayi = ecs_sinir_sistemi(d, 0, 120, 0, 100);
+    eger sekme != 1 ise {
+        ekrana_yaz("HATA: Varlik 1 sinirdan sekmedi!\n".ptr);
+        dondu 4;
+    }
+    degisken hx: *tamsayi = d.hiz_dx;
+    eger hx[1] != (0 - 5) ise {
+        ekrana_yaz("HATA: Sekme sonrasi Varlik 1 hizi tersine donmedi!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("ECS_SOA_PHYSICS_PASS\n".ptr);
+    dondu 0;
+}
+

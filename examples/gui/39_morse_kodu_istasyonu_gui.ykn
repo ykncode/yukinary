@@ -1,0 +1,39 @@
+# ============================================================
+# Örnek 39: Win32 Arayüzlü Mors Kodu Telgraf İstasyonu
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+#c-lib "kernel32";
+isv Beep(dwFreq: tamsayi, dwDuration: tamsayi) -> tamsayi;
+
+isv nokta_cal() {
+    Beep(800, 150); # 800 Hz, 150 ms
+}
+
+isv cizgi_cal() {
+    Beep(800, 450); # 800 Hz, 450 ms
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Mors Istasyonu".ptr, 600, 420);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Metin Giris ve Mors Donusum Kutulari
+    metin_kutusu_olustur(p_h, 101, 30, 20, 520, 80);
+    metin_kutusu_olustur(p_h, 102, 30, 120, 520, 80);
+
+    # Telgraf Manipil Butonu
+    buton_olustur(p_h, "Nokta (.)".ptr, 201, 30, 230, 120, 50);
+    buton_olustur(p_h, "Cizgi (-)".ptr, 202, 170, 230, 120, 50);
+    buton_olustur(p_h, "SOS Gonder (... --- ...)".ptr, 203, 310, 230, 240, 50);
+
+    buton_olustur(p_h, "Metni Morsa Cevir".ptr, 204, 30, 300, 520, 40);
+
+    ekrana_yaz("Mors Istasyonu hazir. 800Hz ses frekansi ayarlandi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

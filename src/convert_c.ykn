@@ -1,0 +1,275 @@
+# ============================================================
+# src/convert_c.ykn
+# FAZ 9.3: C -> YKN Donusturucu Motoru
+# C fonksiyon bildirimlerini YKN AST'sine donusturuyor.
+# Tip donusum tablosu, basari orani, E037/E038 diagnostics.
+# ============================================================
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+# E037: Donusum esik altinda
+# E038: Uretilen YKN typecheck hatasi
+degisken E037_CONVERT_BELOW_THRESHOLD: tamsayi = 37;
+degisken E038_CONVERT_TYPECHECK_ERROR: tamsayi = 38;
+
+# ============================================================
+# C -> YKN Tip Donusum Tablosu
+# ============================================================
+yapi CTipDonusumu {
+    c_isim: *u8;
+    c_isim_uzn: tamsayi;
+    ykn_isim: *u8;
+    ykn_isim_uzn: tamsayi;
+}
+
+degisken g_tip_tablosu_boyut: tamsayi = 12;
+degisken g_c_tipleri: [12]*u8;
+degisken g_c_uzunluklar: [12]tamsayi;
+degisken g_ykn_tipleri: [12]*u8;
+degisken g_ykn_uzunluklar: [12]tamsayi;
+
+isv tip_tablosunu_yukle() {
+    g_c_tipleri[0]  = "int".ptr;       g_c_uzunluklar[0]  = 3;
+    g_ykn_tipleri[0] = "tamsayi".ptr;  g_ykn_uzunluklar[0] = 7;
+
+    g_c_tipleri[1]  = "double".ptr;    g_c_uzunluklar[1]  = 6;
+    g_ykn_tipleri[1] = "gercek".ptr;   g_ykn_uzunluklar[1] = 6;
+
+    g_c_tipleri[2]  = "float".ptr;     g_c_uzunluklar[2]  = 5;
+    g_ykn_tipleri[2] = "gercek".ptr;   g_ykn_uzunluklar[2] = 6;
+
+    g_c_tipleri[3]  = "void".ptr;      g_c_uzunluklar[3]  = 4;
+    g_ykn_tipleri[3] = "bos".ptr;      g_ykn_uzunluklar[3] = 3;
+
+    g_c_tipleri[4]  = "char*".ptr;     g_c_uzunluklar[4]  = 5;
+    g_ykn_tipleri[4] = "*u8".ptr;      g_ykn_uzunluklar[4] = 3;
+
+    g_c_tipleri[5]  = "char *".ptr;    g_c_uzunluklar[5]  = 6;
+    g_ykn_tipleri[5] = "*u8".ptr;      g_ykn_uzunluklar[5] = 3;
+
+    g_c_tipleri[6]  = "size_t".ptr;    g_c_uzunluklar[6]  = 6;
+    g_ykn_tipleri[6] = "tamsayi".ptr;  g_ykn_uzunluklar[6] = 7;
+
+    g_c_tipleri[7]  = "long".ptr;      g_c_uzunluklar[7]  = 4;
+    g_ykn_tipleri[7] = "tamsayi".ptr;  g_ykn_uzunluklar[7] = 7;
+
+    g_c_tipleri[8]  = "unsigned".ptr;  g_c_uzunluklar[8]  = 8;
+    g_ykn_tipleri[8] = "tamsayi".ptr;  g_ykn_uzunluklar[8] = 7;
+
+    g_c_tipleri[9]  = "short".ptr;     g_c_uzunluklar[9]  = 5;
+    g_ykn_tipleri[9] = "tamsayi".ptr;  g_ykn_uzunluklar[9] = 7;
+
+    g_c_tipleri[10] = "bool".ptr;      g_c_uzunluklar[10] = 4;
+    g_ykn_tipleri[10] = "mantik".ptr;  g_ykn_uzunluklar[10] = 6;
+
+    g_c_tipleri[11] = "int*".ptr;      g_c_uzunluklar[11] = 4;
+    g_ykn_tipleri[11] = "*tamsayi".ptr; g_ykn_uzunluklar[11] = 9;
+}
+
+# C tip adini YKN tipine donustur
+isv c_tipi_donustur(c_tip: *u8, uzunluk: tamsayi) -> *u8 {
+    eger c_tip == 0 veya uzunluk <= 0 ise { dondu "tamsayi".ptr; }
+    degisken i: tamsayi = 0;
+    dongu i < g_tip_tablosu_boyut {
+        eger g_c_uzunluklar[i] == uzunluk ve
+            bellek_esit_mi(g_c_tipleri[i], c_tip, uzunluk) == 1 ise {
+            dondu g_ykn_tipleri[i];
+        }
+        i = i + 1;
+    }
+    # Bilinmeyen tip: tamsayi fallback
+    dondu "tamsayi".ptr;
+}
+
+# ============================================================
+# C Fonksiyon Bildirimi Parser
+# "int func(int a, double b)" -> YKN bildirimi
+# ============================================================
+yapi CParametre {
+    tip: *u8;
+    tip_uzn: tamsayi;
+    isim: *u8;
+    isim_uzn: tamsayi;
+}
+
+yapi CFonksiyon {
+    donus_tipi: *u8;
+    donus_tipi_uzn: tamsayi;
+    isim: *u8;
+    isim_uzn: tamsayi;
+    parametreler: [8]*CParametre;
+    parametre_sayisi: tamsayi;
+    donusturuldu: tamsayi;
+}
+
+# Bosluk atla
+isv c_bosluk_atla(kaynak: *u8, pos: *tamsayi, son: tamsayi) {
+    dongu pos[0] < son ve (kaynak[pos[0]] == 32 veya kaynak[pos[0]] == 9) {
+        pos[0] = pos[0] + 1;
+    }
+}
+
+# Kimlik oku (harf/rakam/alt cizgi)
+isv c_kimlik_oku(kaynak: *u8, pos: *tamsayi, son: tamsayi, cikis: *u8, cikis_uzn: *tamsayi) {
+    degisken bas: tamsayi = pos[0];
+    degisken i: tamsayi = 0;
+    dongu pos[0] < son {
+        degisken c: u8 = kaynak[pos[0]];
+        eger (c >= 65 ve c <= 90) veya (c >= 97 ve c <= 122) veya
+            (c >= 48 ve c <= 57) veya c == 95 veya c == 42 veya c == 32 ise {
+            eger cikis != 0 ve i < 32 ise { cikis[i] = c; }
+            i = i + 1; pos[0] = pos[0] + 1;
+        } yoksa { durdur; }
+    }
+    eger cikis != 0 ve i < 64 ise { cikis[i] = 0; }
+    eger cikis_uzn != 0 ise { cikis_uzn[0] = i; }
+}
+
+# C fonksiyon bildirimini parse et
+isv c_fonksiyon_parse(kaynak: *u8, uzunluk: tamsayi, cikis: *CFonksiyon) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya cikis == 0 ise { dondu 0; }
+    cikis.parametre_sayisi = 0;
+    cikis.donusturuldu = 0;
+
+    degisken pos_tampon: [1]tamsayi;
+    pos_tampon[0] = 0;
+
+    # Donus tipi oku
+    degisken dt_mem: *u8 = compiler_tahsis_et(64);
+    degisken dt_uzn_tampon: [1]tamsayi;
+    c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+    c_kimlik_oku(kaynak, pos_tampon, uzunluk, dt_mem, dt_uzn_tampon);
+    cikis.donus_tipi = dt_mem;
+    cikis.donus_tipi_uzn = dt_uzn_tampon[0];
+
+    c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+
+    # Fonksiyon ismi oku
+    degisken isim_mem: *u8 = compiler_tahsis_et(128);
+    degisken isim_uzn_tampon: [1]tamsayi;
+    c_kimlik_oku(kaynak, pos_tampon, uzunluk, isim_mem, isim_uzn_tampon);
+    cikis.isim = isim_mem;
+    cikis.isim_uzn = isim_uzn_tampon[0];
+
+    # ( bul
+    c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+    eger pos_tampon[0] >= uzunluk veya kaynak[pos_tampon[0]] != 40 ise { dondu 0; }
+    pos_tampon[0] = pos_tampon[0] + 1;
+
+    # Parametreleri parse et
+    dongu pos_tampon[0] < uzunluk ve kaynak[pos_tampon[0]] != 41 {
+        c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+        eger kaynak[pos_tampon[0]] == 41 ise { durdur; }
+
+        degisken param: *CParametre = compiler_tahsis_et(96);
+        eger param == 0 ise { durdur; }
+
+        degisken pt_mem: *u8 = compiler_tahsis_et(64);
+        degisken pt_uzn_tampon: [1]tamsayi;
+        c_kimlik_oku(kaynak, pos_tampon, uzunluk, pt_mem, pt_uzn_tampon);
+        param.tip = pt_mem;
+        param.tip_uzn = pt_uzn_tampon[0];
+
+        c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+
+        degisken pi_mem: *u8 = compiler_tahsis_et(64);
+        degisken pi_uzn_tampon: [1]tamsayi;
+        c_kimlik_oku(kaynak, pos_tampon, uzunluk, pi_mem, pi_uzn_tampon);
+        param.isim = pi_mem;
+        param.isim_uzn = pi_uzn_tampon[0];
+
+        eger cikis.parametre_sayisi < 8 ise {
+            cikis.parametreler[cikis.parametre_sayisi] = param;
+            cikis.parametre_sayisi = cikis.parametre_sayisi + 1;
+        }
+
+        c_bosluk_atla(kaynak, pos_tampon, uzunluk);
+        eger pos_tampon[0] < uzunluk ve kaynak[pos_tampon[0]] == 44 ise {
+            pos_tampon[0] = pos_tampon[0] + 1; # virgul
+        }
+    }
+    cikis.donusturuldu = 1;
+    dondu 1;
+}
+
+# ============================================================
+# C Fonksiyonundan YKN Kodu Uret
+# ============================================================
+isv c_fonksiyon_ykn_uret(f: *CFonksiyon, cikis: *u8, maks: tamsayi) -> tamsayi {
+    eger f == 0 veya cikis == 0 veya maks <= 0 ise { dondu 0; }
+    tip_tablosunu_yukle();
+
+    degisken pos: tamsayi = 0;
+    degisken isv_str: *u8 = "harici isv ".ptr;
+    degisken ii: tamsayi = 0;
+    dongu isv_str[ii] != 0 ve pos < maks { cikis[pos] = isv_str[ii]; pos = pos + 1; ii = ii + 1; }
+
+    # Fonksiyon ismi
+    ii = 0;
+    dongu ii < f.isim_uzn ve pos < maks {
+        eger f.isim[ii] != 32 ve f.isim[ii] != 9 ise {
+            cikis[pos] = f.isim[ii]; pos = pos + 1;
+        }
+        ii = ii + 1;
+    }
+
+    cikis[pos] = 40; pos = pos + 1; # (
+
+    # Parametreler
+    degisken pi: tamsayi = 0;
+    dongu pi < f.parametre_sayisi {
+        degisken p: *CParametre = f.parametreler[pi];
+        eger p != 0 ise {
+            # Parametre ismi
+            ii = 0;
+            dongu ii < p.isim_uzn ve pos < maks {
+                eger p.isim[ii] != 32 ise { cikis[pos] = p.isim[ii]; pos = pos + 1; }
+                ii = ii + 1;
+            }
+            # : tip
+            eger pos < maks { cikis[pos] = 58; pos = pos + 1; }
+            eger pos < maks { cikis[pos] = 32; pos = pos + 1; }
+            degisken ykn_tip: *u8 = c_tipi_donustur(p.tip, p.tip_uzn);
+            ii = 0;
+            dongu ykn_tip[ii] != 0 ve pos < maks { cikis[pos] = ykn_tip[ii]; pos = pos + 1; ii = ii + 1; }
+            eger pi + 1 < f.parametre_sayisi ise {
+                eger pos < maks { cikis[pos] = 44; pos = pos + 1; }
+                eger pos < maks { cikis[pos] = 32; pos = pos + 1; }
+            }
+        }
+        pi = pi + 1;
+    }
+    cikis[pos] = 41; pos = pos + 1; # )
+
+    # -> donus tipi
+    degisken arrow: *u8 = " -> ".ptr;
+    ii = 0;
+    dongu arrow[ii] != 0 ve pos < maks { cikis[pos] = arrow[ii]; pos = pos + 1; ii = ii + 1; }
+    degisken ykn_donus: *u8 = c_tipi_donustur(f.donus_tipi, f.donus_tipi_uzn);
+    ii = 0;
+    dongu ykn_donus[ii] != 0 ve pos < maks { cikis[pos] = ykn_donus[ii]; pos = pos + 1; ii = ii + 1; }
+    cikis[pos] = 59; pos = pos + 1; # ;
+    cikis[pos] = 10; pos = pos + 1; # newline
+    eger pos < maks { cikis[pos] = 0; }
+    dondu pos;
+}
+
+# ============================================================
+# Basari Orani Hesaplama
+# ============================================================
+isv convert_basari_orani_hesapla(donusturulan: tamsayi, toplam: tamsayi) -> tamsayi {
+    eger toplam <= 0 ise { dondu 0; }
+    dondu (donusturulan * 100) / toplam;
+}
+
+# Esik kontrolu: basari orani esik altindaysa E037 uret
+isv convert_esik_kontrol(basari_oran: tamsayi, esik: tamsayi, satir: tamsayi) -> tamsayi {
+    eger basari_oran < esik ise {
+        degisken hk: HataKaydi;
+        tani_olustur(&hk, E037_CONVERT_BELOW_THRESHOLD, satir, 0,
+            "Donusum basari orani esik degerinin altinda".ptr, 0);
+        hata_kaydi_yazdir(&hk);
+        dondu 0;
+    }
+    dondu 1;
+}

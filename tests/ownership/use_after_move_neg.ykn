@@ -1,0 +1,13 @@
+# Ownership Test NEGATIF: use_after_move — E040 beklenir.
+# Bir deger tasindiginda orijinal degisken artik kullanilamaz.
+isv tasi(x: tamsayi) -> tamsayi {
+    dondu x + 1;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 42;
+    # x tasi() fonksiyonuna tasinir
+    degisken y: tamsayi = tasi(x);
+    # Tasindiktan sonra x kullanilmaya calisiliyor — E040 olmali
+    degisken z: tamsayi = x + 1;
+    dondu z;
+}

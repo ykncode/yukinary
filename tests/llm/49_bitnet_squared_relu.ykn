@@ -1,0 +1,28 @@
+# Microsoft BitNet b1.58 2B-4T FFN activation oracle (Q16.16).
+ice_aktar "../../std/ai/attention.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken gate: [4]tamsayi;
+    degisken up: [4]tamsayi;
+    degisken actual: [4]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 4 { actual[i] = -1; i = i + 1; }
+    gate[0] = 0 - 65536;
+    gate[1] = 32768;
+    gate[2] = 0 - 16384;
+    gate[3] = 131072;
+    up[0] = 65536;
+    up[1] = 65536;
+    up[2] = 131072;
+    up[3] = 0 - 32768;
+
+    eger bitnet_q16_squared_relu_product(0, up, actual, 4) != 0 { dondu 1; }
+    eger bitnet_q16_squared_relu_product(gate, up, actual, 4) != 1 { dondu 2; }
+    eger actual[0] != 0 veya actual[1] != 16384 veya
+       actual[2] != 0 veya actual[3] != 0 - 131072 {
+        ekrana_yaz("BITNET-SQUARED-RELU-FAIL\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("BITNET-SQUARED-RELU-PASS\n".ptr);
+    dondu 0;
+}

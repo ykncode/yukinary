@@ -1,0 +1,120 @@
+# ============================================================
+# std/apps/dosya_yoneticisi.ykn
+# FAZ 49 & FAZ 66: Saf Yukinary Dosya Yoneticisi ve Dizin Filtreleme
+# SIFIR MOCK, Gercek Dosya Listesi, Boyut Siralama ve Uzanti Filtreleme Motoru
+# ============================================================
+
+yapi DosyaKaydi {
+    ad:        *u8;
+    boyut:     tamsayi;
+    dizin_mi:  tamsayi;
+}
+
+yapi DizinGorunumu {
+    kapasite:      tamsayi;
+    dosya_sayisi:  tamsayi;
+    kayitlar:      *tamsayi; # *DosyaKaydi dizisi
+}
+
+isv dizin_dizgi_uzunlugu(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv dizin_gorunumu_olustur(kap: tamsayi) -> *DizinGorunumu {
+    degisken dg: *DizinGorunumu = bellek_tahsis_et(24);
+    dg.kapasite = kap;
+    dg.dosya_sayisi = 0;
+    dg.kayitlar = bellek_tahsis_et(kap * 8);
+    dondu dg;
+}
+
+isv dizin_dosya_ekle(dg: *DizinGorunumu, ad: *u8, boyut: tamsayi, dizin_mi: tamsayi) -> tamsayi {
+    degisken n: tamsayi = dg.dosya_sayisi;
+    eger n >= dg.kapasite ise {
+        dondu 0;
+    }
+    degisken k: *DosyaKaydi = bellek_tahsis_et(24);
+    k.ad = ad;
+    k.boyut = boyut;
+    k.dizin_mi = dizin_mi;
+
+    degisken arr: *tamsayi = dg.kayitlar;
+    arr[n] = k;
+    dg.dosya_sayisi = n + 1;
+    dondu 1;
+}
+
+isv dizin_toplam_boyut(dg: *DizinGorunumu) -> tamsayi {
+    degisken n: tamsayi = dg.dosya_sayisi;
+    degisken arr: *tamsayi = dg.kayitlar;
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken k: *DosyaKaydi = arr[i];
+        toplam = toplam + k.boyut;
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+# FAZ 66: Boyuta gore dosya siralama (artan: 1, azalan: 0)
+isv dizin_sirala_boyuta_gore(dg: *DizinGorunumu, artan: tamsayi) {
+    degisken n: tamsayi = dg.dosya_sayisi;
+    eger n <= 1 ise { dondu; }
+    degisken arr: *tamsayi = dg.kayitlar;
+
+    degisken i: tamsayi = 0;
+    dongu i < (n - 1) {
+        degisken j: tamsayi = 0;
+        dongu j < (n - i - 1) {
+            degisken k1: *DosyaKaydi = arr[j];
+            degisken k2: *DosyaKaydi = arr[j + 1];
+            degisken degistir: tamsayi = 0;
+            eger artan == 1 ve k1.boyut > k2.boyut ise {
+                degistir = 1;
+            }
+            eger artan == 0 ve k1.boyut < k2.boyut ise {
+                degistir = 1;
+            }
+            eger degistir == 1 ise {
+                arr[j] = k2;
+                arr[j + 1] = k1;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+# FAZ 66: Uzantiya gore filtreleme
+isv dizin_filtrele_uzantiya_gore(dg: *DizinGorunumu, uzanti: *u8) -> *DizinGorunumu {
+    degisken yeni_dg: *DizinGorunumu = dizin_gorunumu_olustur(dg.kapasite);
+    degisken n: tamsayi = dg.dosya_sayisi;
+    degisken arr: *tamsayi = dg.kayitlar;
+    degisken u_len: tamsayi = dizin_dizgi_uzunlugu(uzanti);
+
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken k: *DosyaKaydi = arr[i];
+        degisken k_ad: *u8 = k.ad;
+        degisken ad_len: tamsayi = dizin_dizgi_uzunlugu(k_ad);
+        eger ad_len >= u_len ise {
+            degisken eslesiyor: tamsayi = 1;
+            degisken ui: tamsayi = 0;
+            dongu ui < u_len {
+                eger k_ad[ad_len - u_len + ui] != uzanti[ui] ise {
+                    eslesiyor = 0;
+                }
+                ui = ui + 1;
+            }
+            eger eslesiyor == 1 ise {
+                dizin_dosya_ekle(yeni_dg, k_ad, k.boyut, k.dizin_mi);
+            }
+        }
+        i = i + 1;
+    }
+    dondu yeni_dg;
+}

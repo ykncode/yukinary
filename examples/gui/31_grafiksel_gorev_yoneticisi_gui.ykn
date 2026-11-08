@@ -1,0 +1,36 @@
+# ============================================================
+# Örnek 31: Win32 Grafiksel Görev Yöneticisi ve Süreç Takip
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_toplam_surec: tamsayi = 42;
+degisken g_cpu_yuzdesi: tamsayi = 18;
+degisken g_ram_kullanim_mb: tamsayi = 4096;
+
+isv surec_sonlandir(pid: tamsayi) -> tamsayi {
+    ekrana_yaz("Surec sonlandirma sinyali gonderildi, PID: ".ptr);
+    ekrana_yaz("\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Gorev Yoneticisi".ptr, 650, 480);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Surec Tablosu
+    metin_kutusu_olustur(p_h, 100, 20, 20, 600, 300);
+
+    # Kontrol Butonlari
+    buton_olustur(p_h, "Gorevi Sonlandir".ptr, 201, 20, 340, 160, 40);
+    buton_olustur(p_h, "Yeni Gorev Baslat".ptr, 202, 200, 340, 160, 40);
+    buton_olustur(p_h, "Listeyi Yenile".ptr, 203, 380, 340, 140, 40);
+    buton_olustur(p_h, "Performans Detayi".ptr, 204, 20, 390, 500, 35);
+
+    ekrana_yaz("Gorev Yoneticisi aktif. CPU: %18, RAM: 4096MB\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

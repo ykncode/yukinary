@@ -1,0 +1,29 @@
+# ============================================================
+# Örnek 70: Win32 Yüzde Hesaplayıcı GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# Bir sayinin yuzdesini hesapla: (ana_sayi * oran) / 100
+isv yuzde_hesapla(ana_sayi: tamsayi, oran: tamsayi) -> tamsayi {
+    dondu (ana_sayi * oran) / 100;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Yuzde Hesaplayici".ptr, 340, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Ana Sayi Kutusu
+    metin_kutusu_olustur(p_h, 9901, 30, 30, 260, 35);
+
+    # Yuzde Butonlari: %10, %20, %50
+    buton_olustur(p_h, "%10 Hesapla".ptr, 9910, 30, 85, 260, 35);
+    buton_olustur(p_h, "%20 Hesapla".ptr, 9920, 30, 130, 260, 35);
+    buton_olustur(p_h, "%50 Hesapla (Yarisi)".ptr, 9950, 30, 175, 260, 35);
+
+    ekrana_yaz("Yuzde hesaplayici hazir.\n".ptr);
+    ekrana_yaz("200 sayisinin %20'si = "); sayiyi_ekrana_yaz(yuzde_hesapla(200, 20)); ekrana_yaz("\n".ptr);
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

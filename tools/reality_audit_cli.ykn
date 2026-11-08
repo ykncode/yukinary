@@ -1,0 +1,160 @@
+# Pure-YKN reality auditor CLI.
+# Dosya yolları argv üzerinden verilir; dizin traversal bu executable'ın
+# kapsamına girmez ve çağıran tarafından explicit file list sağlanmalıdır.
+
+ice_aktar "tools/reality_audit.ykn";
+
+harici isv ekrana_yaz(mesaj: *u8);
+
+degisken g_reality_audit_rapor: *u8 = 0;
+degisken g_reality_audit_rapor_kapasite: tamsayi = 0;
+degisken g_reality_audit_rapor_pos: tamsayi = 0;
+degisken g_reality_audit_rapor_hata: tamsayi = 0;
+
+isv reality_audit_rapora_bayt(deger: u8) {
+    eger g_reality_audit_rapor == 0 veya
+       g_reality_audit_rapor_pos + 1 >= g_reality_audit_rapor_kapasite ise {
+        g_reality_audit_rapor_hata = 1;
+        dondu;
+    }
+    g_reality_audit_rapor[g_reality_audit_rapor_pos] = deger;
+    g_reality_audit_rapor_pos = g_reality_audit_rapor_pos + 1;
+    g_reality_audit_rapor[g_reality_audit_rapor_pos] = 0;
+}
+
+isv reality_audit_rapora_ekle(metin: *u8) {
+    eger metin == 0 veya g_reality_audit_rapor == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        reality_audit_rapora_bayt(metin[i]);
+        i = i + 1;
+    }
+}
+
+isv reality_audit_rapor_yolu_ekle(yol: *u8) {
+    eger yol == 0 ise { g_reality_audit_rapor_hata = 1; dondu; }
+    degisken i: tamsayi = 0;
+    dongu yol[i] != 0 {
+        eger yol[i] == 37 ise { reality_audit_rapora_ekle("%25".ptr); }
+        yoksa eger yol[i] == 9 ise { reality_audit_rapora_ekle("%09".ptr); }
+        yoksa eger yol[i] == 10 ise { reality_audit_rapora_ekle("%0A".ptr); }
+        yoksa eger yol[i] == 13 ise { reality_audit_rapora_ekle("%0D".ptr); }
+        yoksa { reality_audit_rapora_bayt(yol[i]); }
+        i = i + 1;
+    }
+}
+
+isv reality_audit_yaz_durum(adet: tamsayi) {
+    eger adet > 0 ise { ekrana_yaz("present".ptr); }
+    yoksa { ekrana_yaz("absent".ptr); }
+}
+
+isv reality_audit_rapora_durum(adet: tamsayi) {
+    eger adet > 0 ise { reality_audit_rapora_ekle("present".ptr); }
+    yoksa { reality_audit_rapora_ekle("absent".ptr); }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger arguman_sayisi < 2 veya argumanlar == 0 ise {
+        ekrana_yaz("REALITY_AUDIT_USAGE: pass one or more source paths\n".ptr);
+        dondu 2;
+    }
+
+    degisken ilk_dosya: tamsayi = 1;
+    degisken rapor_aktif: tamsayi = 0;
+    eger arguman_sayisi >= 2 ve reality_audit_strlen(argumanlar[1]) == 8 ve
+       reality_audit_eslesme(argumanlar[1], 8, "--report".ptr, 8, 0) == 1 ise {
+        ilk_dosya = 2;
+        rapor_aktif = 1;
+        eger arguman_sayisi < 3 ise {
+            ekrana_yaz("REALITY_AUDIT_USAGE: --report requires source files\n".ptr);
+            dondu 2;
+        }
+        g_reality_audit_rapor_kapasite = 1048576;
+        g_reality_audit_rapor = bellek_tahsis_et(g_reality_audit_rapor_kapasite);
+        eger g_reality_audit_rapor == 0 ise { dondu 4; }
+        reality_audit_rapora_ekle("YKN_REALITY_AUDIT_V1\n".ptr);
+    }
+
+    degisken kapasite: tamsayi = 1048576;
+    degisken tampon: *u8 = bellek_tahsis_et(kapasite + 1);
+    eger tampon == 0 ise {
+        ekrana_yaz("REALITY_AUDIT_ALLOCATION_ERROR\n".ptr);
+        dondu 4;
+    }
+    degisken toplam_bulgu: tamsayi = 0;
+    degisken dosya_adedi: tamsayi = 0;
+    degisken i: tamsayi = ilk_dosya;
+    dongu i < arguman_sayisi {
+        degisken yol: *u8 = argumanlar[i];
+        degisken uzunluk: tamsayi = dosya_oku(yol, tampon, kapasite);
+        eger uzunluk <= 0 veya uzunluk >= kapasite ise {
+            ekrana_yaz("REALITY_AUDIT_READ_ERROR_OR_SIZE_LIMIT\n".ptr);
+            dondu 3;
+        }
+        degisken byte_i: tamsayi = 0;
+        dongu byte_i < uzunluk {
+            eger tampon[byte_i] == 0 ise {
+                ekrana_yaz("REALITY_AUDIT_BINARY_INPUT_ERROR\n".ptr);
+                dondu 3;
+            }
+            byte_i = byte_i + 1;
+        }
+        tampon[uzunluk] = 0;
+        degisken bulgular: RealityAuditCounts;
+        eger reality_audit_tara(tampon, &bulgular) != 1 ise {
+            ekrana_yaz("REALITY_AUDIT_SCAN_ERROR\n".ptr);
+            dondu 4;
+        }
+        eger rapor_aktif == 0 ise {
+            ekrana_yaz("FILE ".ptr);
+            ekrana_yaz(yol);
+            ekrana_yaz(" mock=".ptr); reality_audit_yaz_durum(bulgular.mock_marker);
+            ekrana_yaz(" stub=".ptr); reality_audit_yaz_durum(bulgular.stub_marker);
+            ekrana_yaz(" constant_success=".ptr); reality_audit_yaz_durum(bulgular.constant_success);
+            ekrana_yaz(" fake_handle=".ptr); reality_audit_yaz_durum(bulgular.fake_handle);
+            ekrana_yaz("\n".ptr);
+        }
+        eger rapor_aktif != 0 ise {
+            reality_audit_rapor_yolu_ekle(yol);
+            reality_audit_rapora_ekle("\tmock=".ptr);
+            reality_audit_rapora_durum(bulgular.mock_marker);
+            reality_audit_rapora_ekle("\tstub=".ptr);
+            reality_audit_rapora_durum(bulgular.stub_marker);
+            reality_audit_rapora_ekle("\tconstant_success=".ptr);
+            reality_audit_rapora_durum(bulgular.constant_success);
+            reality_audit_rapora_ekle("\tfake_handle=".ptr);
+            reality_audit_rapora_durum(bulgular.fake_handle);
+            reality_audit_rapora_ekle("\n".ptr);
+            eger g_reality_audit_rapor_hata != 0 ise { dondu 5; }
+        }
+
+        toplam_bulgu = toplam_bulgu + bulgular.mock_marker +
+            bulgular.stub_marker + bulgular.constant_success + bulgular.fake_handle;
+        dosya_adedi = dosya_adedi + 1;
+        i = i + 1;
+    }
+
+    eger dosya_adedi == 0 ise {
+        ekrana_yaz("REALITY_AUDIT_NO_FILES\n".ptr);
+        dondu 2;
+    }
+    eger toplam_bulgu > 0 ise {
+        eger rapor_aktif != 0 ise {
+            reality_audit_rapora_ekle("VERDICT\tREVIEW_REQUIRED\n".ptr);
+            eger g_reality_audit_rapor_hata != 0 ise { dondu 5; }
+            ekrana_yaz(g_reality_audit_rapor);
+        } yoksa {
+            ekrana_yaz("REALITY_AUDIT_REVIEW_REQUIRED\n".ptr);
+        }
+        dondu 1;
+    }
+    eger rapor_aktif != 0 ise {
+        reality_audit_rapora_ekle("VERDICT\tNO_MARKERS\n".ptr);
+        eger g_reality_audit_rapor_hata != 0 ise { dondu 5; }
+        ekrana_yaz(g_reality_audit_rapor);
+    } yoksa {
+        ekrana_yaz("REALITY_AUDIT_NO_MARKERS\n".ptr);
+    }
+    dondu 0;
+}

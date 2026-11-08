@@ -1,0 +1,8 @@
+[
+  {
+    "name": "sayi",
+    "source": "..\\..\\test_sayi.ykn",
+    "expected": "expected\\sayi.stdout",
+    "exit_code": 0
+  }
+]

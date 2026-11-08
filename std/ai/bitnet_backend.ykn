@@ -1,0 +1,1226 @@
+# ============================================================
+# YKN std/ai/bitnet_backend.ykn
+# Gerçek packed BitNet ve architecture-adapter kernel ABI'si.
+#
+# Type=36/34 gövdesinde her byte dört 2-bit ternary ağırlık taşır.
+# Kernel ağırlıkları açılmış matrise kopyalamadan doğrudan okur.
+# ============================================================
+
+degisken BITNET_KERNEL_HATASI = 0;
+degisken BITNET_KERNEL_Q16 = 65536;
+degisken g_llm_q6_q8_activations: [65536]tamsayi;
+degisken g_llm_q6_q8_scales_q16: [256]tamsayi;
+
+isv bitnet_i2s_kodunu_oku(paketli: *u8, eleman: tamsayi) -> tamsayi {
+    eger paketli == 0 veya eleman < 0 ise { dondu 0; }
+    degisken blok: tamsayi = eleman / 128;
+    degisken in_blok: tamsayi = eleman % 128;
+    degisken lane: tamsayi = in_blok / 32;
+    degisken lane_ofset: tamsayi = in_blok % 32;
+    degisken bayt_ofset: tamsayi = blok * 32 + lane_ofset;
+    degisken bayt: tamsayi = paketli[bayt_ofset];
+    eger bayt < 0 ise { bayt = bayt + 256; }
+    degisken kaydir: tamsayi = 6 - lane * 2;
+    degisken bolen: tamsayi = 1;
+    dongu kaydir > 0 { bolen = bolen * 2; kaydir = kaydir - 1; }
+    degisken ham: tamsayi = (bayt / bolen) % 4;
+    # GGUF I2_S: 00=-1, 01=0, 10=+1, 11 invalid.
+    eger ham == 0 ise { dondu 2; }
+    eger ham == 1 ise { dondu 0; }
+    eger ham == 2 ise { dondu 1; }
+    BITNET_KERNEL_HATASI = 1;
+    dondu 0;
+}
+
+isv bitnet_i2s_scale_q16(buffer: *u8, offset: tamsayi) -> tamsayi {
+    eger buffer == 0 veya offset < 0 ise { dondu 0; }
+    degisken b0: tamsayi = buffer[offset];
+    degisken b1: tamsayi = buffer[offset + 1];
+    degisken b2: tamsayi = buffer[offset + 2];
+    degisken b3: tamsayi = buffer[offset + 3];
+    eger b0 < 0 ise { b0 = b0 + 256; }
+    eger b1 < 0 ise { b1 = b1 + 256; }
+    eger b2 < 0 ise { b2 = b2 + 256; }
+    eger b3 < 0 ise { b3 = b3 + 256; }
+    degisken bits: tamsayi = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216;
+    degisken sign: tamsayi = bits / 2147483648;
+    degisken exponent: tamsayi = (bits / 8388608) % 256;
+    degisken mantissa: tamsayi = bits % 8388608;
+    eger exponent == 0 veya exponent == 255 ise { dondu 0; }
+    degisken value: tamsayi = 8388608 + mantissa;
+    # IEEE-754: Q16.16 value = significand * 2^(exponent - 134).
+    degisken shift: tamsayi = exponent - 134;
+    eger shift >= 0 ise {
+        dongu shift > 0 { value = value * 2; shift = shift - 1; }
+    } yoksa {
+        dongu shift < 0 { value = value / 2; shift = shift + 1; }
+    }
+    eger sign == 1 ise { value = 0 - value; }
+    dondu value;
+}
+
+# Backend-local deterministic router. Keeping this dependency local makes
+# bitnet_backend.ykn directly importable without relying on std/ai/runtime.ykn.
+isv bitnet_backend_moe_topk(logitler: *tamsayi, expert_sayisi: tamsayi, top_k: tamsayi, secilen: *tamsayi) -> tamsayi {
+    eger logitler == 0 veya secilen == 0 veya expert_sayisi <= 0 veya top_k <= 0 ise { dondu 0; }
+    degisken tarama_limiti: tamsayi = expert_sayisi;
+    eger tarama_limiti > 64 ise { tarama_limiti = 64; }
+    degisken secim_limiti: tamsayi = top_k;
+    eger secim_limiti > tarama_limiti ise { secim_limiti = tarama_limiti; }
+    degisken kullanildi: [64]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 64 { kullanildi[i] = 0; i = i + 1; }
+    degisken secim: tamsayi = 0;
+    dongu secim < secim_limiti {
+        degisken en_iyi: tamsayi = 0 - 1;
+        i = 0;
+        dongu i < tarama_limiti {
+            eger kullanildi[i] == 0 ve (en_iyi == 0 - 1 veya logitler[i] > logitler[en_iyi]) ise { en_iyi = i; }
+            i = i + 1;
+        }
+        eger en_iyi == 0 - 1 ise { dondu secim; }
+        secilen[secim] = en_iyi;
+        kullanildi[en_iyi] = 1;
+        secim = secim + 1;
+    }
+    dondu secim;
+}
+
+# W: [K x N] packed ternary, X: Q16.16 [M x K], Y: Q16.16 [M x N].
+isv bitnet_i2s_paketli_matris_carp(paketli: *u8,
+                                   aktivasyon: *tamsayi,
+                                   cikti: *tamsayi,
+                                   M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger paketli == 0 veya aktivasyon == 0 veya cikti == 0 veya
+       M <= 0 veya K <= 0 veya N <= 0 ise { BITNET_KERNEL_HATASI = 2; dondu 0; }
+    degisken tensor_eleman: tamsayi = K * N;
+    degisken scale_q16: tamsayi = BITNET_KERNEL_Q16;
+    eger tensor_eleman % 128 == 0 ise {
+        scale_q16 = bitnet_i2s_scale_q16(paketli, tensor_eleman / 4);
+        eger scale_q16 <= 0 ise { BITNET_KERNEL_HATASI = 4; dondu 0; }
+        eger M == 1 {
+            dondu bitnet_i2s_matris_carp_hizli(paketli, scale_q16, aktivasyon, cikti, K, N);
+        }
+    } yoksa {
+        degisken mi: tamsayi = 0;
+        dongu mi < M {
+            degisken mj: tamsayi = 0;
+            dongu mj < N {
+                degisken mtoplam: tamsayi = 0;
+                degisken mk: tamsayi = 0;
+                dongu mk < K {
+                    degisken midx: tamsayi = mj * K + mk;
+                    degisken mbayt: tamsayi = paketli[midx / 4];
+                    eger mbayt < 0 { mbayt = mbayt + 256; }
+                    degisken mkaydir: tamsayi = (midx % 4) * 2;
+                    degisken mbolen: tamsayi = 1;
+                    dongu mkaydir > 0 { mbolen = mbolen * 2; mkaydir = mkaydir - 1; }
+                    degisken mham: tamsayi = (mbayt / mbolen) % 4;
+                    degisken mw: tamsayi = 0;
+                    eger mham == 0 { mw = 0 - 1; }
+                    yoksa eger mham == 2 { mw = 1; }
+                    mtoplam = mtoplam + mw * aktivasyon[mi * K + mk];
+                    mk = mk + 1;
+                }
+                cikti[mi * N + mj] = mtoplam;
+                mj = mj + 1;
+            }
+            mi = mi + 1;
+        }
+        dondu 1;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken amax: tamsayi = 0;
+        degisken k: tamsayi = 0;
+        dongu k < K {
+            degisken ax: tamsayi = aktivasyon[i * K + k];
+            eger ax < 0 { ax = 0 - ax; }
+            eger ax > amax { amax = ax; }
+            k = k + 1;
+        }
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            k = 0;
+            dongu k < K {
+                degisken kod: tamsayi = bitnet_i2s_kodunu_oku(paketli, j * K + k);
+                degisken x: tamsayi = aktivasyon[i * K + k];
+                degisken ax: tamsayi = x;
+                eger ax < 0 { ax = 0 - ax; }
+                degisken q: tamsayi = 0;
+                eger amax > 0 { q = (ax * 127 + amax / 2) / amax; }
+                eger q > 127 { q = 127; }
+                eger x < 0 { q = 0 - q; }
+                eger kod == 2 { toplam = toplam - q; }
+                yoksa eger kod == 1 { toplam = toplam + q; }
+                k = k + 1;
+            }
+            eger amax == 0 { cikti[i * N + j] = 0; }
+            yoksa {
+                degisken scaled_product: tamsayi = toplam * amax;
+                degisken scale_quotient: tamsayi = scaled_product / 127;
+                degisken scale_remainder: tamsayi = scaled_product % 127;
+                degisken whole_q16: tamsayi = scale_quotient / BITNET_KERNEL_Q16;
+                degisken fraction_q16: tamsayi = scale_quotient % BITNET_KERNEL_Q16;
+                cikti[i * N + j] = whole_q16 * scale_q16 +
+                    (fraction_q16 * scale_q16) / BITNET_KERNEL_Q16 +
+                    (scale_remainder * scale_q16) / (127 * BITNET_KERNEL_Q16);
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+degisken g_bitnet_cpu_qact: [8192]tamsayi;
+degisken g_fp16_lut: [65536]tamsayi;
+degisken g_fp16_lut_init: tamsayi = 0;
+
+isv init_fp16_lut() {
+    eger g_fp16_lut_init == 1 { dondu; }
+    degisken b: tamsayi = 0;
+    dongu b < 65536 {
+        degisken lo: tamsayi = b & 255;
+        degisken hi: tamsayi = (b >> 8) & 255;
+        g_fp16_lut[b] = llm_f16_q16_coz(lo, hi);
+        b = b + 1;
+    }
+    g_fp16_lut_init = 1;
+}
+
+degisken g_bitnet_ternary_lut: [4]tamsayi;
+degisken g_bitnet_ternary_lut_init: tamsayi = 0;
+
+isv bitnet_init_ternary_lut() {
+    eger g_bitnet_ternary_lut_init == 1 { dondu; }
+    g_bitnet_ternary_lut[0] = 0 - 1;
+    g_bitnet_ternary_lut[1] = 0;
+    g_bitnet_ternary_lut[2] = 1;
+    g_bitnet_ternary_lut[3] = 0;
+    g_bitnet_ternary_lut_init = 1;
+}
+
+degisken g_work_weights: *u8;
+degisken g_work_scale_q16: tamsayi;
+degisken g_work_cikti: *tamsayi;
+degisken g_work_amax: tamsayi;
+degisken g_work_K: tamsayi;
+degisken g_work_N: tamsayi;
+degisken g_work_j_start: [16]tamsayi;
+degisken g_work_j_end: [16]tamsayi;
+degisken g_work_done: [16]tamsayi;
+degisken g_work_p_qact: *u8 = 0;
+degisken g_work_sum_q: tamsayi = 0;
+degisken g_bitnet_pool_init: tamsayi = 0;
+degisken g_fn_QueueUserWorkItem: *u8 = 0;
+degisken g_avx2_fn: *u8 = 0;
+degisken g_avx2_f16_dot_fn: *u8 = 0;
+degisken g_avx2_q16_to_f32_fn: *u8 = 0;
+degisken g_lmhead_f32_buf: [4096]tamsayi;
+degisken g_bitnet_cpu_qact_i8: [8192]u8;
+degisken g_f16_work_base: *u8 = 0;
+degisken g_f16_work_pf32: tamsayi = 0;
+degisken g_f16_work_cikti: *tamsayi = 0;
+degisken g_f16_work_K: tamsayi = 0;
+degisken g_f16_work_satir_bayti: tamsayi = 0;
+
+isv bitnet_f16_slice_worker(tid: tamsayi) -> tamsayi {
+    degisken base_pencere: *u8 = g_f16_work_base;
+    degisken p_f32: tamsayi = g_f16_work_pf32;
+    degisken cikti: *tamsayi = g_f16_work_cikti;
+    degisken K: tamsayi = g_f16_work_K;
+    degisken satir_bayti: tamsayi = g_f16_work_satir_bayti;
+    degisken j_start: tamsayi = g_work_j_start[tid];
+    degisken j_end: tamsayi = g_work_j_end[tid];
+    degisken f16_fn: *u8 = g_avx2_f16_dot_fn;
+
+    degisken j: tamsayi = j_start;
+    dongu j < j_end {
+        degisken row_ptr: *u8 = base_pencere + j * satir_bayti;
+        degisken p_row: tamsayi = row_ptr as tamsayi;
+        cikti[j] = ykn_dyn_call_ptr_3(f16_fn, p_row, p_f32, K);
+        j = j + 1;
+    }
+    g_work_done[tid] = 1;
+    dondu 0;
+}
+
+harici isv VirtualAlloc(lpAddress: *u8, dwSize: tamsayi, flAllocationType: tamsayi, flProtect: tamsayi) -> *u8;
+harici isv ykn_dyn_call_ptr_3(fn_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(fn_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+
+isv bitnet_hex_val(c: tamsayi) -> tamsayi {
+    eger c >= 48 ve c <= 57 { dondu c - 48; }
+    eger c >= 97 ve c <= 102 { dondu c - 97 + 10; }
+    eger c >= 65 ve c <= 70 { dondu c - 65 + 10; }
+    dondu 0;
+}
+
+isv bitnet_init_avx2_jit() -> *u8 {
+    eger g_avx2_fn != 0 and g_avx2_f16_dot_fn != 0 { dondu g_avx2_fn; }
+    # MEM_COMMIT | MEM_RESERVE = 0x3000 (12288), PAGE_EXECUTE_READWRITE = 0x40 (64)
+    degisken exec_buf: *u8 = VirtualAlloc(0, 4096, 12288, 64);
+    eger exec_buf == 0 { dondu 0; }
+
+    degisken hex_code: *u8 = "4883ec18c5f97f3424b803030303c5f96ec8c4e27d58c9b801000100c5f96ed0c4e27d58d24c89c048c1f8074981f8800000007c64c5fdefc04531c0c4a17e6f1c01c5dd71d302c5d571d304c5cd71d306c5cddbf1c4a24d043482c5d5dbe9c4a255046c8220c5d5fdeec5dddbe1c4a25d04648240c5e5dbd9c4a265045c8260c5e5fddcc5d5fddbc5e5f5dac5fdfec34983c02048ffc875a3c4e37d39c101c5f9fec1c5f970c8eec5f9fec1c5f970c855c5f9fec1c5f97ec04898c5f82834244883c418c5f877c3".ptr;
+    degisken i: tamsayi = 0;
+    dongu i < 200 {
+        degisken h1: tamsayi = bitnet_hex_val(hex_code[i * 2]);
+        degisken h2: tamsayi = bitnet_hex_val(hex_code[i * 2 + 1]);
+        exec_buf[i] = (h1 << 4) | h2;
+        i = i + 1;
+    }
+    g_avx2_fn = exec_buf;
+
+    degisken p_f16: *u8 = exec_buf + 256;
+    degisken hex_f16: *u8 = "4d85c07e7b49ffc84d89c149c1e904747549ffc14983e1fec5f857c031c0c5f057c966666666662e0f1f840000000000c4e27d131441c4e27d135c4110c5fc28e0c4e26db82482c4e27d13444120c5fc28d1c4e27d134c4130c4e265b8548220c4e25d98448240c4e26d984c82604883c0204983c1fe75b841f6c0107412eb32c5f857c0eb30c5f857c031c0c5f057c9c5fc28d0c4e27d130441c5fc28d9c4e27d134c4110c4e26d980482c4e265984c8220c5f458c0c4e37d19c101c5f858c1c5f9c6c801c5f858c1c5fa16c8c5fa58c1c4e1fa2cc0c5f877c3".ptr;
+    i = 0;
+    dongu i < 218 {
+        degisken h1_f: tamsayi = bitnet_hex_val(hex_f16[i * 2]);
+        degisken h2_f: tamsayi = bitnet_hex_val(hex_f16[i * 2 + 1]);
+        p_f16[i] = (h1_f << 4) | h2_f;
+        i = i + 1;
+    }
+    g_avx2_f16_dot_fn = p_f16;
+
+    degisken p_q: *u8 = exec_buf + 512;
+    degisken hex_q: *u8 = "4d85c00f8e880100004983f804730731c0e96801000049b9f0ffffffffffff7f4983f810730731c0e9fd0000004c89c04c21c84531d2662e0f1f840000000000c4a1822a44d108c4a1822a0cd1c4a1822a54d110c4a1822a5cd118c4a1822a64d128c4a1822a6cd120c4e37121c010c4a1822a4cd130c4e37921c220c4a1822a54d138c4e37921c330c4a1822a5cd148c4e35121e410c4a1822a6cd140c4e35921c920c4a1822a64d150c4e37121ca30c4a1822a54d158c4e35121db10c4a1822a6cd168c4e36121dc20c4a1822a64d160c4e36121d230c4a1822a5cd170c4e35921e510c4a1822a6cd178c4e35921db20c4e36121dd30c4a178110492c4a178114c9210c4a17811549220c4a178115c92304983c2104c39d00f8521ffffff4939c0746d41f6c00c74544989c24983c10c4c89c84c21c0660f1f840000000000c4a1822a44d108c4a1822a0cd1c4e37121c010c4a1822a4cd110c4e37921c120c4a1822a4cd118c4e37921c130c4a1781104924983c2044c39d075c4eb0ec4e1822a04c1c5fa11048248ffc04939c075edc3".ptr;
+    i = 0;
+    dongu i < 402 {
+        degisken h1_q: tamsayi = bitnet_hex_val(hex_q[i * 2]);
+        degisken h2_q: tamsayi = bitnet_hex_val(hex_q[i * 2 + 1]);
+        p_q[i] = (h1_q << 4) | h2_q;
+        i = i + 1;
+    }
+    g_avx2_q16_to_f32_fn = p_q;
+
+    dondu exec_buf;
+}
+
+isv bitnet_cpu_init_pool() {
+    eger g_bitnet_pool_init == 1 { dondu; }
+    g_fn_QueueUserWorkItem = 0;
+    bitnet_init_avx2_jit();
+    g_bitnet_pool_init = 1;
+}
+
+isv bitnet_i2s_slice_worker(tid: tamsayi) -> tamsayi {
+    degisken weights: *u8 = g_work_weights;
+    degisken scale_q16: tamsayi = g_work_scale_q16;
+    degisken cikti: *tamsayi = g_work_cikti;
+    degisken amax: tamsayi = g_work_amax;
+    degisken K: tamsayi = g_work_K;
+    degisken j_start: tamsayi = g_work_j_start[tid];
+    degisken j_end: tamsayi = g_work_j_end[tid];
+    degisken avx_fn: *u8 = g_avx2_fn;
+    degisken sum_q: tamsayi = g_work_sum_q;
+    degisken p_qact: *u8 = g_work_p_qact;
+
+    degisken row_bytes: tamsayi = K / 4;
+    degisken num_blocks: tamsayi = K / 128;
+
+    degisken j: tamsayi = j_start;
+    dongu j < j_end {
+        degisken row_w: *u8 = weights + j * row_bytes;
+        degisken toplam: tamsayi = 0;
+        eger avx_fn != 0 {
+            degisken addr_w: tamsayi = row_w as tamsayi;
+            degisken addr_q: tamsayi = p_qact as tamsayi;
+            degisken raw_dot: tamsayi = ykn_dyn_call_ptr_3(avx_fn, addr_w, addr_q, K);
+            toplam = raw_dot - sum_q;
+        } yoksa {
+            degisken b_idx: tamsayi = 0;
+            dongu b_idx < num_blocks {
+                degisken block_ptr: *u8 = row_w + b_idx * 32;
+                degisken base0: tamsayi = b_idx * 128;
+                degisken base1: tamsayi = base0 + 32;
+                degisken base2: tamsayi = base0 + 64;
+                degisken base3: tamsayi = base0 + 96;
+
+                degisken inner: tamsayi = 0;
+                dongu inner < 32 {
+                    degisken byte: tamsayi = block_ptr[inner];
+                    eger byte < 0 { byte = byte + 256; }
+                    degisken w0: tamsayi = g_bitnet_ternary_lut[(byte >> 6) & 3];
+                    degisken w1: tamsayi = g_bitnet_ternary_lut[(byte >> 4) & 3];
+                    degisken w2: tamsayi = g_bitnet_ternary_lut[(byte >> 2) & 3];
+                    degisken w3: tamsayi = g_bitnet_ternary_lut[byte & 3];
+
+                    toplam = toplam + w0 * g_bitnet_cpu_qact[base0 + inner]
+                                    + w1 * g_bitnet_cpu_qact[base1 + inner]
+                                    + w2 * g_bitnet_cpu_qact[base2 + inner]
+                                    + w3 * g_bitnet_cpu_qact[base3 + inner];
+
+                    inner = inner + 1;
+                }
+                b_idx = b_idx + 1;
+            }
+        }
+
+        eger amax == 0 {
+            cikti[j] = 0;
+        } yoksa {
+            degisken scaled_product: tamsayi = toplam * amax;
+            degisken scale_quotient: tamsayi = scaled_product / 127;
+            degisken scale_remainder: tamsayi = scaled_product % 127;
+            degisken whole_q16: tamsayi = scale_quotient / BITNET_KERNEL_Q16;
+            degisken fraction_q16: tamsayi = scale_quotient % BITNET_KERNEL_Q16;
+            cikti[j] = whole_q16 * scale_q16 +
+                (fraction_q16 * scale_q16) / BITNET_KERNEL_Q16 +
+                (scale_remainder * scale_q16) / (127 * BITNET_KERNEL_Q16);
+        }
+        j = j + 1;
+    }
+    g_work_done[tid] = 1;
+    dondu 0;
+}
+
+isv bitnet_i2s_matris_carp_hizli(weights: *u8, scale_q16: tamsayi,
+                                 aktivasyon: *tamsayi, cikti: *tamsayi,
+                                 K: tamsayi, N: tamsayi) -> tamsayi {
+    eger weights == 0 veya aktivasyon == 0 veya cikti == 0 veya K <= 0 veya N <= 0 ise { dondu 0; }
+    bitnet_cpu_init_pool();
+    bitnet_init_ternary_lut();
+
+    degisken amax: tamsayi = 0;
+    degisken k: tamsayi = 0;
+    dongu k < K {
+        degisken ax: tamsayi = aktivasyon[k];
+        eger ax < 0 { ax = 0 - ax; }
+        eger ax > amax { amax = ax; }
+        k = k + 1;
+    }
+    degisken sum_q: tamsayi = 0;
+    k = 0;
+    dongu k < K {
+        degisken x: tamsayi = aktivasyon[k];
+        degisken ax: tamsayi = x;
+        eger ax < 0 { ax = 0 - ax; }
+        degisken q: tamsayi = 0;
+        eger amax > 0 { q = (ax * 127 + amax / 2) / amax; }
+        eger q > 127 { q = 127; }
+        eger x < 0 { q = 0 - q; }
+        g_bitnet_cpu_qact[k] = q;
+        g_bitnet_cpu_qact_i8[k] = q;
+        sum_q = sum_q + q;
+        k = k + 1;
+    }
+    g_work_sum_q = sum_q;
+    degisken p_qact: *u8 = &g_bitnet_cpu_qact_i8;
+    g_work_p_qact = p_qact;
+
+    degisken avx_fn: *u8 = g_avx2_fn;
+    eger g_fn_QueueUserWorkItem == 0 veya N < 32 {
+        degisken row_bytes: tamsayi = K / 4;
+        degisken num_blocks: tamsayi = K / 128;
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken row_w: *u8 = weights + j * row_bytes;
+            degisken toplam: tamsayi = 0;
+            eger avx_fn != 0 {
+                degisken addr_w: tamsayi = row_w as tamsayi;
+                degisken addr_q: tamsayi = p_qact as tamsayi;
+                degisken raw_dot: tamsayi = ykn_dyn_call_ptr_3(avx_fn, addr_w, addr_q, K);
+                toplam = raw_dot - sum_q;
+            } yoksa {
+                degisken b_idx: tamsayi = 0;
+                dongu b_idx < num_blocks {
+                    degisken block_ptr: *u8 = row_w + b_idx * 32;
+                    degisken base0: tamsayi = b_idx * 128;
+                    degisken base1: tamsayi = base0 + 32;
+                    degisken base2: tamsayi = base0 + 64;
+                    degisken base3: tamsayi = base0 + 96;
+
+                    degisken inner: tamsayi = 0;
+                    dongu inner < 32 {
+                        degisken byte: tamsayi = block_ptr[inner];
+                        eger byte < 0 { byte = byte + 256; }
+                        degisken w0: tamsayi = g_bitnet_ternary_lut[(byte >> 6) & 3];
+                        degisken w1: tamsayi = g_bitnet_ternary_lut[(byte >> 4) & 3];
+                        degisken w2: tamsayi = g_bitnet_ternary_lut[(byte >> 2) & 3];
+                        degisken w3: tamsayi = g_bitnet_ternary_lut[byte & 3];
+
+                        toplam = toplam + w0 * g_bitnet_cpu_qact[base0 + inner]
+                                        + w1 * g_bitnet_cpu_qact[base1 + inner]
+                                        + w2 * g_bitnet_cpu_qact[base2 + inner]
+                                        + w3 * g_bitnet_cpu_qact[base3 + inner];
+
+                        inner = inner + 1;
+                    }
+                    b_idx = b_idx + 1;
+                }
+            }
+
+            eger amax == 0 {
+                cikti[j] = 0;
+            } yoksa {
+                degisken scaled_product: tamsayi = toplam * amax;
+                degisken scale_quotient: tamsayi = scaled_product / 127;
+                degisken scale_remainder: tamsayi = scaled_product % 127;
+                degisken whole_q16: tamsayi = scale_quotient / BITNET_KERNEL_Q16;
+                degisken fraction_q16: tamsayi = scale_quotient % BITNET_KERNEL_Q16;
+                cikti[j] = whole_q16 * scale_q16 +
+                    (fraction_q16 * scale_q16) / BITNET_KERNEL_Q16 +
+                    (scale_remainder * scale_q16) / (127 * BITNET_KERNEL_Q16);
+            }
+            j = j + 1;
+        }
+        dondu 1;
+    }
+
+    g_work_weights = weights;
+    g_work_scale_q16 = scale_q16;
+    g_work_cikti = cikti;
+    g_work_amax = amax;
+    g_work_K = K;
+    g_work_N = N;
+
+    degisken num_threads: tamsayi = 8;
+    degisken chunk: tamsayi = N / num_threads;
+    degisken t: tamsayi = 0;
+    dongu t < num_threads {
+        g_work_j_start[t] = t * chunk;
+        eger t == num_threads - 1 {
+            g_work_j_end[t] = N;
+        } yoksa {
+            g_work_j_end[t] = (t + 1) * chunk;
+        }
+        g_work_done[t] = 0;
+        t = t + 1;
+    }
+
+    t = 0;
+    dongu t < num_threads {
+        ykn_dyn_call_ptr_3(g_fn_QueueUserWorkItem, bitnet_i2s_slice_worker, t, 0);
+        t = t + 1;
+    }
+
+    t = 0;
+    dongu t < num_threads {
+        dongu g_work_done[t] == 0 {
+            # bekle
+        }
+        t = t + 1;
+    }
+    dondu 1;
+}
+
+isv bitnet_f16_matvec_hizli(base_pencere: *u8, girdi: *tamsayi, cikti: *tamsayi, K: tamsayi, N: tamsayi, satir_bayti: tamsayi) -> tamsayi {
+    bitnet_cpu_init_pool();
+    bitnet_init_avx2_jit();
+    degisken f16_fn: *u8 = g_avx2_f16_dot_fn;
+    degisken q_fn: *u8 = g_avx2_q16_to_f32_fn;
+
+    eger f16_fn != 0 ve q_fn != 0 ve K <= 4096 {
+        degisken p_girdi: tamsayi = girdi as tamsayi;
+        degisken p_f32_ptr: *u8 = &g_lmhead_f32_buf;
+        degisken p_f32: tamsayi = p_f32_ptr as tamsayi;
+        ykn_dyn_call_ptr_3(q_fn, p_girdi, p_f32, K);
+
+        eger g_fn_QueueUserWorkItem != 0 ve N >= 64 {
+            g_f16_work_base = base_pencere;
+            g_f16_work_pf32 = p_f32;
+            g_f16_work_cikti = cikti;
+            g_f16_work_K = K;
+            g_f16_work_satir_bayti = satir_bayti;
+
+            degisken num_threads: tamsayi = 8;
+            degisken chunk: tamsayi = N / num_threads;
+            degisken t: tamsayi = 0;
+            dongu t < num_threads {
+                g_work_j_start[t] = t * chunk;
+                eger t == num_threads - 1 {
+                    g_work_j_end[t] = N;
+                } yoksa {
+                    g_work_j_end[t] = (t + 1) * chunk;
+                }
+                g_work_done[t] = 0;
+                t = t + 1;
+            }
+
+            t = 0;
+            dongu t < num_threads {
+                ykn_dyn_call_ptr_3(g_fn_QueueUserWorkItem, bitnet_f16_slice_worker, t, 0);
+                t = t + 1;
+            }
+
+            t = 0;
+            dongu t < num_threads {
+                dongu g_work_done[t] == 0 {
+                    # bekle
+                }
+                t = t + 1;
+            }
+            dondu 1;
+        }
+
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken row_ptr: *u8 = base_pencere + j * satir_bayti;
+            degisken p_row: tamsayi = row_ptr as tamsayi;
+            cikti[j] = ykn_dyn_call_ptr_3(f16_fn, p_row, p_f32, K);
+            j = j + 1;
+        }
+        dondu 1;
+    }
+
+    # Skaler fallback
+    init_fp16_lut();
+    degisken j_sc: tamsayi = 0;
+    dongu j_sc < N {
+        degisken row_ptr: *u8 = base_pencere + j_sc * satir_bayti;
+        degisken f16_dot_q32: tamsayi = 0;
+        degisken k: tamsayi = 0;
+        dongu k < K {
+            degisken lo: tamsayi = row_ptr[k * 2];
+            eger lo < 0 { lo = lo + 256; }
+            degisken hi: tamsayi = row_ptr[k * 2 + 1];
+            eger hi < 0 { hi = hi + 256; }
+            degisken u16: tamsayi = lo | (hi << 8);
+            degisken agirlik: tamsayi = g_fp16_lut[u16];
+            f16_dot_q32 = f16_dot_q32 + girdi[k] * agirlik;
+            k = k + 1;
+        }
+        cikti[j_sc] = f16_dot_q32 / 65536;
+        j_sc = j_sc + 1;
+    }
+    dondu 1;
+}
+
+
+
+# F16/F32 GGUF byte buffer'ları YKN scalar ABI'sinde signed u8 gibi
+# görünebilir; IEEE bit alanına girmeden önce her byte unsigned 0..255'e
+# normalize edilir. Native C++ kernel ham uint8_t belleğini zaten böyle görür.
+isv llm_u8_byte(deger: tamsayi) -> tamsayi {
+    eger deger < 0 ise { dondu deger + 256; }
+    dondu deger;
+}
+
+# F16 GGUF tensorlerini Q16.16'ya çevirir. Adapter backend'in gerçek
+# forward pass'i bu kernel üzerinden yapılır; F32 için ayrı native kernel
+# eklendiğinde aynı descriptor üzerinden çalışır.
+isv llm_f16_q16_coz(lo: tamsayi, hi: tamsayi) -> tamsayi {
+    degisken lo_u: tamsayi = llm_u8_byte(lo);
+    degisken hi_u: tamsayi = llm_u8_byte(hi);
+    degisken bits: tamsayi = lo_u + hi_u * 256;
+    degisken isaret: tamsayi = bits / 32768;
+    degisken us: tamsayi = (bits / 1024) % 32;
+    degisken mantis: tamsayi = bits % 1024;
+    eger us == 0 ise {
+        degisken alt: tamsayi = mantis / 256;
+        eger isaret == 1 ise { dondu 0 - alt; }
+        dondu alt;
+    }
+    eger us == 31 ise { dondu 0; }
+    degisken sonuc: tamsayi = (1024 + mantis) * 64;
+    degisken fark: tamsayi = us - 15;
+    eger fark > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i < fark { sonuc = sonuc * 2; i = i + 1; }
+    }
+    yoksa eger fark < 0 ise {
+        degisken i2: tamsayi = 0;
+        dongu i2 < 0 - fark { sonuc = sonuc / 2; i2 = i2 + 1; }
+    }
+    eger isaret == 1 ise { dondu 0 - sonuc; }
+    dondu sonuc;
+}
+
+# Quantized K block scales may be IEEE-754 half subnormals below one Q16.16
+# unit. Keep d in Q32.32 until its integer group scale is applied.
+isv llm_f16_q32_coz(lo: tamsayi, hi: tamsayi) -> tamsayi {
+    degisken lo_u: tamsayi = llm_u8_byte(lo);
+    degisken hi_u: tamsayi = llm_u8_byte(hi);
+    degisken bits: tamsayi = lo_u + hi_u * 256;
+    degisken isaret: tamsayi = bits / 32768;
+    degisken us: tamsayi = (bits / 1024) % 32;
+    degisken mantis: tamsayi = bits % 1024;
+    eger us == 0 ise {
+        degisken subnormal_q32: tamsayi = mantis * 256;
+        eger isaret == 1 ise { dondu 0 - subnormal_q32; }
+        dondu subnormal_q32;
+    }
+    eger us == 31 ise { dondu 0; }
+    degisken sonuc: tamsayi = 1024 + mantis;
+    degisken shift: tamsayi = us + 7;
+    dongu shift > 0 { sonuc = sonuc * 2; shift = shift - 1; }
+    eger isaret == 1 ise { dondu 0 - sonuc; }
+    dondu sonuc;
+}
+
+# Q1_0 dequantizer: GGML bloğu d(2) + qs[16]. Her bit pozitif/negatif
+# işareti taşır; ölçek gerçek ağırlığın mutlak değeridir.
+isv llm_q1_0_eleman_q16(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 128 ise { dondu 0; }
+    degisken d: tamsayi = llm_f16_q16_coz(agirlik[blok_ofseti], agirlik[blok_ofseti + 1]);
+    degisken bayt: tamsayi = agirlik[blok_ofseti + 2 + eleman / 8];
+    degisken bit_shift: tamsayi = eleman % 8;
+    degisken bit_bolen: tamsayi = 1;
+    dongu bit_shift > 0 { bit_bolen = bit_bolen * 2; bit_shift = bit_shift - 1; }
+    degisken bit: tamsayi = (bayt / bit_bolen) % 2;
+    eger bit == 0 ise { dondu 0 - d; }
+    dondu d;
+}
+
+# Q1_0 ağırlıklar row-major [K x N], 128 elemanlık bloklar.
+isv llm_q1_0_matris_carp(agirlik: *u8,
+                          aktivasyon: *tamsayi,
+                          cikti: *tamsayi,
+                          M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 veya K % 128 != 0 ise { BITNET_KERNEL_HATASI = 8; dondu 0; }
+    degisken satir_bayti: tamsayi = (K / 128) * 18;
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken blok: tamsayi = j * satir_bayti + (k / 128) * 18;
+                degisken w: tamsayi = llm_q1_0_eleman_q16(agirlik, blok, k % 128);
+                toplam = toplam + (aktivasyon[i * K + k] * w) / BITNET_KERNEL_Q16;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# F16 ağırlıklar row-major [K x N], iki byte little-endian.
+# TQ2_0 (GGML type 35): 256 ternary values per block of 66 bytes (qs[64] + d(f16)).
+# Ternary values: 00 -> -1, 01 -> 0, 10 -> +1.
+isv llm_tq2_0_eleman_q16(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 256 ise { dondu 0; }
+    degisken d: tamsayi = llm_f16_q16_coz(agirlik[blok_ofseti + 64], agirlik[blok_ofseti + 65]);
+    eger d == 0 { dondu 0; }
+    degisken bayt: tamsayi = agirlik[blok_ofseti + (eleman / 4)];
+    degisken shift: tamsayi = (eleman % 4) * 2;
+    degisken shift_bolen: tamsayi = 1;
+    dongu shift > 0 { shift_bolen = shift_bolen * 2; shift = shift - 1; }
+    degisken v: tamsayi = (bayt / shift_bolen) % 4;
+    eger v == 2 { dondu d; }
+    yoksa eger v == 0 { dondu 0 - d; }
+    dondu 0;
+}
+
+isv llm_tq2_0_matris_carp(agirlik: *u8,
+                          aktivasyon: *tamsayi,
+                          cikti: *tamsayi,
+                          M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 veya K % 256 != 0 ise { BITNET_KERNEL_HATASI = 8; dondu 0; }
+    degisken blocks_per_row: tamsayi = K / 256;
+    degisken satir_bayti: tamsayi = blocks_per_row * 66;
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken act_base_row: tamsayi = i * K;
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken row_offset: tamsayi = j * satir_bayti;
+            degisken toplam: tamsayi = 0;
+            degisken b: tamsayi = 0;
+            dongu b < blocks_per_row {
+                degisken blok_ofset: tamsayi = row_offset + b * 66;
+                degisken act_offset: tamsayi = act_base_row + b * 256;
+                degisken d: tamsayi = llm_f16_q16_coz(agirlik[blok_ofset + 64], agirlik[blok_ofset + 65]);
+                eger d != 0 {
+                    degisken blok_toplam: tamsayi = 0;
+                    degisken bi: tamsayi = 0;
+                    dongu bi < 64 {
+                        degisken bval: tamsayi = agirlik[blok_ofset + bi];
+                        degisken act_idx: tamsayi = act_offset + bi * 4;
+                        degisken v0: tamsayi = bval % 4;
+                        eger v0 == 2 { blok_toplam = blok_toplam + aktivasyon[act_idx]; }
+                        yoksa eger v0 == 0 { blok_toplam = blok_toplam - aktivasyon[act_idx]; }
+                        degisken v1: tamsayi = (bval / 4) % 4;
+                        eger v1 == 2 { blok_toplam = blok_toplam + aktivasyon[act_idx + 1]; }
+                        yoksa eger v1 == 0 { blok_toplam = blok_toplam - aktivasyon[act_idx + 1]; }
+                        degisken v2: tamsayi = (bval / 16) % 4;
+                        eger v2 == 2 { blok_toplam = blok_toplam + aktivasyon[act_idx + 2]; }
+                        yoksa eger v2 == 0 { blok_toplam = blok_toplam - aktivasyon[act_idx + 2]; }
+                        degisken v3: tamsayi = (bval / 64) % 4;
+                        eger v3 == 2 { blok_toplam = blok_toplam + aktivasyon[act_idx + 3]; }
+                        yoksa eger v3 == 0 { blok_toplam = blok_toplam - aktivasyon[act_idx + 3]; }
+                        bi = bi + 1;
+                    }
+                    toplam = toplam + (blok_toplam * d) / 65536;
+                }
+                b = b + 1;
+            }
+            cikti[i * N + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv llm_f16_matris_carp(agirlik: *u8,
+                        aktivasyon: *tamsayi,
+                        cikti: *tamsayi,
+                        M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya
+       M <= 0 veya K <= 0 veya N <= 0 ise { BITNET_KERNEL_HATASI = 2; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken w_ofset: tamsayi = (j * K + k) * 2;
+                degisken w: tamsayi = llm_f16_q16_coz(agirlik[w_ofset], agirlik[w_ofset + 1]);
+                toplam = toplam + aktivasyon[i * K + k] * w;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam / BITNET_KERNEL_Q16;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# GGML block_q4_K içindeki scale/min alanlarını açar. Her blok 256 ağırlık,
+# 8 adet 32-elemanlı sub-block ve low/high nibble çiftlerinden oluşur.
+isv llm_q4_k_eleman_q16(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 256 ise { dondu 0; }
+    degisken sub: tamsayi = eleman / 32;
+    degisken lane: tamsayi = eleman % 32;
+    # Q4_K packs each pair of 32-value groups into the low/high nibble
+    # of the same 32-byte slice: groups 0/1 share bytes 0..31, 2/3
+    # share 32..63, and so on.
+    degisken packed_index: tamsayi = (sub % 4) * 32 + lane;
+    degisken packed: tamsayi = llm_u8_byte(agirlik[blok_ofseti + 16 + packed_index]);
+    degisken q: tamsayi = packed % 16;
+    eger sub >= 4 { q = packed / 16; }
+
+    degisken sc: tamsayi = 0;
+    degisken mn: tamsayi = 0;
+    eger sub < 4 ise {
+        sc = llm_u8_byte(agirlik[blok_ofseti + 4 + sub]) % 64;
+        mn = llm_u8_byte(agirlik[blok_ofseti + 8 + sub]) % 64;
+    } yoksa {
+        degisken scale_hi_source: tamsayi = llm_u8_byte(agirlik[blok_ofseti + 4 + sub - 4]);
+        degisken scale_min_hi_source: tamsayi = llm_u8_byte(agirlik[blok_ofseti + 4 + sub]);
+        degisken scale_min_pair: tamsayi = llm_u8_byte(agirlik[blok_ofseti + 4 + sub + 4]);
+        # GGML's high groups put the two high bits from sc[j-4] in
+        # scale bits 4..5 and take sc[j]'s low nibble as bits 0..3.
+        sc = (scale_min_pair % 16) + ((scale_hi_source / 64) * 16);
+        mn = (scale_min_pair / 16) + ((scale_min_hi_source / 64) * 16);
+    }
+    degisken d_q32: tamsayi = llm_f16_q32_coz(agirlik[blok_ofseti], agirlik[blok_ofseti + 1]);
+    degisken dmin_q32: tamsayi = llm_f16_q32_coz(agirlik[blok_ofseti + 2], agirlik[blok_ofseti + 3]);
+    dondu (d_q32 * (sc * q) - dmin_q32 * mn) / 65536;
+}
+
+# GGML Q4_K row-major [N x K], K multiple of 256; each block is 144 bytes.
+isv llm_q4_k_matris_carp(agirlik: *u8,
+                          aktivasyon: *tamsayi,
+                          cikti: *tamsayi,
+                          M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 or K % 256 != 0 ise { BITNET_KERNEL_HATASI = 9; dondu 0; }
+    eger K > 65536 { BITNET_KERNEL_HATASI = 9; dondu 0; }
+    degisken satir_bayti: tamsayi = (K / 256) * 144;
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        eger llm_q6_k_q8k_aktivasyon_hazirla(&aktivasyon[i * K], K) != 1 { BITNET_KERNEL_HATASI = 9; dondu 0; }
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken output_q16: tamsayi = 0;
+            degisken block: tamsayi = 0;
+            dongu block < K / 256 {
+                degisken block_offset: tamsayi = j * satir_bayti + block * 144;
+                degisken dot_scale: tamsayi = 0;
+                degisken dot_min: tamsayi = 0;
+                degisken k: tamsayi = 0;
+                dongu k < 256 {
+                    degisken sub: tamsayi = k / 32;
+                    degisken lane: tamsayi = k % 32;
+                    degisken packed_index: tamsayi = block_offset + 16 + (sub % 4) * 32 + lane;
+                    degisken packed: tamsayi = llm_u8_byte(agirlik[packed_index]);
+                    degisken q: tamsayi = packed % 16;
+                    eger sub >= 4 { q = packed / 16; }
+                    degisken sc: tamsayi = 0;
+                    degisken mn: tamsayi = 0;
+                    eger sub < 4 {
+                        sc = llm_u8_byte(agirlik[block_offset + 4 + sub]) % 64;
+                        mn = llm_u8_byte(agirlik[block_offset + 8 + sub]) % 64;
+                    } yoksa {
+                        degisken hi_sc: tamsayi = llm_u8_byte(agirlik[block_offset + sub]);
+                        degisken hi_mn: tamsayi = llm_u8_byte(agirlik[block_offset + 4 + sub]);
+                        degisken pair: tamsayi = llm_u8_byte(agirlik[block_offset + 8 + sub]);
+                        sc = pair % 16 + (hi_sc / 64) * 16;
+                        mn = pair / 16 + (hi_mn / 64) * 16;
+                    }
+                    degisken q8: tamsayi = g_llm_q6_q8_activations[block * 256 + k];
+                    dot_scale = dot_scale + sc * q * q8;
+                    dot_min = dot_min + mn * q8;
+                    k = k + 1;
+                }
+                degisken d_q32: tamsayi = llm_f16_q32_coz(agirlik[block_offset], agirlik[block_offset + 1]);
+                degisken dmin_q32: tamsayi = llm_f16_q32_coz(agirlik[block_offset + 2], agirlik[block_offset + 3]);
+                degisken scaled_sum_q16: tamsayi = (d_q32 * dot_scale - dmin_q32 * dot_min) / 65536;
+
+                output_q16 = output_q16 +
+                    (scaled_sum_q16 * g_llm_q6_q8_scales_q16[block]) / 65536;
+                block = block + 1;
+            }
+            cikti[i * N + j] = output_q16;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# GGML block_q6_K elemanı. ql/qh dört 6-bit lane'e ayrılmıştır;
+# 16 signed sub-block ölçeği ve ortak FP16 d ölçeği uygulanır.
+isv llm_q6_k_eleman_q16(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 256 ise { dondu 0; }
+    degisken yarim: tamsayi = eleman / 128;
+    degisken yerel: tamsayi = eleman % 128;
+    degisken grup: tamsayi = yerel / 32;
+    degisken lane: tamsayi = yerel % 32;
+    degisken ql_ofset: tamsayi = blok_ofseti + yarim * 64 + (grup % 2) * 32 + lane;
+    degisken qh_ofset: tamsayi = blok_ofseti + 128 + yarim * 32 + lane;
+    degisken ql: tamsayi = llm_u8_byte(agirlik[ql_ofset]);
+    eger grup >= 2 ise { ql = ql / 16; } yoksa { ql = ql % 16; }
+    degisken qh: tamsayi = llm_u8_byte(agirlik[qh_ofset]);
+    degisken bolen: tamsayi = 1;
+    eger grup == 1 ise { bolen = 4; }
+    eger grup == 2 ise { bolen = 16; }
+    eger grup == 3 ise { bolen = 64; }
+    degisken q: tamsayi = ql + ((qh / bolen) % 4) * 16 - 32;
+    degisken scale_ofset: tamsayi = blok_ofseti + 192 + yarim * 8 + grup * 2 + lane / 16;
+    degisken scale: tamsayi = llm_u8_byte(agirlik[scale_ofset]);
+    eger scale >= 128 ise { scale = scale - 256; }
+    degisken d_q32: tamsayi = llm_f16_q32_coz(agirlik[blok_ofseti + 208], agirlik[blok_ofseti + 209]);
+    dondu (d_q32 * scale * q) / 65536;
+}
+
+# Quantize one activation row to GGML Q8_K's 256-value blocks, as used by
+# llama.cpp's Q6_K x Q8_K vector dot path.
+isv llm_q6_k_q8k_aktivasyon_hazirla(aktivasyon: *tamsayi, K: tamsayi) -> tamsayi {
+    eger aktivasyon == 0 veya K <= 0 veya K > 65536 veya K % 256 != 0 { dondu 0; }
+    degisken block: tamsayi = 0;
+    dongu block < K / 256 {
+        degisken base: tamsayi = block * 256;
+        degisken max_signed: tamsayi = aktivasyon[base];
+        degisken max_abs: tamsayi = max_signed;
+        eger max_abs < 0 { max_abs = 0 - max_abs; }
+        degisken i: tamsayi = 1;
+        dongu i < 256 {
+            degisken x: tamsayi = aktivasyon[base + i];
+            degisken ax: tamsayi = x;
+            eger ax < 0 { ax = 0 - ax; }
+            eger ax > max_abs { max_abs = ax; max_signed = x; }
+            i = i + 1;
+        }
+        eger max_abs == 0 {
+            g_llm_q6_q8_scales_q16[block] = 0;
+            i = 0;
+            dongu i < 256 { g_llm_q6_q8_activations[base + i] = 0; i = i + 1; }
+        } yoksa {
+            g_llm_q6_q8_scales_q16[block] = (0 - max_signed) / 127;
+            i = 0;
+            dongu i < 256 {
+                degisken numerator: tamsayi = 0 - 127 * aktivasyon[base + i];
+                degisken numerator_abs: tamsayi = numerator;
+                eger numerator_abs < 0 { numerator_abs = 0 - numerator_abs; }
+                degisken denominator: tamsayi = max_signed;
+                eger denominator < 0 { denominator = 0 - denominator; }
+                degisken q_abs: tamsayi = (numerator_abs + denominator / 2) / denominator;
+                degisken q: tamsayi = q_abs;
+                eger (numerator < 0 and max_signed > 0) or
+                     (numerator > 0 and max_signed < 0) { q = 0 - q_abs; }
+                eger q > 127 { q = 127; }
+                eger q < -127 { q = -127; }
+                g_llm_q6_q8_activations[base + i] = q;
+                i = i + 1;
+            }
+        }
+        block = block + 1;
+    }
+    dondu 1;
+}
+
+# GGML Q6_K row-major [N x K], K multiple of 256; each block is 210 bytes.
+isv llm_q6_k_matris_carp(agirlik: *u8,
+                          aktivasyon: *tamsayi,
+                          cikti: *tamsayi,
+                          M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 veya K % 256 != 0 ise { BITNET_KERNEL_HATASI = 10; dondu 0; }
+    eger K > 65536 { BITNET_KERNEL_HATASI = 10; dondu 0; }
+
+    degisken satir_bayti: tamsayi = (K / 256) * 210;
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        eger llm_q6_k_q8k_aktivasyon_hazirla(&aktivasyon[i * K], K) != 1 { BITNET_KERNEL_HATASI = 10; dondu 0; }
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken output_q16: tamsayi = 0;
+            degisken block: tamsayi = 0;
+            dongu block < K / 256 {
+                degisken block_offset: tamsayi = j * satir_bayti + block * 210;
+                degisken weighted_sum: tamsayi = 0;
+                degisken k: tamsayi = 0;
+                dongu k < 256 {
+                    degisken half: tamsayi = k / 128;
+                    degisken local: tamsayi = k % 128;
+                    degisken group: tamsayi = local / 32;
+                    degisken lane: tamsayi = local % 32;
+                    degisken ql_offset: tamsayi = block_offset + half * 64 + (group % 2) * 32 + lane;
+                    degisken qh_offset: tamsayi = block_offset + 128 + half * 32 + lane;
+                    degisken ql: tamsayi = llm_u8_byte(agirlik[ql_offset]);
+                    eger group >= 2 { ql = ql / 16; } yoksa { ql = ql % 16; }
+                    degisken qh: tamsayi = llm_u8_byte(agirlik[qh_offset]);
+                    degisken shift_divisor: tamsayi = 1;
+                    degisken shift_count: tamsayi = group * 2;
+                    dongu shift_count > 0 { shift_divisor = shift_divisor * 2; shift_count = shift_count - 1; }
+                    degisken q: tamsayi = ql + ((qh / shift_divisor) % 4) * 16 - 32;
+                    degisken scale: tamsayi = llm_u8_byte(agirlik[block_offset + 192 + half * 8 + group * 2 + lane / 16]);
+                    eger scale >= 128 { scale = scale - 256; }
+                    degisken akt: tamsayi = aktivasyon[i * K + block * 256 + k];
+                    weighted_sum = weighted_sum + (scale * q * akt) / 65536;
+                    k = k + 1;
+                }
+                degisken d_q32: tamsayi = llm_f16_q32_coz(
+                    agirlik[block_offset + 208], agirlik[block_offset + 209]);
+                degisken scaled_sum_q16: tamsayi = (d_q32 * weighted_sum) / 65536;
+                output_q16 = output_q16 + scaled_sum_q16;
+                block = block + 1;
+            }
+            cikti[i * N + j] = output_q16;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# GGML block_iq4_nl nonlinear codebook değerleri.
+isv llm_iq4_nl_deger(indeks: tamsayi) -> tamsayi {
+    eger indeks == 0 ise { dondu -127; }
+    eger indeks == 1 ise { dondu -104; }
+    eger indeks == 2 ise { dondu -83; }
+    eger indeks == 3 ise { dondu -65; }
+    eger indeks == 4 ise { dondu -49; }
+    eger indeks == 5 ise { dondu -35; }
+    eger indeks == 6 ise { dondu -22; }
+    eger indeks == 7 ise { dondu -10; }
+    eger indeks == 8 ise { dondu 1; }
+    eger indeks == 9 ise { dondu 13; }
+    eger indeks == 10 ise { dondu 25; }
+    eger indeks == 11 ise { dondu 38; }
+    eger indeks == 12 ise { dondu 53; }
+    eger indeks == 13 ise { dondu 69; }
+    eger indeks == 14 ise { dondu 89; }
+    eger indeks == 15 ise { dondu 113; }
+    dondu 0;
+}
+
+isv llm_iq4_nl_eleman_q16(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 32 ise { dondu 0; }
+    degisken packed: tamsayi = llm_u8_byte(agirlik[blok_ofseti + 2 + eleman % 16]);
+    degisken kod: tamsayi = packed % 16;
+    eger eleman >= 16 ise { kod = packed / 16; }
+    degisken d: tamsayi = llm_f16_q16_coz(agirlik[blok_ofseti], agirlik[blok_ofseti + 1]);
+    dondu d * llm_iq4_nl_deger(kod);
+}
+
+# GGML IQ4_NL row-major [N x K], K multiple of 32; 18 bytes per block.
+isv llm_iq4_nl_matris_carp(agirlik: *u8,
+                            aktivasyon: *tamsayi,
+                            cikti: *tamsayi,
+                            M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 veya K % 32 != 0 ise { BITNET_KERNEL_HATASI = 11; dondu 0; }
+    degisken satir_bayti: tamsayi = (K / 32) * 18;
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken blok: tamsayi = j * satir_bayti + (k / 32) * 18;
+                degisken w: tamsayi = llm_iq4_nl_eleman_q16(agirlik, blok, k % 32);
+                toplam = toplam + (aktivasyon[i * K + k] * w) / BITNET_KERNEL_Q16;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# F32 IEEE-754 ağırlığı Q16.16'ya çevirir. NaN/Inf güvenlik nedeniyle
+# sıfırlanır; gerçek sayısal çekirdek aynı descriptor üzerinden çalışır.
+isv llm_f32_q16_coz(b0: tamsayi, b1: tamsayi, b2: tamsayi, b3: tamsayi) -> tamsayi {
+    degisken b0_u: tamsayi = llm_u8_byte(b0);
+    degisken b1_u: tamsayi = llm_u8_byte(b1);
+    degisken b2_u: tamsayi = llm_u8_byte(b2);
+    degisken b3_u: tamsayi = llm_u8_byte(b3);
+    degisken bits: tamsayi = b0_u + b1_u * 256 + b2_u * 65536 + b3_u * 16777216;
+    degisken isaret: tamsayi = bits / 2147483648;
+    degisken us: tamsayi = (bits / 8388608) % 256;
+    degisken mantis: tamsayi = bits % 8388608;
+    eger us == 255 ise { dondu 0; }
+    eger us == 0 ise {
+        degisken alt: tamsayi = mantis / 128;
+        eger isaret == 1 ise { dondu 0 - alt; }
+        dondu alt;
+    }
+    degisken sonuc: tamsayi = (8388608 + mantis) / 128;
+    degisken fark: tamsayi = us - 127;
+    eger fark > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i < fark { sonuc = sonuc * 2; i = i + 1; }
+    }
+    yoksa eger fark < 0 ise {
+        degisken i2: tamsayi = 0;
+        dongu i2 < 0 - fark { sonuc = sonuc / 2; i2 = i2 + 1; }
+    }
+    eger isaret == 1 ise { dondu 0 - sonuc; }
+    dondu sonuc;
+}
+
+# BF16 little-endian değerini F32 bit alanına genişletip Q16.16'ya çevirir.
+isv llm_bf16_q16_coz(lo: tamsayi, hi: tamsayi) -> tamsayi {
+    dondu llm_f32_q16_coz(0, 0, llm_u8_byte(lo), llm_u8_byte(hi));
+}
+
+isv llm_bf16_matris_carp(agirlik: *u8,
+                         aktivasyon: *tamsayi,
+                         cikti: *tamsayi,
+                         M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya
+       M <= 0 veya K <= 0 veya N <= 0 ise { BITNET_KERNEL_HATASI = 12; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken w_ofset: tamsayi = (j * K + k) * 2;
+                degisken w: tamsayi = llm_bf16_q16_coz(agirlik[w_ofset], agirlik[w_ofset + 1]);
+                toplam = toplam + aktivasyon[i * K + k] * w;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam / BITNET_KERNEL_Q16;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# F32 ağırlıklar row-major [K x N], dört byte little-endian.
+isv llm_f32_matris_carp(agirlik: *u8,
+                        aktivasyon: *tamsayi,
+                        cikti: *tamsayi,
+                        M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya
+       M <= 0 veya K <= 0 veya N <= 0 ise { BITNET_KERNEL_HATASI = 2; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken w_ofset: tamsayi = (j * K + k) * 4;
+                degisken w: tamsayi = llm_f32_q16_coz(
+                    agirlik[w_ofset], agirlik[w_ofset + 1],
+                    agirlik[w_ofset + 2], agirlik[w_ofset + 3]);
+                toplam = toplam + aktivasyon[i * K + k] * w;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam / BITNET_KERNEL_Q16;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+
+
+# Router'ın seçtiği expert'ler için gerçek packed matmul çalıştırır ve
+# sonuçları eşit ağırlıklı top-k kombinasyonunda toplar.
+isv bitnet_moe_paketli_ileri(paketli_expertler: *u8,
+                             expert_stride: tamsayi,
+                             router_logits: *tamsayi,
+                             aktivasyon: *tamsayi,
+                             ara_cikti: *tamsayi,
+                             cikti: *tamsayi,
+                             expert_sayisi: tamsayi,
+                             top_k: tamsayi,
+                             K: tamsayi,
+                             N: tamsayi) -> tamsayi {
+    BITNET_KERNEL_HATASI = 0;
+    eger paketli_expertler == 0 veya router_logits == 0 veya aktivasyon == 0 veya
+       ara_cikti == 0 veya cikti == 0 veya expert_stride <= 0 veya
+       expert_sayisi <= 0 veya expert_sayisi > 64 veya top_k <= 0 veya
+       top_k > expert_sayisi veya K <= 0 veya N <= 0 ise { BITNET_KERNEL_HATASI = 3; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < N { cikti[i] = 0; i = i + 1; }
+    degisken secilen: [64]tamsayi;
+    degisken adet: tamsayi = bitnet_backend_moe_topk(router_logits, expert_sayisi, top_k, secilen);
+    eger adet <= 0 ise { BITNET_KERNEL_HATASI = 4; dondu 0; }
+    degisken e: tamsayi = 0;
+    dongu e < adet {
+        degisken uzman: tamsayi = secilen[e];
+        eger bitnet_i2s_paketli_matris_carp(
+            paketli_expertler + uzman * expert_stride, aktivasyon,
+            ara_cikti + e * N, 1, K, N) == 0 ise { dondu 0; }
+        i = 0;
+        dongu i < N {
+            cikti[i] = cikti[i] + ara_cikti[e * N + i] / adet;
+            i = i + 1;
+        }
+        e = e + 1;
+    }
+    dondu adet;
+}

@@ -1,0 +1,12 @@
+# 中文测试: 浮点数类型
+函数 主函数(argc: 整数, argv: **u8) -> 整数 {
+    变量 x: 浮点 = 4.5;
+    变量 y: 浮点 = 2.0;
+    变量 z: 浮点 = x * y;
+    如果 z == 9.0 则 {
+        ekrana_yaz("ZH-FLOAT-PASS\n".ptr);
+    } 否则 {
+        ekrana_yaz("ZH-FLOAT-FAIL\n".ptr);
+    }
+    返回 0;
+}

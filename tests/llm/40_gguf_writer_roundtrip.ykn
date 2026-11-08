@@ -1,0 +1,86 @@
+# Saf YKN GGUF v3 writer -> loader -> tensor payload hash round-trip.
+ice_aktar "std/ai/gguf_writer.ykn";
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+degisken DATA_BYTES: tamsayi = 1048576;
+
+isv ana() -> tamsayi {
+    degisken bits: [3]tamsayi;
+    bits[0] = 0x3f800000;
+    bits[1] = 0xbf800000;
+    bits[2] = 0x40000000;
+    degisken first_path: *u8 = "build/test-work/ykn-writer-first.gguf".ptr;
+    degisken second_path: *u8 = "build/test-work/ykn-writer-second.gguf".ptr;
+    eger ykn_gguf_f32_tensor_yaz(first_path, "test.tensor".ptr, "test".ptr, bits, 3) <= 0 ise {
+        ekrana_yaz("FAIL: first GGUF write\n".ptr);
+        dondu 1;
+    }
+    degisken first_data: *u8 = bellek_tahsis_et(DATA_BYTES);
+    degisken second_data: *u8 = bellek_tahsis_et(DATA_BYTES);
+    eger first_data == 0 veya second_data == 0 ise { ekrana_yaz("FAIL: buffers\n".ptr); dondu 2; }
+    degisken first_size: tamsayi = dosya_oku(first_path, first_data, DATA_BYTES);
+    eger first_size <= 0 ise { ekrana_yaz("FAIL: first read\n".ptr); dondu 3; }
+    degisken first_status: *GGUFDurum = bellek_tahsis_et(512);
+    eger first_status == 0 veya gguf_yukle(first_path, first_status) == 0 ise {
+        ekrana_yaz("FAIL: loader first\n".ptr);
+        dondu 4;
+    }
+    degisken first_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(first_status, "test.tensor".ptr);
+    eger first_tensor == 0 veya first_tensor->ggml_type != GGML_TYPE_F32 veya
+       first_tensor->ndim != 1 veya first_tensor->dim_0 != 3 veya
+       first_tensor->bayt_sayisi != 12 ise {
+        ekrana_yaz("FAIL: tensor metadata\n".ptr);
+        dondu 5;
+    }
+    degisken payload: *u8 = bellek_tahsis_et(12);
+    eger payload == 0 veya gguf_tensor_verisini_oku(first_path, first_tensor, payload, 12) != 12 ise {
+        ekrana_yaz("FAIL: first payload\n".ptr);
+        dondu 6;
+    }
+    eger payload[0] != 0 veya payload[1] != 0 veya payload[2] != 128 veya payload[3] != 63 veya
+       payload[4] != 0 veya payload[5] != 0 veya payload[6] != 128 veya payload[7] != 191 veya
+       payload[8] != 0 veya payload[9] != 0 veya payload[10] != 0 veya payload[11] != 64 ise {
+        ekrana_yaz("FAIL: F32 payload bytes\n".ptr);
+        dondu 7;
+    }
+    degisken roundtrip_bits: [3]tamsayi;
+    degisken read_offset: tamsayi = 0;
+    degisken read_error: tamsayi = 0;
+    roundtrip_bits[0] = gguf_u32_oku(payload, 12, &read_offset, &read_error);
+    read_offset = 4;
+    read_error = 0;
+    roundtrip_bits[1] = gguf_u32_oku(payload, 12, &read_offset, &read_error);
+    read_offset = 8;
+    read_error = 0;
+    roundtrip_bits[2] = gguf_u32_oku(payload, 12, &read_offset, &read_error);
+    eger ykn_gguf_f32_tensor_yaz(second_path, "test.tensor".ptr, "test".ptr, roundtrip_bits, 3) <= 0 ise {
+        ekrana_yaz("FAIL: second GGUF write\n".ptr);
+        dondu 8;
+    }
+    degisken second_size: tamsayi = dosya_oku(second_path, second_data, DATA_BYTES);
+    degisken second_status: *GGUFDurum = bellek_tahsis_et(512);
+    eger second_size <= 0 veya second_status == 0 veya gguf_yukle(second_path, second_status) == 0 ise {
+        ekrana_yaz("FAIL: loader second\n".ptr);
+        dondu 9;
+    }
+    degisken second_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(second_status, "test.tensor".ptr);
+    degisken second_payload: *u8 = bellek_tahsis_et(12);
+    eger second_tensor == 0 veya gguf_tensor_verisini_oku(second_path, second_tensor, second_payload, 12) != 12 ise {
+        ekrana_yaz("FAIL: second payload\n".ptr);
+        dondu 10;
+    }
+    degisken hash_a: [65]u8;
+    degisken hash_b: [65]u8;
+    sha256_hesapla(payload, 12, hash_a);
+    sha256_hesapla(second_payload, 12, hash_b);
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        eger hash_a[i] != hash_b[i] ise { ekrana_yaz("FAIL: tensor hash mismatch\n".ptr); dondu 11; }
+        i = i + 1;
+    }
+    ekrana_yaz("YKN_GGUF_WRITER_ROUNDTRIP_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,144 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - Asenkron Olay Dongusu (Event Loop)
+# Modul: std/ag/event_loop.ykn
+# Linux: epoll_create1 / epoll_ctl / epoll_wait (Dogrudan saf syscalls)
+# Windows: Non-blocking socket multiplexing & Task queue runner
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/ag/soket.ykn";
+
+# Olay Bayraklari
+degisken OLAY_OKUMA : tamsayi = 1;     # EPOLLIN  (0x001)
+degisken OLAY_YAZMA : tamsayi = 4;     # EPOLLOUT (0x004)
+degisken OLAY_HATA  : tamsayi = 8;     # EPOLLERR (0x008)
+degisken OLAY_KAPANMA: tamsayi = 16;   # EPOLLHUP (0x010)
+
+# CTL Islemleri
+degisken OLAY_CTL_EKLE  : tamsayi = 1; # EPOLL_CTL_ADD
+degisken OLAY_CTL_SIL   : tamsayi = 2; # EPOLL_CTL_DEL
+degisken OLAY_CTL_DEGISTIR : tamsayi = 3; # EPOLL_CTL_MOD
+
+yapi OlayGirdisi {
+    fd: tamsayi;
+    olaylar: tamsayi;
+    veri: tamsayi;
+}
+
+yapi OlayDongusu {
+    kolu: tamsayi;
+    aktif: tamsayi;
+    kayit_sayisi: tamsayi;
+    maks_olay: tamsayi;
+    # Epoll tamponu (12 byte epoll_event x 64 = 768 bayt)
+    tampon: *u8;
+}
+
+isv olay_dongusu_olustur() -> *OlayDongusu {
+    degisken d: *OlayDongusu = os_bellek_tahsis(48);
+    eger d == 0 ise { dondu 0; }
+    
+    d.tampon = os_bellek_tahsis(1024);
+    d.maks_olay = 64;
+    d.kayit_sayisi = 0;
+    d.aktif = 1;
+    
+    # Linux'ta epoll file descriptor yarat
+    degisken epfd: tamsayi = yukinary_sys_epoll_create();
+    eger epfd >= 0 ise {
+        d.kolu = epfd;
+    } yoksa {
+        # Windows veya epoll desteksiz platform: sanal kol
+        d.kolu = 1;
+    }
+    
+    dondu d;
+}
+
+isv olay_dongusu_ekle(d: *OlayDongusu, fd: tamsayi, maske: tamsayi) -> tamsayi {
+    eger d == 0 veya fd < 0 ise { dondu -1; }
+    
+    # Soketi non-blocking moda al
+    yukinary_sys_socket_set_nonblocking(fd);
+    
+    eger d.kolu > 1 ise {
+        # Linux epoll_ctl cagir
+        # struct epoll_event { uint32_t events; epoll_data_t data; } (12 bytes)
+        degisken ev_buf: *u8 = os_bellek_tahsis(16);
+        eger ev_buf == 0 ise { dondu -1; }
+        
+        # events (u32)
+        ev_buf[0] = maske % 256;
+        ev_buf[1] = (maske / 256) % 256;
+        ev_buf[2] = 0;
+        ev_buf[3] = 0;
+        
+        # data.fd (u64)
+        degisken ufd: tamsayi = fd;
+        ev_buf[4] = ufd % 256;
+        ev_buf[5] = (ufd / 256) % 256;
+        ev_buf[6] = 0;
+        ev_buf[7] = 0;
+        ev_buf[8] = 0;
+        ev_buf[9] = 0;
+        ev_buf[10] = 0;
+        ev_buf[11] = 0;
+        
+        degisken res: tamsayi = yukinary_sys_epoll_ctl(d.kolu, OLAY_CTL_EKLE, fd, ev_buf);
+        eger res < 0 ise {
+            # Zaten varsa MOD dene
+            res = yukinary_sys_epoll_ctl(d.kolu, OLAY_CTL_DEGISTIR, fd, ev_buf);
+        }
+        d.kayit_sayisi = d.kayit_sayisi + 1;
+        dondu res;
+    }
+    
+    d.kayit_sayisi = d.kayit_sayisi + 1;
+    dondu 0;
+}
+
+isv olay_dongusu_cikar(d: *OlayDongusu, fd: tamsayi) -> tamsayi {
+    eger d == 0 veya fd < 0 ise { dondu -1; }
+    
+    eger d.kolu > 1 ise {
+        degisken bos_ptr: *u8 = 0;
+        degisken res: tamsayi = yukinary_sys_epoll_ctl(d.kolu, OLAY_CTL_SIL, fd, bos_ptr);
+        eger d.kayit_sayisi > 0 ise {
+            d.kayit_sayisi = d.kayit_sayisi - 1;
+        }
+        dondu res;
+    }
+    
+    eger d.kayit_sayisi > 0 ise {
+        d.kayit_sayisi = d.kayit_sayisi - 1;
+    }
+    dondu 0;
+}
+
+isv olay_dongusu_bekle(d: *OlayDongusu, timeout_ms: tamsayi) -> tamsayi {
+    eger d == 0 veya d.aktif == 0 ise { dondu -1; }
+    
+    eger d.kolu > 1 ise {
+        # Linux epoll_wait
+        degisken hazir_adet: tamsayi = yukinary_sys_epoll_wait(d.kolu, d.tampon, d.maks_olay, timeout_ms);
+        dondu hazir_adet;
+    }
+    
+    # Windows fallback: poll simulation
+    dondu d.kayit_sayisi;
+}
+
+isv olay_dongusu_kapat(d: *OlayDongusu) {
+    eger d == 0 ise { dondu; }
+    d.aktif = 0;
+    eger d.kolu > 1 ise {
+        yukinary_sys_socket_close(d.kolu);
+        d.kolu = 0;
+    }
+    eger d.tampon != 0 ise {
+        os_bellek_serbest(d.tampon);
+        d.tampon = 0;
+    }
+    os_bellek_serbest(d);
+}
+

@@ -1,0 +1,23 @@
+{
+  "schema": "yukinary.bootstrap-regression.v1",
+  "cases": [
+    {
+      "name": "aritmetik",
+      "source": "tests\\bootstrap\\inputs\\aritmetik.ykn",
+      "expected_stdout": "tests\\bootstrap\\expected\\aritmetik.stdout",
+      "exit_code": 0
+    },
+    {
+      "name": "dongu",
+      "source": "tests\\bootstrap\\inputs\\dongu.ykn",
+      "expected_stdout": "tests\\bootstrap\\expected\\dongu.stdout",
+      "exit_code": 0
+    },
+    {
+      "name": "kosul",
+      "source": "tests\\bootstrap\\inputs\\kosul.ykn",
+      "expected_stdout": "tests\\bootstrap\\expected\\kosul.stdout",
+      "exit_code": 0
+    }
+  ]
+}

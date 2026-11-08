@@ -1,0 +1,55 @@
+# ============================================================
+# Örnek 30: Win32 Arayüzlü Satranç Tahtası ve Hamle İzleyici
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 64 Kare (0: Bos, 1: Piyon, 2: At, 3: Fil, 4: Kale, 5: Vezir, 6: Sah)
+degisken g_tahta: [64]tamsayi;
+degisken g_hamle_sirasi: tamsayi = 1; # 1: Beyaz, 2: Siyah
+
+isv tahtayi_diz() {
+    degisken i: tamsayi = 0;
+    dongu (i < 64) {
+        g_tahta[i] = 0;
+        i = i + 1;
+    }
+    # Beyaz ve Siyah Piyonlar
+    i = 8;
+    dongu (i < 16) { g_tahta[i] = 1; i = i + 1; }
+    i = 48;
+    dongu (i < 56) { g_tahta[i] = 1; i = i + 1; }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Satranc Tahtasi".ptr, 620, 600);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    tahtayi_diz();
+
+    # 8x8 Tahta Butonlari
+    degisken r: tamsayi = 0;
+    dongu (r < 8) {
+        degisken c: tamsayi = 0;
+        dongu (c < 8) {
+            degisken x: tamsayi = 30 + (c * 50);
+            degisken y: tamsayi = 30 + (r * 50);
+            degisken id: tamsayi = 1000 + (r * 8 + c);
+            buton_olustur(p_h, ".".ptr, id, x, y, 48, 48);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    # Durum Paneli
+    buton_olustur(p_h, "Yeni Oyun".ptr, 2001, 450, 50, 130, 40);
+    buton_olustur(p_h, "Hamleyi Geri Al".ptr, 2002, 450, 110, 130, 40);
+    metin_kutusu_olustur(p_h, 3001, 450, 170, 130, 260);
+
+    ekrana_yaz("Satranc Tahtasi yuklendi. 64 kare hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

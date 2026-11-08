@@ -1,0 +1,117 @@
+# ============================================================
+# Yukinary (YKN) Standart Kutuphanesi - Win32 OS & API Sabitleri
+# Modul: std/os_win32.ykn
+# ============================================================
+
+# Standart Cihaz Handle'lari (GetStdHandle)
+degisken WIN_STD_INPUT_HANDLE      = 0xfffffff6; # -10
+degisken WIN_STD_OUTPUT_HANDLE     = 0xfffffff5; # -11
+degisken WIN_STD_ERROR_HANDLE      = 0xfffffff4; # -12
+
+# Dosya Erisim Yetkileri (Access Rights)
+degisken WIN_GENERIC_READ          = 0x80000000;
+degisken WIN_GENERIC_WRITE         = 0x40000000;
+degisken WIN_GENERIC_EXECUTE       = 0x20000000;
+degisken WIN_GENERIC_ALL           = 0x10000000;
+degisken WIN_FILE_APPEND_DATA      = 0x0004;
+
+# Dosya Paylasim Modlari (Share Modes)
+degisken WIN_FILE_SHARE_NONE       = 0;
+degisken WIN_FILE_SHARE_READ       = 1;
+degisken WIN_FILE_SHARE_WRITE      = 2;
+degisken WIN_FILE_SHARE_DELETE     = 4;
+
+# Dosya Yaratilis / Acilis Modlari (Creation Dispositions)
+degisken WIN_CREATE_NEW            = 1;
+degisken WIN_CREATE_ALWAYS         = 2;
+degisken WIN_OPEN_EXISTING         = 3;
+degisken WIN_OPEN_ALWAYS           = 4;
+degisken WIN_TRUNCATE_EXISTING     = 5;
+
+# Dosya Nitelikleri (File Attributes & Flags)
+degisken WIN_FILE_ATTRIBUTE_NORMAL = 0x80;
+degisken WIN_FILE_FLAG_SEQUENTIAL  = 0x08000000;
+degisken WIN_FILE_FLAG_OVERLAPPED  = 0x40000000;
+
+# Dosya Konumlandirma (SetFilePointer / MoveMethod)
+degisken WIN_FILE_BEGIN            = 0;
+degisken WIN_FILE_CURRENT          = 1;
+degisken WIN_FILE_END              = 2;
+
+# Bellek Tahsis Sabitleri (VirtualAlloc / VirtualFree)
+degisken WIN_MEM_COMMIT            = 0x1000;
+degisken WIN_MEM_RESERVE           = 0x2000;
+degisken WIN_MEM_COMMIT_RESERVE    = 0x3000;
+degisken WIN_MEM_DECOMMIT          = 0x4000;
+degisken WIN_MEM_RELEASE           = 0x8000;
+
+# Bellek Sayfa Koruma Bayraklari (Page Protections)
+degisken WIN_PAGE_NOACCESS         = 0x01;
+degisken WIN_PAGE_READONLY         = 0x02;
+degisken WIN_PAGE_READWRITE        = 0x04;
+degisken WIN_PAGE_EXECUTE          = 0x10;
+degisken WIN_PAGE_EXECUTE_READ     = 0x20;
+degisken WIN_PAGE_EXECUTE_READWRITE= 0x40;
+
+# Konsol Modu (SetConsoleMode)
+degisken WIN_ENABLE_PROCESSED_OUTPUT           = 0x0001;
+degisken WIN_ENABLE_WRAP_AT_EOL_OUTPUT         = 0x0002;
+degisken WIN_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
+# Hata ve Ozel Donus Degerleri
+degisken WIN_INVALID_HANDLE_VALUE  = 0xffffffffffffffff;
+
+# Disari cagirilar (OS Syscall Wrappers) - Win32 API via IAT
+isv VirtualAlloc(lpAddress: *u8, dwSize: tamsayi, flAllocationType: tamsayi, flProtect: tamsayi) -> *u8 { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv VirtualFree(lpAddress: *u8, dwSize: tamsayi, dwFreeType: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv ExitProcess(uExitCode: tamsayi) {} # reality-audit: allow class=empty_body reason=IAT-signature-patched-by-target-codegen
+isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv CreateFileA(lpFileName: *u8, dwDesiredAccess: tamsayi, dwShareMode: tamsayi, lpSecurityAttributes: *u8, dwCreationDisposition: tamsayi, dwFlagsAndAttributes: tamsayi, hTemplateFile: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv ReadFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToRead: tamsayi, lpNumberOfBytesRead: *tamsayi, lpOverlapped: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToWrite: tamsayi, lpNumberOfBytesWritten: *tamsayi, lpOverlapped: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv CloseHandle(hObject: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv SetFilePointerEx(hFile: tamsayi, liDistanceToMove: tamsayi, lpNewFilePointer: *tamsayi, dwMoveMethod: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv GetCommandLineA() -> *u8 { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+
+# Win32 OS Wrappers
+isv win32_bellek_tahsis(boyut: tamsayi) -> *u8 {
+    dondu VirtualAlloc(0, boyut, 0x3000, 0x04);
+}
+
+isv win32_bellek_serbest(ptr: *u8) {
+    eger ptr != 0 ise {
+        VirtualFree(ptr, 0, 0x8000);
+    }
+}
+
+isv win32_sureci_sonlandir(kod: tamsayi) {
+    ExitProcess(kod);
+}
+
+isv win32_dosya_yarat(dosya_adi: *u8, erisim: tamsayi, paylasim: tamsayi, yaratma: tamsayi, nitelikler: tamsayi) -> tamsayi {
+    dondu CreateFileA(dosya_adi, erisim, paylasim, 0, yaratma, nitelikler, 0);
+}
+
+isv win32_dosya_yaz(handle: tamsayi, buffer: *u8, boyut: tamsayi, yazilan: *tamsayi) -> tamsayi {
+    dondu WriteFile(handle, buffer, boyut, yazilan, 0);
+}
+
+isv win32_dosya_oku(handle: tamsayi, buffer: *u8, boyut: tamsayi, okunan: *tamsayi) -> tamsayi {
+    dondu ReadFile(handle, buffer, boyut, okunan, 0);
+}
+
+isv win32_dosya_kapat(handle: tamsayi) -> tamsayi {
+    dondu CloseHandle(handle);
+}
+
+isv win32_dosya_konum_ayarla(handle: tamsayi, mesafe: tamsayi, yeni_konum: *tamsayi, mod: tamsayi) -> tamsayi {
+    dondu SetFilePointerEx(handle, mesafe, yeni_konum, mod);
+}
+
+isv win32_standart_handle_al(std_handle: tamsayi) -> tamsayi {
+    dondu GetStdHandle(std_handle);
+}
+
+isv win32_komut_satiri_argumanlari() -> *u8 {
+    dondu GetCommandLineA();
+}

@@ -1,0 +1,741 @@
+# ============================================================
+# Yukinary std/ai/attention.ykn
+# BitNet fixed-point transformer primitives.
+#
+# Sayisal format: signed Q16.16 (65536 = 1.0).
+# KV cache API stateless tutulur; pointer field ABI'sine bagli degildir.
+# ============================================================
+
+degisken BITNET_Q16_BIR = 65536;
+
+# Native SIMD ABI. Scalar YKN matematiği her zaman referans olarak korunur;
+# gerçek model oturumunda backend mevcutsa dot/SiLU/IQ2_S dispatch edilir.
+harici isv ykn_llm_simd_backend() -> tamsayi;
+harici isv ykn_llm_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_llm_silu_q16(gate: *tamsayi, up: *tamsayi, cikti: *tamsayi, n: tamsayi);
+harici isv ykn_llm_iq2s_dot_q16(skorlar: *tamsayi, deger_cache: *tamsayi, cikti: *tamsayi, params: *tamsayi) -> tamsayi;
+harici isv ykn_llm_f16_dot_q16(activation: *tamsayi, qact: *tamsayi, K: tamsayi) -> tamsayi;
+harici isv ykn_llm_q1_0_dot_q16(arg1: *tamsayi, arg2: *tamsayi, arg3: tamsayi) -> tamsayi;
+harici isv ykn_llm_clock_ns() -> tamsayi;
+harici isv ykn_llm_peak_rss_bytes() -> tamsayi;
+degisken g_llm_native_simd_aktif: tamsayi = 0;
+
+# Self-hosted Win64 ABI için KV/attention çağrılarının primitive scratch alanı.
+degisken g_llm_kv_anahtar_cache: *tamsayi = 0;
+degisken g_llm_kv_deger_cache: *tamsayi = 0;
+degisken g_llm_kv_kafa_sayisi: tamsayi = 0;
+degisken g_llm_kv_kafa_boyutu: tamsayi = 0;
+degisken g_llm_kv_kapasitesi: tamsayi = 0;
+degisken g_llm_kv_token: tamsayi = 0;
+degisken g_llm_kv_kafa: tamsayi = 0;
+degisken g_llm_kv_window_start: tamsayi = 0;
+# Zero keeps the generic 1/sqrt(head_dim) scaling; positive values are Q16 scales.
+degisken g_llm_kv_attention_scale_q16: tamsayi = 0;
+degisken g_llm_kv_anahtar_girdi: *tamsayi = 0;
+degisken g_llm_kv_deger_girdi: *tamsayi = 0;
+degisken g_llm_kv_sorgu: *tamsayi = 0;
+degisken g_llm_kv_cikti: *tamsayi = 0;
+degisken g_llm_attention_skorlar: [512]tamsayi;
+degisken g_llm_attention_agirliklar: [512]tamsayi;
+degisken G_ATTN_CACHED_HEAD_DIM: tamsayi = 0;
+degisken G_ATTN_CACHED_SQRT: tamsayi = 0;
+degisken G_ROPE_CACHE_VALID: tamsayi = 0;
+degisken G_ROPE_CACHE_CIFT: tamsayi = 0;
+degisken G_ROPE_CACHE_KONUM: tamsayi = 0 - 1;
+degisken G_ROPE_CACHE_BOYUT: tamsayi = 0;
+degisken G_ROPE_CACHE_FREQ: tamsayi = 0;
+degisken G_ROPE_CACHE_COS_PTR: *tamsayi = 0;
+degisken G_ROPE_CACHE_SIN_PTR: *tamsayi = 0;
+
+# YKN raw-pointer addition is byte-based; scale tamsayi element offsets to bytes.
+isv bitnet_tamsayi_ptr_at(base: *tamsayi, index: tamsayi) -> *tamsayi {
+    eger base == 0 ise { dondu 0; }
+    dondu base + index * 8;
+}
+
+
+# Eski 9-parametreli attention ABI'sinin yerine tek pointer paket sözleşmesi.
+# Stage-1 Win64 çağrı alanı uzun pointer/metadata listelerinde bozulabildiği
+# için yeni çağıranlar bu paketi veya global scratch yolunu kullanır.
+yapi BitNetAttentionPaketi {
+    sorgu: *tamsayi;
+    anahtar_cache: *tamsayi;
+    deger_cache: *tamsayi;
+    kafa_sayisi: tamsayi;
+    kafa_boyutu: tamsayi;
+    kapasite: tamsayi;
+    son_token: tamsayi;
+    kafa: tamsayi;
+    cikti: *tamsayi;
+}
+
+isv bitnet_q16_karekoku(deger: tamsayi) -> tamsayi {
+    eger deger <= 0 ise { dondu 0; }
+    degisken alt: tamsayi = 0;
+    degisken ust: tamsayi = deger + 1;
+    dongu ust - alt > 1 {
+        degisken orta: tamsayi = (alt + ust) / 2;
+        eger orta <= deger / orta ise { alt = orta; }
+        yoksa { ust = orta; }
+    }
+    dondu alt;
+}
+
+isv bitnet_rmsnorm_q16(girdi: *tamsayi,
+                       agirlik: *tamsayi,
+                       cikti: *tamsayi,
+                       eleman_sayisi: tamsayi,
+                       epsilon_q16: tamsayi) -> tamsayi {
+    eger girdi == 0 veya cikti == 0 veya eleman_sayisi <= 0 ise { dondu 0; }
+    eger g_llm_native_simd_aktif == 1 {
+        degisken pack: [3]tamsayi;
+        pack[0] = agirlik as tamsayi;
+        pack[1] = eleman_sayisi;
+        pack[2] = epsilon_q16;
+        dondu ykn_llm_q1_0_dot_q16(girdi, cikti, pack.ptr);
+    }
+    # Q16 aktivasyonlar özellikle quantized matmul sonrası çok büyüyebilir.
+    # Önce max-abs ile ölçekleyerek kare toplamının 64-bit taşmasını önle.
+    degisken maksimum: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < eleman_sayisi {
+        degisken mutlak: tamsayi = girdi[i];
+        eger mutlak < 0 ise { mutlak = 0 - mutlak; }
+        eger mutlak > maksimum ise { maksimum = mutlak; }
+        i = i + 1;
+    }
+    eger maksimum == 0 ise {
+        i = 0;
+        dongu i < eleman_sayisi { cikti[i] = 0; i = i + 1; }
+        dondu 1;
+    }
+    # max_abs Q16 olduğundan bu oran her zaman yaklaşık [-1,1] Q16'tır.
+    # Büyük değerlerde x*65536 çarpımını da taşırmamak için bölme yolunu seç.
+    degisken olcek_boleni: tamsayi = 1;
+    # x*65536 signed-64 taşmasını önlemek için bölmeli yolu erken seç.
+    # 1e9 eşiğinde çarpım en fazla yaklaşık 6.5e13'tür; daha büyük
+    # embedding/aktivasyonlarda x / (max/65536) aynı Q16 oranını taşmasız
+    # verir. Eski 1.4e14 eşiği 1e14 civarı gerçek embedding değerlerinde
+    # çarpımı taşırabiliyordu.
+    eger maksimum > 1000000000 ise {
+        olcek_boleni = (maksimum + BITNET_Q16_BIR - 1) / BITNET_Q16_BIR;
+    }
+    # RMSNorm uses epsilon in the original activation scale. Since the vector
+    # is normalized by maximum below, scale epsilon by 1/maximum_real^2 before
+    # adding it to the normalized mean-square value.
+    degisken epsilon_normalize_q16: tamsayi = 0;
+    eger maksimum <= 3037000499 {
+        degisken eps_numerator: tamsayi = epsilon_q16 * BITNET_Q16_BIR * BITNET_Q16_BIR;
+        epsilon_normalize_q16 = eps_numerator / (maksimum * maksimum);
+    }
+    degisken kare_toplami: tamsayi = 0;
+    i = 0;
+    dongu i < eleman_sayisi {
+        degisken normalize: tamsayi = 0;
+        eger olcek_boleni == 1 ise {
+            normalize = (girdi[i] * BITNET_Q16_BIR) / maksimum;
+        } yoksa {
+            normalize = girdi[i] / olcek_boleni;
+        }
+        kare_toplami = kare_toplami + (normalize * normalize) / BITNET_Q16_BIR;
+        i = i + 1;
+    }
+    degisken ortalama: tamsayi = kare_toplami / eleman_sayisi;
+    degisken rms: tamsayi = bitnet_q16_karekoku((ortalama + epsilon_normalize_q16) * BITNET_Q16_BIR);
+    eger rms <= 0 ise { dondu 0; }
+    i = 0;
+    dongu i < eleman_sayisi {
+        degisken normalize2: tamsayi = 0;
+        eger olcek_boleni == 1 ise {
+            normalize2 = (girdi[i] * BITNET_Q16_BIR) / maksimum;
+        } yoksa {
+            normalize2 = girdi[i] / olcek_boleni;
+        }
+        degisken w: tamsayi = BITNET_Q16_BIR;
+        eger agirlik != 0 ise { w = agirlik[i]; }
+        cikti[i] = (normalize2 * w) / rms;
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+isv bitnet_rope_cift_q16(deger: *tamsayi,
+                         kosinus: tamsayi,
+                         sinus: tamsayi) -> tamsayi {
+    eger deger == 0 ise { dondu 0; }
+    degisken x0: tamsayi = deger[0];
+    degisken x1: tamsayi = deger[1];
+    deger[0] = (x0 * kosinus - x1 * sinus) / BITNET_Q16_BIR;
+    deger[1] = (x0 * sinus + x1 * kosinus) / BITNET_Q16_BIR;
+    dondu 1;
+}
+
+isv bitnet_rope_q16(vektor: *tamsayi,
+                    kosinus_tablosu: *tamsayi,
+                    sinus_tablosu: *tamsayi,
+                    cift_sayisi: tamsayi) -> tamsayi {
+    eger vektor == 0 veya kosinus_tablosu == 0 veya sinus_tablosu == 0 veya
+       cift_sayisi <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < cift_sayisi {
+        bitnet_rope_cift_q16(bitnet_tamsayi_ptr_at(vektor, i * 2),
+                             kosinus_tablosu[i], sinus_tablosu[i]);
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# GPT-NeoX/Qwen düzeni: ilk yarı cos, ikinci yarı sin ile eşleştirilir.
+# Llama'nın interleaved düzeninden ayrı tutulur; adapter seçiminde mimari
+# profili karar verir.
+isv bitnet_rope_neox_q16(vektor: *tamsayi,
+                         kosinus_tablosu: *tamsayi,
+                         sinus_tablosu: *tamsayi,
+                         cift_sayisi: tamsayi) -> tamsayi {
+    eger vektor == 0 veya kosinus_tablosu == 0 veya sinus_tablosu == 0 veya
+       cift_sayisi <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < cift_sayisi {
+        degisken x0: tamsayi = vektor[i];
+        degisken x1: tamsayi = vektor[i + cift_sayisi];
+        vektor[i] = (x0 * kosinus_tablosu[i] - x1 * sinus_tablosu[i]) / BITNET_Q16_BIR;
+        vektor[i + cift_sayisi] = (x0 * sinus_tablosu[i] + x1 * kosinus_tablosu[i]) / BITNET_Q16_BIR;
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Arena duzeni: [(token * kafa_sayisi + kafa) * kafa_boyutu + boyut].
+isv bitnet_kv_cache_baslat(anahtar_cache: *tamsayi,
+                           deger_cache: *tamsayi,
+                           kafa_sayisi: tamsayi,
+                           kafa_boyutu: tamsayi,
+                           kapasite: tamsayi) -> tamsayi {
+    eger anahtar_cache == 0 veya deger_cache == 0 veya kafa_sayisi <= 0 veya
+       kafa_boyutu <= 0 veya kapasite <= 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv bitnet_kv_cache_yaz(anahtar_cache: *tamsayi,
+                        deger_cache: *tamsayi,
+                        kafa_sayisi: tamsayi,
+                        kafa_boyutu: tamsayi,
+                        kapasite: tamsayi,
+                        token: tamsayi,
+                        kafa: tamsayi,
+                        anahtar_girdi: *tamsayi,
+                        deger_girdi: *tamsayi) -> tamsayi {
+    eger anahtar_cache == 0 veya deger_cache == 0 veya anahtar_girdi == 0 veya
+       deger_girdi == 0 veya token < 0 veya token >= kapasite veya kafa < 0 veya
+       kafa >= kafa_sayisi veya kafa_boyutu <= 0 ise { dondu 0; }
+    degisken taban: tamsayi = (token * kafa_sayisi + kafa) * kafa_boyutu;
+    degisken i: tamsayi = 0;
+    dongu i < kafa_boyutu {
+        anahtar_cache[taban + i] = anahtar_girdi[i];
+        deger_cache[taban + i] = deger_girdi[i];
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ABI-stabil KV cache yazımı: tüm çalışma parametreleri global scratch'tan okunur.
+isv bitnet_kv_cache_yaz_global() -> tamsayi {
+    eger g_llm_kv_anahtar_cache == 0 veya g_llm_kv_deger_cache == 0 veya
+       g_llm_kv_anahtar_girdi == 0 veya g_llm_kv_deger_girdi == 0 veya
+       g_llm_kv_token < 0 veya g_llm_kv_token >= g_llm_kv_kapasitesi veya
+       g_llm_kv_kafa < 0 veya g_llm_kv_kafa >= g_llm_kv_kafa_sayisi veya
+       g_llm_kv_kafa_boyutu <= 0 veya g_llm_kv_kapasitesi <= 0 ise { dondu 0; }
+    degisken taban: tamsayi = (g_llm_kv_token * g_llm_kv_kafa_sayisi +
+        g_llm_kv_kafa) * g_llm_kv_kafa_boyutu;
+    degisken i: tamsayi = 0;
+    dongu i < g_llm_kv_kafa_boyutu {
+        g_llm_kv_anahtar_cache[taban + i] = g_llm_kv_anahtar_girdi[i];
+        g_llm_kv_deger_cache[taban + i] = g_llm_kv_deger_girdi[i];
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ABI-stabil attention wrapper. KV cache okunması ve softmax aynı Q16
+# sözleşmesini korur, ancak uzun pointer/metadata çağrısı yapılmaz.
+isv bitnet_kv_dikkat_q16_global() -> tamsayi {
+    eger g_llm_kv_sorgu == 0 veya g_llm_kv_anahtar_cache == 0 veya
+       g_llm_kv_deger_cache == 0 veya g_llm_kv_cikti == 0 veya
+       g_llm_kv_kafa_sayisi <= 0 veya g_llm_kv_kafa_boyutu <= 0 veya
+       g_llm_kv_kapasitesi <= 0 or g_llm_kv_token < 0 or
+       g_llm_kv_token >= g_llm_kv_kapasitesi or g_llm_kv_kafa < 0 or
+       g_llm_kv_kafa >= g_llm_kv_kafa_sayisi ise { dondu 0; }
+    # Skor/agirlik dizileri global scratch'tadır; büyük local diziler Stage-1
+    # frame'inde cache pointer'larını bozabildiği için stack kullanılmaz.
+    degisken start_token: tamsayi = g_llm_kv_window_start;
+    eger start_token < 0 or start_token > g_llm_kv_token { dondu 0; }
+    degisken window_count: tamsayi = g_llm_kv_token - start_token + 1;
+    eger window_count > 512 { dondu 0; }
+    degisken token: tamsayi = start_token;
+    degisken slot: tamsayi = 0;
+    degisken en_buyuk: tamsayi = 0 - 9223372036854775807;
+    # Q16.16 sqrt: sqrt(head_dim * 65536 * 65536) is Q16.16.
+    degisken karekok: tamsayi = G_ATTN_CACHED_SQRT;
+    eger G_ATTN_CACHED_HEAD_DIM != g_llm_kv_kafa_boyutu {
+        karekok = bitnet_q16_karekoku(
+            g_llm_kv_kafa_boyutu * BITNET_Q16_BIR * BITNET_Q16_BIR);
+        G_ATTN_CACHED_SQRT = karekok;
+        G_ATTN_CACHED_HEAD_DIM = g_llm_kv_kafa_boyutu;
+    }
+    eger karekok <= 0 ise { dondu 0; }
+    degisken is_mult8: tamsayi = 0;
+    eger g_llm_kv_kafa_boyutu % 8 == 0 { is_mult8 = 1; }
+    dongu token <= g_llm_kv_token {
+        degisken taban: tamsayi = (token * g_llm_kv_kafa_sayisi +
+            g_llm_kv_kafa) * g_llm_kv_kafa_boyutu;
+        degisken skor: tamsayi = 0;
+        eger g_llm_native_simd_aktif == 1 ise {
+            skor = ykn_llm_dot_q16(g_llm_kv_sorgu,
+                bitnet_tamsayi_ptr_at(g_llm_kv_anahtar_cache, taban), g_llm_kv_kafa_boyutu);
+        } yoksa {
+            degisken dot: tamsayi = 0;
+            degisken i: tamsayi = 0;
+            eger is_mult8 == 1 {
+                dongu i < g_llm_kv_kafa_boyutu {
+                    dot = dot + g_llm_kv_sorgu[i] * g_llm_kv_anahtar_cache[taban + i]
+                              + g_llm_kv_sorgu[i + 1] * g_llm_kv_anahtar_cache[taban + i + 1]
+                              + g_llm_kv_sorgu[i + 2] * g_llm_kv_anahtar_cache[taban + i + 2]
+                              + g_llm_kv_sorgu[i + 3] * g_llm_kv_anahtar_cache[taban + i + 3]
+                              + g_llm_kv_sorgu[i + 4] * g_llm_kv_anahtar_cache[taban + i + 4]
+                              + g_llm_kv_sorgu[i + 5] * g_llm_kv_anahtar_cache[taban + i + 5]
+                              + g_llm_kv_sorgu[i + 6] * g_llm_kv_anahtar_cache[taban + i + 6]
+                              + g_llm_kv_sorgu[i + 7] * g_llm_kv_anahtar_cache[taban + i + 7];
+                    i = i + 8;
+                }
+            } yoksa {
+                dongu i < g_llm_kv_kafa_boyutu {
+                    dot = dot + g_llm_kv_sorgu[i] * g_llm_kv_anahtar_cache[taban + i];
+                    i = i + 1;
+                }
+            }
+            skor = dot / BITNET_Q16_BIR;
+        }
+        # Most architectures use 1/sqrt(head_dim). Gemma-4 explicitly uses
+        # scale 1.0, supplied by its model graph.
+        eger g_llm_kv_attention_scale_q16 > 0 {
+            skor = (skor * g_llm_kv_attention_scale_q16) / BITNET_Q16_BIR;
+        } yoksa {
+            skor = (skor * BITNET_Q16_BIR) / karekok;
+        }
+        g_llm_attention_skorlar[slot] = skor;
+        eger skor > en_buyuk ise { en_buyuk = skor; }
+        token = token + 1;
+        slot = slot + 1;
+    }
+    eger g_llm_native_simd_aktif == 1 {
+        degisken params: [6]tamsayi;
+        params[0] = window_count;
+        params[1] = start_token;
+        params[2] = g_llm_kv_token;
+        params[3] = g_llm_kv_kafa_sayisi;
+        params[4] = g_llm_kv_kafa;
+        params[5] = g_llm_kv_kafa_boyutu;
+        dondu ykn_llm_iq2s_dot_q16(g_llm_attention_skorlar.ptr, g_llm_kv_deger_cache, g_llm_kv_cikti, params.ptr);
+    }
+    # Global scratch ABI, stateless attention ile aynı Q16 exp/softmax
+    # referans yolunu kullanır. Önceki bounded-linear ağırlıklandırma hızlı
+    # bir fallback'ti ancak C++/YKN logits parity'sini bozuyordu.
+    eger bitnet_q16_softmax(g_llm_attention_skorlar,
+        g_llm_attention_agirliklar, window_count) == 0 ise { dondu 0; }
+    degisken i2: tamsayi = 0;
+    eger is_mult8 == 1 {
+        dongu i2 < g_llm_kv_kafa_boyutu {
+            g_llm_kv_cikti[i2] = 0; g_llm_kv_cikti[i2 + 1] = 0;
+            g_llm_kv_cikti[i2 + 2] = 0; g_llm_kv_cikti[i2 + 3] = 0;
+            g_llm_kv_cikti[i2 + 4] = 0; g_llm_kv_cikti[i2 + 5] = 0;
+            g_llm_kv_cikti[i2 + 6] = 0; g_llm_kv_cikti[i2 + 7] = 0;
+            i2 = i2 + 8;
+        }
+    } yoksa {
+        dongu i2 < g_llm_kv_kafa_boyutu { g_llm_kv_cikti[i2] = 0; i2 = i2 + 1; }
+    }
+    token = start_token;
+    slot = 0;
+    dongu token <= g_llm_kv_token {
+        degisken taban2: tamsayi = (token * g_llm_kv_kafa_sayisi +
+            g_llm_kv_kafa) * g_llm_kv_kafa_boyutu;
+        degisken w_slot: tamsayi = g_llm_attention_agirliklar[slot];
+        i2 = 0;
+        eger is_mult8 == 1 {
+            dongu i2 < g_llm_kv_kafa_boyutu {
+                g_llm_kv_cikti[i2] = g_llm_kv_cikti[i2] + w_slot * g_llm_kv_deger_cache[taban2 + i2];
+                g_llm_kv_cikti[i2 + 1] = g_llm_kv_cikti[i2 + 1] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 1];
+                g_llm_kv_cikti[i2 + 2] = g_llm_kv_cikti[i2 + 2] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 2];
+                g_llm_kv_cikti[i2 + 3] = g_llm_kv_cikti[i2 + 3] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 3];
+                g_llm_kv_cikti[i2 + 4] = g_llm_kv_cikti[i2 + 4] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 4];
+                g_llm_kv_cikti[i2 + 5] = g_llm_kv_cikti[i2 + 5] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 5];
+                g_llm_kv_cikti[i2 + 6] = g_llm_kv_cikti[i2 + 6] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 6];
+                g_llm_kv_cikti[i2 + 7] = g_llm_kv_cikti[i2 + 7] + w_slot * g_llm_kv_deger_cache[taban2 + i2 + 7];
+                i2 = i2 + 8;
+            }
+        } yoksa {
+            dongu i2 < g_llm_kv_kafa_boyutu {
+                g_llm_kv_cikti[i2] = g_llm_kv_cikti[i2] +
+                    w_slot * g_llm_kv_deger_cache[taban2 + i2];
+                i2 = i2 + 1;
+            }
+        }
+        token = token + 1;
+        slot = slot + 1;
+    }
+    i2 = 0;
+    eger is_mult8 == 1 {
+        dongu i2 < g_llm_kv_kafa_boyutu {
+            g_llm_kv_cikti[i2] = g_llm_kv_cikti[i2] / 65536;
+            g_llm_kv_cikti[i2 + 1] = g_llm_kv_cikti[i2 + 1] / 65536;
+            g_llm_kv_cikti[i2 + 2] = g_llm_kv_cikti[i2 + 2] / 65536;
+            g_llm_kv_cikti[i2 + 3] = g_llm_kv_cikti[i2 + 3] / 65536;
+            g_llm_kv_cikti[i2 + 4] = g_llm_kv_cikti[i2 + 4] / 65536;
+            g_llm_kv_cikti[i2 + 5] = g_llm_kv_cikti[i2 + 5] / 65536;
+            g_llm_kv_cikti[i2 + 6] = g_llm_kv_cikti[i2 + 6] / 65536;
+            g_llm_kv_cikti[i2 + 7] = g_llm_kv_cikti[i2 + 7] / 65536;
+            i2 = i2 + 8;
+        }
+    } yoksa {
+        dongu i2 < g_llm_kv_kafa_boyutu {
+            g_llm_kv_cikti[i2] = g_llm_kv_cikti[i2] / 65536;
+            i2 = i2 + 1;
+        }
+    }
+    dondu 1;
+}
+
+# Q16.16 sayısal yardımcıları. Exp, overflow olmaması için maksimumdan
+# fark alınmış [-8,0] aralığında range-reduction ile hesaplanır.
+isv bitnet_q16_exp_neg(fark: tamsayi) -> tamsayi {
+    eger fark >= 0 ise { dondu BITNET_Q16_BIR; }
+    eger fark < 0 - 8 * BITNET_Q16_BIR ise { dondu 0; }
+    degisken x: tamsayi = fark / 8;
+    degisken x2: tamsayi = (x * x) / BITNET_Q16_BIR;
+    degisken x3: tamsayi = (x2 * x) / BITNET_Q16_BIR;
+    degisken x4: tamsayi = (x3 * x) / BITNET_Q16_BIR;
+    degisken x5: tamsayi = (x4 * x) / BITNET_Q16_BIR;
+    degisken tek: tamsayi = BITNET_Q16_BIR + x + x2 / 2 + x3 / 6 + x4 / 24 + x5 / 120;
+    eger tek < 0 ise { tek = 0; }
+    degisken sonuc: tamsayi = tek;
+    degisken i: tamsayi = 0;
+    dongu i < 7 { sonuc = (sonuc * tek) / BITNET_Q16_BIR; i = i + 1; }
+    dondu sonuc;
+}
+
+isv bitnet_q16_softmax(girdi: *tamsayi, cikti: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger girdi == 0 veya cikti == 0 veya adet <= 0 ise { dondu 0; }
+    degisken en_buyuk: tamsayi = girdi[0];
+    degisken i: tamsayi = 1;
+    dongu i < adet { eger girdi[i] > en_buyuk ise { en_buyuk = girdi[i]; } i = i + 1; }
+    degisken toplam: tamsayi = 0;
+    i = 0;
+    dongu i < adet { cikti[i] = bitnet_q16_exp_neg(girdi[i] - en_buyuk); toplam = toplam + cikti[i]; i = i + 1; }
+    eger toplam <= 0 ise { dondu 0; }
+    i = 0;
+    dongu i < adet { cikti[i] = (cikti[i] * BITNET_Q16_BIR) / toplam; i = i + 1; }
+    dondu 1;
+}
+
+isv bitnet_q16_silu(deger: tamsayi) -> tamsayi {
+    # Match the reference SiLU sigmoid, saturating outside exp_neg's safe range.
+    eger deger >= 8 * BITNET_Q16_BIR ise { dondu deger; }
+    eger deger <= 0 - 8 * BITNET_Q16_BIR ise { dondu 0; }
+    degisken exp_term: tamsayi = 0;
+    degisken sigmoid: tamsayi = 0;
+    eger deger >= 0 ise {
+        exp_term = bitnet_q16_exp_neg(0 - deger);
+        sigmoid = (BITNET_Q16_BIR * BITNET_Q16_BIR) /
+            (BITNET_Q16_BIR + exp_term);
+    } yoksa {
+        exp_term = bitnet_q16_exp_neg(deger);
+        sigmoid = (exp_term * BITNET_Q16_BIR) /
+            (BITNET_Q16_BIR + exp_term);
+    }
+    dondu (deger * sigmoid) / BITNET_Q16_BIR;
+}
+
+# Stable Q16.16 tanh using the already range-reduced exp implementation.
+isv bitnet_q16_tanh(deger: tamsayi) -> tamsayi {
+    eger deger >= 8 * BITNET_Q16_BIR { dondu BITNET_Q16_BIR; }
+    eger deger <= 0 - 8 * BITNET_Q16_BIR { dondu 0 - BITNET_Q16_BIR; }
+    degisken neg: tamsayi = 0;
+    degisken x: tamsayi = deger;
+    eger x < 0 { neg = 1; x = 0 - x; }
+    degisken e: tamsayi = bitnet_q16_exp_neg(0 - 2 * x);
+    degisken denominator: tamsayi = BITNET_Q16_BIR + e;
+    eger denominator <= 0 { dondu 0; }
+    degisken magnitude: tamsayi = ((BITNET_Q16_BIR - e) * BITNET_Q16_BIR) / denominator;
+    eger neg == 1 { dondu 0 - magnitude; }
+    dondu magnitude;
+}
+
+# Gemma-4's dense FFN uses the tanh-approximate GELU used by GGML.
+isv bitnet_q16_gelu(deger: tamsayi) -> tamsayi {
+    eger deger >= 6 * BITNET_Q16_BIR { dondu deger; }
+    eger deger <= 0 - 6 * BITNET_Q16_BIR { dondu 0; }
+    degisken x2: tamsayi = (deger * deger) / BITNET_Q16_BIR;
+    degisken x3: tamsayi = (x2 * deger) / BITNET_Q16_BIR;
+    degisken cubic: tamsayi = (x3 * 2930) / BITNET_Q16_BIR;
+    degisken argument: tamsayi = ((deger + cubic) * 52306) / BITNET_Q16_BIR;
+    degisken multiplier: tamsayi = BITNET_Q16_BIR + bitnet_q16_tanh(argument);
+    dondu (deger * multiplier) / (2 * BITNET_Q16_BIR);
+}
+
+isv bitnet_q16_gelu_vector(degerler: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger degerler == 0 or adet <= 0 { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet { degerler[i] = bitnet_q16_gelu(degerler[i]); i = i + 1; }
+    dondu 1;
+}
+
+isv bitnet_q16_gelu_product(gate: *tamsayi, up: *tamsayi,
+                            cikti: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger gate == 0 or up == 0 or cikti == 0 or adet <= 0 { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        cikti[i] = (bitnet_q16_gelu(gate[i]) * up[i]) / BITNET_Q16_BIR;
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv bitnet_q16_softcap(deger: tamsayi, cap: tamsayi) -> tamsayi {
+    eger cap <= 0 { dondu deger; }
+    eger deger >= cap * 8 { dondu cap; }
+    eger deger <= 0 - cap * 8 { dondu 0 - cap; }
+    degisken oran: tamsayi = (deger * BITNET_Q16_BIR) / cap;
+    dondu (cap * bitnet_q16_tanh(oran)) / BITNET_Q16_BIR;
+}
+
+isv bitnet_q16_softcap_vector(degerler: *tamsayi, adet: tamsayi,
+                              cap: tamsayi) -> tamsayi {
+    eger degerler == 0 or adet <= 0 or cap <= 0 { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet { degerler[i] = bitnet_q16_softcap(degerler[i], cap); i = i + 1; }
+    dondu 1;
+}
+
+isv bitnet_q16_squared_relu_product(gate: *tamsayi, up: *tamsayi,
+                                    cikti: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger gate == 0 veya up == 0 veya cikti == 0 veya adet <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        eger gate[i] <= 0 ise { cikti[i] = 0; }
+        yoksa {
+            degisken relu_kare_q16: tamsayi = (gate[i] * gate[i]) / BITNET_Q16_BIR;
+            cikti[i] = (relu_kare_q16 * up[i]) / BITNET_Q16_BIR;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv bitnet_q16_swiglu(gate: *tamsayi, up: *tamsayi, cikti: *tamsayi, adet: tamsayi) -> tamsayi {
+    eger gate == 0 veya up == 0 veya cikti == 0 veya adet <= 0 ise { dondu 0; }
+    eger g_llm_native_simd_aktif == 1 ise {
+        ykn_llm_silu_q16(gate, up, cikti, adet);
+        dondu 1;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < adet { cikti[i] = (bitnet_q16_silu(gate[i]) * up[i]) / BITNET_Q16_BIR; i = i + 1; }
+    dondu 1;
+}
+
+# Q16.16 ln/exp yardımcıları. RoPE frekansı artık kaba lineer oranla değil,
+# gerçek theta_i = position * base^(-2i/dim) bağıntısıyla üretilir.
+# ln için [1,2) aralığına range-reduction ve atanh serisi kullanılır.
+isv bitnet_q16_ln(deger: tamsayi) -> tamsayi {
+    eger deger <= 0 ise { dondu 0; }
+    degisken x: tamsayi = deger;
+    degisken ikilik: tamsayi = 0;
+    dongu x >= 131072 {
+        x = x / 2;
+        ikilik = ikilik + 1;
+    }
+    dongu x < 65536 {
+        x = x * 2;
+        ikilik = ikilik - 1;
+    }
+    degisken z: tamsayi = ((x - 65536) * 65536) / (x + 65536);
+    degisken z2: tamsayi = (z * z) / 65536;
+    degisken terim: tamsayi = z;
+    degisken toplam: tamsayi = z;
+    terim = (terim * z2) / 65536; toplam = toplam + terim / 3;
+    terim = (terim * z2) / 65536; toplam = toplam + terim / 5;
+    terim = (terim * z2) / 65536; toplam = toplam + terim / 7;
+    terim = (terim * z2) / 65536; toplam = toplam + terim / 9;
+    terim = (terim * z2) / 65536; toplam = toplam + terim / 11;
+    dondu ikilik * 45426 + 2 * toplam;
+}
+
+isv bitnet_q16_exp(deger: tamsayi) -> tamsayi {
+    eger deger >= 0 ise {
+        eger deger == 0 ise { dondu 65536; }
+        # Bu helper RoPE oranında yalnız negatif değerle çağrılır.
+        dondu 65536;
+    }
+    eger deger < 0 - 8 * 65536 ise { dondu 0; }
+    degisken x: tamsayi = 0 - deger;
+    degisken toplam: tamsayi = 65536;
+    degisken terim: tamsayi = 65536;
+    degisken n: tamsayi = 1;
+    dongu n <= 8 {
+        terim = 0 - ((terim * x) / 65536) / n;
+        toplam = toplam + terim;
+        n = n + 1;
+    }
+    eger toplam < 0 ise { toplam = 0; }
+    dondu toplam;
+}
+
+# RoPE açıları ve sin/cos tabloları Q16.16 olarak üretilir. 2*pi Q16
+# yaklaşık 411775'tir. Açı önce [-pi/2, pi/2] aralığına indirilir;
+# böylece Taylor serisi pi civarında patlamaz.
+isv bitnet_rope_tablosu_uret(kosinus: *tamsayi, sinus: *tamsayi,
+                             cift_sayisi: tamsayi, konum: tamsayi,
+                             rope_boyutu: tamsayi, frekans_tabani_q16: tamsayi) -> tamsayi {
+    eger kosinus == 0 veya sinus == 0 veya cift_sayisi <= 0 veya
+       rope_boyutu <= 0 veya rope_boyutu % 2 != 0 veya cift_sayisi * 2 > rope_boyutu veya
+       frekans_tabani_q16 <= 0 ise { dondu 0; }
+    eger G_ROPE_CACHE_VALID == 1 ve G_ROPE_CACHE_CIFT == cift_sayisi ve
+       G_ROPE_CACHE_KONUM == konum ve G_ROPE_CACHE_BOYUT == rope_boyutu ve
+       G_ROPE_CACHE_FREQ == frekans_tabani_q16 ve
+       G_ROPE_CACHE_COS_PTR == kosinus ve G_ROPE_CACHE_SIN_PTR == sinus {
+        dondu 1;
+    }
+    degisken ln_base: tamsayi = bitnet_q16_ln(frekans_tabani_q16);
+    degisken adim_ln: tamsayi = (2 * ln_base) / rope_boyutu;
+    degisken oran: tamsayi = bitnet_q16_exp(0 - adim_ln);
+    eger oran <= 0 veya oran > 65536 ise { dondu 0; }
+    degisken frekans: tamsayi = 65536;
+    degisken i: tamsayi = 0;
+    dongu i < cift_sayisi {
+        degisken aci: tamsayi = (konum * frekans) % 411775;
+        eger aci > 205887 ise { aci = aci - 411775; }
+        eger aci < 0 - 205887 ise { aci = aci + 411775; }
+        degisken cos_isaret: tamsayi = 1;
+        degisken sin_isaret: tamsayi = 1;
+        eger aci > 102944 ise {
+            aci = 205887 - aci;
+            cos_isaret = 0 - 1;
+        } yoksa eger aci < 0 - 102944 ise {
+            aci = 0 - 205887 - aci;
+            cos_isaret = 0 - 1;
+        }
+        degisken a2: tamsayi = (aci * aci) / 65536;
+        degisken a3: tamsayi = (a2 * aci) / 65536;
+        degisken a4: tamsayi = (a2 * a2) / 65536;
+        degisken a5: tamsayi = (a4 * aci) / 65536;
+        degisken a6: tamsayi = (a3 * a3) / 65536;
+        degisken a7: tamsayi = (a6 * aci) / 65536;
+        degisken a8: tamsayi = (a4 * a4) / 65536;
+        degisken a9: tamsayi = (a8 * aci) / 65536;
+        degisken c: tamsayi = 65536 - a2 / 2 + a4 / 24 - a6 / 720 + a8 / 40320;
+        degisken s: tamsayi = aci - a3 / 6 + a5 / 120 - a7 / 5040 + a9 / 362880;
+        kosinus[i] = c * cos_isaret;
+        sinus[i] = s * sin_isaret;
+        frekans = (frekans * oran) / 65536;
+        i = i + 1;
+    }
+    G_ROPE_CACHE_VALID = 1;
+    G_ROPE_CACHE_CIFT = cift_sayisi;
+    G_ROPE_CACHE_KONUM = konum;
+    G_ROPE_CACHE_BOYUT = rope_boyutu;
+    G_ROPE_CACHE_FREQ = frekans_tabani_q16;
+    G_ROPE_CACHE_COS_PTR = kosinus;
+    G_ROPE_CACHE_SIN_PTR = sinus;
+    dondu 1;
+}
+
+# Q16.16 scaled dot-product attention; gerçek softmax ve GQA cache yolu.
+isv bitnet_kv_dikkat_q16(sorgu: *tamsayi,
+                         anahtar_cache: *tamsayi,
+                         deger_cache: *tamsayi,
+                         kafa_sayisi: tamsayi,
+                         kafa_boyutu: tamsayi,
+                         kapasite: tamsayi,
+                         son_token: tamsayi,
+                         kafa: tamsayi,
+                         cikti: *tamsayi) -> tamsayi {
+    eger sorgu == 0 veya anahtar_cache == 0 veya deger_cache == 0 veya cikti == 0 veya
+       kafa_sayisi <= 0 veya kafa_boyutu <= 0 veya kapasite <= 0 veya
+       son_token < 0 veya son_token >= kapasite veya kafa < 0 veya kafa >= kafa_sayisi ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < kafa_boyutu { cikti[i] = 0; i = i + 1; }
+    degisken skorlar: [512]tamsayi;
+    degisken agirliklar: [512]tamsayi;
+    eger son_token + 1 > 512 ise { dondu 0; }
+    degisken token: tamsayi = 0;
+    # Q16.16 sqrt: sqrt(head_dim * 65536 * 65536) is Q16.16.
+    degisken karekok: tamsayi = bitnet_q16_karekoku(
+        kafa_boyutu * BITNET_Q16_BIR * BITNET_Q16_BIR);
+    eger karekok <= 0 ise { karekok = BITNET_Q16_BIR; }
+    dongu token <= son_token {
+        degisken taban: tamsayi = (token * kafa_sayisi + kafa) * kafa_boyutu;
+        degisken skor: tamsayi = 0;
+        i = 0;
+        dongu i < kafa_boyutu {
+            skor = skor + (sorgu[i] * anahtar_cache[taban + i]) / BITNET_Q16_BIR;
+            i = i + 1;
+        }
+        skorlar[token] = (skor * BITNET_Q16_BIR) / karekok;
+        token = token + 1;
+    }
+    eger bitnet_q16_softmax(skorlar, agirliklar, son_token + 1) == 0 ise { dondu 0; }
+    token = 0;
+    dongu token <= son_token {
+        degisken taban2: tamsayi = (token * kafa_sayisi + kafa) * kafa_boyutu;
+        i = 0;
+        dongu i < kafa_boyutu {
+            cikti[i] = cikti[i] + (agirliklar[token] * deger_cache[taban2 + i]) / BITNET_Q16_BIR;
+            i = i + 1;
+        }
+        token = token + 1;
+    }
+    dondu 1;
+}
+
+# Paketli stateless API. Parametreler global scratch'a taşınarak aynı
+# doğrulanmış softmax yolunu kullanır; dışarıda yalnızca bir struct pointer'ı
+# taşındığı için self-host ABI'de kararlıdır.
+isv bitnet_kv_dikkat_q16_paketli(paket: *BitNetAttentionPaketi) -> tamsayi {
+    eger paket == 0 veya paket->sorgu == 0 veya paket->anahtar_cache == 0 veya
+       paket->deger_cache == 0 veya paket->cikti == 0 veya
+       paket->kafa_sayisi <= 0 veya paket->kafa_boyutu <= 0 veya
+       paket->kapasite <= 0 veya paket->son_token < 0 veya
+       paket->kafa < 0 ise { dondu 0; }
+    g_llm_kv_anahtar_cache = paket->anahtar_cache;
+    g_llm_kv_deger_cache = paket->deger_cache;
+    g_llm_kv_kafa_sayisi = paket->kafa_sayisi;
+    g_llm_kv_kafa_boyutu = paket->kafa_boyutu;
+    g_llm_kv_kapasitesi = paket->kapasite;
+    g_llm_kv_token = paket->son_token;
+    g_llm_kv_kafa = paket->kafa;
+    g_llm_kv_sorgu = paket->sorgu;
+    g_llm_kv_cikti = paket->cikti;
+    dondu bitnet_kv_dikkat_q16_global();
+}
+
+isv bitnet_kv_cache_oku(anahtar_cache: *tamsayi,
+                        deger_cache: *tamsayi,
+                        kafa_sayisi: tamsayi,
+                        kafa_boyutu: tamsayi,
+                        kapasite: tamsayi,
+                        token: tamsayi,
+                        kafa: tamsayi,
+                        anahtar_cikti: *tamsayi,
+                        deger_cikti: *tamsayi) -> tamsayi {
+    eger anahtar_cache == 0 veya deger_cache == 0 veya anahtar_cikti == 0 veya
+       deger_cikti == 0 veya token < 0 veya token >= kapasite veya kafa < 0 veya
+       kafa >= kafa_sayisi veya kafa_boyutu <= 0 ise { dondu 0; }
+    degisken taban: tamsayi = (token * kafa_sayisi + kafa) * kafa_boyutu;
+    degisken i: tamsayi = 0;
+    dongu i < kafa_boyutu {
+        anahtar_cikti[i] = anahtar_cache[taban + i];
+        deger_cikti[i] = deger_cache[taban + i];
+        i = i + 1;
+    }
+    dondu 1;
+}

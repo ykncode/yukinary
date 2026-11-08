@@ -1,0 +1,13 @@
+ice_aktar "std"
+
+isv ana() -> tamsayi {
+    ekrana_yaz("OOM testi basliyor...\n");
+    # Cok buyuk bir bellek tahsisi (100 Terabayt)
+    degisken ptr: *u8 = bellek_tahsis_et(100000000000000);
+    eger ptr != 0 ise {
+        ekrana_yaz("HATA: Tahsis basarili oldu!\n");
+        dondu 1;
+    }
+    ekrana_yaz("Bu satir basilmamali, panik devreye girmeli.\n");
+    dondu 0;
+}

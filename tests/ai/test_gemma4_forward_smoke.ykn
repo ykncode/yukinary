@@ -1,0 +1,401 @@
+# One-token Gemma4 real-weight forward test with strict llama.cpp parity.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv signed_sayi_yaz(sayi: tamsayi) {
+    eger sayi < 0 { ekrana_yaz("-".ptr); sayi_yaz(0 - sayi); dondu; }
+    sayi_yaz(sayi);
+}
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; }
+    dongu adet > 0 { adet = adet - 1; degisken ch: [2]u8; ch[0] = rakamlar[adet]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken path: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle(path, durum) == 0 { ExitProcess(2); }
+    degisken gemma_profile_dbg: *GGUFGemma4Profile = durum->gemma4;
+    ekrana_yaz("SWA_AFTER_GGUF=".ptr); sayi_yaz(gemma_profile_dbg->swa_window);
+    ekrana_yaz(" DEBUG=".ptr); sayi_yaz(GGUF_DEBUG_SWA_WINDOW);
+    ekrana_yaz(" SKL=".ptr); sayi_yaz(gemma_profile_dbg->swa_key_length);
+    ekrana_yaz(" FKL=".ptr); sayi_yaz(gemma_profile_dbg->full_key_length); ekrana_yaz("\n".ptr);
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, path, durum) == 0 { ExitProcess(3); }
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("GEMMA4_CUDA_INIT_FAIL=".ptr); sayi_yaz(YKN_CUDA_LAST_ERROR);
+        ekrana_yaz("\\n".ptr); ExitProcess(12);
+    }
+    ekrana_yaz("GEMMA4_CUDA_READY=1\n".ptr);
+    degisken spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&spec);
+    spec.model_adi = durum->mimari_adi;
+    spec.mimari = LLM_MIMARI_GEMMA;
+    spec.quant_tipi = durum->quant_tipi;
+    spec.vocab_boyutu = durum->vocab_boyutu;
+    spec.gizli_boyut = durum->gizli_boyut;
+    spec.katman_sayisi = durum->katman_sayisi;
+    spec.context_boyutu = durum->context_boyutu;
+    spec.kafa_sayisi = durum->kafa_sayisi;
+    spec.kv_kafa_sayisi = durum->kv_kafa_sayisi;
+    spec.kafa_boyutu = durum->kafa_boyutu;
+    spec.ffn_boyutu = durum->ffn_boyutu;
+    spec.rope_boyutu = durum->rope_boyutu;
+    spec.rope_freq_base_q16 = durum->rope_freq_base_q16;
+    spec.norm_eps_q16 = durum->norm_eps_q16;
+    spec.bos_token_id = durum->bos_token_id;
+    spec.eos_token_id = durum->eos_token_id;
+    eger llm_runtime_spec_dogrula(&spec) == 0 { ExitProcess(4); }
+    ekrana_yaz("SWA_AFTER_SPEC=".ptr); sayi_yaz(gemma_profile_dbg->swa_window); ekrana_yaz("\n".ptr);
+    degisken adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(LLM_MIMARI_GEMMA, &adapter) == 0 { ExitProcess(5); }
+
+    degisken cache_capacity: tamsayi = 16;
+    # Gemma-4 also needs 10,752-wide PLE projection scratch, wider than Q.
+    degisken q_capacity: tamsayi = spec.kafa_sayisi * spec.kafa_boyutu;
+    eger q_capacity < 10752 { q_capacity = 10752; }
+    degisken kv_head_width: tamsayi = spec.kafa_boyutu;
+    eger gemma_profile_dbg != 0 { kv_head_width = gemma_profile_dbg->full_key_length; }
+    degisken kv_width: tamsayi = spec.kv_kafa_sayisi * kv_head_width;
+    degisken kv_bytes: tamsayi = cache_capacity * spec.katman_sayisi * kv_width * 8;
+    degisken hidden: *tamsayi = bellek_tahsis_et(spec.gizli_boyut * 8);
+    degisken residual: *tamsayi = bellek_tahsis_et(spec.gizli_boyut * 8);
+    degisken q: *tamsayi = bellek_tahsis_et(q_capacity * 8);
+    degisken key: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken value: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken attention: *tamsayi = bellek_tahsis_et(q_capacity * 8);
+    degisken ffn: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(spec.vocab_boyutu * 8);
+    degisken weights: *u8 = bellek_tahsis_et(8388608);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    eger hidden == 0 or residual == 0 or q == 0 or key == 0 or value == 0 or
+       attention == 0 or ffn == 0 or logits == 0 or weights == 0 or
+       key_cache == 0 or value_cache == 0 { ExitProcess(6); }
+
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &loader; paket.adapter = &adapter; paket.spec = &spec;
+    paket.hidden = hidden; paket.residual = residual; paket.q = q;
+    paket.key = key; paket.value = value; paket.attention = attention;
+    paket.ffn = ffn; paket.logits = logits; paket.logits_kapasitesi = spec.vocab_boyutu;
+    paket.agirlik_buffer = weights; paket.agirlik_kapasitesi = 8388608;
+    paket.kv_anahtar = key_cache; paket.kv_deger = value_cache;
+    paket.kafa_sayisi = spec.kafa_sayisi; paket.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = spec.kafa_boyutu; paket.kv_kapasitesi = cache_capacity;
+    paket.ffn_boyutu = spec.ffn_boyutu;
+    degisken icra: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra, &paket) == 0 {
+        ekrana_yaz("GEMMA4_SETUP_FAIL=".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz("\n".ptr); ExitProcess(7);
+    }
+
+    ekrana_yaz("GEMMA4_PROFILE_SWA_WINDOW_PRE=".ptr); sayi_yaz(gemma_profile_dbg->swa_window); ekrana_yaz("\n".ptr);
+    degisken gate_meta: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(durum, 0, 0, ".ffn_gate.weight".ptr);
+    degisken up_meta: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(durum, 0, 0, ".ffn_up.weight".ptr);
+    ekrana_yaz("GEMMA4_FFN_META gate_type=".ptr); sayi_yaz(gate_meta->ggml_type);
+    ekrana_yaz(" gate_dims=".ptr); sayi_yaz(gate_meta->dim_0); ekrana_yaz("x".ptr); sayi_yaz(gate_meta->dim_1);
+    ekrana_yaz(" up_type=".ptr); sayi_yaz(up_meta->ggml_type); ekrana_yaz("\n".ptr);
+    # Exercise real-weight PLE input projection for the final prompt token.
+    degisken gemma_ple_token: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_token_embd.weight".ptr);
+    degisken gemma_ple_model: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_model_proj.weight".ptr);
+    degisken gemma_ple_norm: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_proj_norm.weight".ptr);
+    ekrana_yaz("GEMMA4_PLE_TYPES=".ptr); sayi_yaz(gemma_ple_token->ggml_type); ekrana_yaz(",".ptr);
+    sayi_yaz(gemma_ple_model->ggml_type); ekrana_yaz(",".ptr); sayi_yaz(gemma_ple_norm->ggml_type); ekrana_yaz("\n".ptr);
+    degisken emb_meta: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "token_embd.weight".ptr);
+    ekrana_yaz("GEMMA4_EMBED_META type=".ptr); sayi_yaz(emb_meta->ggml_type);
+    ekrana_yaz(" dims=".ptr); sayi_yaz(emb_meta->dim_0); ekrana_yaz("x".ptr); sayi_yaz(emb_meta->dim_1);
+    ekrana_yaz(" bytes=".ptr); sayi_yaz(emb_meta->bayt_sayisi); ekrana_yaz("\n".ptr);
+    degisken emb_row_bytes: tamsayi = emb_meta->bayt_sayisi / emb_meta->dim_1;
+    eger llm_model_aralik_oku(&loader, emb_meta->veri_offset + 107 * emb_row_bytes, weights, emb_row_bytes) != emb_row_bytes { ExitProcess(14); }
+    ekrana_yaz("EMB_BLOCK bytes=".ptr); sayi_yaz(weights[0]); ekrana_yaz(",".ptr); sayi_yaz(weights[1]);
+    ekrana_yaz(",".ptr); sayi_yaz(weights[208]); ekrana_yaz(",".ptr); sayi_yaz(weights[209]);
+    ekrana_yaz(" ql=".ptr); sayi_yaz(weights[0]); ekrana_yaz(" qh=".ptr); sayi_yaz(weights[128]);
+    ekrana_yaz(" sc=".ptr); sayi_yaz(weights[192]); ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_EMBED_DEQUANT=".ptr); signed_sayi_yaz(llm_q6_k_eleman_q16(weights, 0, 0)); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(llm_q6_k_eleman_q16(weights, 0, 1)); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(llm_q6_k_eleman_q16(weights, 0, 2)); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(llm_q6_k_eleman_q16(weights, 0, 3)); ekrana_yaz("\n".ptr);
+    degisken gemma_embed_ok: tamsayi = llm_transformer_embedding_oku(&icra, durum, 107);
+    eger gemma_embed_ok == 0 { ekrana_yaz("GEMMA4_EMBED_FAIL\n".ptr); ExitProcess(10); }
+    ekrana_yaz("YKN_EMBED_Q16=".ptr); signed_sayi_yaz(g_llm_transformer_hidden[0]); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(g_llm_transformer_hidden[1]); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(g_llm_transformer_hidden[2]); ekrana_yaz(",".ptr);
+    signed_sayi_yaz(g_llm_transformer_hidden[3]); ekrana_yaz("\n".ptr);
+
+    degisken gemma_ple_ok: tamsayi = llm_transformer_gemma4_prepare_per_layer_input(&icra, durum, 107);
+    eger gemma_ple_ok == 0 {
+        ekrana_yaz("GEMMA4_PLE_INPUT_FAIL tensor_error=".ptr); sayi_yaz(TRANSFORMER_TENSOR_HATASI);
+        ekrana_yaz("\n".ptr); ExitProcess(11);
+    }
+    ekrana_yaz("GEMMA4_PLE_INPUT_PASS\n".ptr);
+
+    # Verify the learned full-attention RoPE mask from the actual GGUF payload.
+    degisken rope_pairs: tamsayi = llm_transformer_gemma4_full_rope_pairs(&icra, durum);
+    eger rope_pairs != 64 { ekrana_yaz("GEMMA4_ROPE_MASK_FAIL=".ptr); sayi_yaz(rope_pairs); ekrana_yaz("\n".ptr); ExitProcess(9); }
+    ekrana_yaz("GEMMA4_ROPE_ACTIVE_PAIRS=".ptr); sayi_yaz(rope_pairs);
+    ekrana_yaz(" SWA_WINDOW=".ptr); sayi_yaz(durum->gemma4->swa_window); ekrana_yaz("\n".ptr);
+
+    # Capture YKN's first-layer intermediates for comparison with llama.cpp.
+    TRANSFORMER_TRACE_POSITION = 0;
+    # Single real vocabulary token isolates one complete model forward pass.
+    degisken prompt: [1]tamsayi;
+    prompt[0] = 107;
+    degisken output: [1]tamsayi;
+    degisken request: LLMGreedyGenerationRequest;
+    request.icra = &icra; request.durum = durum;
+    request.prompt_tokenleri = prompt; request.prompt_adedi = 1;
+    request.uretilen_tokenler = output; request.uretilen_kapasitesi = 1;
+    request.max_yeni_token = 1;
+    degisken generated: tamsayi = llm_transformer_greedy_generate(&request);
+    eger generated != 1 {
+        ekrana_yaz("GEMMA4_FORWARD_FAIL code=".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz(" pos=".ptr); sayi_yaz(icra.token_konumu);
+        ekrana_yaz(" heads=".ptr); sayi_yaz(g_llm_kv_kafa_sayisi);
+        ekrana_yaz(" dim=".ptr); sayi_yaz(g_llm_kv_kafa_boyutu);
+        ekrana_yaz(" head=".ptr); sayi_yaz(g_llm_kv_kafa);
+        ekrana_yaz(" cap=".ptr); sayi_yaz(g_llm_kv_kapasitesi);
+        ekrana_yaz(" win=".ptr); sayi_yaz(g_llm_kv_window_start);
+        ekrana_yaz("\n".ptr); ExitProcess(8);
+    }
+    ekrana_yaz("GEMMA4_TOKEN=".ptr); sayi_yaz(output[0]); ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_LOGIT_140_Q16="); signed_sayi_yaz(logits[140]);
+    ekrana_yaz(" YKN_LOGIT_ACTUAL_Q16="); signed_sayi_yaz(logits[output[0]]); ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_FINAL_HIDDEN_Q16=");
+    degisken final_hidden_i: tamsayi = 0;
+    dongu final_hidden_i < 2560 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_FINAL_HIDDEN[final_hidden_i]); ekrana_yaz(",".ptr);
+        final_hidden_i = final_hidden_i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_GATE_TRACE0=");
+    degisken gate_dump_i: tamsayi = 0;
+    dongu gate_dump_i < 10240 { signed_sayi_yaz(TRANSFORMER_TRACE_GATE0[gate_dump_i]); ekrana_yaz(",".ptr); gate_dump_i = gate_dump_i + 1; }
+    ekrana_yaz("\nYKN_UP_TRACE0=");
+    degisken up_dump_i: tamsayi = 0;
+    dongu up_dump_i < 10240 { signed_sayi_yaz(TRANSFORMER_TRACE_UP0[up_dump_i]); ekrana_yaz(",".ptr); up_dump_i = up_dump_i + 1; }
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_GATE_3998=".ptr); signed_sayi_yaz(TRANSFORMER_TRACE_GATE_3998);
+    ekrana_yaz(" INPUT0=".ptr); signed_sayi_yaz(TRANSFORMER_TRACE_FFN_INPUT[0]); ekrana_yaz("\n".ptr);
+    degisken gate_row_bytes: tamsayi = gate_meta->bayt_sayisi / gate_meta->dim_1;
+    eger llm_model_aralik_oku(&loader, gate_meta->veri_offset + 3998 * gate_row_bytes,
+        weights, gate_row_bytes) != gate_row_bytes { ExitProcess(15); }
+    degisken gate_cpu_row: [1]tamsayi;
+    eger llm_q4_k_matris_carp(weights, TRANSFORMER_TRACE_FFN_INPUT,
+        gate_cpu_row, 1, spec.gizli_boyut, 1) != 1 { ExitProcess(16); }
+    ekrana_yaz("CPU_GATE_3998=".ptr); signed_sayi_yaz(gate_cpu_row[0]); ekrana_yaz("\n".ptr);
+    degisken gate_gpu_row: [1]tamsayi;
+    eger ykn_cuda_q4_k_matvec(weights, TRANSFORMER_TRACE_FFN_INPUT, gate_gpu_row,
+        spec.gizli_boyut, 1, gate_row_bytes) != 1 { ExitProcess(17); }
+    ekrana_yaz("GPU_GATE_3998=".ptr); signed_sayi_yaz(gate_gpu_row[0]); ekrana_yaz("\n".ptr);
+    degisken gate_chunk_rows: tamsayi = 8388608 / gate_row_bytes;
+    degisken gate_chunk_bytes: tamsayi = gate_chunk_rows * gate_row_bytes;
+    degisken gate_chunk_out: *tamsayi = bellek_tahsis_et(gate_chunk_rows * 8);
+    eger llm_model_aralik_oku(&loader, gate_meta->veri_offset, weights, gate_chunk_bytes) != gate_chunk_bytes { ExitProcess(18); }
+    eger ykn_cuda_q4_k_matvec(weights, TRANSFORMER_TRACE_FFN_INPUT, gate_chunk_out,
+        spec.gizli_boyut, gate_chunk_rows, gate_chunk_bytes) != 1 { ExitProcess(19); }
+    ekrana_yaz("GPU_CHUNK_GATE_3998=".ptr); signed_sayi_yaz(gate_chunk_out[3998]); ekrana_yaz("\n".ptr);
+    degisken gate_dispatch_out: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    g_llm_tensor_icra = &icra; g_llm_tensor_bilgi = gate_meta;
+    g_llm_tensor_girdi = TRANSFORMER_TRACE_FFN_INPUT; g_llm_tensor_cikti = gate_dispatch_out;
+    g_llm_tensor_K = spec.gizli_boyut; g_llm_tensor_N = spec.ffn_boyutu;
+    eger llm_transformer_tensor_ileri_global() != 1 { ExitProcess(20); }
+    ekrana_yaz("DISPATCH_GATE_3998=".ptr); signed_sayi_yaz(gate_dispatch_out[3998]); ekrana_yaz("\n".ptr);
+    degisken gate_buf: *tamsayi = icra.ffn_gate_scratch;
+    degisken up_buf: *tamsayi = icra.ffn_up_scratch;
+    degisken scan_i: tamsayi = 0; degisken gate_max: tamsayi = 0;
+    degisken gate_min: tamsayi = 0; degisken gate_max_i: tamsayi = 0;
+    degisken gate_min_i: tamsayi = 0;
+    dongu scan_i < spec.ffn_boyutu {
+        eger gate_buf[scan_i] > gate_max { gate_max = gate_buf[scan_i]; gate_max_i = scan_i; }
+        eger gate_buf[scan_i] < gate_min { gate_min = gate_buf[scan_i]; gate_min_i = scan_i; }
+        scan_i = scan_i + 1;
+    }
+    ekrana_yaz("GATE_EXTREMA max_i=".ptr); sayi_yaz(gate_max_i); ekrana_yaz(" max=".ptr); signed_sayi_yaz(gate_max);
+    ekrana_yaz(" min_i=".ptr); sayi_yaz(gate_min_i); ekrana_yaz(" min=".ptr); signed_sayi_yaz(gate_min); ekrana_yaz("\n".ptr);
+    ekrana_yaz("LAYER_SCALE_Q16="); signed_sayi_yaz(TRANSFORMER_TRACE_LAYER_SCALE); ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_CONTEXT0_Q16=");
+    degisken trace_context_i: tamsayi = 0;
+    dongu trace_context_i < 2048 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_ATTN_CONTEXT[trace_context_i]);
+        ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("YKN_LAYER0_RESIDUAL_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 2560 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_LAYER0_RESIDUAL[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\nYKN_LAYER0_INPUT_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 2560 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_LAYER0_INPUT[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\nYKN_LAYER0_V_RAW_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 512 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_LAYER0_V_RAW[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\nYKN_LAYER0_V_NORM_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 512 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_LAYER0_V_NORM[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("YKN_GATE0_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 10240 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_GATE0[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+
+    ekrana_yaz("\nYKN_UP0_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 10240 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_UP0[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\nYKN_PROJECTION0_Q16=");
+    trace_context_i = 0;
+    dongu trace_context_i < 2560 {
+        signed_sayi_yaz(TRANSFORMER_TRACE_ATTN_OUT[trace_context_i]); ekrana_yaz(",".ptr);
+        trace_context_i = trace_context_i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+    degisken full_stage: tamsayi = 0;
+    dongu full_stage < 24 {
+        eger full_stage == 0 or full_stage == 1 or full_stage == 2 or
+           full_stage == 3 or full_stage == 4 or full_stage == 5 or
+           full_stage == 6 or full_stage == 7 or full_stage == 10 or
+           full_stage == 11 or full_stage == 12 or full_stage == 15 or
+           full_stage == 16 or full_stage == 17 or full_stage == 18 or
+           full_stage == 19 or full_stage == 20 or full_stage == 21 or full_stage == 22 or full_stage == 23 {
+            degisken full_layer: tamsayi = 0;
+            dongu full_layer < 4 {
+                degisken full_count: tamsayi = 2560;
+                eger full_stage == 1 or full_stage == 12 {
+                    full_count = 2048;
+                }
+                eger full_stage == 2 or full_stage == 3 {
+                    full_count = 512;
+                }
+                eger full_stage == 17 or full_stage == 20 or full_stage == 21 or full_stage == 22 or full_stage == 23 {
+                    full_count = 256;
+                }
+                degisken full_index: tamsayi = 0;
+                degisken full_base: tamsayi = (full_stage * 4 + full_layer) * 4096;
+                ekrana_yaz("YKN_FULL stage="); sayi_yaz(full_stage);
+                ekrana_yaz(" layer="); sayi_yaz(full_layer);
+                ekrana_yaz(" n="); sayi_yaz(full_count); ekrana_yaz(" values=");
+                dongu full_index < full_count {
+                    signed_sayi_yaz(TRANSFORMER_TRACE_FULL[full_base + full_index]);
+                    ekrana_yaz(",".ptr);
+                    full_index = full_index + 1;
+                }
+                ekrana_yaz("\n".ptr);
+                full_layer = full_layer + 1;
+            }
+        }
+        full_stage = full_stage + 1;
+    }
+
+    degisken trace_stage: tamsayi = 0;
+    dongu trace_stage < 23 {
+        degisken trace_slot: tamsayi = trace_stage * 42;
+        ekrana_yaz("YKN_TRACE stage=".ptr); sayi_yaz(trace_stage);
+        ekrana_yaz(" sum=".ptr); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[trace_slot]);
+        ekrana_yaz(" max=".ptr); sayi_yaz(TRANSFORMER_TRACE_MAX[trace_slot]);
+        ekrana_yaz(" max_i=".ptr); sayi_yaz(TRANSFORMER_TRACE_MAX_INDEX[trace_slot]);
+        ekrana_yaz(" first=".ptr); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4]); ekrana_yaz(",".ptr);
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 1]); ekrana_yaz(",".ptr);
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 2]); ekrana_yaz(",".ptr);
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 3]); ekrana_yaz("\n".ptr);
+        trace_stage = trace_stage + 1;
+    }
+    degisken trace_layer: tamsayi = 0;
+    dongu trace_layer < 42 {
+        degisken query_slot: tamsayi = 1 * 42 + trace_layer;
+        degisken key_slot: tamsayi = 2 * 42 + trace_layer;
+        degisken value_slot: tamsayi = 3 * 42 + trace_layer;
+        degisken context_slot: tamsayi = 12 * 42 + trace_layer;
+        degisken post_attn_slot: tamsayi = 4 * 42 + trace_layer;
+        degisken attention_projection_slot: tamsayi = 5 * 42 + trace_layer;
+        degisken attention_slot: tamsayi = 6 * 42 + trace_layer;
+        degisken ffn_slot: tamsayi = 15 * 42 + trace_layer;
+        degisken trace_slot: tamsayi = 16 * 42 + trace_layer;
+        degisken output_slot: tamsayi = 11 * 42 + trace_layer;
+        degisken ple_slot: tamsayi = 20 * 42 + trace_layer;
+        ekrana_yaz("YKN_LAYER layer="); sayi_yaz(trace_layer);
+        ekrana_yaz(" q_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[query_slot]);
+        ekrana_yaz(" k_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[key_slot]);
+        ekrana_yaz(" value_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[value_slot]);
+        ekrana_yaz(" value_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[value_slot]);
+        ekrana_yaz(" context_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[context_slot]);
+        ekrana_yaz(" post_attn_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[post_attn_slot]);
+        ekrana_yaz(" post_attn_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[post_attn_slot]);
+        ekrana_yaz(" post_attn_first="); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[post_attn_slot * 4]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[post_attn_slot * 4 + 1]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[post_attn_slot * 4 + 2]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[post_attn_slot * 4 + 3]);
+        ekrana_yaz(" projection_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[attention_projection_slot]);
+        ekrana_yaz(" projection_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[attention_projection_slot]);
+        ekrana_yaz(" attn_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[attention_slot]);
+        ekrana_yaz(" attn_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[attention_slot]);
+        ekrana_yaz(" attn_first="); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[attention_slot * 4]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[attention_slot * 4 + 1]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[attention_slot * 4 + 2]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[attention_slot * 4 + 3]);
+        ekrana_yaz(" ffn_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[ffn_slot]);
+        ekrana_yaz(" ffn_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[ffn_slot]);
+        ekrana_yaz(" ffn_first="); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[ffn_slot * 4]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[ffn_slot * 4 + 1]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[ffn_slot * 4 + 2]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[ffn_slot * 4 + 3]);
+        ekrana_yaz(" pe_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[trace_slot]);
+        ekrana_yaz(" max="); sayi_yaz(TRANSFORMER_TRACE_MAX[trace_slot]);
+        ekrana_yaz(" first="); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 1]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 2]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 3]);
+        ekrana_yaz(" l_out_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[output_slot]);
+        ekrana_yaz(" l_out_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[output_slot]);
+        ekrana_yaz(" l_out_first="); signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[output_slot * 4]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[output_slot * 4 + 1]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[output_slot * 4 + 2]); ekrana_yaz(",");
+        signed_sayi_yaz(TRANSFORMER_TRACE_FIRST[output_slot * 4 + 3]);
+        ekrana_yaz(" ple_sum="); signed_sayi_yaz(TRANSFORMER_TRACE_SUM[ple_slot]);
+        ekrana_yaz(" ple_max="); sayi_yaz(TRANSFORMER_TRACE_MAX[ple_slot]); ekrana_yaz("\n".ptr);
+        trace_layer = trace_layer + 1;
+    }
+    eger output[0] != 140 {
+        ekrana_yaz("GEMMA4_TOKEN_PARITY_FAIL expected=140 actual=".ptr);
+        sayi_yaz(output[0]); ekrana_yaz("\n".ptr); ExitProcess(13);
+    }
+    dondu 0;
+}

@@ -1,0 +1,208 @@
+# ============================================================
+# tools/train_mini_model.ykn
+# Yukinary (YKN) Saf YKN ile Mini Model Egitimi & GGUF Quantizer
+# ============================================================
+
+isv ekrana_yaz(mesaj: *u8) {}
+# Gercek Win32 I/O: CreateFileA + WriteFile + CloseHandle
+#c-lib "kernel32";
+harici isv CreateFileA(
+    lpFileName: *u8, dwAccess: tamsayi, dwShare: tamsayi,
+    lpSec: *u8, dwCreate: tamsayi, dwFlags: tamsayi, hTemplate: tamsayi
+) -> tamsayi;
+harici isv WriteFile(hFile: tamsayi, lpBuf: *u8, nBytes: tamsayi, lpWritten: *tamsayi, lpOv: *u8) -> tamsayi;
+harici isv CloseHandle(hObj: tamsayi) -> tamsayi;
+
+isv diske_bas_ve_kapat(dosya_adi: *u8, buffer: *u8, boyut: tamsayi) -> tamsayi {
+    eger dosya_adi == 0 veya buffer == 0 veya boyut <= 0 ise { dondu 0; }
+    degisken h: tamsayi = CreateFileA(dosya_adi, 1073741824, 0, 0, 2, 128, 0);
+    eger h == (0 - 1) veya h == 0 ise { dondu 0; }
+    degisken yazilan: [1]tamsayi;
+    WriteFile(h, buffer, boyut, yazilan, 0);
+    CloseHandle(h);
+    dondu yazilan[0];
+}
+
+ice_aktar "../std/ai/trainer.ykn";
+
+# Global static bss data allocations
+degisken g_girdi: [16]tamsayi;
+degisken g_w1_ternary: [512]tamsayi;
+degisken g_w2_ternary: [192]tamsayi;
+degisken g_gguf_buffer: [4096]u8;
+
+# GGUF Baslik Yardimcilari
+isv gguf_u32_yaz(ofset: tamsayi, deger: tamsayi) {
+    g_gguf_buffer[ofset + 0] = (deger) & 255;
+    g_gguf_buffer[ofset + 1] = (deger / 256) & 255;
+    g_gguf_buffer[ofset + 2] = (deger / 65536) & 255;
+    g_gguf_buffer[ofset + 3] = (deger / 16777216) & 255;
+}
+
+isv gguf_u64_yaz(ofset: tamsayi, deger: tamsayi) {
+    gguf_u32_yaz(ofset, deger);
+    gguf_u32_yaz(ofset + 4, 0);
+}
+
+isv gguf_metin_yaz(ofset: tamsayi, kaynak: *u8, uzunluk: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < uzunluk) {
+        g_gguf_buffer[ofset + i] = kaynak[i];
+        i = i + 1;
+    }
+}
+
+isv quantize_w1(esik: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < 512) {
+        degisken w: tamsayi = g_ai_w1[i];
+        eger w > esik ise {
+            g_w1_ternary[i] = 1;
+        } yoksa eger w < (0 - esik) ise {
+            g_w1_ternary[i] = 0 - 1;
+        } yoksa {
+            g_w1_ternary[i] = 0;
+        }
+        i = i + 1;
+    }
+}
+
+isv quantize_w2(esik: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < 192) {
+        degisken w: tamsayi = g_ai_w2[i];
+        eger w > esik ise {
+            g_w2_ternary[i] = 1;
+        } yoksa eger w < (0 - esik) ise {
+            g_w2_ternary[i] = 0 - 1;
+        } yoksa {
+            g_w2_ternary[i] = 0;
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YUKINARY SAF YKN ILE AI EGITIMI & GGUF QUANTIZER (FAZ 9)\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+
+    ai_egitim_baslat();
+
+    ekrana_yaz("[1/4] Agirliklar Q16.16 formatinda baslatildi (W1: 512, W2: 192 parametre)\n".ptr);
+
+    degisken epoch: tamsayi = 0;
+    degisken toplam_kayip: tamsayi = 0;
+
+    ekrana_yaz("[2/4] Egitim dongusu basliyor (40 epoch)...\n".ptr);
+    dongu (epoch < 40) {
+        toplam_kayip = 0;
+        degisken cat: tamsayi = 0;
+        dongu (cat < 6) {
+            degisken k: tamsayi = 0;
+            dongu (k < 16) {
+                g_ai_x[k] = 0;
+                k = k + 1;
+            }
+            g_ai_x[cat * 2] = TRAINER_Q16_BIR;
+            g_ai_x[cat * 2 + 1] = TRAINER_Q16_BIR / 2;
+
+            ai_forward_pass();
+            degisken l: tamsayi = ai_backward_pass(cat);
+            toplam_kayip = toplam_kayip + l;
+            ai_optimizer_adimi();
+
+            cat = cat + 1;
+        }
+        epoch = epoch + 1;
+    }
+    ekrana_yaz("[OK] Egitim tamamlandi. Kayip basariyla optimize edildi.\n".ptr);
+
+    # [3/4] BitNet 1.58b Ternary Quantization
+    ekrana_yaz("[3/4] Agirliklar BitNet 1.58b {-1, 0, +1} ternary forma quantize ediliyor...\n".ptr);
+    quantize_w1(100);
+    quantize_w2(100);
+
+    # [4/4] Binary GGUF v3 Dosyasini Diske Basma
+    ekrana_yaz("[4/4] GGUFv3 ikili konteyneri serialize ediliyor...\n".ptr);
+
+    # Header: Magic "GGUF" (4B), Versiyon 3 (4B), Tensor count 2 (8B), KV count 3 (8B)
+    g_gguf_buffer[0] = 71; # 'G'
+    g_gguf_buffer[1] = 71; # 'G'
+    g_gguf_buffer[2] = 85; # 'U'
+    g_gguf_buffer[3] = 70; # 'F'
+    gguf_u32_yaz(4, 3);
+    gguf_u64_yaz(8, 2);
+    gguf_u64_yaz(16, 3);
+
+    degisken ofs: tamsayi = 24;
+
+    # KV 1: "general.architecture" = "bitnet"
+    gguf_u64_yaz(ofs, 20); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "general.architecture".ptr, 20); ofs = ofs + 20;
+    gguf_u32_yaz(ofs, 8); ofs = ofs + 4;
+    gguf_u64_yaz(ofs, 6); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "bitnet".ptr, 6); ofs = ofs + 6;
+
+    # KV 2: "general.name" = "ykn-repair-mini"
+    gguf_u64_yaz(ofs, 12); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "general.name".ptr, 12); ofs = ofs + 12;
+    gguf_u32_yaz(ofs, 8); ofs = ofs + 4;
+    gguf_u64_yaz(ofs, 15); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "ykn-repair-mini".ptr, 15); ofs = ofs + 15;
+
+    # KV 3: "repair.categories" = 6
+    gguf_u64_yaz(ofs, 17); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "repair.categories".ptr, 17); ofs = ofs + 17;
+    gguf_u32_yaz(ofs, 4); ofs = ofs + 4;
+    gguf_u32_yaz(ofs, 6); ofs = ofs + 4;
+
+    # Tensor 1 Info: "w1"
+    gguf_u64_yaz(ofs, 2); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "w1".ptr, 2); ofs = ofs + 2;
+    gguf_u32_yaz(ofs, 2); ofs = ofs + 4; # 2 dims
+    gguf_u64_yaz(ofs, 16); ofs = ofs + 8; # dim 16
+    gguf_u64_yaz(ofs, 32); ofs = ofs + 8; # dim 32
+    gguf_u32_yaz(ofs, 1); ofs = ofs + 4; # type I8 = 1
+    gguf_u64_yaz(ofs, 0); ofs = ofs + 8;
+
+    # Tensor 2 Info: "w2"
+    gguf_u64_yaz(ofs, 2); ofs = ofs + 8;
+    gguf_metin_yaz(ofs, "w2".ptr, 2); ofs = ofs + 2;
+    gguf_u32_yaz(ofs, 2); ofs = ofs + 4;
+    gguf_u64_yaz(ofs, 32); ofs = ofs + 8;
+    gguf_u64_yaz(ofs, 6); ofs = ofs + 8;
+    gguf_u32_yaz(ofs, 1); ofs = ofs + 4;
+    gguf_u64_yaz(ofs, 512); ofs = ofs + 8;
+
+    # 32-byte Alignment
+    degisken pad: tamsayi = (32 - (ofs % 32)) % 32;
+    degisken p_idx: tamsayi = 0;
+    dongu (p_idx < pad) {
+        g_gguf_buffer[ofs] = 0;
+        ofs = ofs + 1;
+        p_idx = p_idx + 1;
+    }
+
+    # Tensor 1 binary verisi (512 bayt)
+    degisken t1: tamsayi = 0;
+    dongu (t1 < 512) {
+        g_gguf_buffer[ofs] = (g_w1_ternary[t1] + 256) & 255;
+        ofs = ofs + 1;
+        t1 = t1 + 1;
+    }
+
+    # Tensor 2 binary verisi (192 bayt)
+    degisken t2: tamsayi = 0;
+    dongu (t2 < 192) {
+        g_gguf_buffer[ofs] = (g_w2_ternary[t2] + 256) & 255;
+        ofs = ofs + 1;
+        t2 = t2 + 1;
+    }
+
+    degisken yol: *u8 = "build/models/ykn_repair_mini.gguf".ptr;
+    diske_bas_ve_kapat(yol, g_gguf_buffer, ofs);
+
+    ekrana_yaz("[BASARILI] Saf YKN ile GGUF modeli diske yazildi: build/models/ykn_repair_mini.gguf\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,50 @@
+# ============================================================
+# Örnek 76: Konsol Tabanlı HTTP 1.1 Web Sunucusu ve İstek Ayrıştırıcı
+# ============================================================
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv http_istek_coz(istek: *u8, uzunluk: tamsayi) -> tamsayi {
+    ekrana_yaz("--- Gelen HTTP Istegi ---\n".ptr);
+    ekrana_yaz(istek);
+    ekrana_yaz("\n".ptr);
+
+    # Basit HTTP 1.1 200 OK Yaniti Uretimi
+    ekrana_yaz("HTTP/1.1 200 OK\r\n".ptr);
+    ekrana_yaz("Content-Type: application/json; charset=utf-8\r\n".ptr);
+    ekrana_yaz("Server: Yukinary-Native-V2\r\n".ptr);
+    ekrana_yaz("Content-Length: 26\r\n\r\n".ptr);
+    ekrana_yaz("{\"durum\":\"OK\",\"kod\":200}\n".ptr);
+    dondu 200;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Yukinary HTTP Web Sunucusu Baslatildi ===\n".ptr);
+    ekrana_yaz("Port: 8080 Dinleniyor...\n".ptr);
+
+    degisken ornek_istek: *u8 = "GET /api/v1/durum HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: curl/7.88\r\n".ptr;
+    degisken kod: tamsayi = http_istek_coz(ornek_istek, 60);
+
+    ekrana_yaz("Yanit kodu: ".ptr);
+    sayiyi_yaz(kod);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

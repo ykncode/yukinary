@@ -1,0 +1,53 @@
+# ============================================================
+# std/ai/loader.ykn
+# SafeTensors Model Yukleyici (Zero-Copy Bellek Okuyucu)
+# ============================================================
+
+ice_aktar "std/dosya.ykn";
+ice_aktar "std/metin.ykn";
+
+yapi SafetensorsModel {
+    ham_bellek: *u8;
+    toplam_boyut: tamsayi;
+    baslik_uzunlugu: tamsayi;
+    baslik_json: *u8;
+    veri_baslangici: *u8;
+    veri_boyutu: tamsayi;
+}
+
+isv safetensors_u64_oku(ptr: *u8) -> tamsayi {
+    degisken b0: tamsayi = ptr[0] & 255;
+    degisken b1: tamsayi = ptr[1] & 255;
+    degisken b2: tamsayi = ptr[2] & 255;
+    degisken b3: tamsayi = ptr[3] & 255;
+    degisken b4: tamsayi = ptr[4] & 255;
+    degisken b5: tamsayi = ptr[5] & 255;
+    degisken b6: tamsayi = ptr[6] & 255;
+    degisken b7: tamsayi = ptr[7] & 255;
+    dondu b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
+}
+
+isv safetensors_model_ac(dosya_adi: *u8, model: *SafetensorsModel) -> tamsayi {
+    eger dosya_adi == 0 veya model == 0 ise { dondu 0; }
+    degisken boyut: tamsayi = 0;
+    degisken ham: *u8 = dosya_oku_tamami(dosya_adi, &boyut);
+    eger ham == 0 veya boyut < 8 ise {
+        dondu 0;
+    }
+    degisken header_len: tamsayi = safetensors_u64_oku(ham);
+    eger header_len <= 0 veya (8 + header_len) > boyut ise {
+        dondu 0;
+    }
+    model.ham_bellek = ham;
+    model.toplam_boyut = boyut;
+    model.baslik_uzunlugu = header_len;
+    model.baslik_json = ham + 8;
+    model.veri_baslangici = ham + 8 + header_len;
+    model.veri_boyutu = boyut - 8 - header_len;
+    dondu 1;
+}
+
+isv safetensors_yukle(dosya_adi: *u8) -> tamsayi {
+    degisken m: SafetensorsModel;
+    dondu safetensors_model_ac(dosya_adi, &m);
+}

@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 27: Win32 Arayüzlü Mini SQL Sorgu Konsolu
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_kayit_sayisi: tamsayi = 4;
+degisken g_sutun_sayisi: tamsayi = 3;
+
+isv sorgu_calistir(sorgu: *u8) -> tamsayi {
+    ekrana_yaz("SQL Calistiriliyor: ".ptr);
+    ekrana_yaz(sorgu);
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("Sonuc: 4 satir etkilendi. Sonuc tablosu guncellendi.\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN SQL Studio".ptr, 750, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # SQL Editor Alani
+    metin_kutusu_olustur(p_h, 100, 20, 20, 700, 120);
+
+    # Calistir Butonu
+    buton_olustur(p_h, "Calistir (F5)".ptr, 200, 20, 150, 140, 35);
+    buton_olustur(p_h, "Plani Goruntule".ptr, 201, 180, 150, 140, 35);
+    buton_olustur(p_h, "Disa Aktar (CSV)".ptr, 202, 340, 150, 140, 35);
+
+    # Sonuc Tablosu Alani
+    metin_kutusu_olustur(p_h, 300, 20, 200, 700, 260);
+
+    sorgu_calistir("SELECT id, ad, maas FROM personeller WHERE maas > 50000;".ptr);
+
+    ekrana_yaz("SQL Konsolu baslatildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

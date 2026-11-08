@@ -1,0 +1,93 @@
+# ============================================================
+# tests/cross_target/test_wasm_riscv_emit.ykn
+# FAZ 55: WebAssembly 1.0 (WASM) & RISC-V 64 İkili Formatı Doğrulama Testi
+# Gerçek WASM 1.0 modül emisyonu, LEB128 bayt doğrulaması ve RV64 makine kodu yürütümü
+# ============================================================
+
+ice_aktar "src/codegen/output_wasm.ykn";
+ice_aktar "src/codegen/output_riscv.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 55: Gercek WASM 1.0 & RISC-V 64 Emitter Testi Basliyor...\n".ptr);
+
+    # ============================================================
+    # 1. GERÇEK WASM 1.0 MODÜLÜ VE BÖLÜMLERİNİN EMİSYONU
+    # ============================================================
+    degisken wasm: *WasmModul = wasm_modul_olustur(2048);
+
+    # 1.1 Type Section (Tip Bolumu - Sec ID 1): (i32, i32) -> i32
+    wasm_tip_bolumu_yaz_2_i32_to_i32(wasm);
+
+    # 1.2 Function Section (Sec ID 3): Func 0 -> Type 0
+    wasm_fonksiyon_bolumu_yaz(wasm, 1, 0);
+
+    # 1.3 Memory Section (Sec ID 5): 1 sayfalık (64KB) doğrusal bellek
+    wasm_bellek_bolumu_yaz(wasm, 1, 0);
+
+    # 1.4 Export Section (Sec ID 7): "topla" fonksiyonunu dışa aktar
+    wasm_export_bolumu_yaz_tek_fonk(wasm, "topla".ptr, 0);
+
+    # 1.5 Code Section (Sec ID 10): topla(a, b) fonksiyon gövdesi
+    # local.get 0 (0x20 0x00)
+    # local.get 1 (0x20 0x01)
+    # i32.add     (0x6A)
+    # end         (0x0B)
+    wasm_govde_baslat(wasm);
+    wasm_govde_u32_leb128(wasm, 0); # Yerel değişken grubu sayısı: 0
+    wasm_govde_bayt_yaz(wasm, WASM_OP_LOCAL_GET);
+    wasm_govde_u32_leb128(wasm, 0);
+    wasm_govde_bayt_yaz(wasm, WASM_OP_LOCAL_GET);
+    wasm_govde_u32_leb128(wasm, 1);
+    wasm_govde_bayt_yaz(wasm, WASM_OP_I32_ADD);
+    wasm_govde_bayt_yaz(wasm, WASM_OP_END);
+    wasm_kod_bolumu_tek_fonk_bitir(wasm);
+
+    # 1.6 WASM Modülünü Standartlara Göre Doğrula
+    degisken wasm_gecerli: tamsayi = wasm_modul_dogrula(wasm);
+    eger wasm_gecerli != 1 ise {
+        ekrana_yaz("HATA: Uretilen WASM 1.0 modulu standartlara uymuyor!\n".ptr);
+        dondu 1;
+    }
+
+    # ============================================================
+    # 2. GERÇEK RISC-V 64 KOMUT VE PROGRAM EMİSYONU
+    # ============================================================
+    # Fonksiyon: hesapla(a0, a1) -> (a0 + a1) * 2
+    degisken rv_prog: *RiscvProgram = riscv_program_olustur(64);
+
+    # 2.1 Prologue: 32 bayt yığın çerçevesi ayır, RA ve S0 sakla
+    riscv_emit_prologue(rv_prog, 32);
+
+    # 2.2 Aritmetik: ADD t0, a0, a1 (t0 = a0 + a1)
+    # op=51, funct3=0, funct7=0, rd=t0(5), rs1=a0(10), rs2=a1(11)
+    riscv_komut_ekle(rv_prog, riscv_encode_r_type(RV_OP_REG, 0, 0, RV_T0, RV_A0, RV_A1));
+
+    # 2.3 Sabit Yükle: ADDI t1, zero, 2 (t1 = 2)
+    # op=19, funct3=0, rd=t1(6), rs1=zero(0), imm=2
+    riscv_komut_ekle(rv_prog, riscv_encode_i_type(RV_OP_IMM, 0, RV_T1, RV_ZERO, 2));
+
+    # 2.4 Çarpım: MUL a0, t0, t1 (a0 = t0 * 2) - RV64M Standard Extension
+    # op=51, funct3=0, funct7=1, rd=a0(10), rs1=t0(5), rs2=t1(6)
+    riscv_komut_ekle(rv_prog, riscv_encode_r_type(RV_OP_REG, 0, 1, RV_A0, RV_T0, RV_T1));
+
+    # 2.5 Epilogue: Yığını geri yükle ve JALR ile dön
+    riscv_emit_epilogue(rv_prog, 32);
+
+    # 2.6 Programı Sanal RV64 Çekirdeğinde Simüle Et ve Sonucu Doğrula
+    # Girdi: a0 = 15, a1 = 27 -> Beklenen: (15 + 27) * 2 = 84
+    degisken rv_sonuc: tamsayi = riscv_program_simule_et(rv_prog, 15, 27);
+    eger rv_sonuc != 84 ise {
+        ekrana_yaz("HATA: RISC-V 64 program calistirma sonucu hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 2.7 Ek komut kodlama testi: ECALL (0x73)
+    degisken ecall_ins: tamsayi = riscv_ecall();
+    eger ecall_ins != 115 ise {
+        ekrana_yaz("HATA: RISC-V ECALL hatali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("WASM_RISCV_EMIT_PASS\n".ptr);
+    dondu 0;
+}

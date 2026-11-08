@@ -1,0 +1,140 @@
+# ============================================================
+# tests/incremental/02_fingerprint_units.ykn
+# FAZ 6.1: Unit Tests for All 7 Fingerprint Components
+# ============================================================
+
+ice_aktar "src/fingerprint.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv str_len(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv str_esit(a: *u8, b: *u8, len: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("START TEST\n".ptr);
+    degisken fp1: [68]u8;
+    degisken fp2: [68]u8;
+
+    # 1. Source SHA-256 fingerprint
+    degisken src1: *u8 = "degisken a: tamsayi = 10;".ptr;
+    fp_kaynak_hash(src1, str_len(src1), fp1);
+    ekrana_yaz("FP1: ".ptr); ekrana_yaz(fp1); ekrana_yaz("\n".ptr);
+    eger str_len(fp1) != 64 ise {
+        ekrana_yaz("FAIL: fp_kaynak_hash uzunlugu 64 olmali\n".ptr);
+        dondu 1;
+    }
+    # Ayni kaynak ayni hash'i vermeli (determinizm)
+    fp_kaynak_hash(src1, str_len(src1), fp2);
+    eger str_esit(fp1, fp2, 64) == 0 ise {
+        ekrana_yaz("FAIL: fp_kaynak_hash deterministik degil\n".ptr);
+        dondu 1;
+    }
+    # Farkli kaynak farkli hash vermeli
+    degisken src2: *u8 = "degisken a: tamsayi = 20;".ptr;
+    fp_kaynak_hash(src2, str_len(src2), fp2);
+    eger str_esit(fp1, fp2, 64) == 1 ise {
+        ekrana_yaz("FAIL: farkli kaynak ayni hash verdi\n".ptr);
+        dondu 1;
+    }
+    # 2. Imported module fingerprint
+    degisken imp_list: [1024]*u8;
+    fp_import_hash(imp_list, 0, fp1);
+    eger str_len(fp1) != 64 ise {
+        ekrana_yaz("FAIL: fp_import_hash uzunlugu 64 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Compiler version fingerprint
+    fp_derleyici_surumu(fp1);
+    eger str_len(fp1) != 64 ise {
+        ekrana_yaz("FAIL: fp_derleyici_surumu uzunlugu 64 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Target platform fingerprint
+    fp_hedef_platform(0, fp1); # windows
+    fp_hedef_platform(1, fp2); # linux
+    eger str_esit(fp1, fp2, 64) == 1 ise {
+        ekrana_yaz("FAIL: farkli platformlar ayni fingerprinti verdi\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Feature flag fingerprint
+    fp_ozellik_bayraklari(1, fp1); # unsafe
+    fp_ozellik_bayraklari(2, fp2); # self_heal
+    eger str_esit(fp1, fp2, 64) == 1 ise {
+        ekrana_yaz("FAIL: farkli feature flagler ayni fingerprinti verdi\n".ptr);
+        dondu 1;
+    }
+
+    # 6. Stdlib API fingerprint
+    fp_stdlib_api(fp1);
+    eger str_len(fp1) != 64 ise {
+        ekrana_yaz("FAIL: fp_stdlib_api uzunluk 64 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 7. Generic specialization fingerprint
+    degisken gens: [64]*u8;
+    gens[0] = "Dizi__tamsayi".ptr;
+    gens[1] = "Secenek__metin".ptr;
+    fp_generics_ozellesme(gens, 2, fp1);
+    fp_generics_ozellesme(gens, 0, fp2);
+    eger str_esit(fp1, fp2, 64) == 1 ise {
+        ekrana_yaz("FAIL: generics listesi farkliysa fingerprint farkli olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 8. Composite fingerprint
+    degisken c_src: [68]u8;
+    degisken c_imp: [68]u8;
+    degisken c_ver: [68]u8;
+    degisken c_plt: [68]u8;
+    degisken c_flg: [68]u8;
+    degisken c_std: [68]u8;
+    degisken c_gen: [68]u8;
+    degisken comp1: [68]u8;
+    degisken comp2: [68]u8;
+
+    fp_kaynak_hash(src1, str_len(src1), c_src);
+    fp_import_hash(imp_list, 0, c_imp);
+    fp_derleyici_surumu(c_ver);
+    fp_hedef_platform(0, c_plt);
+    fp_ozellik_bayraklari(0, c_flg);
+    fp_stdlib_api(c_std);
+    fp_generics_ozellesme(gens, 2, c_gen);
+
+    fp_bilesik_hesapla(c_src, c_imp, c_ver, c_plt, c_flg, c_std, c_gen, comp1);
+    eger str_len(comp1) != 64 ise {
+        ekrana_yaz("FAIL: bilesik fingerprint uzunluk 64 olmali\n".ptr);
+        dondu 1;
+    }
+    # Determinism
+    fp_bilesik_hesapla(c_src, c_imp, c_ver, c_plt, c_flg, c_std, c_gen, comp2);
+    eger str_esit(comp1, comp2, 64) == 0 ise {
+        ekrana_yaz("FAIL: bilesik fingerprint deterministik degil\n".ptr);
+        dondu 1;
+    }
+
+    # Bilesen degisimi bilesik fingerprint'i degistirmeli
+    fp_hedef_platform(1, c_plt); # platform degistir
+    fp_bilesik_hesapla(c_src, c_imp, c_ver, c_plt, c_flg, c_std, c_gen, comp2);
+    eger str_esit(comp1, comp2, 64) == 1 ise {
+        ekrana_yaz("FAIL: platform degisimi bilesik fingerprint'i degistirmedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ6_FINGERPRINT_UNITS_PASS\n".ptr);
+    dondu 0;
+}

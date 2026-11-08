@@ -1,0 +1,131 @@
+# ============================================================
+# tests/guvenlik/04_pointer_lifetime.ykn
+# GOREV 4.1 - Pointer Lifetime Tracking Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi; eger n < 0 ise { n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger sayi < 0 ise { buf[i] = 45; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../src/safety.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    degisken motor: *GuvenlikMotoru = guvenlik_motoru_olustur();
+    eger motor == 0 ise { ekrana_yaz("FAIL: motor\n".ptr); dondu 1; }
+
+    # -----------------------------------------------------------
+    # Test 1: Pointer kayit
+    # -----------------------------------------------------------
+    degisken isim1: [8]u8;
+    isim1[0] = 112; isim1[1] = 49;
+    degisken p1: *u8 = isim1;
+
+    pointer_kaydet(motor, p1, 2, 1);
+
+    degisken ka1: tamsayi = gm_kayitli_adet(motor);
+    eger ka1 != 1 ise {
+        ekrana_yaz("FAIL: kayitli_adet 1 olmali, bulunan=".ptr);
+        sayiyi_yazdir(ka1); ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    eger pointer_gecerli_mi(motor, p1, 2) != 1 ise {
+        ekrana_yaz("FAIL: kayitli pointer gecerli olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST 04 LIFETIME: Kayit OK\n".ptr);
+
+    # -----------------------------------------------------------
+    # Test 2: Serbest birakma
+    # -----------------------------------------------------------
+    pointer_serbest_birak(motor, p1, 2);
+
+    eger pointer_gecerli_mi(motor, p1, 2) != 0 ise {
+        ekrana_yaz("FAIL: serbest pointer gecersiz olmali\n".ptr);
+        dondu 1;
+    }
+
+    eger pointer_serbest_mi(motor, p1, 2) != 1 ise {
+        ekrana_yaz("FAIL: pointer serbest listesinde olmali\n".ptr);
+        dondu 1;
+    }
+
+    degisken sa1: tamsayi = gm_serbest_adet(motor);
+    eger sa1 != 1 ise {
+        ekrana_yaz("FAIL: serbest_adet 1 olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST 04 LIFETIME: Serbest birakma OK\n".ptr);
+
+    # -----------------------------------------------------------
+    # Test 3: Ikinci pointer
+    # -----------------------------------------------------------
+    degisken isim2: [8]u8;
+    isim2[0] = 112; isim2[1] = 50;
+    degisken p2: *u8 = isim2;
+    pointer_kaydet(motor, p2, 2, 1);
+
+    eger pointer_gecerli_mi(motor, p2, 2) != 1 ise {
+        ekrana_yaz("FAIL: p2 gecerli olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST 04 LIFETIME: Ikinci pointer OK\n".ptr);
+
+    # -----------------------------------------------------------
+    # Test 4: Guvenli blok derinlik sayaci (gm_oku/gm_yaz ile)
+    # -----------------------------------------------------------
+    eger motor.aktif_mi != 0 ise {
+        ekrana_yaz("FAIL: aktif_mi=0 olmali\n".ptr);
+        dondu 1;
+    }
+
+    guvenlik_modunu_ayarla(motor, 1);
+    eger motor.aktif_mi != 1 ise {
+        ekrana_yaz("FAIL: aktif_mi=1 olmali\n".ptr);
+        dondu 1;
+    }
+    eger motor.guvenli_derinlik != 1 ise {
+        ekrana_yaz("FAIL: derinlik=1 olmali\n".ptr);
+        dondu 1;
+    }
+
+    guvenlik_modunu_ayarla(motor, 1);
+    eger motor.guvenli_derinlik != 2 ise {
+        ekrana_yaz("FAIL: derinlik=2 olmali\n".ptr);
+        dondu 1;
+    }
+
+    guvenlik_modunu_ayarla(motor, 0);
+    eger motor.aktif_mi != 1 ise {
+        ekrana_yaz("FAIL: dis blok hala aktif olmali\n".ptr);
+        dondu 1;
+    }
+
+    guvenlik_modunu_ayarla(motor, 0);
+    eger motor.aktif_mi != 0 ise {
+        ekrana_yaz("FAIL: aktif_mi=0 olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST 04 LIFETIME: Guvenli blok derinligi OK\n".ptr);
+
+    # -----------------------------------------------------------
+    # Test 5: Rapor
+    # -----------------------------------------------------------
+    guvenlik_lifetime_raporu(motor);
+
+    ekrana_yaz("FAZ14-LIFETIME-PASS\n".ptr);
+    dondu 0;
+}

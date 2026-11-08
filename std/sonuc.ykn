@@ -1,0 +1,80 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/sonuc.ykn
+# Canonical Result ABI: sonuc<T> / *Sonuc
+# ============================================================
+#
+# Canonical runtime modeli pointer-backed tagged result'tir:
+#   +0  basarili : tamsayi (0 = hata, 1 = basari)
+#   +8  deger    : T'nin 8-byte scalar/pointer ABI degeri
+#   +16 hata_kodu: tamsayi
+#
+# Parser/typechecker'daki builtin `sonuc<T>` ve bu dosyadaki kaynak-level
+# `Sonuc` compatibility tipi ayni layout'u kullanir. `Sonuc` ayri bir Result
+# modeli degil, eski API isimlerini koruyan nominal compatibility gorunumudur.
+
+# Compatibility/source-level spelling for the canonical Result record.
+yapi Sonuc {
+    basarili: tamsayi;
+    deger: tamsayi;
+    hata_kodu: tamsayi;
+}
+
+# Canonical constructors. Payload currently follows the platform scalar ABI;
+# generic payload'lar typed IR'de ayni 8-byte slot'a lower edilir.
+isv sonuc_tamam(deger: tamsayi) -> *Sonuc {
+    degisken s: *Sonuc = bellek_tahsis_et(24);
+    eger s == 0 ise { dondu 0; }
+    s.basarili = 1;
+    s.deger = deger;
+    s.hata_kodu = 0;
+    dondu s;
+}
+
+isv sonuc_hata(kod: tamsayi) -> *Sonuc {
+    degisken s: *Sonuc = bellek_tahsis_et(24);
+    eger s == 0 ise { dondu 0; }
+    s.basarili = 0;
+    s.deger = 0;
+    s.hata_kodu = kod;
+    dondu s;
+}
+
+# Backward-compatible Turkish constructors. They deliberately delegate to
+# the canonical constructors, so allocation and field initialization cannot
+# drift between the two public spellings.
+isv tamam(deger: tamsayi) -> *Sonuc {
+    dondu sonuc_tamam(deger);
+}
+
+isv hata(kod: tamsayi) -> *Sonuc {
+    dondu sonuc_hata(kod);
+}
+
+isv sonuc_basarili_mi(s: *Sonuc) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    dondu s.basarili;
+}
+
+isv sonuc_tamam_mi(s: *Sonuc) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    eger s.basarili == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv sonuc_hata_mi(s: *Sonuc) -> tamsayi {
+    eger s == 0 ise { dondu 1; }
+    eger s.basarili == 0 ise { dondu 1; }
+    dondu 0;
+}
+
+# Default alan ikinci parametredir; bu imza Option helper'larıyla aynı
+# çağrı biçimini korur ve imported std modüller arasında arity driftini önler.
+isv sonuc_deger_al(s: *Sonuc, varsayilan_deger: tamsayi) -> tamsayi {
+    eger s == 0 veya s.basarili == 0 ise { dondu varsayilan_deger; }
+    dondu s.deger;
+}
+
+isv sonuc_hata_kodu_al(s: *Sonuc) -> tamsayi {
+    eger s == 0 ise { dondu -1; }
+    dondu s.hata_kodu;
+}

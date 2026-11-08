@@ -1,0 +1,67 @@
+# ============================================================
+# src/codegen/debug_codeview.ykn
+# FAZ 36: Windows CodeView / PDB Sembol Tablosu Ureticisi
+# Visual Studio Debugger, WinDbg ve x64dbg icin kaynak seviyesinde
+# satir ve sembol tablolarini (.debug$S / .debug$T) uretir.
+# ============================================================
+
+# CodeView Alt Kesit Sabitleri (Subsections)
+degisken CV_SIGNATURE_C13    = 4;
+degisken DEBUG_S_SYMBOLS     = 241; # 0xF1
+degisken DEBUG_S_LINES       = 242; # 0xF2
+degisken DEBUG_S_STRINGTABLE = 243; # 0xF3
+degisken DEBUG_S_FILECHKSMS  = 244; # 0xF4
+
+# CodeView Sembol Turleri
+degisken S_GPROC32           = 4368; # 0x1110 Global Function
+degisken S_END               = 6;    # 0x0006 Scope End
+degisken S_FRAMEPROC         = 4114; # 0x1012 Frame Procedure
+
+# Satir Numarasi Kaydi
+yapi CvSatirKaydi {
+    ofset:      tamsayi; # Fonksiyon baslangicindan itibaren byte offset
+    satir_no:   tamsayi; # Kaynak kod satir numarasi
+}
+
+yapi CodeViewAkisi {
+    tampon:         *u8;
+    kapasite:       tamsayi;
+    kullanilan:     tamsayi;
+    satir_sayisi:   tamsayi;
+}
+
+isv codeview_akis_olustur(kapasite_bayt: tamsayi) -> *CodeViewAkisi {
+    degisken cv: *CodeViewAkisi = bellek_tahsis_et(32);
+    cv.tampon = bellek_tahsis_et(kapasite_bayt);
+    cv.kapasite = kapasite_bayt;
+    cv.kullanilan = 0;
+    cv.satir_sayisi = 0;
+
+    # 1. C13 Imza (4 bayt: 0x00000004)
+    cv.tampon[0] = 4;
+    cv.tampon[1] = 0;
+    cv.tampon[2] = 0;
+    cv.tampon[3] = 0;
+    cv.kullanilan = 4;
+
+    dondu cv;
+}
+
+isv codeview_satir_ekle(cv: *CodeViewAkisi, byte_ofset: tamsayi, satir: tamsayi) {
+    # Basit satir tablosu emisyonu: ofset (4 bayt) + satir_no (4 bayt)
+    eger (cv.kullanilan + 8) <= cv.kapasite ise {
+        cv.tampon[cv.kullanilan + 0] = (byte_ofset & 255);
+        cv.tampon[cv.kullanilan + 1] = ((byte_ofset >> 8) & 255);
+        cv.tampon[cv.kullanilan + 2] = 0;
+        cv.tampon[cv.kullanilan + 3] = 0;
+
+        cv.tampon[cv.kullanilan + 4] = (satir & 255);
+        cv.tampon[cv.kullanilan + 5] = ((satir >> 8) & 255);
+        cv.tampon[cv.kullanilan + 6] = 0;
+        cv.tampon[cv.kullanilan + 7] = 0;
+
+        cv.kullanilan = cv.kullanilan + 8;
+        cv.satir_sayisi = cv.satir_sayisi + 1;
+    }
+}
+

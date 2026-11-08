@@ -1,0 +1,4 @@
+﻿degisken x: tamsayi = 5;
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}

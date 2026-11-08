@@ -1,0 +1,42 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/veri/dagitik.ykn
+# Dagitik Hesaplama ve Toplu Indirgeme (All-Reduce / Barrier)
+# ============================================================
+
+yapi DagitikGrup {
+    rank: tamsayi;
+    dunya_boyutu: tamsayi;
+    bariyer_sayaci: tamsayi;
+    aktif: tamsayi;
+}
+
+isv dagitik_baslat(gpu_sayisi: tamsayi) -> *DagitikGrup {
+    eger gpu_sayisi <= 0 ise { dondu 0; }
+    degisken grup: *DagitikGrup = bellek_tahsis_et(32);
+    eger grup == 0 ise { dondu 0; }
+    grup.rank = 0;
+    grup.dunya_boyutu = gpu_sayisi;
+    grup.bariyer_sayaci = 0;
+    grup.aktif = 1;
+    dondu grup;
+}
+
+# Gradyanlari toplar (Sum) ve hedef tampona birlestirir (All-Reduce Sum)
+isv dagitik_all_reduce(hedef_verisi: *tamsayi, kaynak_verisi: *tamsayi, eleman_sayisi: tamsayi) -> tamsayi {
+    eger hedef_verisi == 0 veya kaynak_verisi == 0 veya eleman_sayisi <= 0 ise {
+        dondu -1;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < eleman_sayisi {
+        hedef_verisi[i] = hedef_verisi[i] + kaynak_verisi[i];
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Tum dugumlerin senkronizasyon bariyerini gunceller
+isv dagitik_bariyer(grup: *DagitikGrup) -> tamsayi {
+    eger grup == 0 veya grup.aktif == 0 ise { dondu -1; }
+    grup.bariyer_sayaci = grup.bariyer_sayaci + 1;
+    dondu grup.bariyer_sayaci;
+}

@@ -1,0 +1,2239 @@
+# ============================================================
+# Yukinary (YKN) Derleyicisi Ana Orkestrator (Self-Hosting V1)
+# ============================================================
+# Bu modul; C++ prangalarindan kurtuldugumuz, tum Uctan Uca (E2E)
+# derleme boru hattini (Pipeline) isleten ve tamamen YKN ile yazilmis
+# ana giris (main) noktasidir.
+
+ice_aktar "utils.ykn";
+ice_aktar "diagnostics.ykn";
+ice_aktar "lexer.ykn";
+ice_aktar "ast.ykn";
+ice_aktar "sandbox_gate.ykn";
+ice_aktar "hir.ykn";
+ice_aktar "mir.ykn";
+ice_aktar "parser.ykn";
+ice_aktar "macros.ykn";
+ice_aktar "generics.ykn";
+ice_aktar "typechecker.ykn";
+ice_aktar "ir.ykn";
+ice_aktar "ir_lower.ykn";
+ice_aktar "ir_codegen_x64.ykn";
+ice_aktar "optimizer.ykn";
+ice_aktar "codegen.ykn";
+ice_aktar "codegen/peephole.ykn";
+ice_aktar "context.ykn";
+ice_aktar "llm.ykn";
+ice_aktar "safety.ykn";
+ice_aktar "lsp.ykn";
+ice_aktar "formatter.ykn";
+ice_aktar "repl.ykn";
+ice_aktar "paket.ykn";
+ice_aktar "keywords.ykn";
+ice_aktar "self_healing.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/ai/yknllm_sandbox.ykn";
+ice_aktar "self_host_verify.ykn";
+ice_aktar "ai_micro_engine.ykn";
+
+# ============================================================
+# Bellek Boyut Sabitleri
+# ============================================================
+degisken JETON_ARENA_BOYUTU    = 33554432;   # 32 MB (Jetonlar dizisi)
+degisken AST_ARENA_BOYUTU      = 134217728;  # 128 MB (AST Dugumleri)
+degisken MAKRO_KURAL_BOYUTU    = 65536;      # 64 KB (Makro Kurallari)
+degisken KOD_ARENA_BOYUTU      = 67108864;   # 64 MB (x86_64 Makine Kodu)
+degisken ELF_ARENA_BOYUTU      = 67108864;   # 64 MB (ELF / Mach-O / PE)
+degisken TC_ARENA_BOYUTU       = 16777216;   # 16 MB (Tip Denetleyici Arenasi)
+degisken KAYNAK_TAMPON_BOYUTU  = 33554432;   # 32 MB (Kaynak Kod Okuma Tamponu)
+
+# ============================================================
+# Win32 Isletim Sistemi Sabitleri
+# ============================================================
+degisken STD_OUTPUT_HANDLE     = 0 - 11;     # -11: Standart Cikti Handle
+degisken STD_INPUT_HANDLE      = 0 - 10;     # -10: Standart Girdi Handle
+degisken STD_ERROR_HANDLE      = 0 - 12;     # -12: Standart Hata Handle
+degisken GENERIC_READ          = 0x80000000; # Dosya Okuma Yetkisi
+degisken GENERIC_WRITE         = 0x40000000; # Dosya Yazma Yetkisi
+degisken FILE_SHARE_READ       = 1;          # Dosya Paylasimli Okuma
+degisken CREATE_ALWAYS         = 2;          # Dosyayi Yeniden Yarat
+degisken OPEN_EXISTING         = 3;          # Mevcut Dosyayi Ac
+degisken FILE_ATTRIBUTE_NORMAL = 0x80;       # Standart Dosya Niteligi
+degisken MEM_COMMIT_RESERVE    = 0x3000;     # MEM_COMMIT | MEM_RESERVE
+degisken PAGE_READWRITE        = 0x04;       # Okunabilir / Yazilabilir Bellek
+degisken INVALID_HANDLE_VALUE  = 0 - 1;      # Gecersiz Handle
+
+# ============================================================
+# Verbose / Debug Cikti Kontrolu
+# ============================================================
+degisken g_verbose: tamsayi = 0;
+degisken g_dump_ir: tamsayi = 0;  # --dump-ir bayragi: IR dump'i her zaman goster
+degisken g_backend_ir: tamsayi = 0; # --backend=ir bayragi: E2E IR Kod Uretimi
+degisken g_aktif_ir_motoru: *IrMotoru = 0;
+degisken g_debug_info: tamsayi = 0;  # --debug bayragi: DWARF4 (ELF) / CodeView (PE) debug bilgisi
+degisken g_llm_cli_rag_yolu: *u8 = 0;
+degisken g_llm_cli_model_durumu: *GGUFDurum = 0;
+
+# Gercek #prompt uretim limiti: CLI verilmezse kullanilabilir kod icin 64 token.
+degisken g_llm_cli_max_tokens: tamsayi = 64;
+
+# Faz 5: In-File Konfigurasyon Yonetimi ve Precedence
+degisken g_cli_hedef_acikca_verildi: tamsayi = 0;
+degisken g_cli_llm_model_acikca_verildi: tamsayi = 0;
+degisken g_cli_self_heal_acikca_verildi: tamsayi = 0;
+degisken g_cli_opt_acikca_verildi: tamsayi = 0;
+degisken g_cli_target_acikca_verildi: tamsayi = 0;
+degisken g_cli_max_tokens_acikca_verildi: tamsayi = 0;
+degisken g_in_file_cikti_dosyasi: *u8 = 0;
+degisken g_cfg_stack_size: tamsayi = 0;
+degisken g_cfg_workers: tamsayi = 0;
+degisken g_cfg_memory_model: tamsayi = 0;
+degisken g_cfg_cpu_arch: tamsayi = 0;
+
+isv verbose_yaz(mesaj: *u8) {
+    eger g_verbose != 0 ise {
+        ekrana_yaz(mesaj);
+    }
+}
+
+isv verbose_sayi(sayi: tamsayi) {
+    eger g_verbose != 0 ise {
+        sayiyi_yazdir(sayi);
+    }
+}
+
+# ============================================================
+# Circular Import Korumasi
+# ============================================================
+degisken g_import_listesi: [4096]*u8;
+degisken g_import_sayisi: tamsayi = 0;
+degisken g_imp_kayitlar: [4096]*u8;
+degisken g_imp_kayit_uzn: [4096]tamsayi;
+degisken g_imp_kayit_sayisi: tamsayi = 0;
+
+isv import_yolu_normalize_et(yol: *u8) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    degisken uzn: tamsayi = 0;
+    dongu yol[uzn] != 0 {
+        eger yol[uzn] == 92 ise { yol[uzn] = 47; }
+        uzn = uzn + 1;
+    }
+    degisken out: [1024]u8;
+    degisken seg_bas: [128]tamsayi;
+    degisken seg_say: tamsayi = 0;
+    degisken out_uzn: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        dongu i < uzn ve yol[i] == 47 { i = i + 1; }
+        eger i >= uzn ise { durdur; }
+        degisken s: tamsayi = i;
+        dongu i < uzn ve yol[i] != 47 { i = i + 1; }
+        degisken slen: tamsayi = i - s;
+        eger slen == 1 ve yol[s] == 46 ise {
+            devam_et;
+        }
+        eger slen == 2 ve yol[s] == 46 ve yol[s + 1] == 46 ve seg_say > 0 ise {
+            seg_say = seg_say - 1;
+            out_uzn = seg_bas[seg_say];
+            devam_et;
+        }
+        seg_bas[seg_say] = out_uzn;
+        seg_say = seg_say + 1;
+        eger out_uzn > 0 ise {
+            out[out_uzn] = 47;
+            out_uzn = out_uzn + 1;
+        }
+        degisken k: tamsayi = 0;
+        dongu k < slen {
+            out[out_uzn] = yol[s + k];
+            out_uzn = out_uzn + 1;
+            k = k + 1;
+        }
+    }
+    out[out_uzn] = 0;
+    degisken m: tamsayi = 0;
+    dongu m <= out_uzn {
+        yol[m] = out[m];
+        m = m + 1;
+    }
+    dondu out_uzn;
+}
+
+isv import_yolu_esit_mi(yol1: *u8, uzn1: tamsayi, yol2: *u8, uzn2: tamsayi) -> tamsayi {
+    eger yol1 == 0 veya yol2 == 0 veya uzn1 != uzn2 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzn1 {
+        degisken c1: tamsayi = yol1[i];
+        degisken c2: tamsayi = yol2[i];
+        eger c1 == 92 ise { c1 = 47; }
+        eger c2 == 92 ise { c2 = 47; }
+        eger c1 != c2 ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv import_zincirinde_var_mi(zincir: *AstDugum, yol: *u8, uzn: tamsayi) -> tamsayi {
+    degisken curr: *AstDugum = zincir;
+    dongu curr != 0 {
+        eger import_yolu_esit_mi(curr.tip_adi, curr.tip_adi_uzunluk, yol, uzn) == 1 ise {
+            dondu 1;
+        }
+        curr = curr.sol;
+    }
+    dondu 0;
+}
+
+# Import alias rewrite tablosu. Alias yalnizca declaration adini degil,
+# imported modulun kendi function-call AST'lerini de ayni namespace'e tasir.
+degisken IMPORT_ALIAS_MAP_KAPASITE = 4096;
+degisken g_import_alias_eski: [4096]*u8;
+degisken g_import_alias_eski_uzn: [4096]tamsayi;
+degisken g_import_alias_yeni: [4096]*u8;
+degisken g_import_alias_yeni_uzn: [4096]tamsayi;
+degisken g_import_alias_map_sayisi: tamsayi = 0;
+# Import grafigi ve kaynak dosyalari icin yapilandirilabilir guvenlik sinirlari.
+degisken MAX_IMPORT_DOSYA: tamsayi = 4096;
+degisken MAX_IMPORT_DERINLIK: tamsayi = 128;
+degisken MAX_IMPORT_DOSYA_BOYUTU: tamsayi = 16777216; # 16 MiB
+
+# OS soyutlama modulu icindeki `os_` sarmalayicilarini kullaniyoruz
+# YKN stdlib artik platform bagimsiz olarak bu islemleri `std/os/common.ykn` ile saglar.
+
+isv import_alias_cagri_yenile(dugum_basi: *AstDugum) {
+    degisken dugum: *AstDugum = dugum_basi;
+    dongu dugum != 0 {
+        # AST_ISLEV_CAGRISI biciminde callee sol dalindadir. Sadece
+        # declaration listesinde degil, function govdelerindeki cagrilarda
+        # rewrite yapilir; yerel degisken/alan adlari etkilenmez.
+        eger dugum.tip == AST_ISLEV_CAGRISI ve dugum.sol != 0 ve
+            dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+            degisken hedef: *Jeton = dugum.sol.ilk_jeton;
+            degisken ai: tamsayi = 0;
+            dongu ai < g_import_alias_map_sayisi {
+                eger g_import_alias_eski_uzn[ai] == hedef.uzunluk ve
+                    bellek_esit_mi(g_import_alias_eski[ai], hedef.baslangic, hedef.uzunluk) == 1 ise {
+                    hedef.baslangic = g_import_alias_yeni[ai];
+                    hedef.uzunluk = g_import_alias_yeni_uzn[ai];
+                    durdur;
+                }
+                ai = ai + 1;
+            }
+        }
+
+        import_alias_cagri_yenile(dugum.sol);
+        import_alias_cagri_yenile(dugum.sag);
+        import_alias_cagri_yenile(dugum.govde);
+        import_alias_cagri_yenile(dugum.yoksa_govde);
+        import_alias_cagri_yenile(dugum.parametreler);
+        dugum = dugum.sonraki;
+    }
+}
+
+isv bellek_serbest_birak(ptr: *u8) {
+    win32_bellek_serbest(ptr);
+}
+
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi {
+    # 0x80000000 = WIN_GENERIC_READ
+    # 1 = WIN_FILE_SHARE_READ
+    # 3 = WIN_OPEN_EXISTING
+    # 0x80 = WIN_FILE_ATTRIBUTE_NORMAL
+    degisken h: tamsayi = os_dosya_yarat(dosya_adi, 0x80000000, 1, 3, 0x80);
+    eger h == 0xffffffffffffffff veya h == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = 0;
+    os_dosya_oku(h, buffer, maks_boyut, &okunan);
+    os_dosya_kapat(h);
+    dondu okunan;
+}
+
+isv diske_bas_ve_kapat(dosya_adi: *u8, buffer: *u8, boyut: tamsayi) -> tamsayi {
+    # 0x40000000 = WIN_GENERIC_WRITE
+    # 2 = WIN_CREATE_ALWAYS
+    # 0x80 = WIN_FILE_ATTRIBUTE_NORMAL
+    degisken h: tamsayi = os_dosya_yarat(dosya_adi, 0x40000000, 0, 2, 0x80);
+    eger h == 0xffffffffffffffff veya h == 0 ise {
+        dondu 0;
+    }
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(h, buffer, boyut, &yazilan);
+    os_dosya_kapat(h);
+    dondu yazilan;
+}
+
+isv ekrana_yaz(mesaj: *u8) {
+    # 0xfffffff5 = WIN_STD_OUTPUT_HANDLE
+    degisken h: tamsayi = os_standart_handle_al(0xfffffff5);
+    degisken uz: tamsayi = 0;
+    dongu mesaj[uz] != 0 { uz = uz + 1; }
+    degisken yazilan_bayt: tamsayi = 0;
+    os_dosya_yaz(h, mesaj, uz, &yazilan_bayt);
+}
+
+isv ekrana_yaz_boyut(mesaj: *u8, uz: tamsayi) {
+    degisken h: tamsayi = os_standart_handle_al(0xfffffff5);
+    degisken yazilan_bayt: tamsayi = 0;
+    os_dosya_yaz(h, mesaj, uz, &yazilan_bayt);
+}
+
+isv panik(mesaj: *u8) {
+    ekrana_yaz("\n[PANIK] ".ptr);
+    ekrana_yaz(mesaj);
+    ekrana_yaz("\n".ptr);
+    os_sureci_sonlandir(2);
+}
+
+isv komut_satiri_arg1() -> *u8 { dondu 0; }
+
+degisken g_compiler: *CompilerContext = 0;
+
+# FAZ 5: #c-lib, #cpp-lib, #rs-lib, #py-lib, #convert direktifleri artik desteklenmektedir.
+isv kaynakta_unsupported_codegen_direktifi_var_mi(jetonlar: *u8, sayi: tamsayi) -> tamsayi {
+    dondu 0;
+}
+
+isv konfigurasyon_direktiflerini_islet(ctx: *CompilerContext, ast_koku: *AstDugum) {
+    eger ast_koku == 0 ise { dondu; }
+    degisken stmt: *AstDugum = ast_koku.sol;
+    dongu stmt != 0 {
+        eger stmt.tip == AST_DIREKTIF_CONFIG ise {
+            degisken kv: *AstDugum = stmt.sol;
+            dongu kv != 0 {
+                degisken k_jeton: *Jeton = kv.ilk_jeton;
+                degisken val_node: *AstDugum = kv.sol;
+                eger k_jeton != 0 ve val_node != 0 ve val_node.ilk_jeton != 0 ise {
+                    degisken v_jeton: *Jeton = val_node.ilk_jeton;
+                    degisken k_ptr: *u8 = k_jeton.baslangic;
+                    degisken k_uzn: tamsayi = k_jeton.uzunluk;
+                    degisken v_ptr: *u8 = v_jeton.baslangic;
+                    degisken v_uzn: tamsayi = v_jeton.uzunluk;
+
+                    eger v_uzn >= 2 ve (v_ptr[0] == 34 veya v_ptr[0] == 39) ise {
+                        v_ptr = v_ptr + 1;
+                        v_uzn = v_uzn - 2;
+                    }
+                    degisken val_str: *u8 = compiler_tahsis_et(v_uzn + 1);
+                    degisken vi: tamsayi = 0;
+                    dongu vi < v_uzn {
+                        val_str[vi] = v_ptr[vi];
+                        vi = vi + 1;
+                    }
+                    val_str[v_uzn] = 0;
+
+                    degisken val_num: tamsayi = 0;
+                    eger v_jeton.tip == TIP_TAMSAYI ise {
+                        degisken ni: tamsayi = 0;
+                        dongu ni < v_uzn {
+                            degisken ch: u8 = v_ptr[ni];
+                            eger ch >= 48 ve ch <= 57 ise {
+                                val_num = (val_num * 10) + (ch - 48);
+                            }
+                            ni = ni + 1;
+                        }
+                    } yoksa eger v_jeton.tip == TIP_DOGRU veya (v_uzn == 5 ve bellek_esit_mi(v_ptr, "dogru".ptr, 5) == 1) veya (v_uzn == 4 ve bellek_esit_mi(v_ptr, "true".ptr, 4) == 1) ise {
+                        val_num = 1;
+                    }
+
+                    # 1. MODEL
+                    eger (k_uzn == 5 ve bellek_esit_mi(k_ptr, "model".ptr, 5) == 1) veya
+                         (k_uzn == 10 ve bellek_esit_mi(k_ptr, "yapay_zeka".ptr, 10) == 1) veya
+                         (k_uzn == 2 ve bellek_esit_mi(k_ptr, "ai".ptr, 2) == 1) veya
+                         (k_uzn == 3 ve bellek_esit_mi(k_ptr, "llm".ptr, 3) == 1) veya
+                         (k_uzn == 8 ve bellek_esit_mi(k_ptr, "ai_model".ptr, 8) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "модель".ptr, 12) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "モデル".ptr, 9) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "模型".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "모델".ptr, 6) == 1) ise {
+                        eger g_cli_llm_model_acikca_verildi == 0 ise {
+                            eger (v_uzn == 6 ve bellek_esit_mi(v_ptr, "bitnet".ptr, 6) == 1) veya
+                                 (v_uzn == 14 ve bellek_esit_mi(v_ptr, "bitnet-b1.58-2B".ptr, 14) == 1) ise {
+                                g_llm_cli_model_yolu = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+                            } yoksa {
+                                g_llm_cli_model_yolu = val_str;
+                            }
+                            eger g_llm_cli_model_durumu == 0 ise {
+                                g_llm_cli_model_durumu = compiler_tahsis_et(4096);
+                                eger g_llm_cli_model_durumu != 0 {
+                                    eger g_llm_cli_max_tokens == 0 ise {
+                                        g_llm_cli_max_tokens = 64;
+                                        g_llm_uretim_limiti = 64;
+                                    }
+                                    llm_gguf_modeli_yukle(g_llm_cli_model_yolu, g_llm_cli_model_durumu);
+                                    llm_gguf_transformer_cli_baslat();
+                                }
+                            }
+                        }
+                    }
+                    # 2. OPT
+                    yoksa eger (k_uzn == 3 ve bellek_esit_mi(k_ptr, "opt".ptr, 3) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "optimizasyon".ptr, 12) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "optimization".ptr, 12) == 1) veya
+                         (k_uzn == 22 ve bellek_esit_mi(k_ptr, "оптимизация".ptr, 22) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "最適化".ptr, 9) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "优化".ptr, 6) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "최적화".ptr, 9) == 1) ise {
+                        eger g_cli_opt_acikca_verildi == 0 ise {
+                            eger val_num > 0 veya (v_uzn == 3 ve bellek_esit_mi(v_ptr, "hiz".ptr, 3) == 1) veya (v_uzn == 5 ve bellek_esit_mi(v_ptr, "speed".ptr, 5) == 1) ise {
+                                g_ra_opt_aktif = 1;
+                            } yoksa {
+                                g_ra_opt_aktif = 0;
+                            }
+                        }
+                    }
+                    # 3. SELF_HEAL
+                    yoksa eger (k_uzn == 9 ve bellek_esit_mi(k_ptr, "self_heal".ptr, 9) == 1) veya
+                         (k_uzn == 8 ve bellek_esit_mi(k_ptr, "oto_onar".ptr, 8) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "kendini_onar".ptr, 12) == 1) veya
+                         (k_uzn == 4 ve bellek_esit_mi(k_ptr, "onar".ptr, 4) == 1) veya
+                         (k_uzn == 36 ve bellek_esit_mi(k_ptr, "самовосстановление".ptr, 36) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "自己修復".ptr, 12) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "自愈".ptr, 6) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "자가복구".ptr, 12) == 1) ise {
+                        eger g_cli_self_heal_acikca_verildi == 0 ise {
+                            eger val_num > 0 veya (v_uzn == 4 ve bellek_esit_mi(v_ptr, "acik".ptr, 4) == 1) veya (v_uzn == 2 ve bellek_esit_mi(v_ptr, "on".ptr, 2) == 1) ise {
+                                g_self_heal_aktif = 1;
+                                eger ctx != 0 ve ctx.self_heal != 0 ise { ctx.self_heal.aktif = 1; }
+                            } yoksa {
+                                g_self_heal_aktif = 0;
+                                eger ctx != 0 ve ctx.self_heal != 0 ise { ctx.self_heal.aktif = 0; }
+                            }
+                        }
+                    }
+                    # 4. OUTPUT / CIKTI
+                    yoksa eger (k_uzn == 5 ve bellek_esit_mi(k_ptr, "cikti".ptr, 5) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "output".ptr, 6) == 1) veya
+                         (k_uzn == 11 ve bellek_esit_mi(k_ptr, "hedef_dosya".ptr, 11) == 1) veya
+                         (k_uzn == 10 ve bellek_esit_mi(k_ptr, "вывод".ptr, 10) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "出力".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "输出".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "출력".ptr, 6) == 1) ise {
+                        eger g_cli_hedef_acikca_verildi == 0 ise {
+                            g_in_file_cikti_dosyasi = val_str;
+                        }
+                    }
+                    # 5. SIMD
+                    yoksa eger (k_uzn == 4 ve bellek_esit_mi(k_ptr, "simd".ptr, 4) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "vektor".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "vector".ptr, 6) == 1) veya
+                         (k_uzn == 19 ve bellek_esit_mi(k_ptr, "система_simd".ptr, 19) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "вектор".ptr, 12) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "ベクトル".ptr, 12) == 1) ise {
+                        eger val_num > 0 veya (v_uzn == 4 ve bellek_esit_mi(v_ptr, "avx2".ptr, 4) == 1) veya (v_uzn == 4 ve bellek_esit_mi(v_ptr, "neon".ptr, 4) == 1) veya (v_uzn == 4 ve bellek_esit_mi(v_ptr, "acik".ptr, 4) == 1) ise {
+                            g_llm_native_simd_aktif = 1;
+                        } yoksa {
+                            g_llm_native_simd_aktif = 0;
+                        }
+                    }
+                    # 6. SAFETY / GUVENLIK
+                    yoksa eger (k_uzn == 6 ve bellek_esit_mi(k_ptr, "safety".ptr, 6) == 1) veya
+                         (k_uzn == 8 ve bellek_esit_mi(k_ptr, "guvenlik".ptr, 8) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "bounds_check".ptr, 12) == 1) veya
+                         (k_uzn == 24 ve bellek_esit_mi(k_ptr, "безопасность".ptr, 24) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "安全性".ptr, 9) == 1) ise {
+                        eger (v_uzn == 6 ve bellek_esit_mi(v_ptr, "unsafe".ptr, 6) == 1) veya (v_uzn == 8 ve bellek_esit_mi(v_ptr, "guvensiz".ptr, 8) == 1) veya (v_jeton.tip == TIP_TAMSAYI ve val_num == 0) ise {
+                            g_bounds_check = 0;
+                        } yoksa {
+                            g_bounds_check = 1;
+                        }
+                    }
+                    # 8. STACK_SIZE / YIGIN_BOYUTU
+                    yoksa eger (k_uzn == 10 ve bellek_esit_mi(k_ptr, "stack_size".ptr, 10) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "yigin_boyutu".ptr, 12) == 1) veya
+                         (k_uzn == 23 ve bellek_esit_mi(k_ptr, "размер_стека".ptr, 23) == 1) veya
+                         (k_uzn == 21 ve bellek_esit_mi(k_ptr, "スタックサイズ".ptr, 21) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "栈大小".ptr, 9) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "스택크기".ptr, 12) == 1) ise {
+                        eger val_num > 0 ise { g_cfg_stack_size = val_num; }
+                    }
+                    # 9. WORKERS / IS_PARCACIGI
+                    yoksa eger (k_uzn == 7 ve bellek_esit_mi(k_ptr, "workers".ptr, 7) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "is_parcacigi".ptr, 12) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "потоки".ptr, 12) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "スレッド".ptr, 12) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "工作线程".ptr, 12) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "워커".ptr, 6) == 1) ise {
+                        eger val_num > 0 ise { g_cfg_workers = val_num; }
+                    }
+                    # 10. MEMORY / BELLEK
+                    yoksa eger (k_uzn == 6 ve bellek_esit_mi(k_ptr, "memory".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "bellek".ptr, 6) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "память".ptr, 12) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "メモリ".ptr, 9) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "内存".ptr, 6) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "메모리".ptr, 9) == 1) ise {
+                        eger v_uzn == 4 ve bellek_esit_mi(v_ptr, "heap".ptr, 4) == 1 ise { g_cfg_memory_model = 1; }
+                        yoksa { g_cfg_memory_model = 0; }
+                    }
+                    # 11. CPU / ISLEMCI
+                    yoksa eger (k_uzn == 3 ve bellek_esit_mi(k_ptr, "cpu".ptr, 3) == 1) veya
+                         (k_uzn == 7 ve bellek_esit_mi(k_ptr, "islemci".ptr, 7) == 1) veya
+                         (k_uzn == 18 ve bellek_esit_mi(k_ptr, "процессор".ptr, 18) == 1) veya
+                         (k_uzn == 15 ve bellek_esit_mi(k_ptr, "プロセッサ".ptr, 15) == 1) veya
+                         (k_uzn == 9 ve bellek_esit_mi(k_ptr, "处理器".ptr, 9) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "프로세서".ptr, 12) == 1) ise {
+                        eger v_uzn == 6 ve bellek_esit_mi(v_ptr, "native".ptr, 6) == 1 ise { g_cfg_cpu_arch = 1; }
+                        yoksa { g_cfg_cpu_arch = 0; }
+                    }
+                    # 7. TARGET / HEDEF
+                    yoksa eger (k_uzn == 6 ve bellek_esit_mi(k_ptr, "target".ptr, 6) == 1) veya
+                         (k_uzn == 5 ve bellek_esit_mi(k_ptr, "hedef".ptr, 5) == 1) veya
+                         (k_uzn == 8 ve bellek_esit_mi(k_ptr, "platform".ptr, 8) == 1) veya
+                         (k_uzn == 8 ve bellek_esit_mi(k_ptr, "цель".ptr, 8) == 1) veya
+                         (k_uzn == 15 ve bellek_esit_mi(k_ptr, "ターゲット".ptr, 15) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "目标".ptr, 6) == 1) veya
+                         (k_uzn == 6 ve bellek_esit_mi(k_ptr, "타겟".ptr, 6) == 1) ise {
+                        eger g_cli_target_acikca_verildi == 0 ise {
+                            eger (v_uzn == 7 ve bellek_esit_mi(v_ptr, "windows".ptr, 7) == 1) veya (v_uzn == 3 ve bellek_esit_mi(v_ptr, "win".ptr, 3) == 1) ise {
+                                g_target_platform = 0;
+                            } yoksa eger (v_uzn == 5 ve bellek_esit_mi(v_ptr, "linux".ptr, 5) == 1) ise {
+                                g_target_platform = 1;
+                            } yoksa eger (v_uzn == 5 ve bellek_esit_mi(v_ptr, "macos".ptr, 5) == 1) ise {
+                                g_target_platform = 2;
+                            } yoksa eger (v_uzn == 11 ve bellek_esit_mi(v_ptr, "linux-arm64".ptr, 11) == 1) ise {
+                                g_target_platform = 3;
+                            } yoksa eger (v_uzn == 11 ve bellek_esit_mi(v_ptr, "macos-arm64".ptr, 11) == 1) ise {
+                                g_target_platform = 4;
+                            } yoksa eger (v_uzn == 4 ve bellek_esit_mi(v_ptr, "wasm".ptr, 4) == 1) ise {
+                                g_target_platform = 5;
+                            } yoksa eger (v_uzn == 5 ve bellek_esit_mi(v_ptr, "riscv".ptr, 5) == 1) ise {
+                                g_target_platform = 6;
+                            }
+                        }
+                    }
+                    # 8. MAX TOKENS
+                    yoksa eger (k_uzn == 10 ve bellek_esit_mi(k_ptr, "max_tokens".ptr, 10) == 1) veya
+                         (k_uzn == 10 ve bellek_esit_mi(k_ptr, "maks_token".ptr, 10) == 1) veya
+                         (k_uzn == 12 ve bellek_esit_mi(k_ptr, "token_limiti".ptr, 12) == 1) ise {
+                        eger g_cli_max_tokens_acikca_verildi == 0 ve val_num > 0 ise {
+                            g_llm_cli_max_tokens = val_num;
+                            g_llm_uretim_limiti = val_num;
+                        }
+                    }
+                }
+                kv = kv.sonraki;
+            }
+        }
+        stmt = stmt.sonraki;
+    }
+}
+
+isv yukinary_derle_ctx(ctx: *CompilerContext, kaynak_kod: *u8, kod_uzunlugu: tamsayi, cikti_dosyasi: *u8, dosya_dizini: *u8, self_heal: tamsayi) -> tamsayi {
+    ai_micro_motor_baslat();
+    ekrana_yaz("YKN Derleyici Basliyor...\n".ptr);
+
+    eger ctx == 0 ise {
+        ctx = compiler_context_olustur();
+    } yoksa {
+        compiler_context_sifirla(ctx);
+    }
+    degisken c_target: *TargetContext = ctx.target;
+    eger c_target != 0 ise {
+        c_target.platform = g_target_platform;
+        c_target.verbose = g_verbose;
+    }
+
+    degisken c_sh: *SelfHealContext = ctx.self_heal;
+    eger c_sh != 0 ise {
+        c_sh.aktif = self_heal;
+    }
+
+    degisken c_comp: *CompilationContext = ctx.compilation;
+    eger c_comp != 0 ise {
+        c_comp.kaynak_yolu = dosya_dizini;
+        c_comp.cikti_yolu = cikti_dosyasi;
+        c_comp.dosya_dizini = dosya_dizini;
+        c_comp.kod_buffer = kaynak_kod;
+        c_comp.kod_uzunlugu = kod_uzunlugu;
+        c_comp.okunan_bayt = kod_uzunlugu;
+    }
+
+    degisken c_imp: *ImportContext = ctx.import_ctx;
+    eger c_imp != 0 ise {
+        MAX_IMPORT_DOSYA = c_imp.maks_dosya;
+        MAX_IMPORT_DERINLIK = c_imp.maks_derinlik;
+        MAX_IMPORT_DOSYA_BOYUTU = c_imp.maks_dosya_boyutu;
+    }
+
+    g_self_heal_aktif = self_heal;
+    g_trait_hatasi = 0;
+    g_iat_yama_adet = 0;
+
+    # ============================================================
+    # 0. Isletim Sisteminden Sifir-Kopya (Zero-Copy) Bellek Tahsisi
+    # ============================================================
+    # VirtualAlloc/mmap syscall ile aninda toplu hafiza alinir.
+    degisken jeton_arenasi: *u8 = compiler_tahsis_et(JETON_ARENA_BOYUTU);        # 16 MB (Jetonlar)
+    degisken ast_bellek: *u8 = compiler_tahsis_et(AST_ARENA_BOYUTU);             # 128 MB (AST)
+    degisken makro_kural_bellek: *MakroKural = compiler_tahsis_et(MAKRO_KURAL_BOYUTU); # 64 KB (Makrolar)
+    degisken makine_kodu_bellek: *u8 = compiler_tahsis_et(KOD_ARENA_BOYUTU);     # 32 MB (Opcodes)
+    degisken elf_bellek: *u8 = compiler_tahsis_et(ELF_ARENA_BOYUTU);             # 32 MB (ELF Output)
+    degisken tc_bellek: *u8 = compiler_tahsis_et(TC_ARENA_BOYUTU);               # 16 MB (Typechecker)
+    
+    # ============================================================
+    # 1. LEXER (Sozcuksel Analiz - 01_asama_lexer)
+    # ============================================================
+    ekrana_yaz("[1/8] Lexer calisiyor...\n".ptr);
+    degisken l_durum: *LexerState = compiler_tahsis_et(128);
+    eger l_durum == 0 ise { ekrana_yaz("HATA: LexerState bellek tahsisi basarisiz!\n".ptr); }
+    l_durum.kaynak = kaynak_kod;
+    l_durum.dosya_boyutu = kod_uzunlugu;
+    l_durum.guncel_offset = 0;
+    l_durum.satir = 1;
+    l_durum.sutun = 1;
+    l_durum.jetonlar = jeton_arenasi;
+    l_durum.jeton_sayisi = 0;
+    l_durum.jeton_kapasite = 524288;
+    l_durum.pool = 0;
+    
+    verbose_yaz("DEBUG: kod_uzunlugu=".ptr);
+    verbose_sayi(kod_uzunlugu);
+    verbose_yaz("\n".ptr);
+
+    # Lexer kodu parcalayip Jetonlar dizisine yazar
+    degisken jeton_sayisi: tamsayi = tokenize_et(l_durum);
+    eger g_lexer_hata_sayisi > 0 ise {
+        eger g_lexer_ilk_hata_kodu == 7 ise {
+            ekrana_yaz("HATA [E007] [ERR_INVALID_UTF8] [class=lexer]:".ptr);
+            sayiyi_ekrana_yaz(g_lexer_ilk_hata_satir);
+            ekrana_yaz(":".ptr);
+            sayiyi_ekrana_yaz(g_lexer_ilk_hata_sutun);
+            ekrana_yaz(" — LEXER HATA: Gecersiz UTF-8 byte dizisi\n".ptr);
+        } yoksa {
+            ekrana_yaz("HATA: Lexer kaynak hatalari bulundu; derleme durduruldu.\n".ptr);
+        }
+        dondu 1;
+    }
+    verbose_yaz("DEBUG: jeton_sayisi=".ptr);
+    verbose_sayi(jeton_sayisi);
+    verbose_yaz("\n".ptr);
+    eger kaynakta_unsupported_codegen_direktifi_var_mi(jeton_arenasi, jeton_sayisi) == 1 ise {
+        dondu 1;
+    }
+    
+    # ============================================================
+    # 2. PARSER (Sozdizimsel Analiz - 02_asama_parser)
+    # ============================================================
+    ekrana_yaz("[2/8] Parser (Pratt/AST) calisiyor...\n".ptr);
+    degisken ast_arena: *AstArena = compiler_tahsis_et(128);
+    ast_arena.bellek = ast_bellek;
+    ast_arena.kapasite = AST_ARENA_BOYUTU;
+    ast_arena.kullanilan = 0;
+    g_ast_arena_hata_sayisi = 0;
+    g_param_arena_hata_sayisi = 0;
+    
+    degisken p_durum: *ParserDurumu = compiler_tahsis_et(128);
+    p_durum.jetonlar = jeton_arenasi;
+    p_durum.jeton_sayisi = jeton_sayisi;
+    p_durum.guncel_index = 0;
+    p_durum.arena = ast_arena;
+    p_durum.hata_sayisi = 0;
+    
+    # Agacin Koku (Root) olusur
+    degisken ast_koku: *AstDugum = parser_cozumle(p_durum);
+    eger ast_koku == 0 veya p_durum.hata_sayisi > 0 veya
+        g_ast_arena_hata_sayisi > 0 veya g_param_arena_hata_sayisi > 0 ise {
+        # Self-heal aktifse parser hatasinda onarim dene
+        eger self_heal == 1 ise {
+            ekrana_yaz("[oto-onar] Sozdizim hatasi tespit edildi; otonom Micro-LLM devreye giriyor...\n".ptr);
+            degisken aktif_dosya: *u8 = diagnostics_dosya_adi_al();
+            eger aktif_dosya != 0 ise {
+                sh_geri_yukleme_noktasi_olustur(aktif_dosya, kaynak_kod, kod_uzunlugu);
+            }
+            degisken onarilacak_satir: tamsayi = g_parser_son_hata_satir;
+            eger onarilacak_satir <= 0 ise { onarilacak_satir = l_durum.satir; }
+            degisken sh_sonuc: *SelfHealSonuc = self_heal_calistir(
+                kaynak_kod, kod_uzunlugu, g_llm_cli_model_yolu, onarilacak_satir
+            );
+            eger sh_sonuc != 0 ve sh_sonuc.basarili == 1 ve
+                sh_sonuc.duzeltilmis_kaynak != 0 ve sh_sonuc.duzeltilmis_uzunluk > 0 ise {
+                ekrana_yaz("[oto-onar] Onarim basariyla uygulandi, derleme surduruluyor...\n".ptr);
+                eger aktif_dosya != 0 ise {
+                    diske_bas_ve_kapat(aktif_dosya, sh_sonuc.duzeltilmis_kaynak, sh_sonuc.duzeltilmis_uzunluk);
+                    ekrana_yaz("[dil-model-birligi] Kod otonom olarak onarildi ve diskte guncellendi.\n".ptr);
+                }
+                # Onarilan kaynakla yeniden parse et
+                l_durum.kaynak = sh_sonuc.duzeltilmis_kaynak;
+                l_durum.dosya_boyutu = sh_sonuc.duzeltilmis_uzunluk;
+                l_durum.guncel_offset = 0;
+                l_durum.satir = 1;
+                l_durum.sutun = 1;
+                l_durum.jeton_sayisi = 0;
+                jeton_sayisi = tokenize_et(l_durum);
+                p_durum.jeton_sayisi = jeton_sayisi;
+                p_durum.guncel_index = 0;
+                p_durum.hata_sayisi = 0;
+                g_ast_arena_hata_sayisi = 0;
+                g_param_arena_hata_sayisi = 0;
+                ast_arena.kullanilan = 0;
+                ast_koku = parser_cozumle(p_durum);
+                eger ast_koku == 0 veya p_durum.hata_sayisi > 0 ise {
+                    ekrana_yaz("HATA: Sozdizimsel analiz (Parser) basarisiz oldu!\n".ptr);
+                    dondu 1;
+                }
+                kaynak_kod = sh_sonuc.duzeltilmis_kaynak;
+                kod_uzunlugu = sh_sonuc.duzeltilmis_uzunluk;
+            } yoksa {
+                ekrana_yaz("HATA: Sozdizimsel analiz (Parser) basarisiz oldu!\n".ptr);
+                dondu 1;
+            }
+        } yoksa {
+            ekrana_yaz("HATA: Sozdizimsel analiz (Parser) basarisiz oldu!\n".ptr);
+            dondu 1;
+        }
+    }
+    konfigurasyon_direktiflerini_islet(ctx, ast_koku);
+    eger g_cli_hedef_acikca_verildi == 0 ve g_in_file_cikti_dosyasi != 0 ise {
+        cikti_dosyasi = g_in_file_cikti_dosyasi;
+        eger c_comp != 0 ise { c_comp.cikti_yolu = cikti_dosyasi; }
+    }
+    verbose_yaz("P_DEBUG: after parse ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+
+    # ============================================================
+    # 2.5. ICE_AKTAR (Import Resolution)
+    # AST_ICE_AKTAR (tip=21) nodlarini bul, dosyalari yukle ve AST'e inline et
+    # ============================================================
+    eger ast_koku != 0 ise {
+        degisken imp_toplam_jeton: tamsayi = jeton_sayisi;
+        g_imp_kayit_sayisi = 0;
+
+        degisken ana_yol: *u8 = g_import_listesi[0];
+        degisken ana_uzn: tamsayi = 0;
+        eger ana_yol != 0 ise {
+            ana_uzn = import_yolu_normalize_et(ana_yol);
+        }
+        degisken kok_zincir: *AstDugum = compiler_tahsis_et(128);
+        kok_zincir.tip_adi = ana_yol;
+        kok_zincir.tip_adi_uzunluk = ana_uzn;
+        kok_zincir.sol = 0;
+
+        degisken init_iter: *AstDugum = ast_koku.sol;
+        dongu init_iter != 0 {
+            eger init_iter.tip == AST_ICE_AKTAR ise {
+                init_iter.govde = kok_zincir;
+            }
+            init_iter = init_iter.sonraki;
+        }
+
+        degisken imp_modifiye: tamsayi = 1;
+        dongu imp_modifiye == 1 {
+            imp_modifiye = 0;
+            degisken imp_iter: *AstDugum = ast_koku.sol;
+            degisken imp_onceki: *AstDugum = 0;
+            dongu imp_iter != 0 {
+                eger imp_iter.tip == AST_ICE_AKTAR ise {
+                    # `tip_adi` iki compile-time metadata biciminde kullanilir:
+                    # parser'in root import alias'i (or. `olarak m`) veya
+                    # nested import'in kaynak modul dizini. Alias bir YKN
+                    # identifier'idir; yol metadata'si ise ayrac/drive tasir.
+                    # Alias artik gercek namespace rewrite asamasinda islenir;
+                    # burada E037 ile sahte bir reddetme yapilmaz.
+                    degisken mod_isim_j: *Jeton = imp_iter.ilk_jeton;
+                    degisken m_uzn: tamsayi = mod_isim_j.uzunluk;
+                    degisken m_bas: *u8 = mod_isim_j.baslangic;
+                    
+                    # Tirnak isaretlerini ayikla ("..." -> ...)
+                    eger m_uzn >= 2 ve m_bas[0] == 34 ise {
+                        m_bas = m_bas + 1;
+                        m_uzn = m_uzn - 2;
+                    }
+                    
+                    # Mutlak yollar (C:/..., /..., \\server\\...) kaynak
+                    # dosyasinin diziniyle birlestirilmez.
+                    degisken mutlak_yol: tamsayi = 0;
+                    eger m_uzn > 0 ise {
+                        eger m_bas[0] == 47 veya m_bas[0] == 92 ise {
+                            mutlak_yol = 1;
+                        }
+                    }
+                    eger m_uzn >= 2 ise {
+                        eger m_bas[1] == 58 ise {
+                            mutlak_yol = 1;
+                        }
+                    }
+                    
+                    # Zaten yuklendi mi kontrol et
+                    degisken zaten_var: tamsayi = 0;
+                    degisken z_i: tamsayi = 0;
+                    dongu z_i < g_imp_kayit_sayisi {
+                        eger g_imp_kayit_uzn[z_i] == m_uzn ise {
+                            degisken esit: tamsayi = 1;
+                            degisken c_i: tamsayi = 0;
+                            degisken k_bas: *u8 = g_imp_kayitlar[z_i];
+                            dongu c_i < m_uzn {
+                                eger k_bas[c_i] != m_bas[c_i] ise {
+                                    esit = 0;
+                                    durdur;
+                                }
+                                c_i = c_i + 1;
+                            }
+                            eger esit == 1 ise {
+                                zaten_var = 1;
+                                durdur;
+                            }
+                        }
+                        z_i = z_i + 1;
+                    }
+                    
+                    eger zaten_var == 0 ise {
+                        g_imp_kayitlar[g_imp_kayit_sayisi] = m_bas;
+                        g_imp_kayit_uzn[g_imp_kayit_sayisi] = m_uzn;
+                        g_imp_kayit_sayisi = g_imp_kayit_sayisi + 1;
+                        
+                        eger g_import_sayisi >= MAX_IMPORT_DOSYA ise {
+                            import_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosya limiti asildi".ptr);
+                            dondu 1;
+                        }
+                        # Importlar iteratif genisletildigi icin cagri yigini
+                        # yerine aktif grafigin genisleme derinligi korunur.
+                        eger g_imp_kayit_sayisi >= MAX_IMPORT_DERINLIK ise {
+                            import_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import derinlik limiti asildi".ptr);
+                            dondu 1;
+                        }
+                        # Bir byte fazla okunur; tam sinirda kesilmis dosya ile
+                        # gercekten limit asan dosyayi ayirmak icin gereklidir.
+                        degisken mod_kod_buffer: *u8 = compiler_tahsis_et(MAX_IMPORT_DOSYA_BOYUTU + 1);
+                        degisken tam_yol: *u8 = compiler_tahsis_et(1024);
+                        
+                        degisken guncel_dizin: *u8 = dosya_dizini;
+                        # Imported AST nodes carry their declaring module
+                        # directory in tip_adi; a root alias is only a plain
+                        # identifier and must not replace the filesystem base.
+                        eger imp_iter.tip_adi != 0 ve imp_iter.tip_adi_uzunluk > 0 ise {
+                            degisken yol_metadata: tamsayi = 0;
+                            degisken yol_i: tamsayi = 0;
+                            dongu yol_i < imp_iter.tip_adi_uzunluk {
+                                eger imp_iter.tip_adi[yol_i] == 47 veya
+                                    imp_iter.tip_adi[yol_i] == 92 veya
+                                    imp_iter.tip_adi[yol_i] == 58 ise {
+                                    yol_metadata = 1;
+                                    durdur;
+                                }
+                                yol_i = yol_i + 1;
+                            }
+                            eger yol_metadata == 1 ise { guncel_dizin = imp_iter.tip_adi; }
+                        }
+                        
+                        degisken ykn_var: tamsayi = 0;
+                        eger m_uzn >= 4 ise {
+                            eger m_bas[m_uzn - 4] == 46 ve m_bas[m_uzn - 3] == 121 ve m_bas[m_uzn - 2] == 107 ve m_bas[m_uzn - 1] == 110 ise {
+                                ykn_var = 1;
+                            }
+                        }
+                        
+                        # 1. Deneme: guncel_dizin + m_bas; mutlak yolda
+                        # yalnizca m_bas kopyalanir.
+                        degisken ty_pos: tamsayi = 0;
+                        degisken kd_i: tamsayi = 0;
+                        eger mutlak_yol == 0 ise {
+                            dongu guncel_dizin[kd_i] != 0 {
+                                tam_yol[ty_pos] = guncel_dizin[kd_i];
+                                ty_pos = ty_pos + 1;
+                                kd_i = kd_i + 1;
+                            }
+                        }
+                        degisken mi_i: tamsayi = 0;
+                        dongu mi_i < m_uzn {
+                            tam_yol[ty_pos] = m_bas[mi_i];
+                            ty_pos = ty_pos + 1;
+                            mi_i = mi_i + 1;
+                        }
+                        eger ykn_var == 0 ise {
+                            tam_yol[ty_pos] = 46;  # '.'
+                            tam_yol[ty_pos + 1] = 121; # 'y'
+                            tam_yol[ty_pos + 2] = 107; # 'k'
+                            tam_yol[ty_pos + 3] = 110; # 'n'
+                            tam_yol[ty_pos + 4] = 0;
+                        } yoksa {
+                            tam_yol[ty_pos] = 0;
+                        }
+                        
+                        degisken mod_okunan: tamsayi = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                        eger mod_okunan > MAX_IMPORT_DOSYA_BOYUTU ise {
+                            dosya_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosyasi limitini asiyor".ptr);
+                            dondu 1;
+                        }
+                        
+                        # 2. Deneme: dosya_dizini + m_bas (eger guncel_dizin farkliysa)
+                        eger mod_okunan <= 0 ve guncel_dizin != dosya_dizini ise {
+                            ty_pos = 0;
+                            kd_i = 0;
+                            dongu dosya_dizini[kd_i] != 0 {
+                                tam_yol[ty_pos] = dosya_dizini[kd_i];
+                                ty_pos = ty_pos + 1;
+                                kd_i = kd_i + 1;
+                            }
+                            mi_i = 0;
+                            dongu mi_i < m_uzn {
+                                tam_yol[ty_pos] = m_bas[mi_i];
+                                ty_pos = ty_pos + 1;
+                                mi_i = mi_i + 1;
+                            }
+                            eger ykn_var == 0 ise {
+                                tam_yol[ty_pos] = 46; tam_yol[ty_pos + 1] = 121; tam_yol[ty_pos + 2] = 107; tam_yol[ty_pos + 3] = 110; tam_yol[ty_pos + 4] = 0;
+                            } yoksa {
+                                tam_yol[ty_pos] = 0;
+                            }
+                            mod_okunan = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                            eger mod_okunan > MAX_IMPORT_DOSYA_BOYUTU ise {
+                                dosya_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosyasi limitini asiyor".ptr);
+                                dondu 1;
+                            }
+                        }
+                        
+                        # 3. Deneme: m_bas dogrudan (CWD)
+                        eger mod_okunan <= 0 ise {
+                            ty_pos = 0;
+                            mi_i = 0;
+                            dongu mi_i < m_uzn {
+                                tam_yol[ty_pos] = m_bas[mi_i];
+                                ty_pos = ty_pos + 1;
+                                mi_i = mi_i + 1;
+                            }
+                            eger ykn_var == 0 ise {
+                                tam_yol[ty_pos] = 46; tam_yol[ty_pos + 1] = 121; tam_yol[ty_pos + 2] = 107; tam_yol[ty_pos + 3] = 110; tam_yol[ty_pos + 4] = 0;
+                            } yoksa {
+                                tam_yol[ty_pos] = 0;
+                            }
+                            mod_okunan = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                            eger mod_okunan > MAX_IMPORT_DOSYA_BOYUTU ise {
+                                dosya_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosyasi limitini asiyor".ptr);
+                                dondu 1;
+                            }
+                        }
+                        
+                        # 4. Deneme: "std/" + m_bas
+                        eger mod_okunan <= 0 ise {
+                            tam_yol[0] = 115; tam_yol[1] = 116; tam_yol[2] = 100; tam_yol[3] = 47; # "std/"
+                            ty_pos = 4;
+                            mi_i = 0;
+                            dongu mi_i < m_uzn {
+                                tam_yol[ty_pos] = m_bas[mi_i];
+                                ty_pos = ty_pos + 1;
+                                mi_i = mi_i + 1;
+                            }
+                            eger ykn_var == 0 ise {
+                                tam_yol[ty_pos] = 46; tam_yol[ty_pos + 1] = 121; tam_yol[ty_pos + 2] = 107; tam_yol[ty_pos + 3] = 110; tam_yol[ty_pos + 4] = 0;
+                            } yoksa {
+                                tam_yol[ty_pos] = 0;
+                            }
+                            mod_okunan = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                            eger mod_okunan > MAX_IMPORT_DOSYA_BOYUTU ise {
+                                dosya_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosyasi limitini asiyor".ptr);
+                                dondu 1;
+                            }
+                        }
+
+                        # 5. Deneme: ".ykn_cache/packages/" + m_bas
+                        eger mod_okunan <= 0 ise {
+                            degisken pkg_pfx: *u8 = ".ykn_cache/packages/".ptr;
+                            degisken p_idx: tamsayi = 0;
+                            dongu pkg_pfx[p_idx] != 0 {
+                                tam_yol[p_idx] = pkg_pfx[p_idx];
+                                p_idx = p_idx + 1;
+                            }
+                            ty_pos = p_idx;
+                            mi_i = 0;
+                            dongu mi_i < m_uzn {
+                                tam_yol[ty_pos] = m_bas[mi_i];
+                                ty_pos = ty_pos + 1;
+                                mi_i = mi_i + 1;
+                            }
+                            eger ykn_var == 0 ise {
+                                tam_yol[ty_pos] = 46; tam_yol[ty_pos + 1] = 121; tam_yol[ty_pos + 2] = 107; tam_yol[ty_pos + 3] = 110; tam_yol[ty_pos + 4] = 0;
+                            } yoksa {
+                                tam_yol[ty_pos] = 0;
+                            }
+                            mod_okunan = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                            eger mod_okunan <= 0 ise {
+                                ty_pos = p_idx;
+                                mi_i = 0;
+                                dongu mi_i < m_uzn {
+                                    tam_yol[ty_pos] = m_bas[mi_i];
+                                    ty_pos = ty_pos + 1;
+                                    mi_i = mi_i + 1;
+                                }
+                                degisken main_sfx: *u8 = "/src/main.ykn".ptr;
+                                degisken sfx_i: tamsayi = 0;
+                                dongu main_sfx[sfx_i] != 0 {
+                                    tam_yol[ty_pos] = main_sfx[sfx_i];
+                                    ty_pos = ty_pos + 1;
+                                    sfx_i = sfx_i + 1;
+                                }
+                                tam_yol[ty_pos] = 0;
+                                mod_okunan = dosya_oku(tam_yol, mod_kod_buffer, MAX_IMPORT_DOSYA_BOYUTU + 1);
+                            }
+                            eger mod_okunan > MAX_IMPORT_DOSYA_BOYUTU ise {
+                                dosya_limiti_hatasi(imp_iter.ilk_jeton.satir, imp_iter.ilk_jeton.sutun, "Import dosyasi limitini asiyor".ptr);
+                                dondu 1;
+                            }
+                        }
+                        
+                        eger mod_okunan > 0 ise {
+                            degisken ty_uzn: tamsayi = import_yolu_normalize_et(tam_yol);
+                            degisken tam_yol_kopyasi: *u8 = compiler_tahsis_et(ty_uzn + 1);
+                            degisken k_i: tamsayi = 0;
+                            dongu k_i < ty_uzn { tam_yol_kopyasi[k_i] = tam_yol[k_i]; k_i = k_i + 1; }
+                            tam_yol_kopyasi[ty_uzn] = 0;
+
+                            degisken imp_zincir: *AstDugum = imp_iter.govde;
+                            eger imp_zincir == 0 ise { imp_zincir = kok_zincir; }
+
+                            eger import_zincirinde_var_mi(imp_zincir, tam_yol, ty_uzn) == 1 ise {
+                                diagnostics_dosya_adi_ayarla(ana_yol);
+                                import_dongusu_hatasi(1, 1);
+                                dondu 1;
+                            }
+
+                            degisken tam_yol_var: tamsayi = 0;
+                            degisken z_i: tamsayi = 0;
+                            dongu z_i < g_import_sayisi {
+                                degisken g_yol: *u8 = g_import_listesi[z_i];
+                                degisken g_uzn: tamsayi = 0;
+                                dongu g_yol[g_uzn] != 0 { g_uzn = g_uzn + 1; }
+                                eger import_yolu_esit_mi(g_yol, g_uzn, tam_yol, ty_uzn) == 1 ise {
+                                    tam_yol_var = 1;
+                                    durdur;
+                                }
+                                z_i = z_i + 1;
+                            }
+
+                            eger tam_yol_var == 1 ise {
+                                # Import listesi bu derleme boyunca daha once
+                                # yuklenen modulleri tutar; ayni modulu tekrar
+                                # iceri almak dongu degil, idempotent tekraridir.
+                                eger imp_onceki == 0 ise {
+                                    ast_koku.sol = imp_iter.sonraki;
+                                } yoksa {
+                                    imp_onceki.sonraki = imp_iter.sonraki;
+                                }
+                                imp_iter = imp_iter.sonraki;
+                                devam_et;
+                            } yoksa {
+                                g_import_listesi[g_import_sayisi] = tam_yol_kopyasi;
+                                g_import_sayisi = g_import_sayisi + 1;
+                                
+                                degisken son_ay: tamsayi = -1;
+                                degisken s_i: tamsayi = 0;
+                                dongu s_i < ty_uzn {
+                                    eger tam_yol[s_i] == 47 veya tam_yol[s_i] == 92 ise {
+                                        son_ay = s_i;
+                                    }
+                                    s_i = s_i + 1;
+                                }
+                                degisken mod_dizin: *u8 = 0;
+                                eger son_ay >= 0 ise {
+                                    mod_dizin = compiler_tahsis_et(son_ay + 2);
+                                    degisken cp_i: tamsayi = 0;
+                                    dongu cp_i <= son_ay {
+                                        mod_dizin[cp_i] = tam_yol[cp_i];
+                                        cp_i = cp_i + 1;
+                                    }
+                                    mod_dizin[son_ay + 1] = 0;
+                                }
+                                
+                                degisken mod_lx: *LexerState = compiler_tahsis_et(128);
+                                mod_lx.kaynak = mod_kod_buffer;
+                                mod_lx.dosya_boyutu = mod_okunan;
+                                mod_lx.guncel_offset = 0;
+                                mod_lx.satir = 1;
+                                mod_lx.sutun = 1;
+                                mod_lx.jetonlar = jeton_arenasi + (imp_toplam_jeton * 40);
+                                mod_lx.jeton_sayisi = 0;
+                                mod_lx.jeton_kapasite = 524288;
+                                mod_lx.pool = 0;
+                                
+                                diagnostics_dosya_adi_ayarla(tam_yol);
+                                ekrana_yaz("[ice_aktar] Tokenize ediliyor: ".ptr);
+                                ekrana_yaz(tam_yol);
+                                ekrana_yaz("\n".ptr);
+                                degisken mod_js: tamsayi = tokenize_et(mod_lx);
+                                eger g_lexer_hata_sayisi > 0 ise {
+                                    ekrana_yaz("LEXER HATA modulde olustu: kod=".ptr);
+                                    sayiyi_ekrana_yaz(g_lexer_ilk_hata_kodu);
+                                    ekrana_yaz(" satir=".ptr);
+                                    sayiyi_ekrana_yaz(g_lexer_ilk_hata_satir);
+                                    ekrana_yaz(" sutun=".ptr);
+                                    sayiyi_ekrana_yaz(g_lexer_ilk_hata_sutun);
+                                    ekrana_yaz("\n".ptr);
+                                    dondu 1;
+                                }
+                                
+                                degisken mod_pd: *ParserDurumu = compiler_tahsis_et(128);
+                                mod_pd.jetonlar = mod_lx.jetonlar;
+                                mod_pd.jeton_sayisi = mod_js;
+                                mod_pd.guncel_index = 0;
+                                mod_pd.arena = ast_arena;
+                                mod_pd.hata_sayisi = 0;
+                                
+                                degisken mod_ast: *AstDugum = parser_cozumle(mod_pd);
+                                eger mod_ast != 0 ve mod_dizin != 0 ise {
+                                    degisken chk_imp: *AstDugum = mod_ast.sol;
+                                    dongu chk_imp != 0 {
+                                        eger chk_imp.tip == 21 ise { # AST_ICE_AKTAR
+                                            eger chk_imp.tip_adi == 0 {
+                                                chk_imp.tip_adi = mod_dizin;
+                                                chk_imp.tip_adi_uzunluk = son_ay + 1;
+                                            }
+                                        }
+                                        chk_imp = chk_imp.sonraki;
+                                    }
+                                }
+                                imp_toplam_jeton = imp_toplam_jeton + mod_js;
+                                
+                                degisken mod_zincir: *AstDugum = compiler_tahsis_et(128);
+                                mod_zincir.tip_adi = tam_yol_kopyasi;
+                                mod_zincir.tip_adi_uzunluk = ty_uzn;
+                                mod_zincir.sol = imp_zincir;
+
+                                eger mod_ast != 0 ve mod_ast.sol != 0 ise {
+                                    degisken n_walk: *AstDugum = mod_ast.sol;
+                                    dongu n_walk != 0 {
+                                        eger n_walk.tip == AST_ICE_AKTAR ise {
+                                            eger n_walk.tip_adi == 0 ise {
+                                                n_walk.tip_adi = mod_dizin;
+                                            }
+                                            n_walk.govde = mod_zincir;
+                                        }
+                                        n_walk = n_walk.sonraki;
+                                    }
+                                    
+                                    # Uretilen AST dugumlerini ana zincire bagla
+                                    degisken is_alias: tamsayi = 0;
+                                    eger imp_iter.tip_adi != 0 ve imp_iter.tip_adi_uzunluk > 0 ise {
+                                        is_alias = 1;
+                                        degisken cki: tamsayi = 0;
+                                        dongu cki < imp_iter.tip_adi_uzunluk {
+                                            eger imp_iter.tip_adi[cki] == 47 veya imp_iter.tip_adi[cki] == 92 veya imp_iter.tip_adi[cki] == 58 ise {
+                                                is_alias = 0;
+                                                durdur;
+                                            }
+                                            cki = cki + 1;
+                                        }
+                                    }
+                                    eger is_alias == 1 ise {
+                                        degisken mod_isim: *u8 = imp_iter.tip_adi;
+                                        degisken mod_uzn: tamsayi = imp_iter.tip_adi_uzunluk;
+                                        g_import_alias_map_sayisi = 0;
+                                        degisken alias_iter: *AstDugum = mod_ast.sol;
+                                        dongu alias_iter != 0 {
+                                            # Fonksiyonlar ve global degiskenler alias namespace'ine
+                                            # tasinir. Struct adlarini kaynak icindeki tip
+                                            # referanslari da guncellenmeden tasimak, alias
+                                            # modulu icinde gecersiz BicimDeger gibi tipler
+                                            # uretir; nominal tipler global kalir.
+                                            eger alias_iter.tip == 10 veya alias_iter.tip == 7 ise {
+                                                eger alias_iter.ilk_jeton != 0 ise {
+                                                    degisken eski_isim: *u8 = alias_iter.ilk_jeton.baslangic;
+                                                    degisken eski_uzn: tamsayi = alias_iter.ilk_jeton.uzunluk;
+                                                    # Imported module already carries its source namespace
+                                                    # (e.g. matematik__kare). An alias replaces that first
+                                                    # namespace segment instead of prepending a second one.
+                                                    degisken uye_isim: *u8 = eski_isim;
+                                                    degisken uye_uzn: tamsayi = eski_uzn;
+                                                    degisken ayirac: tamsayi = 0 - 1;
+                                                    degisken ai: tamsayi = 0;
+                                                    dongu ai < eski_uzn - 1 {
+                                                        eger eski_isim[ai] == 95 ve eski_isim[ai + 1] == 95 ise {
+                                                            ayirac = ai;
+                                                            durdur;
+                                                        }
+                                                        ai = ai + 1;
+                                                    }
+                                                    eger ayirac >= 0 ise {
+                                                        uye_isim = eski_isim + ayirac + 2;
+                                                        uye_uzn = eski_uzn - ayirac - 2;
+                                                    }
+                                                    degisken yeni_uzn: tamsayi = mod_uzn + 2 + uye_uzn;
+                                                    degisken yeni_buf: *u8 = compiler_tahsis_et(yeni_uzn + 1);
+                                                    
+                                                    degisken bi: tamsayi = 0;
+                                                    dongu bi < mod_uzn { yeni_buf[bi] = mod_isim[bi]; bi = bi + 1; }
+                                                    yeni_buf[bi] = 95; yeni_buf[bi + 1] = 95; bi = bi + 2;
+                                                    degisken ei: tamsayi = 0;
+                                                    dongu ei < uye_uzn { yeni_buf[bi + ei] = uye_isim[ei]; ei = ei + 1; }
+                                                    yeni_buf[yeni_uzn] = 0;
+
+                                                    degisken yeni_j: *Jeton = compiler_tahsis_et(40);
+                                                    yeni_j.tip = alias_iter.ilk_jeton.tip;
+                                                    yeni_j.baslangic = yeni_buf;
+                                                    yeni_j.uzunluk = yeni_uzn;
+                                                    yeni_j.satir = alias_iter.ilk_jeton.satir;
+                                                    yeni_j.sutun = alias_iter.ilk_jeton.sutun;
+                                                    
+                                                    # Rewrite tablosunu declaration rename ile
+                                                    # ayni anda kaydet. Ic cagrilar bununla
+                                                    # alias namespace'ine tasinir.
+                                                    eger g_import_alias_map_sayisi < IMPORT_ALIAS_MAP_KAPASITE ise {
+                                                        degisken map_i: tamsayi = g_import_alias_map_sayisi;
+                                                        g_import_alias_eski[map_i] = eski_isim;
+                                                        g_import_alias_eski_uzn[map_i] = eski_uzn;
+                                                        g_import_alias_yeni[map_i] = yeni_buf;
+                                                        g_import_alias_yeni_uzn[map_i] = yeni_uzn;
+                                                        g_import_alias_map_sayisi = g_import_alias_map_sayisi + 1;
+                                                    }
+                                                    alias_iter.ilk_jeton = yeni_j;
+                                                }
+                                            }
+                                            alias_iter = alias_iter.sonraki;
+                                        }
+                                        # Declaration rename tamamlandiktan sonra modul
+                                        # govdelerindeki call-site'lari ayni map ile guncelle.
+                                        import_alias_cagri_yenile(mod_ast.sol);
+                                        
+                                        degisken mod_son: *AstDugum = mod_ast.sol;
+                                        dongu mod_son.sonraki != 0 {
+                                            mod_son = mod_son.sonraki;
+                                        }
+                                        mod_son.sonraki = imp_iter.sonraki;
+                                        eger imp_onceki == 0 ise {
+                                            ast_koku.sol = mod_ast.sol;
+                                        } yoksa {
+                                            imp_onceki.sonraki = mod_ast.sol;
+                                        }
+                                        imp_iter = mod_son;
+                                        imp_modifiye = 1;
+                                    } yoksa {
+                                        degisken mod_son: *AstDugum = mod_ast.sol;
+                                        dongu mod_son.sonraki != 0 {
+                                            mod_son = mod_son.sonraki;
+                                        }
+                                        mod_son.sonraki = imp_iter.sonraki;
+                                        eger imp_onceki == 0 ise {
+                                            ast_koku.sol = mod_ast.sol;
+                                        } yoksa {
+                                            imp_onceki.sonraki = mod_ast.sol;
+                                        }
+                                        imp_iter = mod_son;
+                                        imp_modifiye = 1;
+                                    }
+                                }
+                            }
+                        } yoksa {
+                            ekrana_yaz("[ice_aktar] UYARI: Dosya okunamadi, atlaniyor.\n".ptr);
+                        }
+                    }
+                }
+                imp_onceki = imp_iter;
+                imp_iter = imp_iter.sonraki;
+            }
+        }
+        ekrana_yaz("[2.5/8] Moduller birlestirildi.\n".ptr);
+        diagnostics_dosya_adi_ayarla(ana_yol);
+    }
+    verbose_yaz("P_DEBUG: after ice_aktar ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+
+    # ============================================================
+    # 2.6. AI PROMPT INJECTION (FAZ 8: #prompt ve #ai Direktifleri)
+    # ============================================================
+    eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+        degisken pr_iter: *AstDugum = ast_koku.sol;
+        degisken pr_onceki: *AstDugum = 0;
+        dongu pr_iter != 0 {
+            degisken pr_siradaki: *AstDugum = pr_iter.sonraki;
+            eger pr_iter.tip == 27 veya pr_iter.tip == 28 ise { # AST_DIREKTIF_PROMPT / AI
+                degisken s_j: *Jeton = pr_iter.ilk_jeton;
+                eger s_j != 0 ise {
+                    degisken s_ptr: *u8 = s_j.baslangic;
+                    degisken s_uzn: tamsayi = s_j.uzunluk;
+                    # Tirnak isaretlerini ayikla ("..." -> ...)
+                    eger s_uzn >= 2 ve s_ptr[0] == 34 ise {
+                        s_ptr = s_ptr + 1;
+                        s_uzn = s_uzn - 2;
+                    }
+                    ekrana_yaz("[AI] #prompt cozumleniyor: ".ptr);
+                    ekrana_yaz(s_j.baslangic);
+                    ekrana_yaz("\n".ptr);
+
+                    degisken uretilen_kod: *u8 = llm_kod_uret(s_ptr, s_uzn);
+                    eger uretilen_kod == 0 ise {
+                        ekrana_yaz("[AI] #prompt reddedildi: inference null cikti; sahte kod uretilmeyecek\n".ptr);
+                        dondu 1;
+                    }
+                    degisken u_uzn: tamsayi = 0;
+                    dongu uretilen_kod[u_uzn] != 0 { u_uzn = u_uzn + 1; }
+                    eger g_verbose != 0 ve g_llm_transformer_aktif == 1 ise {
+                        ekrana_yaz("[AI-TRACE] generated_prefix=".ptr);
+                        degisken trace_uzunluk: tamsayi = u_uzn;
+                        eger trace_uzunluk > 512 ise { trace_uzunluk = 512; }
+                        degisken trace_eski_son: u8 = uretilen_kod[trace_uzunluk];
+                        uretilen_kod[trace_uzunluk] = 0;
+                        ekrana_yaz(uretilen_kod);
+                        uretilen_kod[trace_uzunluk] = trace_eski_son;
+                        ekrana_yaz("\n[AI-TRACE-END]\n".ptr);
+                    }
+                    eger g_llm_transformer_aktif == 1 ise {
+                        ekrana_yaz("[AI-METRIC] input_tokens=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_input_tokens_al());
+                        ekrana_yaz(" tokenize_ns=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_tokenize_ns_al());
+                        ekrana_yaz(" prefill_ns=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_prefill_ns_al());
+                        ekrana_yaz(" decode_ns=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_decode_ns_al());
+                        ekrana_yaz(" total_ns=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_total_ns_al());
+                        ekrana_yaz(" peak_rss=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_peak_rss_al());
+                        ekrana_yaz(" output_tokens=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_uretim_adedi_al());
+                        ekrana_yaz(" fallback=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_fallback_al());
+                        ekrana_yaz(" native_simd=".ptr);
+                        sayiyi_ekrana_yaz(g_llm_native_simd_aktif);
+                        ekrana_yaz(" prompt_first_token=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_ilk_token_al());
+                        ekrana_yaz(" prompt_last_token=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_son_token_al());
+                        ekrana_yaz(" logit_min=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_logit_min_al());
+                        ekrana_yaz(" logit_max=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_logit_max_al());
+                        ekrana_yaz(" logit_first=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_logit_ilk_al());
+                        ekrana_yaz(" logit_last=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_logit_son_al());
+                        ekrana_yaz(" logit_argmax=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_logit_argmax_al());
+
+                        ekrana_yaz("\n".ptr);
+                    }
+
+                    degisken prompt_politika: YKNLLMSandboxPolicy;
+                    eger yknllm_sandbox_politika_kur(&prompt_politika) == 0 veya
+                       yknllm_sandbox_kod_izinli_mi(uretilen_kod, &prompt_politika) == 0 ise {
+                        ekrana_yaz("[AI] #prompt reddedildi: sandbox capability policy\n".ptr);
+                        dondu 1;
+                    }
+                    eger u_uzn <= 0 veya u_uzn > 1048576 ise {
+                        eger g_llm_transformer_aktif == 1 ise {
+                            ekrana_yaz("[AI] #prompt reddedildi: model bos cikti (EOS veya forward hatasi), hata=".ptr);
+                        } yoksa {
+                            ekrana_yaz("[AI] #prompt reddedildi: uretilen kod boyutu gecersiz, asama=".ptr);
+                        }
+                        sayiyi_ekrana_yaz(llm_prompt_hatasi_al());
+                        ekrana_yaz(" uretilen_token=".ptr);
+                        sayiyi_ekrana_yaz(llm_prompt_uretim_adedi_al());
+                        ekrana_yaz("\n".ptr);
+                        dondu 1;
+                    }
+                    degisken prompt_arena: YKNLLMSandboxArena;
+                    eger yknllm_sandbox_arena_kur(&prompt_arena, u_uzn + 1) == 0 ise {
+                        ekrana_yaz("[AI] #prompt reddedildi: sandbox arena tahsis edilemedi\n".ptr);
+                        dondu 1;
+                    }
+                    degisken sandbox_kod: *u8 = yknllm_sandbox_kod_kopyala(
+                        &prompt_arena, uretilen_kod, u_uzn);
+                    eger sandbox_kod == 0 ise {
+                        ekrana_yaz("[AI] #prompt reddedildi: sandbox arena kopyasi basarisiz\n".ptr);
+                        dondu 1;
+                    }
+                    uretilen_kod = sandbox_kod;
+                    eger u_uzn > 0 ise {
+                        degisken pr_lx: *LexerState = compiler_tahsis_et(128);
+                        pr_lx.kaynak = uretilen_kod;
+                        pr_lx.dosya_boyutu = u_uzn;
+                        pr_lx.guncel_offset = 0;
+                        pr_lx.satir = 1;
+                        pr_lx.sutun = 1;
+                        # Jeton boyutu 40 byte'tir; kapasiteyle ayni olcekte
+                        # arena ayirmak prompt kaynakli heap tasmasini onler.
+                        pr_lx.jetonlar = compiler_tahsis_et(65536 * 40);
+                        pr_lx.jeton_sayisi = 0;
+                        pr_lx.jeton_kapasite = 65536;
+                        pr_lx.pool = 0;
+                        tokenize_et(pr_lx);
+                        eger pr_lx.jetonlar == 0 veya pr_lx.jeton_sayisi <= 0 veya
+                           g_lexer_hata_sayisi > 0 ise {
+                            ekrana_yaz("[AI] #prompt reddedildi: lexer dogrulamasi basarisiz\n".ptr);
+                            dondu 1;
+                        }
+
+                        degisken pr_parser: *ParserDurumu = compiler_tahsis_et(128);
+                        pr_parser.jetonlar = pr_lx.jetonlar;
+                        pr_parser.jeton_sayisi = pr_lx.jeton_sayisi;
+                        pr_parser.guncel_index = 0;
+                        pr_parser.arena = ast_arena;
+                        pr_parser.hata_sayisi = 0;
+                        degisken pr_ast: *AstDugum = parser_cozumle(pr_parser);
+
+                        eger pr_ast == 0 veya pr_ast.sol == 0 veya pr_parser.hata_sayisi > 0 veya
+                           g_ast_arena_hata_sayisi > 0 veya g_param_arena_hata_sayisi > 0 ise {
+                            ekrana_yaz("[AI] #prompt reddedildi: parser dogrulamasi basarisiz\n".ptr);
+                            dondu 1;
+                        }
+                        eger yknllm_sandbox_ast_dogrula(pr_ast) == 0 ise {
+                            ekrana_yaz("[AI] #prompt reddedildi: AST capability policy\n".ptr);
+                            dondu 1;
+                        }
+                        eger pr_ast != 0 ve pr_ast.sol != 0 ise {
+                            # Uretilen AST dugumlerini ana zincire bagla
+                            degisken ek_son: *AstDugum = pr_ast.sol;
+                            dongu ek_son.sonraki != 0 { ek_son = ek_son.sonraki; }
+                            ek_son.sonraki = pr_siradaki;
+                            eger pr_onceki == 0 ise {
+                                ast_koku.sol = pr_ast.sol;
+                            } yoksa {
+                                pr_onceki.sonraki = pr_ast.sol;
+                            }
+                            pr_onceki = ek_son;
+                            pr_iter = pr_siradaki;
+                            devam_et;
+                        }
+                    }
+                }
+            }
+            pr_onceki = pr_iter;
+            pr_iter = pr_siradaki;
+        }
+    }
+
+    # ============================================================
+    # 3. MACROS (AST Genisletme - 03_asama_macros)
+    # ============================================================
+    eger g_verbose == 1 ise { ekrana_yaz("[3/8] Makrolar genisletiliyor...\n".ptr); }
+    degisken m_motor: *MakroMotoru = compiler_tahsis_et(128);
+    m_motor.kurallar = 0;
+    m_motor.kapasite = 1024;
+    m_motor.kayitli_sayi = 0;
+    m_motor.arena = ast_arena;
+    # AST'deki AST_MAKRO_TANIMI (22) dugumlerini tara ve makro_kaydet ile kaydet
+    eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+        degisken makro_iter: *AstDugum = ast_koku.sol;
+        dongu makro_iter != 0 {
+            eger makro_iter.tip == 22 ise {
+                # Makro ismi: ilk_jeton, parametreler: parametreler, govde: govde
+                eger makro_iter.ilk_jeton != 0 ise {
+                    degisken param_hashleri: *tamsayi = compiler_tahsis_et(256); # max 32 param
+                    degisken param_sayisi: tamsayi = 0;
+                    degisken p_iter: *AstDugum = makro_iter.parametreler;
+                    dongu p_iter != 0 ve param_sayisi < 32 {
+                        eger p_iter.ilk_jeton != 0 ise {
+                            param_hashleri[param_sayisi] = djb2_sembol(p_iter.ilk_jeton.baslangic, p_iter.ilk_jeton.uzunluk);
+                            param_sayisi = param_sayisi + 1;
+                        }
+                        p_iter = p_iter.sonraki;
+                    }
+                    makro_kaydet(m_motor, makro_iter.ilk_jeton.baslangic, makro_iter.ilk_jeton.uzunluk, param_hashleri, param_sayisi, makro_iter.govde);
+                }
+            }
+            makro_iter = makro_iter.sonraki;
+        }
+    }
+    ast_koku = makrolari_genislet(m_motor, ast_koku);
+    eger g_verbose == 1 ise { ekrana_yaz("[3/8] Makrolar tamamlandi.\n".ptr); }
+    verbose_yaz("P_DEBUG: after macros ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+    
+    # ============================================================
+    # 4. GENERICS (Monomorphization)
+    # ============================================================
+    eger g_verbose == 1 ise { ekrana_yaz("[4/8] Generics monomorphization...\n".ptr); }
+    degisken g_motor: *GenericsMotoru = compiler_tahsis_et(128);
+    g_motor.sablon_listesi = 0;
+    g_motor.monomorph_listesi = 0;
+    g_motor.trait_tablosu = 0;
+    g_motor.arena = ast_arena;
+    g_motor.yapi_sablon_listesi = 0;
+    g_motor.yapi_monomorph_listesi = 0;
+    ast_koku = generics_pipeline_calistir(g_motor, ast_koku);
+    # Monomorphization istatistigi
+    degisken mk_sayac: tamsayi = 0;
+    degisken mk_iter: *MonomorphKayit = g_motor.monomorph_listesi;
+    dongu mk_iter != 0 {
+        mk_sayac = mk_sayac + 1;
+        mk_iter = mk_iter.sonraki;
+    }
+    eger mk_sayac > 0 ise {
+        ekrana_yaz("[4/8] Monomorphized: ".ptr);
+        sayiyi_yazdir(mk_sayac);
+        ekrana_yaz(" generic fonksiyon uretildi.\n".ptr);
+    }
+    eger g_parser_hata_sayisi > 0 ise {
+        ekrana_yaz("HATA: Generics monomorfizasyonunda hata olustu!\n".ptr);
+        dondu 1;
+    }
+    eger g_verbose == 1 ise { ekrana_yaz("[4/8] Generics tamamlandi.\n".ptr); }
+    verbose_yaz("P_DEBUG: after generics ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+
+    # ============================================================
+    # 5. TYPE CHECKER (Semantik Analiz - 05_asama_type_checker)
+    # ============================================================
+    eger g_verbose == 1 ise { ekrana_yaz("[5/8] Tip denetimi ve Name Resolution...\n".ptr); }
+    degisken tc_motor: *TipMotoru = 0;
+    degisken tc_denemesi: tamsayi = 0;
+    degisken tc_basarili: tamsayi = 0;
+    dongu tc_basarili == 0 {
+        tc_motor = tip_denetimini_baslat_ve_don(ast_arena, ast_koku);
+        eger tc_motor == 0 ise {
+            ekrana_yaz("HATA: Tip motoru olusturulamadi!\n".ptr);
+            dondu 1;
+        }
+        eger tc_motor.hata_sayisi == 0 ve trait_hata_sayisini_al() == 0 ise {
+            tc_basarili = 1;
+        } yoksa eger self_heal == 1 ve tc_denemesi < 3 ve
+            typechecker_self_heal_dene(tc_motor) == 1 ise {
+            tc_denemesi = tc_denemesi + 1;
+        } yoksa {
+            verbose_yaz("DEBUG: tc_hata_sayisi=".ptr);
+            verbose_sayi(tc_motor.hata_sayisi);
+            verbose_yaz(" tanimsiz=".ptr);
+            verbose_sayi(tc_motor.tanimsiz_hata_sayisi);
+            verbose_yaz(" uyumsuz=".ptr);
+            verbose_sayi(tc_motor.tip_uyumsuz_hata_sayisi);
+            verbose_yaz(" donus=".ptr);
+            verbose_sayi(tc_motor.donus_hata_sayisi);
+            verbose_yaz(" param=".ptr);
+            verbose_sayi(tc_motor.param_sayisi_hata_sayisi);
+            verbose_yaz(" trait=".ptr);
+            verbose_sayi(trait_hata_sayisini_al());
+            verbose_yaz("\n".ptr);
+            ekrana_yaz("HATA: Tip denetimi basarisiz! Derleme durduruldu.\n".ptr);
+            dondu 1;
+        }
+    }
+    eger g_typechecker_kapasite_hatasi != 0 ise {
+        eger g_typechecker_kapasite_kodu == 1 ise { ekrana_yaz("HATA [E014] [ERR_GLOBAL_SYMBOL_LIMIT] [class=typechecker]: Global sembol tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_typechecker_kapasite_kodu == 2 ise { ekrana_yaz("HATA [E014] [ERR_TYPE_ARENA_LIMIT] [class=typechecker]: Kapsam/type arena kapasitesi asildi.\n".ptr); }
+        yoksa eger g_typechecker_kapasite_kodu == 3 ise { ekrana_yaz("HATA [E014] [ERR_SYMBOL_ARENA_LIMIT] [class=typechecker]: Sembol arena kapasitesi asildi.\n".ptr); }
+        yoksa eger g_typechecker_kapasite_kodu == 4 ise { ekrana_yaz("HATA [E014] [ERR_NOMINAL_TYPE_LIMIT] [class=typechecker]: Nominal tip tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_typechecker_kapasite_kodu == 5 ise { ekrana_yaz("HATA [E014] [ERR_MOVE_TABLE_LIMIT] [class=typechecker]: Move tablosu kapasitesi asildi.\n".ptr); }
+        yoksa { ekrana_yaz("HATA [E014] [ERR_TYPECHECKER_LIMIT] [class=typechecker]: Typechecker kapasitesi asildi.\n".ptr); }
+        dondu 1;
+    }
+    verbose_yaz("P_DEBUG: after typecheck ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+
+    # ============================================================
+    # 5.5 BELLEK GUVENLIGI (Opt-In #guvenli analiz)
+    # ============================================================
+    eger g_bounds_check == 1 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[5.5/8] Bellek guvenligi analizi...\n".ptr); }
+        degisken guv_motor: *GuvenlikMotoru = guvenlik_motoru_olustur();
+        degisken guv_hata: tamsayi = guvenlik_analizi_yap(guv_motor, ast_koku);
+        eger guv_hata > 0 ise {
+            ekrana_yaz("HATA: Guvenlik analizi basarisiz! Derleme durduruldu.\n".ptr);
+            dondu 1;
+        }
+        eger g_verbose == 1 ise { ekrana_yaz("[5.5/8] Guvenlik analizi tamamlandi.\n".ptr); }
+    }
+
+    # ============================================================
+    # 5.6 HIR / MIR KATMANLARI (FIX 7 Opt-in pass)
+    # ============================================================
+    eger g_dump_ir == 1 veya g_backend_ir == 1 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[5.6/8] HIR ve MIR uretimi...\n".ptr); }
+        degisken hir_motor: *HirMotoru = hir_motoru_olustur(8388608); # 8MB
+        ast_to_hir(hir_motor, ast_koku);
+        
+        degisken mir_motor: *MirMotoru = mir_motoru_olustur(8388608); # 8MB
+        hir_to_mir(mir_motor, hir_motor.kok_dugum);
+        
+        degisken ir_motor: *IrMotoru = ir_motoru_olustur(33554432); # 32MB
+        # FAZ 4: IR Lowering (AST'den direkt); eger AST bos ise MIR fallback
+        eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+            ir_lower_baslat(ir_motor, ast_koku.sol);
+        } yoksa {
+            mir_to_ir(ir_motor, mir_motor);
+        }
+        
+        # FAZ 4: IR Verifier
+        degisken ir_hata_sayisi: tamsayi = ir_verifier_calistir(ir_motor);
+        eger ir_hata_sayisi > 0 ise {
+            ekrana_yaz("UYARI [IR_VERIFIER]: ".ptr);
+            sayiyi_yazdir(ir_hata_sayisi);
+            ekrana_yaz(" IR tutarsizligi tespit edildi.\n".ptr);
+        }
+        
+        g_aktif_ir_motoru = ir_motor;
+        # Verbose veya dump modda IR dump
+        eger g_dump_ir == 1 veya g_verbose == 1 ise {
+            ir_dump(ir_motor);
+        }
+        eger g_verbose == 1 ise { ekrana_yaz("[5.6/8] HIR ve MIR tamamlandi.\n".ptr); }
+    }
+
+    # ============================================================
+    # 6. FAZ 6 — AST Optimizer (Constant Folding, Algebraic Simplification, DCE)
+    # ============================================================
+    eger g_verbose == 1 ise { ekrana_yaz("[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n".ptr); }
+    opt_istatistiklerini_sifirla();
+    ast_koku = ast_optimizasyon_pipeline(ast_arena, ast_koku);
+    eger g_ast_mutasyon_aktif == 1 ise {
+        g_ast_mutasyon_uygulandi = 0;
+        ekrana_yaz("[AST-MUTATION] Codegen girisinde hedef dugum mutasyonu etkin.\n".ptr);
+    }
+    verbose_yaz("P_DEBUG: after optimizer ast_koku.sol=".ptr);
+    eger ast_koku != 0 ise { verbose_sayi(ast_koku.sol); } yoksa { verbose_sayi(-1); }
+    verbose_yaz("\n".ptr);
+
+    # ============================================================
+    # 7. CODEGEN (Native Makine Kodu ve PE32+ / ELF)
+    # ============================================================
+    eger g_verbose == 1 ise { ekrana_yaz("[7/7] x86_64 Makine Kodu uretiliyor...\n".ptr); }
+    codegen_sifirla();
+    # --debug bayraginda debug bilgisi uret (minimal DWARF4 / CodeView)
+    eger g_debug_info == 1 ise {
+        ekrana_yaz("[DEBUG] Debug bilgisi uretimi aktif (DWARF4/CodeView minimal).\n".ptr);
+    }
+
+    # Tum AST kokunden yapilari ve global sabitleri topla
+    # (dugum bazli lazy init yerine tam on-tarama — struct field offset bug duzeltmesi)
+    eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+        yapilari_topla(ast_koku.sol);
+        global_sabitleri_topla(ast_koku.sol, 0);
+        raii_ast_destructorlari_tara(ast_koku.sol);
+        g_global_sabitleri_toplandi = 1;
+    }
+    degisken m_arena: *MakineKoduArenasi = compiler_tahsis_et(128);
+    m_arena.bellek = makine_kodu_bellek;
+    m_arena.kapasite = KOD_ARENA_BOYUTU;
+    m_arena.kullanilan = 0;
+    g_ir_aktif_arena = m_arena;
+
+    # Global declaration'lari fonksiyon emission'undan once gercek storage'a
+    # yerlestir. Import edilen compiler fonksiyonlari, kok main.ykn global'larini
+    # kullanabildigi icin lazy traversal sirasina bagimli kalinmaz.
+    eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+        global_deklarasyonlarini_topla(ast_koku.sol);
+        global_deklarasyonlarini_uret(m_arena);
+    }
+
+    # YKN AST'yi x86_64 opcode'larina cevir
+    eger g_backend_ir == 1 ve g_aktif_ir_motoru != 0 ise {
+        ekrana_yaz("[BACKEND] End-to-End IR Kod Uretimi devrede...\n".ptr);
+        ir_codegen_tum_fonksiyonlar(g_aktif_ir_motoru, g_ir_aktif_arena);
+    } yoksa eger ast_koku != 0 ise {
+        degisken cg_dugum: *AstDugum = ast_koku.sol;
+        verbose_yaz("DEBUG: ast_koku.sol=".ptr);
+        verbose_sayi(cg_dugum);
+        verbose_yaz("\n".ptr);
+        degisken cg_dugum_idx: tamsayi = 0;
+        dongu cg_dugum != 0 {
+            verbose_yaz("DEBUG: cg_dugum[".ptr);
+            verbose_sayi(cg_dugum_idx);
+            verbose_yaz("] tip=".ptr);
+            verbose_sayi(cg_dugum.tip);
+            verbose_yaz(" adr=".ptr);
+            verbose_sayi(cg_dugum);
+            verbose_yaz("\n".ptr);
+            ast_kod_uret(m_arena, cg_dugum);
+            cg_dugum = cg_dugum.sonraki;
+            cg_dugum_idx = cg_dugum_idx + 1;
+        }
+    } yoksa {
+        verbose_yaz("DEBUG: ast_koku is NULL!\n".ptr);
+    }
+    eger g_yapi_kapasite_hatasi == 1 ve g_codegen_kapasite_hatasi == 0 ise {
+        ekrana_yaz("HATA: Struct tipi tablosu kapasitesi asildi.\n".ptr);
+        dondu 1;
+    }
+    eger g_codegen_kapasite_hatasi != 0 ise {
+        eger g_codegen_kapasite_kodu == 1 ise { ekrana_yaz("HATA [E014] [ERR_LOCAL_LIMIT] [class=codegen]: Lokal sembol tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 2 ise { ekrana_yaz("HATA [E014] [ERR_PATCH_LIMIT] [class=codegen]: Yama tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 3 ise { ekrana_yaz("HATA [E014] [ERR_STRUCT_FIELD_LIMIT] [class=codegen]: Struct alan veya tablo kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 4 ise { ekrana_yaz("HATA [E014] [ERR_GLOBAL_LIMIT] [class=codegen]: Global sembol tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 5 ise { ekrana_yaz("HATA [E014] [ERR_FUNCTION_LIMIT] [class=codegen]: Fonksiyon tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 6 ise { ekrana_yaz("HATA [E014] [ERR_CLIB_LIMIT] [class=codegen]: C kutuphane tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 7 ise { ekrana_yaz("HATA [E014] [ERR_STRUCT_FIELD_LIMIT] [class=codegen]: Struct alan kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 8 ise { ekrana_yaz("HATA [E014] [ERR_GLOBAL_INIT_LIMIT] [class=codegen]: Global init tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 9 ise { ekrana_yaz("HATA [E014] [ERR_IAT_LIMIT] [class=codegen]: IAT yama tablosu kapasitesi asildi.\n".ptr); }
+        yoksa { ekrana_yaz("HATA [E014] [ERR_CODEGEN_LIMIT] [class=codegen]: Codegen kapasitesi asildi.\n".ptr); }
+        dondu 1;
+    }
+    eger g_codegen_unsupported_ast_hatasi != 0 ise {
+        ekrana_yaz("HATA [E043] [ERR_UNSUPPORTED_AST_NODE]: codegen desteklenmeyen AST dugumu nedeniyle durduruldu.\n".ptr);
+        dondu 1;
+    }
+
+    eger g_ast_mutasyon_aktif == 1 ve g_ast_mutasyon_uygulandi == 0 ise {
+        ekrana_yaz("HATA [E043] [ERR_UNSUPPORTED_AST_NODE] [class=test]: AST mutation hedefi codegen girisine ulasmadi.\n".ptr);
+        dondu 1;
+    }
+
+    eger g_target_platform == 0 veya g_target_platform == 1 ise {
+        degisken fi: tamsayi = 0;
+        dongu fi < g_fonk_adet {
+            degisken f_bas: tamsayi = g_fonk_adres[fi];
+            degisken f_bit: tamsayi = m_arena.kullanilan;
+            eger fi + 1 < g_fonk_adet ise { f_bit = g_fonk_adres[fi + 1]; }
+            x86_peephole_optimize(m_arena, f_bas, f_bit);
+            fi = fi + 1;
+        }
+    }
+
+    # Windows PE32+ / Linux ELF64 formatina sar (g_target_platform'a gore)
+    degisken pe_arena: *MakineKoduArenasi = compiler_tahsis_et(128);
+    pe_arena.bellek = elf_bellek;
+    pe_arena.kapasite = ELF_ARENA_BOYUTU;
+    pe_arena.kullanilan = 0;
+    verbose_yaz("DEBUG: m_arena.kullanilan=".ptr);
+    verbose_sayi(m_arena.kullanilan);
+    verbose_yaz("\n".ptr);
+    degisken ana_rva: tamsayi = bul_ana_adres();
+    verbose_yaz("DEBUG: ana_rva=".ptr);
+    verbose_sayi(ana_rva);
+    verbose_yaz("\n".ptr);
+    eger g_target_platform == 0 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\n".ptr); }
+        degisken giris_rva: tamsayi = baslangic_thunk_uret(m_arena, ana_rva);
+        verbose_yaz("DEBUG: giris_rva=".ptr);
+        verbose_sayi(giris_rva);
+        verbose_yaz("\n".ptr);
+        pe32plus_uret(m_arena, pe_arena, giris_rva);
+    } yoksa eger g_target_platform == 1 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] x86_64 Makine Kodu ve ELF64 baglaniyor...\n".ptr); }
+        degisken linux_giris_offset: tamsayi = linux_baslangic_thunk_uret(m_arena, ana_rva);
+        elf64_linux_uret(pe_arena, m_arena, linux_giris_offset);
+    } yoksa eger g_target_platform == 2 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] x86_64 Makine Kodu ve Mach-O 64 (macOS) baglaniyor...\n".ptr); }
+        degisken macos_giris_offset: tamsayi = macos_baslangic_thunk_uret(m_arena, ana_rva);
+        macho64_macos_uret(pe_arena, m_arena, macos_giris_offset);
+    } yoksa eger g_target_platform == 3 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] ARM64 Makine Kodu ve ELF64 (Linux ARM64) baglaniyor...\n".ptr); }
+        degisken arm64_giris_offset: tamsayi = linux_arm64_baslangic_thunk_uret(m_arena, ana_rva);
+        elf64_arm64_uret(pe_arena, m_arena, arm64_giris_offset);
+    } yoksa eger g_target_platform == 4 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] ARM64 Makine Kodu ve Mach-O 64 (macOS Apple Silicon) baglaniyor...\n".ptr); }
+        degisken macos_arm64_giris_offset: tamsayi = macos_arm64_baslangic_thunk_uret(m_arena, ana_rva);
+        macho64_arm64_uret(pe_arena, m_arena, macos_arm64_giris_offset);
+    } yoksa eger g_target_platform == 5 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] WebAssembly (WASM) modulu olusturuluyor...\n".ptr); }
+        wasm_modulu_uret(pe_arena, m_arena, ana_rva);
+    } yoksa eger g_target_platform == 6 ise {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] RISC-V 64 Makine Kodu ve ELF64 baglaniyor...\n".ptr); }
+        degisken riscv_giris_offset: tamsayi = linux_riscv64_baslangic_thunk_uret(m_arena, ana_rva);
+        elf64_riscv64_uret(pe_arena, m_arena, riscv_giris_offset);
+    } yoksa {
+        eger g_verbose == 1 ise { ekrana_yaz("[7/7] x86_64 Makine Kodu uretildi (varsayilan PE32+ kullaniliyor)...\n".ptr); }
+        degisken giris_rva: tamsayi = baslangic_thunk_uret(m_arena, ana_rva);
+        pe32plus_uret(m_arena, pe_arena, giris_rva);
+    }
+
+    # Startup thunk'i GetCommandLineA ve ExitProcess icin kendi IAT kayitlarini
+    # ekler. Bu gec faz guard tarafindan reddedildiyse bozuk giris RVA'si ile
+    # PE/ELF/Mach-O yazilmaz; kullaniciya ayni kapasite tanisi verilir.
+    eger g_codegen_kapasite_hatasi != 0 ise {
+        eger g_codegen_kapasite_kodu == 9 ise { ekrana_yaz("HATA [E014] [ERR_IAT_LIMIT] [class=codegen]: IAT yama tablosu kapasitesi asildi.\n".ptr); }
+        yoksa eger g_codegen_kapasite_kodu == 2 ise { ekrana_yaz("HATA [E014] [ERR_PATCH_LIMIT] [class=codegen]: Yama tablosu kapasitesi asildi.\n".ptr); }
+        yoksa { ekrana_yaz("HATA [E014] [ERR_CODEGEN_LIMIT] [class=codegen]: Codegen kapasitesi asildi.\n".ptr); }
+        dondu 1;
+    }
+
+    verbose_yaz("DEBUG: pe_arena.kullanilan=".ptr);
+    verbose_sayi(pe_arena.kullanilan);
+    verbose_yaz("\n".ptr);
+
+    eger g_cozulmeyen_harici_cagri_sayisi > 0 ise {
+        ekrana_yaz("HATA: 1 harici fonksiyon cagrisi hedef platformda cozulmedi; artifact yazilmadi.\n".ptr);
+        dondu 1;
+    }
+
+    # ============================================================
+    # 7. CIKTI (Dosya Sisteme Yazma)
+    # ============================================================
+    ekrana_yaz("Diske basiliyor: ".ptr);
+    eger g_cli_hedef_acikca_verildi == 0 ve g_in_file_cikti_dosyasi != 0 ise {
+        cikti_dosyasi = g_in_file_cikti_dosyasi;
+    }
+    ekrana_yaz(cikti_dosyasi);
+    ekrana_yaz("\n".ptr);
+    diske_bas_ve_kapat(cikti_dosyasi, pe_arena.bellek, pe_arena.kullanilan);
+    ekrana_yaz("Diske basma bitti!\n".ptr);
+    eger c_comp != 0 ise {
+        c_comp.derleme_sonucu = 0;
+    }
+    dondu 0;
+}
+
+isv yukinary_derle(kaynak_kod: *u8, kod_uzunlugu: tamsayi, cikti_dosyasi: *u8, dosya_dizini: *u8, self_heal: tamsayi) -> tamsayi {
+    eger g_compiler == 0 ise {
+        g_compiler = compiler_context_olustur();
+    }
+    dondu yukinary_derle_ctx(g_compiler, kaynak_kod, kod_uzunlugu, cikti_dosyasi, dosya_dizini, self_heal);
+}
+
+# Program Baslangic Noktasi
+isv arg_parse(cmd: *u8, arg_buffer: *u8) -> *u8 {
+    degisken j: tamsayi = 0;
+    degisken bitti_mi: tamsayi = 0;
+    dongu cmd[j] != 0 {
+        degisken c: u8 = cmd[j];
+        eger c == 32 ise { bitti_mi = 1; }
+        eger c == 13 ise { bitti_mi = 1; }
+        eger c == 10 ise { bitti_mi = 1; }
+        eger bitti_mi == 1 ise { durdur; }
+        arg_buffer[j] = c;
+        j = j + 1;
+    }
+    arg_buffer[j] = 0;
+    dondu arg_buffer;
+}
+
+isv str_tam_esit(s: *u8, ref: *u8, ref_len: tamsayi) -> tamsayi {
+    eger s == 0 veya ref == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < ref_len {
+        degisken c_s: u8 = s[i];
+        degisken c_r: u8 = ref[i];
+        eger c_s == 0 veya c_s != c_r ise { dondu 0; }
+        i = i + 1;
+    }
+    degisken c_end: u8 = s[i];
+    eger c_end != 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# CLI'deki kucuk, bagimsiz ondalik sayi ayristirici. atoi benzeri harici
+# runtime cagrisi kullanmaz; tasma/bos arguman deterministik olarak reddedilir.
+isv cli_ondalik_oku(metin: *u8) -> tamsayi {
+    eger metin == 0 veya metin[0] == 0 ise { dondu 0 - 1; }
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken adet: tamsayi = 0;
+    dongu metin[i] != 0 {
+        degisken c: u8 = metin[i];
+        eger c < 48 veya c > 57 ise { dondu 0 - 1; }
+        sonuc = sonuc * 10 + (c - 48);
+        eger sonuc > 64 ise { dondu 0 - 1; }
+        adet = adet + 1;
+        i = i + 1;
+    }
+    eger adet <= 0 ise { dondu 0 - 1; }
+    dondu sonuc;
+}
+
+isv allocasyon_fault_cli_ayarla(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    g_allocasyon_sayisi = 0;
+    g_allocasyon_fail_after = 0 - 1;
+    g_allocasyon_politikasi_aktif = 0;
+    degisken i: tamsayi = 1;
+    dongu i < arguman_sayisi {
+        eger str_tam_esit(argumanlar[i], "--fail-alloc-after".ptr, 18) == 1 ise {
+            eger i + 1 >= arguman_sayisi ise {
+                ekrana_yaz("HATA: --fail-alloc-after sonrasinda N bekleniyordu.\n".ptr);
+                dondu 0 - 1;
+            }
+            degisken metin: *u8 = argumanlar[i + 1];
+            eger metin == 0 veya metin[0] == 0 ise {
+                ekrana_yaz("HATA: --fail-alloc-after N sifir veya pozitif bir sayi olmalidir.\n".ptr);
+                dondu 0 - 1;
+            }
+            degisken n: tamsayi = 0;
+            degisken j: tamsayi = 0;
+            dongu metin[j] != 0 {
+                eger metin[j] < 48 veya metin[j] > 57 ise {
+                    ekrana_yaz("HATA: --fail-alloc-after N yalnizca ondalik sayi kabul eder.\n".ptr);
+                    dondu 0 - 1;
+                }
+                eger n > 214748364 ise {
+                    ekrana_yaz("HATA: --fail-alloc-after N kapasite disi.\n".ptr);
+                    dondu 0 - 1;
+                }
+                n = n * 10 + (metin[j] - 48);
+                eger n < 0 ise {
+                    ekrana_yaz("HATA: --fail-alloc-after N kapasite disi.\n".ptr);
+                    dondu 0 - 1;
+                }
+                j = j + 1;
+            }
+            g_allocasyon_fail_after = n;
+            g_allocasyon_politikasi_aktif = 1;
+            i = i + 2;
+        } yoksa {
+            i = i + 1;
+        }
+    }
+    dondu 0;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger allocasyon_fault_cli_ayarla(arguman_sayisi, argumanlar) != 0 ise {
+        dondu 2;
+    }
+    diagnostics_renkleri_baslat(1);
+    ai_micro_motor_baslat();
+    eger arguman_sayisi <= 1 ise {
+        dondu repl_baslat();
+    }
+
+    degisken self_heal: tamsayi = 0; # Guvenlik geregi varsayilan kapali; --self-heal / --onar ile acilir
+    degisken formatter_modu: tamsayi = 0;
+    degisken formatter_kontrol: tamsayi = 0;
+    degisken paket_build_modu: tamsayi = 0;
+    degisken kaynak_indeksi: tamsayi = 0;
+    degisken hedef_indeksi: tamsayi = 0;
+    degisken sonraki_hedef_platform: tamsayi = 0;
+    degisken sonraki_llm_model: tamsayi = 0;
+    degisken sonraki_llm_rag: tamsayi = 0;
+    degisken sonraki_llm_token_limiti: tamsayi = 0;
+    degisken sonraki_allocasyon_fail: tamsayi = 0;
+    degisken sonraki_ast_mutasyon: tamsayi = 0;
+    degisken arg_i: tamsayi = 1;
+    dongu arg_i < arguman_sayisi {
+        eger sonraki_allocasyon_fail == 1 ise {
+            sonraki_allocasyon_fail = 0;
+        } yoksa eger sonraki_ast_mutasyon == 1 ise {
+            degisken mutasyon_hedef: tamsayi = cli_ondalik_oku(argumanlar[arg_i]);
+            eger mutasyon_hedef < 0 veya mutasyon_hedef > 42 ise {
+                ekrana_yaz("HATA: --test-mutate-ast-node 0 ile 42 arasinda bir AST ID bekler.\n".ptr);
+                dondu 2;
+            }
+            g_ast_mutasyon_hedef = mutasyon_hedef;
+            g_ast_mutasyon_aktif = 1;
+            sonraki_ast_mutasyon = 0;
+        } yoksa eger sonraki_llm_model == 1 ise {
+            g_llm_cli_model_yolu = argumanlar[arg_i];
+            sonraki_llm_model = 0;
+        } yoksa eger sonraki_llm_rag == 1 ise {
+            g_llm_cli_rag_yolu = argumanlar[arg_i];
+            sonraki_llm_rag = 0;
+        } yoksa eger sonraki_llm_token_limiti == 1 ise {
+            degisken token_limiti: tamsayi = cli_ondalik_oku(argumanlar[arg_i]);
+            eger token_limiti < 1 veya token_limiti > 64 ise {
+                ekrana_yaz("HATA: --llm-max-tokens 1 ile 64 arasinda bir sayi bekler.\n".ptr);
+                dondu 2;
+            }
+            g_llm_cli_max_tokens = token_limiti;
+            sonraki_llm_token_limiti = 0;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--yardim".ptr, 8) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--help".ptr, 6) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "-h".ptr, 2) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "-y".ptr, 2) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "yardim".ptr, 6) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "help".ptr, 4) == 1 ise {
+            ekrana_yaz("Kullanim: yukic_v1 [fmt [--check] kaynak.ykn] [egit|train] [ai|complete \"kod\"] [cevir|convert <dosya|kod>] [--target windows|linux|macos|linux-arm64|macos-arm64|wasm|riscv] [--self-heal|--kendini-onar] [--guvenli|--bounds-check] [--llm-model <model.gguf>] <kaynak.ykn> [cikti.exe]\n".ptr);
+            ekrana_yaz("  --target, --hedef     : Hedef platform (windows, linux=ELF64, macos=Mach-O, linux-arm64, macos-arm64, wasm, riscv)\n".ptr);
+            ekrana_yaz("  --llm-model, --model  : GGUF v3 AI model dosyasi yolu (#prompt direktifi icin)\n".ptr);
+            ekrana_yaz("  --surum, -v, --version: Derleyici surum bilgisini gosterir\n".ptr);
+            ekrana_yaz("  --yardim, -h, --help  : Bu yardim mesajini gosterir\n".ptr);
+            dondu 0;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--surum".ptr, 7) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--version".ptr, 9) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "-v".ptr, 2) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "surum".ptr, 5) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "version".ptr, 7) == 1 ise {
+            ekrana_yaz("Yukinary Derleyicisi v1.14 (Stage-1 Self-Hosted)\n".ptr);
+            dondu 0;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--fail-alloc-after".ptr, 18) == 1 ise {
+            sonraki_allocasyon_fail = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--test-mutate-ast-node".ptr, 22) == 1 ise {
+            sonraki_ast_mutasyon = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-model".ptr, 11) == 1 ise {
+            sonraki_llm_model = 1;
+            g_cli_llm_model_acikca_verildi = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-rag-context".ptr, 17) == 1 ise {
+            sonraki_llm_rag = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-max-tokens".ptr, 16) == 1 ise {
+            sonraki_llm_token_limiti = 1;
+            g_cli_max_tokens_acikca_verildi = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--lsp".ptr, 5) == 1 veya str_tam_esit(argumanlar[arg_i], "--dil-sunucusu".ptr, 14) == 1 ise {
+            dondu lsp_sunucusu_baslat();
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "repl".ptr, 4) == 1 veya str_tam_esit(argumanlar[arg_i], "--repl".ptr, 6) == 1 ise {
+            dondu repl_baslat();
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "paket".ptr, 5) == 1 veya str_tam_esit(argumanlar[arg_i], "pkg".ptr, 3) == 1 ise {
+            degisken alt_komut: *u8 = 0;
+            eger arg_i + 1 < arguman_sayisi ise { alt_komut = argumanlar[arg_i + 1]; }
+            eger alt_komut == 0 veya str_tam_esit(alt_komut, "liste".ptr, 5) == 1 veya str_tam_esit(alt_komut, "list".ptr, 4) == 1 ise {
+                dondu paket_liste_komutu();
+            } yoksa eger str_tam_esit(alt_komut, "guncelle".ptr, 8) == 1 veya str_tam_esit(alt_komut, "update".ptr, 6) == 1 ise {
+                dondu paket_guncelle_komutu();
+            } yoksa eger str_tam_esit(alt_komut, "yayinla".ptr, 7) == 1 veya str_tam_esit(alt_komut, "publish".ptr, 7) == 1 ise {
+                degisken m_yol: *u8 = 0;
+                eger arg_i + 2 < arguman_sayisi ise { m_yol = argumanlar[arg_i + 2]; }
+                dondu paket_yayinla_komutu(m_yol);
+            } yoksa eger str_tam_esit(alt_komut, "ekle".ptr, 4) == 1 veya str_tam_esit(alt_komut, "add".ptr, 3) == 1 ise {
+                degisken p_ad: *u8 = 0;
+                degisken p_ver: *u8 = 0;
+                eger arg_i + 2 < arguman_sayisi ise { p_ad = argumanlar[arg_i + 2]; }
+                eger arg_i + 3 < arguman_sayisi ise { p_ver = argumanlar[arg_i + 3]; }
+                dondu paket_ekle_komutu(p_ad, p_ver, 1);
+            } yoksa {
+                ekrana_yaz("Gecersiz paket komutu. Gecerli: ekle, liste, guncelle, yayinla\n".ptr);
+                dondu 1;
+            }
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "verify".ptr, 6) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "self-host-verify".ptr, 16) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "dogrula".ptr, 7) == 1 ise {
+            degisken s2_dosya: *u8 = 0;
+            degisken s3_dosya: *u8 = 0;
+            eger arg_i + 1 < arguman_sayisi ise { s2_dosya = argumanlar[arg_i + 1]; }
+            eger arg_i + 2 < arguman_sayisi ise { s3_dosya = argumanlar[arg_i + 2]; }
+            dondu self_host_dogrula(s2_dosya, s3_dosya);
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "egit".ptr, 4) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "train".ptr, 5) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--egit".ptr, 6) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--train".ptr, 7) == 1 ise {
+            dondu ykn_micro_llm_egit_raporla();
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "ai".ptr, 2) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "complete".ptr, 8) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--ai".ptr, 4) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "sor".ptr, 3) == 1 ise {
+            degisken prompt_metni: *u8 = "isv topla(".ptr;
+            eger arg_i + 1 < arguman_sayisi ise {
+                prompt_metni = argumanlar[arg_i + 1];
+            }
+            dondu ykn_cli_ai_calistir(prompt_metni, 64);
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "cevir".ptr, 5) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "convert".ptr, 7) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "transpile".ptr, 9) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--cevir".ptr, 7) == 1 ise {
+            degisken girdi_hedef: *u8 = "def topla(a, b): return a + b".ptr;
+            degisken hedef_kayit_dosyasi: *u8 = 0;
+            degisken kaynak_dil_tipi: tamsayi = 0;
+            degisken c_idx: tamsayi = arg_i + 1;
+            dongu c_idx < arguman_sayisi {
+                degisken cur_arg: *u8 = argumanlar[c_idx];
+                eger str_tam_esit(cur_arg, "--into-std".ptr, 10) == 1 veya str_tam_esit(cur_arg, "--into-file".ptr, 11) == 1 veya str_tam_esit(cur_arg, "-o".ptr, 2) == 1 ise {
+                    eger c_idx + 1 < arguman_sayisi ise {
+                        c_idx = c_idx + 1;
+                        hedef_kayit_dosyasi = argumanlar[c_idx];
+                    }
+                } yoksa eger str_tam_esit(cur_arg, "--from".ptr, 6) == 1 ise {
+                    eger c_idx + 1 < arguman_sayisi ise {
+                        c_idx = c_idx + 1;
+                        degisken f_dil: *u8 = argumanlar[c_idx];
+                        eger str_tam_esit(f_dil, "python".ptr, 6) == 1 veya str_tam_esit(f_dil, "py".ptr, 2) == 1 ise { kaynak_dil_tipi = 1; }
+                        yoksa eger str_tam_esit(f_dil, "c".ptr, 1) == 1 ise { kaynak_dil_tipi = 2; }
+                        yoksa eger str_tam_esit(f_dil, "cpp".ptr, 3) == 1 ise { kaynak_dil_tipi = 3; }
+                        yoksa eger str_tam_esit(f_dil, "js".ptr, 2) == 1 ise { kaynak_dil_tipi = 4; }
+                        yoksa eger str_tam_esit(f_dil, "rust".ptr, 4) == 1 veya str_tam_esit(f_dil, "rs".ptr, 2) == 1 ise { kaynak_dil_tipi = 5; }
+                    }
+                } yoksa {
+                    girdi_hedef = cur_arg;
+                }
+                c_idx = c_idx + 1;
+            }
+            degisken g_buf: *u8 = compiler_tahsis_et(1048576);
+            degisken okunan: tamsayi = dosya_oku(girdi_hedef, g_buf, 1048576);
+            eger okunan > 0 ise {
+                dondu ai_micro_cevir_ve_kaydet(g_buf, okunan, hedef_kayit_dosyasi, kaynak_dil_tipi);
+            } yoksa {
+                degisken k_uzn: tamsayi = metin_uzunlugu(girdi_hedef);
+                dondu ai_micro_cevir_ve_kaydet(girdi_hedef, k_uzn, hedef_kayit_dosyasi, kaynak_dil_tipi);
+            }
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "build".ptr, 5) == 1 veya str_tam_esit(argumanlar[arg_i], "derle".ptr, 5) == 1 ise {
+            paket_build_modu = 1;
+        } yoksa eger formatter_modu == 0 ve kaynak_indeksi == 0 ve str_tam_esit(argumanlar[arg_i], "fmt".ptr, 3) == 1 ise {
+            formatter_modu = 1;
+        } yoksa eger formatter_modu == 1 ve (str_tam_esit(argumanlar[arg_i], "--check".ptr, 7) == 1 veya str_tam_esit(argumanlar[arg_i], "-c".ptr, 2) == 1) ise {
+            formatter_kontrol = 1;
+        } yoksa eger sonraki_hedef_platform == 1 ise {
+            sonraki_hedef_platform = 0;
+            degisken plt: *u8 = argumanlar[arg_i];
+            eger str_tam_esit(plt, "windows".ptr, 7) == 1 veya str_tam_esit(plt, "win".ptr, 3) == 1 ise {
+                g_target_platform = 0;
+            } yoksa eger str_tam_esit(plt, "linux-arm64".ptr, 11) == 1 veya str_tam_esit(plt, "linux-aarch64".ptr, 13) == 1 veya str_tam_esit(plt, "arm64-linux".ptr, 11) == 1 ise {
+                g_target_platform = 3;
+            } yoksa eger str_tam_esit(plt, "macos-arm64".ptr, 11) == 1 veya str_tam_esit(plt, "darwin-arm64".ptr, 12) == 1 veya str_tam_esit(plt, "apple-silicon".ptr, 13) == 1 ise {
+                g_target_platform = 4;
+            } yoksa eger str_tam_esit(plt, "macos".ptr, 5) == 1 veya str_tam_esit(plt, "mac".ptr, 3) == 1 veya str_tam_esit(plt, "darwin".ptr, 6) == 1 veya str_tam_esit(plt, "macos-x86_64".ptr, 12) == 1 veya str_tam_esit(plt, "macos-x64".ptr, 9) == 1 ise {
+                g_target_platform = 2;
+            } yoksa eger str_tam_esit(plt, "linux".ptr, 5) == 1 veya str_tam_esit(plt, "lin".ptr, 3) == 1 veya str_tam_esit(plt, "linux-x86_64".ptr, 12) == 1 veya str_tam_esit(plt, "linux-x64".ptr, 9) == 1 ise {
+                g_target_platform = 1;
+            } yoksa eger str_tam_esit(plt, "wasm".ptr, 4) == 1 veya str_tam_esit(plt, "wasm32".ptr, 6) == 1 veya str_tam_esit(plt, "webassembly".ptr, 11) == 1 ise {
+                g_target_platform = 5;
+            } yoksa eger str_tam_esit(plt, "riscv".ptr, 5) == 1 veya str_tam_esit(plt, "riscv64".ptr, 7) == 1 veya str_tam_esit(plt, "linux-riscv64".ptr, 13) == 1 veya str_tam_esit(plt, "riscv-linux".ptr, 11) == 1 ise {
+                g_target_platform = 6;
+            } yoksa {
+                ekrana_yaz("HATA: Gecersiz hedef platform. Gecerli olanlar: windows, linux, macos, linux-arm64, macos-arm64, wasm, riscv.\n".ptr);
+                dondu 2;
+            }
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--geri-al".ptr, 9) == 1 veya str_tam_esit(argumanlar[arg_i], "--rollback".ptr, 10) == 1 ise {
+            eger arg_i + 1 < arguman_sayisi ise {
+                dondu sh_geri_yukle(argumanlar[arg_i + 1]);
+            } yoksa {
+                ekrana_yaz("HATA: --geri-al sonrasinda dosya yolu bekleniyordu.\n".ptr);
+                dondu 2;
+            }
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--no-self-heal".ptr, 14) == 1 ise {
+            self_heal = 0;
+            g_cli_self_heal_acikca_verildi = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--self-heal".ptr, 11) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--kendini-onar".ptr, 14) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "kendini-onar".ptr, 12) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--onar".ptr, 6) == 1 ise {
+            self_heal = 1;
+            g_cli_self_heal_acikca_verildi = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--guvenli".ptr, 9) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--bounds-check".ptr, 14) == 1 ise {
+            g_bounds_check = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--unsafe".ptr, 8) == 1 veya str_tam_esit(argumanlar[arg_i], "--guvensiz".ptr, 10) == 1 ise {
+            g_bounds_check = 0;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--no-color".ptr, 10) == 1 veya str_tam_esit(argumanlar[arg_i], "--renksiz".ptr, 9) == 1 ise {
+            diagnostics_renkleri_baslat(0);
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--verbose".ptr, 9) == 1 veya str_tam_esit(argumanlar[arg_i], "--ayrintili".ptr, 11) == 1 ise {
+            g_verbose = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--dump-ir".ptr, 9) == 1 ise {
+            g_dump_ir = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--backend=ir".ptr, 12) == 1 ise {
+            g_backend_ir = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--opt".ptr, 5) == 1 veya str_tam_esit(argumanlar[arg_i], "-O".ptr, 2) == 1 ise {
+            g_ra_opt_aktif = 1;
+            g_cli_opt_acikca_verildi = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--debug".ptr, 7) == 1 ise {
+            g_debug_info = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--target".ptr, 8) == 1 veya str_tam_esit(argumanlar[arg_i], "--hedef".ptr, 7) == 1 ise {
+            sonraki_hedef_platform = 1;
+            g_cli_target_acikca_verildi = 1;
+        } yoksa eger kaynak_indeksi == 0 ise {
+            kaynak_indeksi = arg_i;
+        } yoksa eger hedef_indeksi == 0 ise {
+            hedef_indeksi = arg_i;
+            g_cli_hedef_acikca_verildi = 1;
+        } yoksa {
+            ekrana_yaz("HATA: Fazla komut satiri argumani.\n".ptr);
+            dondu 2;
+        }
+        arg_i = arg_i + 1;
+    }
+    eger sonraki_hedef_platform == 1 ise {
+        ekrana_yaz("HATA: --target / --hedef sonrasinda platform adi bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_llm_model == 1 ise {
+        ekrana_yaz("HATA: --llm-model sonrasinda model yolu bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_llm_rag == 1 ise {
+        ekrana_yaz("HATA: --llm-rag-context sonrasinda context dosyasi bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_llm_token_limiti == 1 ise {
+        ekrana_yaz("HATA: --llm-max-tokens sonrasinda 1..64 arasi sayi bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_allocasyon_fail == 1 ise {
+        ekrana_yaz("HATA: --fail-alloc-after sonrasinda N bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_ast_mutasyon == 1 ise {
+        ekrana_yaz("HATA: --test-mutate-ast-node sonrasinda 0..42 arasi AST ID bekleniyordu.\n".ptr);
+        dondu 2;
+    }
+    degisken kaynak_dosya: *u8 = 0;
+    eger paket_build_modu == 1 ise {
+        degisken m_durum: tamsayi = manifest_yukle("yukinary.toml".ptr);
+        eger m_durum != CIKIS_BASARI ise {
+            ekrana_yaz("HATA: yukinary.toml bulunamadi veya gecersiz!\n".ptr);
+            dondu m_durum;
+        }
+        degisken m: *Manifest = g_paket_manifest;
+        kaynak_dosya = m.ana_dosya;
+    } yoksa eger kaynak_indeksi != 0 ise {
+        kaynak_dosya = argumanlar[kaynak_indeksi];
+    } yoksa {
+        eger arguman_sayisi <= 1 ise {
+            dondu repl_baslat();
+        }
+        ekrana_yaz("Kullanim: yukinary_v1 [build] [repl] [verify [s2] [s3]] [egit|train] [ai|complete \"kod\"] [cevir|convert <dosya|kod>] [paket ekle|liste|guncelle|yayinla] [fmt [--check] kaynak.ykn] [--target windows|linux|macos|linux-arm64|macos-arm64] [--self-heal|--kendini-onar] [--unsafe|--guvensiz] <kaynak.ykn> [cikti.exe]\n".ptr);
+        dondu 1;
+    }
+    eger formatter_modu == 1 ve hedef_indeksi != 0 ise {
+        ekrana_yaz("HATA: fmt komutu yalnizca bir kaynak dosyasi kabul eder.\n".ptr);
+        dondu 2;
+    }
+    eger g_llm_cli_rag_yolu != 0 ise {
+        eger llm_rag_context_yukle(g_llm_cli_rag_yolu) == 0 ise {
+            ekrana_yaz("HATA: --llm-rag-context dosyasi okunamadi.\n".ptr);
+            dondu 2;
+        }
+        ekrana_yaz("LLM RAG context yuklendi.\n".ptr);
+    }
+    eger formatter_modu == 1 ise {
+        dondu yukinary_fmt(kaynak_dosya, formatter_kontrol);
+    }
+    
+    eger g_llm_cli_model_yolu != 0 ise {
+        g_llm_uretim_limiti = g_llm_cli_max_tokens;
+        g_llm_cli_model_durumu = compiler_tahsis_et(4096);
+        eger g_llm_cli_model_durumu == 0 veya
+           llm_gguf_modeli_yukle(g_llm_cli_model_yolu, g_llm_cli_model_durumu) == 0 ise {
+            ekrana_yaz("HATA: --llm-model GGUF dosyasi yuklenemedi.\n".ptr);
+            dondu 2;
+        }
+        eger llm_gguf_transformer_cli_baslat() == 0 ise {
+            ekrana_yaz("HATA: GGUF metadata gercek transformer icrasi icin yetersiz.\n".ptr);
+            dondu 2;
+        }
+        ekrana_yaz("LLM modeli yuklendi; #prompt gercek forward-pass kullanacak.\n".ptr);
+        ekrana_yaz("LLM max token: ".ptr);
+        sayiyi_ekrana_yaz(g_llm_uretim_limiti);
+        ekrana_yaz("\n".ptr);
+    }
+    ekrana_yaz("Arguman kontrolu basarili.\n".ptr);
+    
+    # YKN kodu hafizaya alinir (Dinamik Buffer)
+    ekrana_yaz("Bellek tahsis ediliyor...\n".ptr);
+    # Kok kaynakta da bir byte fazla oku; sessiz truncation engellenir.
+    # Stage-3 compiler'in ilk gercek allocation'i icin fault policy burada
+    # acikca yurutulur; builtin allocation lowering'ina dokunulmaz.
+    compiler_allocasyon_kontrol();
+    degisken kod_tampon_boyutu: tamsayi = KAYNAK_TAMPON_BOYUTU + 1;
+    degisken kod_buffer: *u8 = compiler_tahsis_et(kod_tampon_boyutu);
+    
+    ekrana_yaz("Dosya okunuyor...\n".ptr);
+    ekrana_yaz(kaynak_dosya);
+    ekrana_yaz("\n".ptr);
+    
+    # ----------------------------------------------------
+    # KAYNAK DOSYAYI OKU
+    # ----------------------------------------------------
+    degisken okunan_bayt: tamsayi = dosya_oku(kaynak_dosya, kod_buffer, kod_tampon_boyutu);
+    
+    eger okunan_bayt <= 0 ise {
+        ekrana_yaz("HATA: Dosya okunamadi!\n".ptr);
+        dondu 1;
+    }
+    eger okunan_bayt > KAYNAK_TAMPON_BOYUTU ise {
+        dosya_limiti_hatasi(1, 1, "Kaynak dosyasi 32 MiB limitini asiyor".ptr);
+        dondu 1;
+    }
+    
+    ekrana_yaz("Dosya okundu, derleyici cagiriliyor...\n".ptr);
+    # YKN kendini (veya baska bir YKN dosyasini) derler!
+    # Kaynak dosya dizinini bul
+    degisken dosya_dizini_buf: *u8 = compiler_tahsis_et(1024);
+    degisken kd_uzn: tamsayi = 0;
+    dongu kaynak_dosya[kd_uzn] != 0 {
+        kd_uzn = kd_uzn + 1;
+    }
+    degisken son_ayrac: tamsayi = -1;
+    degisken i_d: tamsayi = 0;
+    dongu i_d < kd_uzn {
+        eger kaynak_dosya[i_d] == 47 veya kaynak_dosya[i_d] == 92 ise {
+            son_ayrac = i_d;
+        }
+        i_d = i_d + 1;
+    }
+    eger son_ayrac >= 0 ise {
+        degisken di: tamsayi = 0;
+        dongu di <= son_ayrac { dosya_dizini_buf[di] = kaynak_dosya[di]; di = di + 1; }
+        dosya_dizini_buf[son_ayrac + 1] = 0;
+    } yoksa {
+        dosya_dizini_buf[0] = 0;
+    }
+    degisken hedef_cikti: *u8 = "cikti.exe".ptr;
+    eger paket_build_modu == 1 ve g_paket_manifest != 0 ve g_paket_manifest.cikti != 0 ise {
+        hedef_cikti = g_paket_manifest.cikti;
+    } yoksa eger hedef_indeksi != 0 ise {
+        hedef_cikti = argumanlar[hedef_indeksi];
+    }
+    diagnostics_dosya_adi_ayarla(kaynak_dosya);
+    # Ana dosya da import grafiginin aktif koku olarak kaydedilir.
+    g_import_sayisi = 0;
+    g_import_listesi[0] = kaynak_dosya;
+    g_import_sayisi = 1;
+    degisken derleme_sonucu: tamsayi = yukinary_derle(kod_buffer, okunan_bayt, hedef_cikti, dosya_dizini_buf, self_heal);
+    eger derleme_sonucu == 0 ise {
+        ekrana_yaz("Derleme tamamlandi.\n".ptr);
+    }
+    dondu derleme_sonucu;
+}

@@ -1,0 +1,12 @@
+# FIX-13 olumlu: nullable struct pointer alan erisimi guard icinde acilir.
+yapi Nokta {
+    x: tamsayi;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*Nokta = bos;
+    eger p != bos ise {
+        p.x = 1;
+    }
+    dondu 0;
+}

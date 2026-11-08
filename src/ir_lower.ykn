@@ -1,0 +1,621 @@
+# ============================================================
+# ir_lower.ykn — AST'den Typed IR'a Tam Lowering
+# FAZ 4: Her AST node tipi için IR karşılığı.
+# Token tipi -> IR opcode mapping dahil.
+# ============================================================
+
+# ============================================================
+# Tip bilgisinden IR tip ID'si çıkar
+# ============================================================
+isv ast_tip_id_coz(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu YKN_IR_TID_VOID; }
+    # tip_adi varsa string karşılaştır
+    eger dugum.tip_adi != 0 ise {
+        eger dugum.tip_adi_uzunluk == 7 ve bellek_esit_mi(dugum.tip_adi, "tamsayi".ptr, 7) == 1 ise { dondu YKN_IR_TID_INT; }
+        eger dugum.tip_adi_uzunluk == 7 ve bellek_esit_mi(dugum.tip_adi, "kesirli".ptr, 7) == 1 ise { dondu YKN_IR_TID_FLOAT; }
+        eger dugum.tip_adi_uzunluk == 6 ve bellek_esit_mi(dugum.tip_adi, "gercek".ptr, 6) == 1 ise { dondu YKN_IR_TID_FLOAT; }
+        eger dugum.tip_adi_uzunluk == 6 ve bellek_esit_mi(dugum.tip_adi, "mantik".ptr, 6) == 1 ise { dondu YKN_IR_TID_BOOL; }
+        eger dugum.tip_adi_uzunluk == 2 ve bellek_esit_mi(dugum.tip_adi, "u8".ptr, 2) == 1 ise { dondu YKN_IR_TID_U8; }
+        eger dugum.cozumlenmis_tip > 0 ise { dondu YKN_IR_TID_PTR; }
+    }
+    eger dugum.tip == AST_SAYI       ise { dondu YKN_IR_TID_INT; }
+    eger dugum.tip == AST_GERCEK_SAYI ise { dondu YKN_IR_TID_FLOAT; }
+    eger dugum.tip == AST_METIN      ise { dondu YKN_IR_TID_PTR; }
+    eger dugum.tip == AST_MANTIK     ise { dondu YKN_IR_TID_BOOL; }
+    dondu YKN_IR_TID_UNKNOWN;
+}
+
+# Token tipi -> IR aritmetik opcode
+isv jeton_op_to_ir_op(jeton_tip: tamsayi) -> tamsayi {
+    eger jeton_tip == TIP_ARTI    ise { dondu YKN_IR_ADD; }
+    eger jeton_tip == TIP_EKSI    ise { dondu YKN_IR_SUB; }
+    eger jeton_tip == TIP_CARPI   ise { dondu YKN_IR_MUL; }
+    eger jeton_tip == TIP_BOLME   ise { dondu YKN_IR_DIV; }
+    eger jeton_tip == TIP_MODULO  ise { dondu YKN_IR_MOD; }
+    eger jeton_tip == TIP_VE      ise { dondu YKN_IR_AND; }
+    eger jeton_tip == TIP_AMPERSAND ise { dondu YKN_IR_AND; }
+    eger jeton_tip == TIP_VEYA    ise { dondu YKN_IR_OR; }
+    eger jeton_tip == TIP_XOR     ise { dondu YKN_IR_XOR; }
+    eger jeton_tip == TIP_SOL_KAYDIR ise { dondu YKN_IR_SHL; }
+    eger jeton_tip == TIP_SAG_KAYDIR ise { dondu YKN_IR_SHR; }
+    eger jeton_tip == TIP_DIKEY_CUBUK ise { dondu YKN_IR_OR; }
+    eger jeton_tip == TIP_ESIT_MI    ise { dondu YKN_IR_CMP_EQ; }
+    eger jeton_tip == TIP_ESIT_DEGIL ise { dondu YKN_IR_CMP_NE; }
+    eger jeton_tip == TIP_KUCUK_MU   ise { dondu YKN_IR_CMP_LT; }
+    eger jeton_tip == TIP_KUCUK_ESIT ise { dondu YKN_IR_CMP_LE; }
+    eger jeton_tip == TIP_BUYUK_MU   ise { dondu YKN_IR_CMP_GT; }
+    eger jeton_tip == TIP_BUYUK_ESIT ise { dondu YKN_IR_CMP_GE; }
+    dondu YKN_IR_ADD; # bilinmeyen: güvenli fallback
+}
+
+# ============================================================
+# Yerel Değişken Tablosu (Fonksiyon başına ardışık slot)
+# ============================================================
+degisken g_ir_local_hash: [256]tamsayi;
+degisken g_ir_local_reg:  [256]tamsayi;
+degisken g_ir_local_sayisi: tamsayi = 0;
+
+isv ir_local_tablo_sifirla() {
+    g_ir_local_sayisi = 0;
+}
+
+isv ir_local_slot_al(motor: *IrMotoru, h: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_ir_local_sayisi {
+        eger g_ir_local_hash[i] == h ise {
+            dondu g_ir_local_reg[i];
+        }
+        i = i + 1;
+    }
+    degisken r: tamsayi = ir_yeni_reg(motor);
+    eger g_ir_local_sayisi < 256 ise {
+        g_ir_local_hash[g_ir_local_sayisi] = h;
+        g_ir_local_reg[g_ir_local_sayisi] = r;
+        g_ir_local_sayisi = g_ir_local_sayisi + 1;
+    }
+    dondu r;
+}
+
+isv ir_local_slot_bul(motor: *IrMotoru, h: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_ir_local_sayisi {
+        eger g_ir_local_hash[i] == h ise {
+            dondu g_ir_local_reg[i];
+        }
+        i = i + 1;
+    }
+    dondu ir_local_slot_al(motor, h);
+}
+
+# ============================================================
+# Ana lowering — her AST node için IR üretir, register ID döner
+# ============================================================
+isv ir_lower_ifade(motor: *IrMotoru, dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    degisken tid: tamsayi = ast_tip_id_coz(dugum);
+
+    # ---- 1. Sabitler ----
+    eger dugum.tip == AST_SAYI ise {
+        degisken reg: tamsayi = ir_yeni_reg(motor);
+        degisken deger: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise { deger = string_tamsayiya(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk); }
+        ir_komut_ekle(motor, YKN_IR_CONST, reg, deger, 0, YKN_IR_TID_INT);
+        dondu reg;
+    }
+    eger dugum.tip == AST_GERCEK_SAYI ise {
+        degisken reg: tamsayi = ir_yeni_reg(motor);
+        degisken fval: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = dugum.ilk_jeton;
+            fval = string_gerceksayiya_ieee754(j_tk.baslangic, j_tk.uzunluk);
+        }
+        ir_komut_ekle(motor, YKN_IR_CONST, reg, fval, 0, YKN_IR_TID_FLOAT);
+        dondu reg;
+    }
+    eger dugum.tip == AST_METIN ise {
+        degisken reg: tamsayi = ir_yeni_reg(motor);
+        degisken str_ptr: *u8 = 0;
+        degisken str_uzn: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            str_ptr = dugum.ilk_jeton.baslangic;
+            str_uzn = dugum.ilk_jeton.uzunluk;
+            eger str_uzn >= 2 ve str_ptr[0] == 34 ise {
+                str_ptr = str_ptr + 1;
+                str_uzn = str_uzn - 2;
+            }
+        }
+        ir_komut_ekle(motor, YKN_IR_CONST, reg, str_ptr, str_uzn, YKN_IR_TID_PTR);
+        dondu reg;
+    }
+    eger dugum.tip == AST_MANTIK ise {
+        degisken reg: tamsayi = ir_yeni_reg(motor);
+        degisken bval: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            eger dugum.ilk_jeton.tip == TIP_DOGRU ise { bval = 1; }
+        }
+        ir_komut_ekle(motor, YKN_IR_CONST, reg, bval, 0, YKN_IR_TID_BOOL);
+        dondu reg;
+    }
+
+    # ---- 2. Kimlik / Değişken okuma ----
+    eger dugum.tip == AST_KIMLIK ise {
+        degisken h: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise { h = djb2_hash(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk); }
+        degisken slot: tamsayi = ir_local_slot_bul(motor, h);
+        degisken ptr_reg: tamsayi = ir_yeni_reg(motor);
+        degisken val_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_GET_PTR, ptr_reg, slot, 0, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_LOAD,    val_reg, ptr_reg, 0, tid);
+        dondu val_reg;
+    }
+
+    # ---- 3. İkili işlemler ----
+    eger dugum.tip == AST_IKILI_OP ise {
+        degisken sol_r: tamsayi = ir_lower_ifade(motor, dugum.sol);
+        degisken sag_r: tamsayi = ir_lower_ifade(motor, dugum.sag);
+        degisken dst:   tamsayi = ir_yeni_reg(motor);
+        degisken ir_op: tamsayi = YKN_IR_ADD;
+        eger dugum.ilk_jeton != 0 ise {
+            ir_op = jeton_op_to_ir_op(dugum.ilk_jeton.tip);
+        }
+        ir_komut_ekle(motor, ir_op, dst, sol_r, sag_r, tid);
+        dondu dst;
+    }
+
+    # ---- 4. Unary işlemler ----
+    eger dugum.tip == AST_UNARY ise {
+        degisken src_r: tamsayi = ir_lower_ifade(motor, dugum.sag);
+        degisken dst:   tamsayi = ir_yeni_reg(motor);
+        degisken ir_op: tamsayi = YKN_IR_NEG;
+        eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.tip == TIP_TILDE ise {
+            ir_op = YKN_IR_NOT;
+        }
+        ir_komut_ekle(motor, ir_op, dst, src_r, 0, tid);
+        dondu dst;
+    }
+
+    # ---- 5. Adres alma ----
+    eger dugum.tip == AST_REFERANS ise {
+        degisken src_r: tamsayi = ir_lower_ifade(motor, dugum.sag);
+        degisken dst:   tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_ADDR, dst, src_r, 0, YKN_IR_TID_PTR);
+        dondu dst;
+    }
+
+    # ---- 6. Atama ----
+    eger dugum.tip == AST_ATAMA ise {
+        degisken rhs_r: tamsayi = ir_lower_ifade(motor, dugum.sag);
+        degisken h:  tamsayi = 0;
+        eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+            h = djb2_hash(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+        }
+        degisken slot: tamsayi = ir_local_slot_bul(motor, h);
+        degisken ptr_r: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_GET_PTR, ptr_r, slot, 0, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_STORE, ptr_r, rhs_r, 0, tid);
+        dondu rhs_r;
+    }
+
+    # ---- 7. Değişken tanımı ----
+    eger dugum.tip == AST_DEGISKEN_TANIMI ise {
+        degisken h:  tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise { h = djb2_hash(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk); }
+        degisken slot_r: tamsayi = ir_local_slot_al(motor, h);
+        ir_komut_ekle(motor, YKN_IR_ALLOCA, slot_r, slot_r, 8, tid);
+        eger dugum.sag != 0 ise {
+            degisken init_r: tamsayi = ir_lower_ifade(motor, dugum.sag);
+            degisken ptr_r: tamsayi = ir_yeni_reg(motor);
+            ir_komut_ekle(motor, YKN_IR_GET_PTR, ptr_r, slot_r, 0, YKN_IR_TID_PTR);
+            ir_komut_ekle(motor, YKN_IR_STORE, ptr_r, init_r, 0, tid);
+        }
+        dondu slot_r;
+    }
+
+    # ---- 8. Blok (scope) ----
+    eger dugum.tip == AST_BLOK ise {
+        degisken iter: *AstDugum = dugum.sol;
+        degisken son_r: tamsayi = 0;
+        dongu iter != 0 {
+            son_r = ir_lower_ifade(motor, iter);
+            iter = iter.sonraki;
+        }
+        dondu son_r;
+    }
+
+    # ---- 9. Fonksiyon çağrısı ----
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        # Argümanları hazırla
+        degisken arg_iter: *AstDugum = dugum.sag;
+        degisken arg_idx:  tamsayi = 0;
+        dongu arg_iter != 0 {
+            degisken arg_r: tamsayi = ir_lower_ifade(motor, arg_iter);
+            ir_komut_ekle(motor, YKN_IR_PARAM, arg_idx, arg_r, 0, ast_tip_id_coz(arg_iter));
+            arg_idx = arg_idx + 1;
+            arg_iter = arg_iter.sonraki;
+        }
+        # CALL komutu
+        degisken ret_r: tamsayi = ir_yeni_reg(motor);
+        degisken fn_hash: tamsayi = 0;
+        eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+            fn_hash = djb2_hash(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+        }
+        ir_komut_ekle(motor, YKN_IR_CALL, ret_r, fn_hash, arg_idx, tid);
+        dondu ret_r;
+    }
+
+    # ---- 10. Return ----
+    eger dugum.tip == AST_DONDUR ise {
+        degisken ret_r: tamsayi = 0;
+        eger dugum.sag != 0 ise {
+            ret_r = ir_lower_ifade(motor, dugum.sag);
+        }
+        ir_komut_ekle(motor, YKN_IR_RET, 0, ret_r, 0, tid);
+        dondu 0;
+    }
+
+    # ---- 11. If-Else ----
+    eger dugum.tip == AST_EGER ise {
+        # Koşul
+        degisken kosul_r: tamsayi = ir_lower_ifade(motor, dugum.sol);
+        # Blokları önceden oluştur
+        degisken then_blok:  *IrBloku = ir_blok_yeni(motor);
+        degisken else_blok:  *IrBloku = ir_blok_yeni(motor);
+        degisken merge_blok: *IrBloku = ir_blok_yeni(motor);
+        # Branch: sıfırsa (false) else'e atla
+        ir_komut_ekle(motor, YKN_IR_JMP_IF_Z, 0, kosul_r, else_blok.id, YKN_IR_TID_BOOL);
+        # Then bloğu
+        ir_blok_aktar(motor, then_blok);
+        ir_lower_ifade(motor, dugum.govde);
+        ir_komut_ekle(motor, YKN_IR_JMP, 0, merge_blok.id, 0, YKN_IR_TID_VOID);
+        # Else bloğu
+        ir_blok_aktar(motor, else_blok);
+        eger dugum.yoksa_govde != 0 ise {
+            ir_lower_ifade(motor, dugum.yoksa_govde);
+        }
+        ir_komut_ekle(motor, YKN_IR_JMP, 0, merge_blok.id, 0, YKN_IR_TID_VOID);
+        # Merge
+        ir_blok_aktar(motor, merge_blok);
+        dondu 0;
+    }
+
+    # ---- 12. Döngü ----
+    eger dugum.tip == AST_DONGU ise {
+        degisken cond_blok: *IrBloku = ir_blok_yeni(motor);
+        degisken body_blok: *IrBloku = ir_blok_yeni(motor);
+        degisken exit_blok: *IrBloku = ir_blok_yeni(motor);
+        # Koşul bloğuna geç
+        ir_komut_ekle(motor, YKN_IR_JMP, 0, cond_blok.id, 0, YKN_IR_TID_VOID);
+        ir_blok_aktar(motor, cond_blok);
+        eger dugum.sol != 0 ise {
+            degisken kosul_r: tamsayi = ir_lower_ifade(motor, dugum.sol);
+            ir_komut_ekle(motor, YKN_IR_JMP_IF_Z, 0, kosul_r, exit_blok.id, YKN_IR_TID_BOOL);
+        }
+        # Gövde
+        ir_blok_aktar(motor, body_blok);
+        ir_lower_ifade(motor, dugum.govde);
+        ir_komut_ekle(motor, YKN_IR_JMP, 0, cond_blok.id, 0, YKN_IR_TID_VOID);
+        # Çıkış
+        ir_blok_aktar(motor, exit_blok);
+        dondu 0;
+    }
+
+    # ---- 13. Alan erişimi (struct.field) ----
+    eger dugum.tip == AST_ALAN_ERISIMI ise {
+        degisken obj_r: tamsayi = ir_lower_ifade(motor, dugum.sol);
+        eger dugum.sag != 0 ve dugum.sag.ilk_jeton != 0 ise {
+            degisken sag_j: *Jeton = dugum.sag.ilk_jeton;
+            eger sag_j.uzunluk == 3 ve sag_j.baslangic[0] == 112 ve sag_j.baslangic[1] == 116 ve sag_j.baslangic[2] == 114 ise {
+                # .ptr ozelligi: dogrudan string/pointer referansini dondur
+                dondu obj_r;
+            }
+        }
+        degisken off:   tamsayi = dugum.dizi_boyutu; # Typechecker tarafindan cozulen gercek alan offseti
+        degisken ptr_r: tamsayi = ir_yeni_reg(motor);
+        degisken val_r: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_FIELD_PTR, ptr_r, obj_r, off, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_LOAD, val_r, ptr_r, 0, tid);
+        dondu val_r;
+    }
+
+    # ---- 14. Dizi indeks erişimi ----
+    eger dugum.tip == AST_INDEKS_ERISIMI ise {
+        degisken base_r: tamsayi = ir_lower_ifade(motor, dugum.sol);
+        degisken idx_r:  tamsayi = ir_lower_ifade(motor, dugum.sag);
+        degisken ptr_r:  tamsayi = ir_yeni_reg(motor);
+        degisken val_r:  tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_INDEX_PTR, ptr_r, base_r, idx_r, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_LOAD, val_r, ptr_r, 0, tid);
+        dondu val_r;
+    }
+
+    # ---- 15. Tip dönüşümleri ----
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        # Zaten yukarıda ele alındı; bu dal çalışmaz — güvenlik
+        dondu 0;
+    }
+
+    # ---- Fallback: alt ağaçları gez ----
+    eger dugum.sol != 0 ise { ir_lower_ifade(motor, dugum.sol); }
+    eger dugum.sag != 0 ise { ir_lower_ifade(motor, dugum.sag); }
+    eger dugum.govde != 0 ise { ir_lower_ifade(motor, dugum.govde); }
+    dondu 0;
+}
+
+# ============================================================
+# Fonksiyon lowering
+# ============================================================
+isv ir_lower_fonksiyon(motor: *IrMotoru, dugum: *AstDugum) {
+    eger dugum == 0 ise { dondu; }
+    ir_local_tablo_sifirla();
+    degisken fn_hash: tamsayi = 0;
+    eger dugum.ilk_jeton != 0 ise { fn_hash = djb2_hash(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk); }
+    degisken fonk: *IrFonksiyonu = ir_fonksiyon_baslat(motor, fn_hash);
+    eger fonk == 0 ise { dondu; }
+    eger dugum.ilk_jeton != 0 ise {
+        fonk.isim = dugum.ilk_jeton.baslangic;
+        fonk.isim_uzunluk = dugum.ilk_jeton.uzunluk;
+    }
+    # Parametreleri ALLOCA et
+    degisken param_iter: *AstDugum = dugum.parametreler;
+    degisken p_idx: tamsayi = 0;
+    dongu param_iter != 0 {
+        degisken p_hash:  tamsayi = 0;
+        eger param_iter.ilk_jeton != 0 ise { p_hash = djb2_hash(param_iter.ilk_jeton.baslangic, param_iter.ilk_jeton.uzunluk); }
+        degisken p_slot:  tamsayi = ir_local_slot_al(motor, p_hash);
+        degisken p_tid:   tamsayi = ast_tip_id_coz(param_iter);
+        ir_komut_ekle(motor, YKN_IR_ALLOCA, p_slot, p_slot, 8, p_tid);
+        degisken p_ptr:   tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_GET_PTR, p_ptr, p_slot, 0, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_STORE, p_ptr, p_idx + 100, 0, p_tid); # param regs: 100..
+        p_idx = p_idx + 1;
+        param_iter = param_iter.sonraki;
+    }
+    fonk.param_sayisi = p_idx;
+    # Dönüş tipi
+    eger dugum.tip_adi != 0 ise {
+        fonk.donus_tip_id = ast_tip_id_coz(dugum);
+    }
+    # Gövde
+    eger dugum.govde != 0 ise {
+        ir_lower_ifade(motor, dugum.govde);
+    } yoksa eger dugum.sol != 0 ise {
+        ir_lower_ifade(motor, dugum.sol);
+    }
+    # Frame boyutu hesapla: her reg için 8 byte
+    fonk.frame_boyutu = fonk.sanal_reg_sayisi * 8;
+}
+
+# ============================================================
+# Ana giriş: AST kökünden tüm fonksiyonları IR'a çevir
+# ============================================================
+isv ir_lower_baslat(motor: *IrMotoru, ast_koku: *AstDugum) {
+    degisken iter: *AstDugum = ast_koku;
+    dongu iter != 0 {
+        eger iter.tip == AST_ISLEV ise {
+            ir_lower_fonksiyon(motor, iter);
+        }
+        iter = iter.sonraki;
+    }
+}
+
+# MIR köprüsü (eski arayüz uyumluluğu)
+isv ir_fonksiyon_uret(motor: *IrMotoru, islev_dugumu: *AstDugum) {
+    ir_lower_fonksiyon(motor, islev_dugumu);
+}
+
+# HIR operandını gerçek IR register'ına indirir. MIR komutları HIR pointer'ları
+# taşıdığı için burada pointer kimliği yerine HIR'in semantik değer/hash alanı
+# kullanılır; böylece stage'ler arası adres farkı IR çıktısını değiştirmez.
+isv mir_hir_operand_to_ir(motor: *IrMotoru, dugum: *HirDugum) -> tamsayi {
+    eger motor == 0 veya dugum == 0 ise {
+        eger motor != 0 ise { motor.hata_sayisi = motor.hata_sayisi + 1; }
+        dondu 0;
+    }
+
+    eger dugum.tip == HIR_SAYI ise {
+        degisken sabit_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_CONST, sabit_reg, dugum.deger, 0, YKN_IR_TID_INT);
+        dondu sabit_reg;
+    }
+
+    eger dugum.tip == HIR_KIMLIK ise {
+        degisken slot: tamsayi = ir_local_slot_bul(motor, dugum.deger);
+        degisken ptr_reg: tamsayi = ir_yeni_reg(motor);
+        degisken deger_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_GET_PTR, ptr_reg, slot, 0, YKN_IR_TID_PTR);
+        ir_komut_ekle(motor, YKN_IR_LOAD, deger_reg, ptr_reg, 0, YKN_IR_TID_UNKNOWN);
+        dondu deger_reg;
+    }
+
+    eger dugum.tip == HIR_IKILI_OP ise {
+        degisken sol_reg: tamsayi = mir_hir_operand_to_ir(motor, dugum.sol);
+        degisken sag_reg: tamsayi = mir_hir_operand_to_ir(motor, dugum.sag);
+        eger sol_reg == 0 veya sag_reg == 0 ise { dondu 0; }
+        degisken sonuc_reg: tamsayi = ir_yeni_reg(motor);
+        degisken op: tamsayi = jeton_op_to_ir_op(dugum.deger);
+        ir_komut_ekle(motor, op, sonuc_reg, sol_reg, sag_reg, YKN_IR_TID_INT);
+        dondu sonuc_reg;
+    }
+
+    eger dugum.tip == HIR_ISLEV_CAGRISI ise {
+        degisken hedef_hash: tamsayi = 0;
+        eger dugum.sol != 0 ise { hedef_hash = dugum.sol.deger; }
+        yoksa { hedef_hash = dugum.deger; }
+        eger hedef_hash == 0 ise { motor.hata_sayisi = motor.hata_sayisi + 1; dondu 0; }
+        degisken sonuc_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_CALL, sonuc_reg, hedef_hash, 0, YKN_IR_TID_UNKNOWN);
+        dondu sonuc_reg;
+    }
+
+    eger dugum.tip == HIR_GERCEK_SAYI ise {
+        degisken f_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_CONST, f_reg, dugum.deger, 0, YKN_IR_TID_FLOAT);
+        dondu f_reg;
+    }
+
+    eger dugum.tip == HIR_METIN ise {
+        degisken s_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_CONST, s_reg, dugum.deger, 0, YKN_IR_TID_PTR);
+        dondu s_reg;
+    }
+
+    eger dugum.tip == HIR_ALAN_ERISIMI ise {
+        degisken taban: tamsayi = mir_hir_operand_to_ir(motor, dugum.sol);
+        degisken alan_ptr: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_FIELD_PTR, alan_ptr, taban, dugum.deger, YKN_IR_TID_PTR);
+        degisken deger_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_LOAD, deger_reg, alan_ptr, 0, YKN_IR_TID_UNKNOWN);
+        dondu deger_reg;
+    }
+
+    eger dugum.tip == HIR_INDEKS_ERISIMI ise {
+        degisken taban: tamsayi = mir_hir_operand_to_ir(motor, dugum.sol);
+        degisken idx: tamsayi = mir_hir_operand_to_ir(motor, dugum.sag);
+        degisken eleman_ptr: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_INDEX_PTR, eleman_ptr, taban, idx, YKN_IR_TID_PTR);
+        degisken deger_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_LOAD, deger_reg, eleman_ptr, 0, YKN_IR_TID_UNKNOWN);
+        dondu deger_reg;
+    }
+
+    eger dugum.tip == HIR_UNARY ise {
+        degisken op_reg: tamsayi = mir_hir_operand_to_ir(motor, dugum.sol);
+        degisken res_reg: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_NEG, res_reg, op_reg, 0, YKN_IR_TID_INT);
+        dondu res_reg;
+    }
+
+    eger dugum.tip == HIR_REFERANS ise {
+        degisken slot_h: tamsayi = 0;
+        eger dugum.sol != 0 ise { slot_h = dugum.sol.deger; }
+        degisken slot: tamsayi = ir_local_slot_bul(motor, slot_h);
+        degisken ref_ptr: tamsayi = ir_yeni_reg(motor);
+        ir_komut_ekle(motor, YKN_IR_GET_PTR, ref_ptr, slot, 0, YKN_IR_TID_PTR);
+        dondu ref_ptr;
+    }
+
+    # Bazı HIR üreticileri tek ifadeli blokları operand olarak bırakabilir.
+    # Blokta son değer semantiğini koru; bilinmeyen düğüm sessizce yutulmaz.
+    eger dugum.tip == HIR_BLOK ise {
+        degisken son: *HirDugum = dugum.sol;
+        degisken sonuc: tamsayi = 0;
+        dongu son != 0 {
+            sonuc = mir_hir_operand_to_ir(motor, son);
+            son = son.sonraki;
+        }
+        dondu sonuc;
+    }
+
+    motor.hata_sayisi = motor.hata_sayisi + 1;
+    dondu 0;
+}
+
+isv mir_to_ir_komut(ir_motor: *IrMotoru, komut: *MirKomutu, blok_id_basi: tamsayi) {
+    eger ir_motor == 0 veya komut == 0 ise { dondu; }
+
+    eger komut.tip == MIR_ATAMA ise {
+        degisken kaynak: tamsayi = mir_hir_operand_to_ir(ir_motor, komut.sol);
+        eger kaynak == 0 veya komut.hedef == 0 veya komut.hedef.tip != HIR_KIMLIK ise {
+            ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1;
+            dondu;
+        }
+        degisken slot: tamsayi = ir_local_slot_bul(ir_motor, komut.hedef.deger);
+        degisken adres: tamsayi = ir_yeni_reg(ir_motor);
+        ir_komut_ekle(ir_motor, YKN_IR_GET_PTR, adres, slot, 0, YKN_IR_TID_PTR);
+        ir_komut_ekle(ir_motor, YKN_IR_STORE, adres, kaynak, 0, YKN_IR_TID_INT);
+        dondu;
+    }
+
+    eger komut.tip == MIR_JMP ise {
+        eger komut.hedef_blok_id <= 0 ise { ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1; dondu; }
+        ir_komut_ekle(ir_motor, YKN_IR_JMP, 0,
+            blok_id_basi + komut.hedef_blok_id - 1, 0, YKN_IR_TID_VOID);
+        dondu;
+    }
+
+    eger komut.tip == MIR_JMP_Z ise {
+        degisken kosul: tamsayi = mir_hir_operand_to_ir(ir_motor, komut.sol);
+        eger kosul == 0 veya komut.hedef_blok_id <= 0 ise {
+            ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1;
+            dondu;
+        }
+        ir_komut_ekle(ir_motor, YKN_IR_JMP_IF_Z, 0, kosul,
+            blok_id_basi + komut.hedef_blok_id - 1, YKN_IR_TID_BOOL);
+        dondu;
+    }
+
+    eger komut.tip == MIR_CALL ise {
+        degisken hedef_hash: tamsayi = 0;
+        eger komut.hedef != 0 ise { hedef_hash = komut.hedef.deger; }
+        yoksa eger komut.sol != 0 ise { hedef_hash = komut.sol.deger; }
+        eger hedef_hash == 0 ise {
+            ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1;
+            dondu;
+        }
+        degisken sonuc: tamsayi = ir_yeni_reg(ir_motor);
+        ir_komut_ekle(ir_motor, YKN_IR_CALL, sonuc, hedef_hash, 0, YKN_IR_TID_UNKNOWN);
+        dondu;
+    }
+
+    eger komut.tip == MIR_RET ise {
+        degisken sonuc: tamsayi = 0;
+        eger komut.sol != 0 ise { sonuc = mir_hir_operand_to_ir(ir_motor, komut.sol); }
+        eger komut.sol != 0 ve sonuc == 0 ise { ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1; dondu; }
+        ir_komut_ekle(ir_motor, YKN_IR_RET, 0, sonuc, 0, YKN_IR_TID_UNKNOWN);
+        dondu;
+    }
+
+    ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1;
+}
+
+isv mir_to_ir_islev(ir_motor: *IrMotoru, mir_islev: *MirIslev) {
+    eger ir_motor == 0 veya mir_islev == 0 veya mir_islev.ilk_blok == 0 ise {
+        eger ir_motor != 0 ise { ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1; }
+        dondu;
+    }
+    ir_local_tablo_sifirla();
+
+    degisken fonk: *IrFonksiyonu = ir_fonksiyon_baslat(ir_motor, mir_islev.isim_hash);
+    eger fonk == 0 ise { ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1; dondu; }
+
+    # Önce tüm MIR bloklarını IR bloklarına ayır. Böylece geriye/ileriye
+    # dallar hedeflerini, komutlar çevrilmeden önce deterministik olarak bilir.
+    degisken ilk_ir_blok: *IrBloku = fonk.ilk_blok;
+    degisken son_ir_blok: *IrBloku = ilk_ir_blok;
+    degisken mir_blok: *MirBloku = mir_islev.ilk_blok.sonraki;
+    dongu mir_blok != 0 {
+        degisken yeni_ir_blok: *IrBloku = ir_blok_yeni(ir_motor);
+        eger yeni_ir_blok == 0 ise { ir_motor.hata_sayisi = ir_motor.hata_sayisi + 1; dondu; }
+        ir_blok_aktar(ir_motor, yeni_ir_blok);
+        son_ir_blok = yeni_ir_blok;
+        mir_blok = mir_blok.sonraki;
+    }
+
+    degisken blok_id_basi: tamsayi = ilk_ir_blok.id;
+    mir_blok = mir_islev.ilk_blok;
+    degisken ir_blok: *IrBloku = ilk_ir_blok;
+    degisken toplam_reg: tamsayi = 0;
+    dongu mir_blok != 0 ve ir_blok != 0 {
+        # Bloklar önce zincire eklendi; burada yalnız aktif emit hedefini değiştir.
+        ir_motor.aktif_blok = ir_blok;
+        degisken komut: *MirKomutu = mir_blok.ilk_komut;
+        dongu komut != 0 {
+            mir_to_ir_komut(ir_motor, komut, blok_id_basi);
+            komut = komut.sonraki;
+        }
+        eger ir_motor.sanal_reg_sayaci > toplam_reg ise { toplam_reg = ir_motor.sanal_reg_sayaci; }
+        mir_blok = mir_blok.sonraki;
+        ir_blok = ir_blok.sonraki;
+    }
+    fonk.sanal_reg_sayisi = toplam_reg;
+    fonk.frame_boyutu = toplam_reg * 8;
+}
+
+isv mir_to_ir(ir_motor: *IrMotoru, mir_motor: *MirMotoru) {
+    eger ir_motor == 0 veya mir_motor == 0 ise { dondu; }
+    degisken iter: *MirIslev = mir_motor.ilk_islev;
+    dongu iter != 0 {
+        mir_to_ir_islev(ir_motor, iter);
+        iter = iter.sonraki;
+    }
+}

@@ -1,0 +1,67 @@
+# MIR -> IR lowering execution fixture.
+# Pointer adreslerini değil, HIR semantic değerlerini kullanan gerçek köprüyü sınar.
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+ice_aktar "../../src/mir.ykn";
+ice_aktar "../../src/ir.ykn";
+ice_aktar "../../src/ir_lower.ykn";
+
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+isv ana() -> tamsayi {
+    degisken hir: *HirMotoru = hir_motoru_olustur(65536);
+    degisken mir: *MirMotoru = mir_motoru_olustur(65536);
+    degisken ir: *IrMotoru = ir_motoru_olustur(1048576);
+    eger hir == 0 veya mir == 0 veya ir == 0 ise {
+        ekrana_yaz("FAIL: motor olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    degisken mir_islev_ptr: *MirIslev = mir_islev_olustur(mir, 9001);
+    degisken bb: *MirBloku = mir_blok_olustur(mir);
+    mir_islev_ptr.ilk_blok = bb;
+    mir_islev_ptr.son_blok = bb;
+    mir_islev_ptr.sonraki = 0;
+    mir.ilk_islev = mir_islev_ptr;
+    mir.son_islev = mir_islev_ptr;
+    mir.aktif_islev = mir_islev_ptr;
+    mir.aktif_blok = bb;
+
+    degisken hedef: *HirDugum = hir_dugum_olustur(hir, HIR_KIMLIK, 0);
+    degisken sabit: *HirDugum = hir_dugum_olustur(hir, HIR_SAYI, 0);
+    eger hedef == 0 veya sabit == 0 ise {
+        ekrana_yaz("FAIL: HIR dugumu olusturulamadi\n".ptr);
+        dondu 1;
+    }
+    hedef.deger = 77;
+    sabit.deger = 42;
+
+    degisken ata: *MirKomutu = mir_komut_ekle(mir, bb, MIR_ATAMA);
+    ata.hedef = hedef;
+    ata.sol = sabit;
+    degisken don_cmd: *MirKomutu = mir_komut_ekle(mir, bb, MIR_RET);
+    don_cmd.sol = sabit;
+
+    mir_to_ir(ir, mir);
+    eger ir.hata_sayisi != 0 veya ir.ilk_fonksiyon == 0 ise {
+        ekrana_yaz("FAIL: MIR lowering hata verdi\n".ptr);
+        dondu 1;
+    }
+    degisken fn_ir: *IrFonksiyonu = ir.ilk_fonksiyon;
+    eger fn_ir.sanal_reg_sayisi < 3 veya fn_ir.frame_boyutu <= 0 ise {
+        ekrana_yaz("FAIL: IR frame/register uretilmedi\n".ptr);
+        dondu 1;
+    }
+    eger ir_verifier_calistir(ir) != 0 veya ir.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: MIR'den uretilen IR verifier gecmedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("MIR_TO_IR_PASS\n".ptr);
+    dondu 0;
+}

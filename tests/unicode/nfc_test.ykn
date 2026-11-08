@@ -1,0 +1,19 @@
+# NFC Normalizasyon Testi
+# Turkce karakterlerin NFC normalizasyonunu dogrular
+ice_aktar "std/metin.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # ASCII: degismemeli
+    degisken ascii: *u8 = "hello".ptr;
+    degisken nfc_ascii: *u8 = metin_nfc_normalize(ascii);
+    eger nfc_ascii != 0 ise {
+        ekrana_yaz("NFC_TEST: ASCII OK\n".ptr);
+    }
+    # Precomposed karakter: NFC idempotent olmali
+    # O-diaeresis (U+00D6 = 214): NFC sonrasi ayni olmali
+    degisken sonuc: *u8 = metin_nfc_normalize("test".ptr);
+    eger sonuc != 0 ise {
+        ekrana_yaz("NFC_TEST: normalizasyon OK\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,5 @@
+ice_aktar "../../libykn/std/option.ykn";
+isv ana() -> tamsayi {
+    dondu 0;
+}
+

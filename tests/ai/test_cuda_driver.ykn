@@ -1,0 +1,100 @@
+# Real CUDA Driver API and PTX vector-add integration test.
+# No NVIDIA GPU is reported as UNAVAILABLE, not a pass of GPU compute.
+ice_aktar "std/ai/cuda_driver.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Prove the dynamic function-pointer ABI on a zero-argument Win32 API
+    # before trusting it for CUDA Driver API calls.
+    degisken kernel32: tamsayi = LoadLibraryA("kernel32.dll".ptr);
+    eger kernel32 == 0 { ekrana_yaz("DYN_FFI_LOAD_FAIL\n".ptr); dondu 10; }
+    degisken pid_fn: *u8 = GetProcAddress(kernel32, "GetCurrentProcessId".ptr);
+    eger pid_fn == 0 { FreeLibrary(kernel32); ekrana_yaz("DYN_FFI_SYMBOL_FAIL\n".ptr); dondu 11; }
+    degisken process_id: tamsayi = ykn_dyn_call_ptr_i64(pid_fn, 0, 0);
+    degisken get_module_fn: *u8 = GetProcAddress(kernel32, "GetModuleHandleA".ptr);
+    degisken module_handle: tamsayi = ykn_dyn_call_ptr_i64(get_module_fn, 0, 0);
+    FreeLibrary(kernel32);
+    eger process_id <= 0 { ekrana_yaz("DYN_FFI_CALL_FAIL\n".ptr); dondu 12; }
+    eger module_handle == 0 { ekrana_yaz("DYN_FFI_ARG_ABI_FAIL\n".ptr); dondu 13; }
+    ekrana_yaz("DYN_FFI_ABI_PASS\n".ptr);
+
+    degisken ctx: CudaDriverContext;
+    degisken result: tamsayi = cuda_driver_init(&ctx);
+    eger result != CUDA_SUCCESS ise {
+        eger result == CUDA_ERROR_NO_DRIVER { ekrana_yaz("CUDA_ERROR_NO_DRIVER\n".ptr); }
+        yoksa eger result == CUDA_ERROR_NO_DEVICE { ekrana_yaz("CUDA_ERROR_NO_DEVICE\n".ptr); }
+        yoksa eger result == CUDA_ERROR_MISSING_SYMBOL { ekrana_yaz("CUDA_ERROR_MISSING_SYMBOL\n".ptr); }
+        yoksa eger result == CUDA_ERROR_INIT { ekrana_yaz("CUDA_ERROR_INIT\n".ptr); }
+        yoksa { ekrana_yaz("CUDA_ERROR_OTHER\n".ptr); }
+        ekrana_yaz("CUDA_UNAVAILABLE (GPU test not run)\n".ptr);
+        dondu 0;
+    }
+
+    degisken name: [256]u8;
+    degisken memory: tamsayi = 0;
+    result = cuda_device_query(&ctx, 0, name, &memory);
+    eger result != CUDA_SUCCESS ise { cuda_driver_close(&ctx); ExitProcess(2); }
+    ekrana_yaz("CUDA_DEVICE ".ptr); ekrana_yaz(name.ptr); ekrana_yaz("\n".ptr);
+
+    # Validate the three-argument dynamic-call ABI against CUDA itself before
+    # attempting context creation (attribute 75 is compute-capability major).
+    degisken get_attribute: *u8 = GetProcAddress(ctx.dll, "cuDeviceGetAttribute".ptr);
+    degisken major: tamsayi = 0;
+    eger get_attribute == 0 { cuda_driver_close(&ctx); ExitProcess(8); }
+    result = ykn_dyn_call_ptr_3(get_attribute, &major, 75, 0);
+    eger result != CUDA_SUCCESS { ekrana_yaz("CUDA_CALL3_FAIL\n".ptr); cuda_driver_close(&ctx); ExitProcess(9); }
+    ekrana_yaz("CUDA_CALL3_PASS\n".ptr);
+
+    result = cuda_context_create(&ctx, 0);
+    eger result != CUDA_SUCCESS ise {
+        ekrana_yaz("CUDA_CONTEXT_CREATE_FAIL ".ptr);
+        eger result == 1 { ekrana_yaz("CUDA_ERROR_INVALID_VALUE\n".ptr); }
+        yoksa eger result == 2 { ekrana_yaz("CUDA_ERROR_OUT_OF_MEMORY\n".ptr); }
+        yoksa eger result == 3 { ekrana_yaz("CUDA_ERROR_NOT_INITIALIZED\n".ptr); }
+        eger result == 100 { ekrana_yaz("CUDA_ERROR_INVALID_DEVICE\n".ptr); }
+        yoksa { ekrana_yaz("CUDA_ERROR_OTHER\n".ptr); }
+        cuda_driver_close(&ctx); ExitProcess(3);
+    }
+
+    degisken host_a: [2]tamsayi;
+    degisken host_b: [2]tamsayi;
+    degisken host_c: [2]tamsayi;
+    host_a[0] = 1; host_a[1] = 2;
+    host_b[0] = 10; host_b[1] = 20;
+    host_c[0] = 0; host_c[1] = 0;
+    degisken gpu_a: tamsayi = 0;
+    degisken gpu_b: tamsayi = 0;
+    degisken gpu_c: tamsayi = 0;
+    eger cuda_buffer_alloc(&ctx, 16, &gpu_a) != CUDA_SUCCESS veya
+       cuda_buffer_alloc(&ctx, 16, &gpu_b) != CUDA_SUCCESS veya
+       cuda_buffer_alloc(&ctx, 16, &gpu_c) != CUDA_SUCCESS {
+        eger gpu_a != 0 { cuda_buffer_free(&ctx, gpu_a); }
+        eger gpu_b != 0 { cuda_buffer_free(&ctx, gpu_b); }
+        eger gpu_c != 0 { cuda_buffer_free(&ctx, gpu_c); }
+        cuda_driver_close(&ctx); ExitProcess(4);
+    }
+    eger cuda_copy_to_device(&ctx, gpu_a, host_a.ptr, 16) != CUDA_SUCCESS veya
+       cuda_copy_to_device(&ctx, gpu_b, host_b.ptr, 16) != CUDA_SUCCESS {
+        cuda_buffer_free(&ctx, gpu_a); cuda_buffer_free(&ctx, gpu_b);
+        cuda_buffer_free(&ctx, gpu_c); cuda_driver_close(&ctx); ExitProcess(5);
+    }
+
+    degisken ptx: *u8 = ".version 7.0\n.target sm_52\n.address_size 64\n.visible .entry ykn_vec_add(.param .u64 pA,.param .u64 pB,.param .u64 pC,.param .u32 pN){.reg .pred %p<2>; .reg .b32 %r<6>; .reg .b64 %rd<5>; ld.param.u64 %rd1,[pA]; ld.param.u64 %rd2,[pB]; ld.param.u64 %rd3,[pC]; mov.u32 %r1,%ctaid.x; mov.u32 %r2,%ntid.x; mov.u32 %r3,%tid.x; mad.lo.u32 %r4,%r1,%r2,%r3; ld.param.u32 %r5,[pN]; setp.ge.u32 %p1,%r4,%r5; @%p1 bra DONE; mul.wide.u32 %rd4,%r4,4; add.s64 %rd1,%rd1,%rd4; add.s64 %rd2,%rd2,%rd4; add.s64 %rd3,%rd3,%rd4; ld.global.u32 %r1,[%rd1]; ld.global.u32 %r2,[%rd2]; add.u32 %r3,%r1,%r2; st.global.u32 [%rd3],%r3; DONE: ret;}\n".ptr;
+    degisken params: [4]tamsayi;
+    params[0] = &gpu_a; params[1] = &gpu_b; params[2] = &gpu_c;
+    degisken elements: tamsayi = 4;
+    params[3] = &elements;
+    result = cuda_ptx_launch_1d(&ctx, ptx, "ykn_vec_add".ptr, params, 1, 4);
+    eger result == CUDA_SUCCESS {
+        result = cuda_copy_to_host(&ctx, host_c.ptr, gpu_c, 16);
+    }
+    cuda_buffer_free(&ctx, gpu_a); cuda_buffer_free(&ctx, gpu_b);
+    cuda_buffer_free(&ctx, gpu_c); cuda_driver_close(&ctx);
+    eger result != CUDA_SUCCESS { ekrana_yaz("CUDA_KERNEL_UNAVAILABLE_OR_FAILED\n".ptr); dondu 6; }
+    eger host_c[0] != 11 veya host_c[1] != 22 {
+        ekrana_yaz("CUDA_VECTOR_ADD_PARITY_FAIL\n".ptr); dondu 7;
+    }
+    ekrana_yaz("CUDA_PTX_VECTOR_ADD_PASS 11 22\n".ptr);
+    dondu 0;
+}

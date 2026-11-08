@@ -1,0 +1,381 @@
+# ============================================================
+# Yukinary (YKN) Bellek Guvenligi Kutuphanesi (std/guvenlik.ykn)
+# 1. Bolge (Region) Tabanli Arena Guvenligi
+# 1. Bolge (Region) Tabanli Arena
+# 2. Affine (Move) Tek Kullanimlik Kaynak Yonetimi
+# 3. Guvenli Sinir ve Null Kontrolculeri
+# ============================================================
+
+# Ownership release requires the platform allocator contract explicitly.
+ice_aktar "os/common.ykn";
+
+# Serbest birakilan bloklar hemen allocator'a iade edilmez. Bu quarantine,
+# dangling/UAF tespit penceresinde adresin yeniden kullanilmasini engeller.
+# guvenli_quarantine_temizle() cagrisinda bloklar gercek OS free yoluna gider.
+degisken g_guvenli_quarantine: [1024]*u8;
+degisken g_guvenli_quarantine_adet: tamsayi = 0;
+
+# ------------------------------------------------------------
+# 1. Bolge (Region) Tabanli Arena
+# ------------------------------------------------------------
+yapi Bolge {
+    bellek: *u8;
+    boyut: tamsayi;
+    kullanilan: tamsayi;
+    aktif: tamsayi;
+}
+
+isv bolge_olustur(boyut: tamsayi) -> *Bolge {
+    degisken b: *Bolge = bellek_tahsis_et(32);
+    degisken cap: tamsayi = boyut;
+    eger cap < 1024 ise { cap = 1024; }
+    b.bellek = bellek_tahsis_et(cap);
+    b.boyut = cap;
+    b.kullanilan = 0;
+    b.aktif = 1;
+    dondu b;
+}
+
+isv bolge_tahsis(b: *Bolge, bayt: tamsayi) -> *u8 {
+    eger b == 0 veya b.aktif == 0 ise {
+        dondu 0;
+    }
+    # 8-bayt hizalama
+    degisken mod8: tamsayi = b.kullanilan % 8;
+    degisken pad: tamsayi = 0;
+    eger mod8 != 0 ise { pad = 8 - mod8; }
+    degisken gereken: tamsayi = bayt + pad;
+    eger b.kullanilan + gereken > b.boyut ise {
+        dondu 0; # Bolge kapasitesi doldu
+    }
+    b.kullanilan = b.kullanilan + pad;
+    # Pointer aritmetigi ile baslangic + offset
+    degisken res: *u8 = b.bellek + b.kullanilan;
+    b.kullanilan = b.kullanilan + bayt;
+    dondu res;
+}
+
+isv bolge_kapsaminda_mi(b: *Bolge, ptr: *u8) -> tamsayi {
+    eger b == 0 veya b.aktif == 0 veya ptr == 0 ise {
+        dondu 0;
+    }
+    # ptr >= b.bellek ve ptr < b.bellek + b.kullanilan
+    # Pointer farki hesabi ile kapsam kontrolu
+    degisken ust_sinir: *u8 = b.bellek + b.kullanilan;
+    eger ptr >= b.bellek ve ptr < ust_sinir ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv bolge_sifirla(b: *Bolge) {
+    eger b != 0 ve b.aktif == 1 ise {
+        b.kullanilan = 0;
+    }
+}
+
+isv bolge_kapat(b: *Bolge) {
+    eger b != 0 ise {
+        b.aktif = 0;
+        b.kullanilan = 0;
+    }
+}
+
+# ------------------------------------------------------------
+# 2. Affine (Tek Kullanimlik / Move) Taniticisi
+# ------------------------------------------------------------
+yapi Tasinabilir {
+    deger: tamsayi;
+    tasindi_mi: tamsayi;  # 0 = gecerli, 1 = tasindi (artik erisilemez)
+}
+
+isv tasinabilir_olustur(val: tamsayi) -> *Tasinabilir {
+    degisken t: *Tasinabilir = bellek_tahsis_et(16);
+    t.deger = val;
+    t.tasindi_mi = 0;
+    dondu t;
+}
+
+isv tasinabilir_gecerli_mi(t: *Tasinabilir) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.tasindi_mi == 0 ise { dondu 1; }
+    dondu 0;
+}
+
+isv tasinabilir_tasi(t: *Tasinabilir) -> tamsayi {
+    eger t == 0 veya t.tasindi_mi == 1 ise {
+        dondu -1; # HATA: use-after-move veya gecersiz nesne
+    }
+    t.tasindi_mi = 1;
+    dondu t.deger;
+}
+
+# ------------------------------------------------------------
+# 3. Guvenli Sinir ve Null Kontrolculeri
+# ------------------------------------------------------------
+isv guvenli_dizi_erisim(dizi: *tamsayi, eleman_sayisi: tamsayi, index: tamsayi, out_deger: *tamsayi) -> tamsayi {
+    eger dizi == 0 ise { dondu 0; }
+    eger index < 0 veya index >= eleman_sayisi ise { dondu 0; } # Sinir disi
+    out_deger[0] = dizi[index];
+    dondu 1;
+}
+
+isv guvenli_null_kontrol(ptr: *u8) -> tamsayi {
+    eger ptr == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# 4. Guvenli Tahsis, Double-Free ve Dangling Takibi
+# ------------------------------------------------------------
+yapi GuvenliTahsis {
+    ptr: *u8;
+    boyut: tamsayi;
+    durum: tamsayi;    # 1 = aktif, 2 = serbest_birakildi
+    bolge_id: tamsayi; # 0 = heap, >0 = bolge/arena id
+}
+
+isv guvenli_tahsis_et(boyut: tamsayi) -> *GuvenliTahsis {
+    degisken t: *GuvenliTahsis = bellek_tahsis_et(32);
+    degisken b: *u8 = bellek_tahsis_et(boyut);
+    t.ptr = b;
+    t.boyut = boyut;
+    t.durum = 1; # aktif
+    t.bolge_id = 0;
+    dondu t;
+}
+
+isv guvenli_serbest_birak(t: *GuvenliTahsis) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.durum == 2 ise {
+        # DOUBLE_FREE tespiti
+        ekrana_yaz("[DOUBLE_FREE] Zaten serbest birakilmis pointer tekrar serbest birakilamaz!\n".ptr);
+        dondu 0 - 1;
+    }
+    # Field-as-call-argument lowering is intentionally avoided: capture the
+    # owned pointer in a scalar local before changing the ownership record.
+    degisken serbest_ptr: *u8 = t.ptr;
+    t.ptr = 0;
+    eger serbest_ptr != 0 ve g_guvenli_quarantine_adet < 1024 ise {
+        g_guvenli_quarantine[g_guvenli_quarantine_adet] = serbest_ptr;
+        g_guvenli_quarantine_adet = g_guvenli_quarantine_adet + 1;
+    }
+    t.durum = 2; # serbest birakildi; blok quarantine'de tutulur
+    dondu 1;
+}
+
+# Quarantine bloklarini kontrollu olarak gercek OS allocator'ina iade eder.
+isv guvenli_quarantine_temizle() {
+    degisken i: tamsayi = 0;
+    dongu i < g_guvenli_quarantine_adet {
+        degisken blok: *u8 = g_guvenli_quarantine[i];
+        eger blok != 0 ise { os_bellek_serbest(blok); g_guvenli_quarantine[i] = 0; }
+        i = i + 1;
+    }
+    g_guvenli_quarantine_adet = 0;
+}
+
+isv guvenli_uaf_kontrol(t: *GuvenliTahsis) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.durum == 2 ise {
+        # UAF tespiti
+        ekrana_yaz("[UAF] Serbest birakilmis pointer'a erisim tespit edildi!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}
+
+isv guvenli_dangling_kontrol(t: *GuvenliTahsis, bolge_aktif_mi: tamsayi) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.durum == 2 ise {
+        ekrana_yaz("[DANGLING] Serbest birakilmis nesneye ait dangling pointer!\n".ptr);
+        dondu 0;
+    }
+    eger t.bolge_id > 0 ve bolge_aktif_mi == 0 ise {
+        ekrana_yaz("[DANGLING] Kapanmis bolgeye ait dangling pointer!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# 5. AddressSanitizer (ASan) ve Redzone Korumasi
+# ------------------------------------------------------------
+degisken ASAN_REDZONE_BAYT: tamsayi = 16;
+degisken ASAN_MAGIC_REDZONE: tamsayi = 250; # 0xFA
+degisken ASAN_MAGIC_FREED: tamsayi   = 253; # 0xFD
+
+yapi AsanTahsis {
+    ham_ptr: *u8;
+    kullanici_ptr: *u8;
+    boyut: tamsayi;
+    durum: tamsayi; # 1 = aktif, 2 = serbest (freed)
+}
+
+isv asan_tahsis_et(boyut: tamsayi) -> *AsanTahsis {
+    degisken t: *AsanTahsis = bellek_tahsis_et(32);
+    degisken toplam_boyut: tamsayi = ASAN_REDZONE_BAYT + boyut + ASAN_REDZONE_BAYT;
+    degisken ham: *u8 = bellek_tahsis_et(toplam_boyut);
+
+    # On kirmizi bolgeyi (prefix redzone) 0xFA ile zehirle
+    degisken i: tamsayi = 0;
+    dongu i < ASAN_REDZONE_BAYT {
+        ham[i] = ASAN_MAGIC_REDZONE;
+        i = i + 1;
+    }
+
+    # Kullanici alanini sifirla
+    degisken k_ptr: *u8 = ham + ASAN_REDZONE_BAYT;
+    i = 0;
+    dongu i < boyut {
+        k_ptr[i] = 0;
+        i = i + 1;
+    }
+
+    # Arka kirmizi bolgeyi (suffix redzone) 0xFA ile zehirle
+    degisken son_rz: *u8 = ham + ASAN_REDZONE_BAYT + boyut;
+    i = 0;
+    dongu i < ASAN_REDZONE_BAYT {
+        son_rz[i] = ASAN_MAGIC_REDZONE;
+        i = i + 1;
+    }
+
+    t.ham_ptr = ham;
+    t.kullanici_ptr = k_ptr;
+    t.boyut = boyut;
+    t.durum = 1;
+    dondu t;
+}
+
+isv asan_kontrol(t: *AsanTahsis) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.durum == 2 ise {
+        ekrana_yaz("ASAN_REPORT: Use-after-free detected\n".ptr);
+        dondu 0;
+    }
+    # On redzone kontrolu (buffer underflow)
+    degisken h: *u8 = t.ham_ptr;
+    degisken sz: tamsayi = t.boyut;
+    degisken i: tamsayi = 0;
+    dongu i < ASAN_REDZONE_BAYT {
+        eger h[i] != ASAN_MAGIC_REDZONE ise {
+            ekrana_yaz("ASAN_REPORT: Buffer underflow detected\n".ptr);
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    # Arka redzone kontrolu (buffer overflow)
+    degisken son_rz: *u8 = h + ASAN_REDZONE_BAYT + sz;
+    i = 0;
+    dongu i < ASAN_REDZONE_BAYT {
+        eger son_rz[i] != ASAN_MAGIC_REDZONE ise {
+            ekrana_yaz("ASAN_REPORT: Buffer overflow at address\n".ptr);
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv asan_serbest_birak(t: *AsanTahsis) -> tamsayi {
+    eger t == 0 ise { dondu 0; }
+    eger t.durum == 2 ise {
+        ekrana_yaz("ASAN_REPORT: Double-free detected\n".ptr);
+        dondu 0;
+    }
+    # Redzone ihlali var mi kontrol et
+    asan_kontrol(t);
+    # Kullanici alanini freed magic (0xFD) ile doldur (shadow poison)
+    degisken kp: *u8 = t.kullanici_ptr;
+    degisken sz: tamsayi = t.boyut;
+    degisken i: tamsayi = 0;
+    dongu i < sz {
+        kp[i] = ASAN_MAGIC_FREED;
+        i = i + 1;
+    }
+    t.durum = 2; # Freed
+    dondu 1;
+}
+
+# ============================================================
+# FAZ 5: Kati Referans Yasam Dongusu (Borrow Guard & NLL)
+#
+# Aliasing XOR Mutability Teoremi:
+# 1. Ayni anda birden fazla salt-okunur (&T) referans olabilir.
+# 2. Yazilabilir (&mut T) referans varsa BASKA HICBIR referans
+#    (ne okuma ne yazma) bulunamaz.
+# ============================================================
+
+yapi OduncBekcisi {
+    okuyucu_sayisi: tamsayi;
+    yazici_aktif:   tamsayi;
+    ihlal_sayaci:   tamsayi;
+}
+
+# Yeni OduncBekcisi olustur
+isv odunc_bekcisi_olustur() -> *OduncBekcisi {
+    degisken b: *OduncBekcisi = bellek_tahsis_et(24);
+    eger b == 0 ise { dondu 0; }
+    b.okuyucu_sayisi = 0;
+    b.yazici_aktif = 0;
+    b.ihlal_sayaci = 0;
+    dondu b;
+}
+
+# Salt-okunur odunc al (&T)
+# Yazici varsa basarisiz (0), aksi halde basarili (1)
+isv odunc_al_salt_okunur(b: *OduncBekcisi) -> tamsayi {
+    eger b == 0 veya b.yazici_aktif != 0 ise {
+        eger b != 0 ise { b.ihlal_sayaci = b.ihlal_sayaci + 1; }
+        dondu 0;
+    }
+    b.okuyucu_sayisi = b.okuyucu_sayisi + 1;
+    dondu 1;
+}
+
+# Yazilabilir odunc al (&mut T)
+# Baska okuyucu veya yazici varsa basarisiz (0), aksi halde basarili (1)
+isv odunc_al_yazilabilir(b: *OduncBekcisi) -> tamsayi {
+    eger b == 0 veya b.yazici_aktif != 0 veya b.okuyucu_sayisi != 0 ise {
+        eger b != 0 ise { b.ihlal_sayaci = b.ihlal_sayaci + 1; }
+        dondu 0;
+    }
+    b.yazici_aktif = 1;
+    dondu 1;
+}
+
+# Odunc birak
+isv odunc_birak(b: *OduncBekcisi, yazma_mi: tamsayi) {
+    eger b == 0 ise { dondu; }
+    eger yazma_mi == 1 ise {
+        b.yazici_aktif = 0;
+    } yoksa {
+        eger b.okuyucu_sayisi > 0 ise {
+            b.okuyucu_sayisi = b.okuyucu_sayisi - 1;
+        }
+    }
+}
+
+# Non-Lexical Lifetimes (NLL) canli aralik cakisma kontrolu
+# [bas1, bit1) ve [bas2, bit2) araliklari kesisiyor mu?
+isv nll_cakisma_var_mi(bas1: tamsayi, bit1: tamsayi, bas2: tamsayi, bit2: tamsayi) -> tamsayi {
+    # max(bas1, bas2) < min(bit1, bit2) ise kesisim vardir
+    degisken maks_bas: tamsayi = bas1;
+    eger bas2 > maks_bas ise { maks_bas = bas2; }
+    
+    degisken min_bit: tamsayi = bit1;
+    eger bit2 < min_bit ise { min_bit = bit2; }
+    
+    eger maks_bas < min_bit ise {
+        dondu 1; # Kesisiyor (cakisma var)
+    }
+    dondu 0; # Ayrik
+}
+
+# Odunc bekcisini serbest birak
+isv odunc_bekcisi_serbest_birak(b: *OduncBekcisi) {
+    eger b == 0 ise { dondu; }
+    os_bellek_serbest(b as *u8);
+}
+
+

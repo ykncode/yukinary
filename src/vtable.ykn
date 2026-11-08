@@ -1,0 +1,42 @@
+# ============================================================
+# src/vtable.ykn
+# FAZ 37: Dinamik Arayuzler (Traits) ve Sanal Tablo (VTable) Altyapisi
+# Rust benzeri Trait nesnesi (fat pointer = veri + vtable) ABI motoru.
+# ============================================================
+
+degisken VTABLE_AZAMI_YONTEM = 8;
+
+# Sanal Tablo (VTable) Temsili
+yapi VTable {
+    tip_id:             tamsayi;
+    yontem_sayisi:      tamsayi;
+    yontemler:          *tamsayi; # Fonksiyon isaretcisi dizisi (function pointers)
+}
+
+# Dinamik Arayuz (Trait Object) - 16 Bayt Fat Pointer
+yapi TraitNesnesi {
+    veri_isaretcisi:    *u8;      # Somut struct adresi
+    vtable:             *VTable;  # Somut tipin sanal metod tablosu
+}
+
+isv vtable_olustur(t_id: tamsayi, sayi: tamsayi) -> *VTable {
+    degisken vt: *VTable = bellek_tahsis_et(24);
+    vt.tip_id = t_id;
+    vt.yontem_sayisi = sayi;
+    vt.yontemler = bellek_tahsis_et(VTABLE_AZAMI_YONTEM * 8);
+    dondu vt;
+}
+
+isv vtable_yontem_kaydet(vt: *VTable, slot: tamsayi, fn_ptr: *u8) {
+    eger slot >= 0 ve slot < VTABLE_AZAMI_YONTEM ise {
+        vt.yontemler[slot] = fn_ptr as tamsayi;
+    }
+}
+
+isv trait_nesnesi_olustur(veri: *u8, vt: *VTable) -> *TraitNesnesi {
+    degisken obj: *TraitNesnesi = bellek_tahsis_et(16);
+    obj.veri_isaretcisi = veri;
+    obj.vtable = vt;
+    dondu obj;
+}
+

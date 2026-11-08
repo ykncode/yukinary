@@ -1,0 +1,135 @@
+# ============================================================
+# Yukinary Profiler - std/profiler/profiler.ykn
+# Dahili Dusuk-Yukumlu Ornekleme ve Bolgesel Profiler (High-Precision Profiler)
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+
+degisken g_k32_modul: tamsayi = 0;
+degisken g_pfn_qpc: tamsayi = 0;
+degisken g_pfn_qpf: tamsayi = 0;
+
+yapi ProfilKaydi {
+    id: tamsayi;
+    isim: *u8;
+    cagri_sayisi: tamsayi;
+    toplam_sure_us: tamsayi;
+    baslangic_zamani: tamsayi;
+    aktif_mi: tamsayi;
+}
+
+degisken g_profil_kayitlari: [64]*ProfilKaydi;
+degisken g_profil_sayisi: tamsayi = 0;
+degisken g_qpc_frekans: tamsayi = 0;
+
+isv profiler_ilklendir() {
+    eger g_pfn_qpc != 0 ise { dondu; }
+    
+    g_k32_modul = LoadLibraryA("kernel32.dll".ptr);
+    eger g_k32_modul != 0 ise {
+        g_pfn_qpc = GetProcAddress(g_k32_modul, "QueryPerformanceCounter".ptr);
+        g_pfn_qpf = GetProcAddress(g_k32_modul, "QueryPerformanceFrequency".ptr);
+    }
+    
+    eger g_pfn_qpf != 0 ise {
+        degisken freq: tamsayi = 0;
+        ykn_dyn_call_ptr_3(g_pfn_qpf, &freq, 0, 0);
+        g_qpc_frekans = freq;
+    }
+    eger g_qpc_frekans <= 0 ise { g_qpc_frekans = 10000000; }
+}
+
+isv profil_zaman_al() -> tamsayi {
+    profiler_ilklendir();
+    degisken simdi: tamsayi = 0;
+    eger g_pfn_qpc != 0 ise {
+        ykn_dyn_call_ptr_3(g_pfn_qpc, &simdi, 0, 0);
+    }
+    dondu simdi;
+}
+
+isv profil_kaydi_bul_id(id: tamsayi, isim: *u8) -> *ProfilKaydi {
+    profiler_ilklendir();
+    degisken i: tamsayi = 0;
+    dongu i < g_profil_sayisi {
+        degisken k: *ProfilKaydi = g_profil_kayitlari[i];
+        eger k != 0 ve k.id == id {
+            dondu k;
+        }
+        i = i + 1;
+    }
+    eger g_profil_sayisi < 64 {
+        degisken yk: *ProfilKaydi = bellek_tahsis_et(48);
+        yk.id = id;
+        yk.isim = isim;
+        yk.cagri_sayisi = 0;
+        yk.toplam_sure_us = 0;
+        yk.baslangic_zamani = 0;
+        yk.aktif_mi = 0;
+        g_profil_kayitlari[g_profil_sayisi] = yk;
+        g_profil_sayisi = g_profil_sayisi + 1;
+        dondu yk;
+    }
+    dondu 0;
+}
+
+isv profil_baslat_id(id: tamsayi, isim: *u8) {
+    degisken k: *ProfilKaydi = profil_kaydi_bul_id(id, isim);
+    eger k == 0 ise { dondu; }
+    k.baslangic_zamani = profil_zaman_al();
+    k.aktif_mi = 1;
+}
+
+isv profil_bitir_id(id: tamsayi) {
+    degisken simdi: tamsayi = profil_zaman_al();
+    degisken k: *ProfilKaydi = profil_kaydi_bul_id(id, 0);
+    eger k == 0 veya k.aktif_mi == 0 ise { dondu; }
+    
+    degisken fark_qpc: tamsayi = simdi - k.baslangic_zamani;
+    degisken us: tamsayi = (fark_qpc * 1000000) / g_qpc_frekans;
+    
+    k.toplam_sure_us = k.toplam_sure_us + us;
+    k.cagri_sayisi = k.cagri_sayisi + 1;
+    k.aktif_mi = 0;
+}
+
+isv profiler_sayi_yaz(n: tamsayi) {
+    eger n == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken buf: [32]u8;
+    degisken idx: tamsayi = 30;
+    buf[31] = 0;
+    degisken neg: tamsayi = 0;
+    degisken temp: tamsayi = n;
+    eger temp < 0 { neg = 1; temp = 0 - temp; }
+    dongu temp > 0 {
+        buf[idx] = (temp % 10) + 48;
+        temp = temp / 10;
+        idx = idx - 1;
+    }
+    eger neg == 1 { buf[idx] = 45; idx = idx - 1; }
+    degisken str: *u8 = buf + (idx + 1);
+    ekrana_yaz(str);
+}
+
+isv profil_raporu_yazdir() {
+    ekrana_yaz("\n=== YUKINARY PROFILER RAPORU ===\n".ptr);
+    degisken i: tamsayi = 0;
+    dongu i < g_profil_sayisi {
+        degisken k: *ProfilKaydi = g_profil_kayitlari[i];
+        eger k != 0 {
+            ekrana_yaz("  [FONKSIYON] ".ptr);
+            eger k.isim != 0 ise { ekrana_yaz(k.isim); }
+            ekrana_yaz(" -> Cagri: ".ptr);
+            profiler_sayi_yaz(k.cagri_sayisi);
+            ekrana_yaz(" | Toplam Sure: ".ptr);
+            profiler_sayi_yaz(k.toplam_sure_us);
+            ekrana_yaz(" us\n".ptr);
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("=== RAPOR SONU ===\n\n".ptr);
+}

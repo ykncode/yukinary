@@ -1,0 +1,65 @@
+# ============================================================
+# Örnek 26: Win32 Arayüzlü Markdown Önizleyici (Markdown Previewer)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# Basit Markdown Ayrıştırıcı Durumu
+degisken g_baslik_sayisi: tamsayi = 0;
+degisken g_liste_sayisi: tamsayi = 0;
+degisken g_kalin_kelime_sayisi: tamsayi = 0;
+
+isv markdown_satir_isle(satir: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger uzunluk <= 0 ise { dondu 0; }
+
+    # # ile basliyorsa baslik
+    eger satir[0] == 35 ise {
+        g_baslik_sayisi = g_baslik_sayisi + 1;
+        ekrana_yaz("[RENDER - BASLIK H1]: ".ptr);
+        ekrana_yaz(satir);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # - veya * ile basliyorsa liste maddesi
+    eger satir[0] == 45 veya satir[0] == 42 ise {
+        g_liste_sayisi = g_liste_sayisi + 1;
+        ekrana_yaz("  • [LISTE]: ".ptr);
+        ekrana_yaz(satir);
+        ekrana_yaz("\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("[PARAGRAF]: ".ptr);
+    ekrana_yaz(satir);
+    ekrana_yaz("\n".ptr);
+    dondu 3;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Markdown Onizleyici".ptr, 700, 500);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Sol Panel: Markdown Metin Giris Kutusu
+    metin_kutusu_olustur(p_h, 1001, 20, 20, 310, 380);
+
+    # Sag Panel: Onizleme Alani
+    metin_kutusu_olustur(p_h, 1002, 350, 20, 310, 380);
+
+    # Kontrol Butonlari
+    buton_olustur(p_h, "Onizle (Render)".ptr, 2001, 20, 420, 150, 40);
+    buton_olustur(p_h, "HTML Olarak Aktar".ptr, 2002, 190, 420, 150, 40);
+    buton_olustur(p_h, "Temizle".ptr, 2003, 360, 420, 120, 40);
+
+    # Ornek ayrıştırma testi
+    markdown_satir_isle("# Hosgeldiniz Yukinary Markdown".ptr, 32);
+    markdown_satir_isle("- Yuksek Performansli Native Derleyici".ptr, 39);
+    markdown_satir_isle("- Self-Hosting ve Cok Dilli Sozdizimi".ptr, 38);
+
+    ekrana_yaz("Markdown Onizleyici Arayuzu hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

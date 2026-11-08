@@ -1,0 +1,8 @@
+# FIX-13 POZITIF: alias kullanilmadan dogru guard — gecerli.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        dondu p[0];
+    }
+    dondu 0;
+}

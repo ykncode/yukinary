@@ -1,0 +1,63 @@
+# ============================================================
+# std/gui/font_raster.ykn
+# FAZ 62: Saf İkinci Derece Bezier Eğrisi ve Glif Kontur Rasterizer'ı
+# B(t) = (1-t)^2 P0 + 2(1-t)t P1 + t^2 P2 ve Antialiased Tarama Motoru
+# ============================================================
+
+# Sabit noktalı 1D Bezier hesaplayıcı (t_yuzde: 0..100)
+isv bezier_nokta_hesapla(p0: tamsayi, p1: tamsayi, p2: tamsayi, t_yuzde: tamsayi) -> tamsayi {
+    degisken u: tamsayi = 100 - t_yuzde;
+    degisken terim0: tamsayi = (u * u * p0) / 10000;
+    degisken terim1: tamsayi = (2 * u * t_yuzde * p1) / 10000;
+    degisken terim2: tamsayi = (t_yuzde * t_yuzde * p2) / 10000;
+    dondu (terim0 + terim1 + terim2);
+}
+
+# 2D Kuadratik Bezier Nokta Koordinatını Hesaplar
+isv bezier_2d_nokta_al(p0_x: tamsayi, p0_y: tamsayi, p1_x: tamsayi, p1_y: tamsayi, p2_x: tamsayi, p2_y: tamsayi, t: tamsayi, out_pt: *tamsayi) {
+    out_pt[0] = bezier_nokta_hesapla(p0_x, p1_x, p2_x, t);
+    out_pt[1] = bezier_nokta_hesapla(p0_y, p1_y, p2_y, t);
+}
+
+# Sanal Framebuffer'a piksel antialiasing çizimi
+isv raster_glif_ciz(fb: *tamsayi, fb_genislik: tamsayi, x: tamsayi, y: tamsayi, alpha: tamsayi) {
+    degisken idx: tamsayi = (y * fb_genislik) + x;
+    fb[idx] = alpha; # 0..255 gri tonlama (antialiased coverage)
+}
+
+# Bezier Eğrisini Framebuffer Üzerine Antialiased Eğri Olarak Çizer
+isv raster_bezier_ciz(fb: *tamsayi, fb_w: tamsayi, fb_h: tamsayi, p0_x: tamsayi, p0_y: tamsayi, p1_x: tamsayi, p1_y: tamsayi, p2_x: tamsayi, p2_y: tamsayi, alpha: tamsayi) {
+    degisken adim: tamsayi = 0;
+    degisken pt: [2]tamsayi;
+
+    # 0..100 arası 10 adımla kuadratik eğriyi tara ve pikselleri bas
+    dongu adim <= 100 {
+        bezier_2d_nokta_al(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, adim, pt);
+        degisken px: tamsayi = pt[0];
+        degisken py: tamsayi = pt[1];
+        eger px >= 0 ve px < fb_w ve py >= 0 ve py < fb_h ise {
+            raster_glif_ciz(fb, fb_w, px, py, alpha);
+        }
+        adim = adim + 10;
+    }
+}
+
+# Yatay tarama cizgisi (scanline fill) ile kontur icini doldurma
+isv raster_scanline_doldur(fb: *tamsayi, fb_w: tamsayi, fb_h: tamsayi, x0: tamsayi, x1: tamsayi, y: tamsayi, alpha: tamsayi) {
+    eger y < 0 veya y >= fb_h ise { dondu; }
+    degisken bas_x: tamsayi = x0;
+    degisken bit_x: tamsayi = x1;
+    eger bas_x > bit_x ise {
+        degisken tmp: tamsayi = bas_x;
+        bas_x = bit_x;
+        bit_x = tmp;
+    }
+    eger bas_x < 0 ise { bas_x = 0; }
+    eger bit_x >= fb_w ise { bit_x = fb_w - 1; }
+    
+    degisken x: tamsayi = bas_x;
+    dongu x <= bit_x {
+        raster_glif_ciz(fb, fb_w, x, y, alpha);
+        x = x + 1;
+    }
+}

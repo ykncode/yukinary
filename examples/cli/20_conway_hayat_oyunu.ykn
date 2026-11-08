@@ -1,0 +1,98 @@
+# ============================================================
+# Örnek 20: Konsol Tabanlı Conway'in Hayat Oyunu (Game of Life 6x6)
+# ============================================================
+
+degisken g_grid_a: [36]tamsayi;
+degisken g_grid_b: [36]tamsayi;
+
+isv komsulari_say(r: tamsayi, c: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken dr: tamsayi = 0 - 1;
+
+    dongu (dr <= 1) {
+        degisken dc: tamsayi = 0 - 1;
+        dongu (dc <= 1) {
+            eger dr != 0 veya dc != 0 ise {
+                degisken nr: tamsayi = r + dr;
+                degisken nc: tamsayi = c + dc;
+                eger nr >= 0 ve nr < 6 ve nc >= 0 ve nc < 6 ise {
+                    toplam = toplam + g_grid_a[nr * 6 + nc];
+                }
+            }
+            dc = dc + 1;
+        }
+        dr = dr + 1;
+    }
+    dondu toplam;
+}
+
+isv adim_ilerlet() {
+    degisken r: tamsayi = 0;
+    dongu (r < 6) {
+        degisken c: tamsayi = 0;
+        dongu (c < 6) {
+            degisken canli_komsu: tamsayi = komsulari_say(r, c);
+            degisken simdiki: tamsayi = g_grid_a[r * 6 + c];
+
+            eger simdiki == 1 ise {
+                eger canli_komsu == 2 veya canli_komsu == 3 ise {
+                    g_grid_b[r * 6 + c] = 1; # Yasiyor
+                } yoksa {
+                    g_grid_b[r * 6 + c] = 0; # Oluyor
+                }
+            } yoksa {
+                eger canli_komsu == 3 ise {
+                    g_grid_b[r * 6 + c] = 1; # Doguyor
+                } yoksa {
+                    g_grid_b[r * 6 + c] = 0;
+                }
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    # Kopyala
+    degisken i: tamsayi = 0;
+    dongu (i < 36) {
+        g_grid_a[i] = g_grid_b[i];
+        i = i + 1;
+    }
+}
+
+isv izgara_yazdir() {
+    degisken r: tamsayi = 0;
+    dongu (r < 6) {
+        degisken c: tamsayi = 0;
+        dongu (c < 6) {
+            eger g_grid_a[r * 6 + c] == 1 ise {
+                ekrana_yaz("# ".ptr);
+            } yoksa {
+                ekrana_yaz(". ".ptr);
+            }
+            c = c + 1;
+        }
+        ekrana_yaz("\n".ptr);
+        r = r + 1;
+    }
+    ekrana_yaz("----------------\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    # Glider / Blinker baslatma
+    g_grid_a[1 * 6 + 2] = 1;
+    g_grid_a[2 * 6 + 2] = 1;
+    g_grid_a[3 * 6 + 2] = 1;
+
+    ekrana_yaz("=== Conway's Game of Life (Adim 0) ===\n".ptr);
+    izgara_yazdir();
+
+    adim_ilerlet();
+    ekrana_yaz("=== Adim 1 ===\n".ptr);
+    izgara_yazdir();
+
+    adim_ilerlet();
+    ekrana_yaz("=== Adim 2 ===\n".ptr);
+    izgara_yazdir();
+    dondu 0;
+}

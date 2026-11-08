@@ -1,0 +1,14 @@
+# NLL Test: Non-lexical lifetimes sayesinde ardisik tekil borrow'lar cakisma yaratmaz.
+isv ikiye_katla(val: *tamsayi) {
+    val[0] = val[0] * 2;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken a: tamsayi = 5;
+    ikiye_katla(&a);
+    # Ilk borrow bitti, simdi a degeri guncellendi
+    degisken r: tamsayi = a;
+    eger r == 10 ise {
+        ekrana_yaz("NLL_SEQUENTIAL_BORROWS: OK\n".ptr);
+    }
+    dondu 0;
+}

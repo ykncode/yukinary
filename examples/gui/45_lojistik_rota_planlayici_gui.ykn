@@ -1,0 +1,34 @@
+# ============================================================
+# Örnek 45: Win32 Arayüzlü Lojistik Teslimat Rota Planlayıcı
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 4 Sehir arasi mesafe tablosu
+degisken g_rota_maliyeti_km: tamsayi = 480;
+degisken g_tahmini_yakit_litre: tamsayi = 38;
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Lojistik Rota Planlayici".ptr, 640, 460);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Sehir ve Durak Secimleri
+    buton_olustur(p_h, "[X] Istanbul Depo".ptr, 101, 30, 30, 180, 40);
+    buton_olustur(p_h, "[X] Bursa Dagitim".ptr, 102, 30, 80, 180, 40);
+    buton_olustur(p_h, "[X] Eskisehir Sube".ptr, 103, 30, 130, 180, 40);
+    buton_olustur(p_h, "[X] Ankara Merkez".ptr, 104, 30, 180, 180, 40);
+
+    # Rota Harita Alani
+    metin_kutusu_olustur(p_h, 201, 230, 30, 360, 240);
+
+    # Hesaplama Butonlari
+    buton_olustur(p_h, "Optimum Rotayi Cikar (TSP)".ptr, 301, 30, 300, 260, 45);
+    buton_olustur(p_h, "Yakit ve Maliyet Raporu".ptr, 302, 310, 300, 260, 45);
+
+    ekrana_yaz("Rota planlayici baslatildi (Toplam 4 durak, 480 km).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

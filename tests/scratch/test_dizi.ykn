@@ -1,0 +1,25 @@
+ice_aktar "std/koleksiyon.ykn"
+ice_aktar "std/metin.ykn"
+
+isv test_ekle(d: *Dizi<tamsayi>, eleman: tamsayi) {
+    ekrana_yaz("test_ekle basladi, boyut: ".ptr);
+    ekrana_yaz(tamsayi_metne(d.boyut));
+    ekrana_yaz("\n".ptr);
+    d.ptr[d.boyut] = eleman;
+    d.boyut = d.boyut + 1;
+    ekrana_yaz("test_ekle bitti, yeni boyut: ".ptr);
+    ekrana_yaz(tamsayi_metne(d.boyut));
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    ekrana_yaz("boyut: ".ptr);
+    ekrana_yaz(tamsayi_metne(d.boyut));
+    ekrana_yaz("\n".ptr);
+    test_ekle(d, 42);
+    ekrana_yaz("test_ekle sonrasi boyut: ".ptr);
+    ekrana_yaz(tamsayi_metne(d.boyut));
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

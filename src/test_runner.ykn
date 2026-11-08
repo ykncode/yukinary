@@ -1,0 +1,129 @@
+# ============================================================
+# src/test_runner.ykn
+# FAZ 44 & FAZ 64: Saf Yukinary Dahili Test Kosu Motoru (Test Runner)
+# Test suiti kaydi, otomatik calistirma, filtreleme ve raporlama
+# SIFIR MOCK - Gercek calistirma ve dogrulama dongusu
+# ============================================================
+
+yapi TestBirimi {
+    ad:        *u8;
+    islev_ptr: *u8;
+    durum:     tamsayi; # 0: baslangic, 1: PASS, 2: FAIL
+    sure_ms:   tamsayi;
+    hata_kodu: tamsayi;
+}
+
+yapi TestKosuMotoru {
+    kapasite:    tamsayi;
+    test_sayisi: tamsayi;
+    basarili:    tamsayi;
+    hatali:      tamsayi;
+    birimler:    *tamsayi;
+    toplam_sure: tamsayi;
+}
+
+isv test_dizgi_esit_mi(s1: *u8, s2: *u8) -> tamsayi {
+    eger s1 == 0 veya s2 == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s1[i] != 0 ve s2[i] != 0 {
+        eger s1[i] != s2[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu s1[i] == s2[i];
+}
+
+isv test_dizgi_ile_baslar_mi(metin: *u8, on_ek: *u8) -> tamsayi {
+    eger metin == 0 veya on_ek == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu on_ek[i] != 0 {
+        eger metin[i] == 0 veya metin[i] != on_ek[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv test_motoru_olustur(kap: tamsayi) -> *TestKosuMotoru {
+    degisken m: *TestKosuMotoru = bellek_tahsis_et(48);
+    m.kapasite = kap;
+    m.test_sayisi = 0;
+    m.basarili = 0;
+    m.hatali = 0;
+    m.toplam_sure = 0;
+    m.birimler = bellek_tahsis_et(kap * 8);
+    dondu m;
+}
+
+isv test_kaydet(m: *TestKosuMotoru, ad: *u8, test_islevi: *u8) -> tamsayi {
+    degisken n: tamsayi = m.test_sayisi;
+    degisken cap: tamsayi = m.kapasite;
+    eger n >= cap ise {
+        dondu 0;
+    }
+    degisken b: *TestBirimi = bellek_tahsis_et(40);
+    b.ad = ad;
+    b.islev_ptr = test_islevi;
+    b.durum = 0;
+    b.sure_ms = 0;
+    b.hata_kodu = 0;
+
+    degisken arr: *tamsayi = m.birimler;
+    arr[n] = b as tamsayi;
+    m.test_sayisi = n + 1;
+    dondu 1;
+}
+
+isv test_motoru_calistir(m: *TestKosuMotoru) -> tamsayi {
+    degisken n: tamsayi = m.test_sayisi;
+    degisken arr: *tamsayi = m.birimler;
+    degisken i: tamsayi = 0;
+
+    dongu i < n {
+        degisken b: *TestBirimi = arr[i] as *TestBirimi;
+        degisken cagir_fn: *u8 = b.islev_ptr;
+        degisken sonuc: tamsayi = cagir_fn(0);
+        eger sonuc == 0 ise {
+            b.durum = 1;
+            b.hata_kodu = 0;
+            m.basarili = m.basarili + 1;
+        } yoksa {
+            b.durum = 2;
+            b.hata_kodu = sonuc;
+            m.hatali = m.hatali + 1;
+        }
+        i = i + 1;
+    }
+    dondu m.hatali;
+}
+
+isv test_motoru_filtreli_calistir(m: *TestKosuMotoru, filtre: *u8) -> tamsayi {
+    degisken n: tamsayi = m.test_sayisi;
+    degisken arr: *tamsayi = m.birimler;
+    degisken i: tamsayi = 0;
+
+    dongu i < n {
+        degisken b: *TestBirimi = arr[i] as *TestBirimi;
+        degisken eslesiyor: tamsayi = 1;
+        eger filtre != 0 ve filtre[0] != 0 ise {
+            eslesiyor = test_dizgi_ile_baslar_mi(b.ad, filtre);
+        }
+        eger eslesiyor == 1 ise {
+            degisken cagir_fn: *u8 = b.islev_ptr;
+            degisken sonuc: tamsayi = cagir_fn(0);
+            eger sonuc == 0 ise {
+                b.durum = 1;
+                b.hata_kodu = 0;
+                m.basarili = m.basarili + 1;
+            } yoksa {
+                b.durum = 2;
+                b.hata_kodu = sonuc;
+                m.hatali = m.hatali + 1;
+            }
+        }
+        i = i + 1;
+    }
+    dondu m.hatali;
+}

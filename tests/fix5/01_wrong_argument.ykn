@@ -1,0 +1,6 @@
+isv al(t: tamsayi) -> tamsayi {
+    dondu t;
+}
+isv ana() -> tamsayi {
+    dondu al("yanlis");
+}

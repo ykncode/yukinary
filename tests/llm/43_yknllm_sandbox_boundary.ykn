@@ -1,0 +1,21 @@
+# Saf YKNLLM exact capacity boundary acceptance.
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/ai/yknllm_sandbox.ykn";
+
+isv ana() -> tamsayi {
+    degisken kaynak: *u8 = "isv ana() -> tamsayi { dondu 0; }".ptr;
+    degisken uzunluk: tamsayi = yknllm_sandbox_uzunluk(kaynak);
+    degisken arena: YKNLLMSandboxArena;
+    eger uzunluk <= 0 veya yknllm_sandbox_arena_kur(&arena, uzunluk + 1) == 0 ise {
+        ekrana_yaz("FAIL: exact arena create\n".ptr);
+        dondu 1;
+    }
+    eger yknllm_sandbox_kod_kopyala(&arena, kaynak, uzunluk) == 0 veya
+       arena.kullanilan != arena.kapasite veya
+       yknllm_sandbox_arena_kapat(&arena) == 0 ise {
+        ekrana_yaz("FAIL: exact arena boundary\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("YKNLLM_SANDBOX_BOUNDARY_PASS\n".ptr);
+    dondu 0;
+}

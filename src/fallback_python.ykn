@@ -1,0 +1,83 @@
+# ============================================================
+# src/fallback_python.ykn
+# FAZ 9.4 Fallback C: PYTHON_EMBED
+# Python DLL FFI: Py_Initialize, PyRun_SimpleString, PyObject_Call
+# ============================================================
+
+# Python DLL fonksiyon isaretcileri
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> *u8;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+
+harici isv ykn_dyn_call_ptr_i64(function_ptr: *u8, first: tamsayi, second: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+
+degisken g_python_handle: tamsayi = 0;
+degisken g_py_initialize: *u8 = 0;
+degisken g_py_run_simple: *u8 = 0;
+degisken g_py_finalize: *u8 = 0;
+degisken g_py_import: *u8 = 0;
+degisken g_py_getattr: *u8 = 0;
+degisken g_py_call: *u8 = 0;
+degisken g_py_as_long: *u8 = 0;
+
+# Python DLL'ini yukle (python313.dll, python312.dll, vs.)
+isv python_yukle() -> tamsayi {
+    eger g_python_handle != 0 ise { dondu 1; }
+    # Cesitli Python surum dll adlarini dene
+    degisken dll_adlari: [4]*u8;
+    dll_adlari[0] = "python313.dll".ptr;
+    dll_adlari[1] = "python312.dll".ptr;
+    dll_adlari[2] = "python311.dll".ptr;
+    dll_adlari[3] = "python310.dll".ptr;
+    degisken i: tamsayi = 0;
+    dongu i < 4 {
+        degisken h: tamsayi = LoadLibraryA(dll_adlari[i]);
+        eger h != 0 ise {
+            g_python_handle = h;
+            # Fonksiyon adreslerini al
+            g_py_initialize  = GetProcAddress(h, "Py_Initialize".ptr);
+            g_py_run_simple  = GetProcAddress(h, "PyRun_SimpleString".ptr);
+            g_py_finalize    = GetProcAddress(h, "Py_Finalize".ptr);
+            g_py_import      = GetProcAddress(h, "PyImport_ImportModule".ptr);
+            g_py_getattr     = GetProcAddress(h, "PyObject_GetAttrString".ptr);
+            g_py_call        = GetProcAddress(h, "PyObject_CallObject".ptr);
+            g_py_as_long     = GetProcAddress(h, "PyLong_AsLongLong".ptr);
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv python_calistir(kod: *u8) -> tamsayi {
+    eger python_yukle() == 0 ise { dondu 0 - 1; }
+    eger g_py_initialize != 0 ise {
+        ykn_dyn_call_ptr_3(g_py_initialize, 0, 0, 0);
+    }
+    eger g_py_run_simple != 0 ise {
+        dondu ykn_dyn_call_ptr_3(g_py_run_simple, kod, 0, 0);
+    }
+    dondu 0 - 1;
+}
+
+isv python_kapat() {
+    eger g_python_handle == 0 ise { dondu; }
+    eger g_py_finalize != 0 ise {
+        ykn_dyn_call_ptr_3(g_py_finalize, 0, 0, 0);
+    }
+    FreeLibrary(g_python_handle);
+    g_python_handle = 0;
+    g_py_initialize = 0;
+    g_py_run_simple = 0;
+    g_py_finalize = 0;
+    g_py_import = 0;
+    g_py_getattr = 0;
+    g_py_call = 0;
+    g_py_as_long = 0;
+}
+
+isv python_mevcut_mu() -> tamsayi {
+    eger g_python_handle != 0 ve g_py_initialize != 0 ise { dondu 1; }
+    dondu 0;
+}

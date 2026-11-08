@@ -1,0 +1,35 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - OTP Supervisor (Gozetmen)
+# ============================================================
+
+# "Bırak Çöksün" (Let it crash) felsefesi. 
+ice_aktar "std/aktor/aktor.ykn";
+
+yapi Gozetmen {
+    gozetlenen_aktor: *Aktor;
+    yeniden_baslatma_siniri: tamsayi;
+    baslangic_durumu: tamsayi;
+    yeniden_baslatma_sayisi: tamsayi;
+}
+
+isv gozetmen_baslat(a: *Aktor, baslangic_durumu: tamsayi, limit: tamsayi) -> Gozetmen {
+    degisken g: Gozetmen;
+    g.gozetlenen_aktor = a;
+    g.yeniden_baslatma_siniri = limit;
+    g.baslangic_durumu = baslangic_durumu;
+    g.yeniden_baslatma_sayisi = 0;
+    
+    aktor_yarat(a, baslangic_durumu);
+    dondu g;
+}
+
+isv gozetmen_yeniden_baslat(g: *Gozetmen) -> tamsayi {
+    eger g == 0 veya g.gozetlenen_aktor == 0 ise { dondu -1; }
+    eger g.yeniden_baslatma_sayisi >= g.yeniden_baslatma_siniri ise { dondu -2; }
+    aktor_durdur(g.gozetlenen_aktor);
+    degisken res: tamsayi = aktor_yarat(g.gozetlenen_aktor, g.baslangic_durumu);
+    eger res == 0 ise {
+        g.yeniden_baslatma_sayisi = g.yeniden_baslatma_sayisi + 1;
+    }
+    dondu res;
+}

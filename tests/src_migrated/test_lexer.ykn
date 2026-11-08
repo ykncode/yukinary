@@ -1,0 +1,27 @@
+isv ekrana_yaz(m: *u8) {}
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+
+yapi LexerState {
+    kaynak: *u8;
+    dosya_boyutu: tamsayi;
+    guncel_offset: tamsayi;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger arguman_sayisi < 2 ise { dondu 1; }
+    degisken buf: *u8 = bellek_tahsis_et(65536);
+    degisken n: tamsayi = dosya_oku(argumanlar[1], buf, 65536);
+    eger n <= 0 ise { ekrana_yaz("dosya hata\n".ptr); dondu 1; }
+    ekrana_yaz("dosya OK\n".ptr);
+    degisken lx: *LexerState = bellek_tahsis_et(128);
+    lx.kaynak = buf;
+    lx.dosya_boyutu = n;
+    lx.guncel_offset = 0;
+    ekrana_yaz("lx setup OK\n".ptr);
+    dongu lx.guncel_offset < lx.dosya_boyutu {
+        lx.guncel_offset = lx.guncel_offset + 1;
+    }
+    ekrana_yaz("loop done\n".ptr);
+    dondu 0;
+}

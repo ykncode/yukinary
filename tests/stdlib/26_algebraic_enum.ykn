@@ -1,0 +1,23 @@
+# GOREV 8.3: payload tasiyan enum ve pattern destructuring
+
+enum Secenek<T> {
+    Bazi(T),
+    Hicbiri
+}
+
+isv ana() -> tamsayi {
+    degisken s: *Secenek<tamsayi> = Secenek::Bazi(42);
+    esles s {
+        Secenek::Bazi(x) ise {
+            eger x == 42 ise {
+                ekrana_yaz("Algebraic enum PASS\n".ptr);
+                dondu 0;
+            }
+            dondu 1;
+        }
+        Secenek::Hicbiri ise {
+            dondu 2;
+        }
+    }
+    dondu 3;
+}

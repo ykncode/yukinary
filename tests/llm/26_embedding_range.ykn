@@ -1,0 +1,15 @@
+# Direct GGUF embedding range read regression.
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken bayt: [8]u8;
+    degisken offset: tamsayi = 8351360 + 4355 * 5120;
+    eger dosya_oku_aralik("models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr,
+        offset, bayt, 8) != 8 ise {
+        ekrana_yaz("EMBEDDING-RANGE-FAIL-READ\n".ptr); dondu 1;
+    }
+    eger bayt[0] != 55 veya bayt[1] != 47 veya bayt[2] != 156 veya bayt[3] != 59 veya
+       bayt[4] != 164 veya bayt[5] != 184 veya bayt[6] != 148 veya bayt[7] != 63 ise {
+        ekrana_yaz("EMBEDDING-RANGE-FAIL-BYTES\n".ptr); dondu 2;
+    }
+    ekrana_yaz("EMBEDDING-RANGE-PASS\n".ptr); dondu 0;
+}

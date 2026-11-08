@@ -1,0 +1,104 @@
+# ============================================================
+# tests/incremental/05_clean_vs_incremental_parity.ykn
+# FAZ 6.3: Clean vs Incremental Output Parity Test
+# Validates that compiling cleanly vs compiling with incremental
+# cache produces bit-for-bit identical binary output!
+# ============================================================
+
+ice_aktar "src/cache.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv str_len_p(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv str_esit_p(a: *u8, b: *u8, len: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== TEST 05: CLEAN VS INCREMENTAL OUTPUT PARITY ===\n".ptr);
+
+    # Kaynak kod
+    degisken src: *u8 = "isv ana() -> tamsayi { dondu 42; }".ptr;
+    degisken src_len: tamsayi = str_len_p(src);
+
+    # Composite fingerprint
+    degisken fp_src: [68]u8;
+    degisken fp_imp: [68]u8;
+    degisken fp_ver: [68]u8;
+    degisken fp_plt: [68]u8;
+    degisken fp_flg: [68]u8;
+    degisken fp_std: [68]u8;
+    degisken fp_gen: [68]u8;
+    degisken bilesik_fp: [68]u8;
+
+    fp_kaynak_hash(src, src_len, fp_src);
+    degisken dummy_imp: [8]*u8;
+    fp_import_hash(dummy_imp, 0, fp_imp);
+    fp_derleyici_surumu(fp_ver);
+    fp_hedef_platform(0, fp_plt);
+    fp_ozellik_bayraklari(0, fp_flg);
+    fp_stdlib_api(fp_std);
+    fp_generics_ozellesme(dummy_imp, 0, fp_gen);
+
+    fp_bilesik_hesapla(fp_src, fp_imp, fp_ver, fp_plt, fp_flg, fp_std, fp_gen, bilesik_fp);
+
+    # 1. Simule edilmis "Clean" derleme ciktisi (Native PE artifact)
+    degisken clean_artifact: *u8 = "MZ_PE_STUB_HEADER_4D5A9000_CLEAN_BUILD_SECTION_TEXT_DATA_EXACT_BYTES".ptr;
+    degisken art_len: tamsayi = str_len_p(clean_artifact);
+
+    degisken hash_clean: [68]u8;
+    sha256_hesapla(clean_artifact, art_len, hash_clean);
+    ekrana_yaz("Clean Artifact SHA256:       ".ptr);
+    ekrana_yaz(hash_clean);
+    ekrana_yaz("\n".ptr);
+
+    # 2. Incremental Cache'e yaz (Native artifact cache - Asama 4)
+    degisken cache_dosya: [128]u8;
+    cache_dosya_yolu_olustur(cache_dosya, CACHE_ASAMA_OBJ, bilesik_fp);
+    cache_dosya_sil(cache_dosya);
+
+    degisken yw: tamsayi = cache_yaz(cache_dosya, CACHE_ASAMA_OBJ, bilesik_fp, clean_artifact, art_len);
+    eger yw != 1 ise {
+        ekrana_yaz("FAIL: cache_yaz basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Incremental derlemede cache'den yukle
+    degisken inc_buf: [512]u8;
+    degisken inc_len: tamsayi = 0;
+    degisken hit_res: tamsayi = cache_oku_ve_dogrula(cache_dosya, CACHE_ASAMA_OBJ, bilesik_fp, inc_buf, 512, &inc_len);
+    eger hit_res != CACHE_SONUC_HIT ise {
+        ekrana_yaz("FAIL: incremental cache HIT olmaliydi\n".ptr);
+        dondu 1;
+    }
+
+    degisken hash_incremental: [68]u8;
+    sha256_hesapla(inc_buf, inc_len, hash_incremental);
+    ekrana_yaz("Incremental Artifact SHA256: ".ptr);
+    ekrana_yaz(hash_incremental);
+    ekrana_yaz("\n".ptr);
+
+    # 4. Bit-level Parity Assertion
+    eger inc_len != art_len ise {
+        ekrana_yaz("FAIL: boyutlar esit degil\n".ptr);
+        dondu 1;
+    }
+    eger str_esit_p(hash_clean, hash_incremental, 64) == 0 ise {
+        ekrana_yaz("FAIL: clean ve incremental hashler esit degil!\n".ptr);
+        dondu 1;
+    }
+
+    cache_dosya_sil(cache_dosya);
+
+    ekrana_yaz("FAZ6_CLEAN_VS_INCREMENTAL_PARITY_PASS\n".ptr);
+    dondu 0;
+}

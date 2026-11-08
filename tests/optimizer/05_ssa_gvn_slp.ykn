@@ -1,0 +1,61 @@
+# ============================================================
+# tests/optimizer/05_ssa_gvn_slp.ykn
+# FAZ 29: SSA IR, Kuresel Deger Numaralandirma (GVN),
+# Superword-Level Parallelism (SLP) ve Kuyruk Cagrisi Optimizasyonu (TCO)
+# ============================================================
+
+# TCO Testi: Kuyruk ozyinelemeli toplama
+isv kuyruk_toplam(n: tamsayi, akkumulator: tamsayi) -> tamsayi {
+    eger n <= 0 ise {
+        dondu akkumulator;
+    }
+    dondu kuyruk_toplam(n - 1, akkumulator + n);
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 29: SSA IR, GVN, SLP & TCO Testi Basliyor...\n".ptr);
+
+    # 1. GVN (Global Value Numbering) & CSE Testi:
+    degisken a: tamsayi = 10;
+    degisken b: tamsayi = 20;
+
+    degisken ortak1: tamsayi = a + b;
+    degisken dummy: tamsayi = 5;
+    degisken ortak2: tamsayi = a + b;  # GVN tarafindan ortak1 ile birlestirilmeli
+
+    eger ortak1 != ortak2 ise {
+        ekrana_yaz("HATA: GVN ortak alt ifade uyusmazligi!\n".ptr);
+        dondu 1;
+    }
+
+    # Komutatif GVN testi: (a + b) == (b + a)
+    degisken ortak3: tamsayi = b + a;
+    eger ortak1 != ortak3 ise {
+        ekrana_yaz("HATA: Komutatif GVN esitlik hatasi!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. TCO (Tail-Call Optimization) Testi:
+    degisken toplam: tamsayi = kuyruk_toplam(10, 0); # 1..10 toplami = 55
+    eger toplam != 55 ise {
+        ekrana_yaz("HATA: TCO kuyruk toplami hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # 3. SLP (Superword-Level Parallelism) Testi:
+    # Ardil dizi indis atamalari
+    degisken dizi: [4]tamsayi;
+    dizi[0] = 100;
+    dizi[1] = 200;
+    dizi[2] = 300;
+    dizi[3] = 400;
+
+    degisken dizi_toplam: tamsayi = dizi[0] + dizi[1] + dizi[2] + dizi[3];
+    eger dizi_toplam != 1000 ise {
+        ekrana_yaz("HATA: Dizi SLP atamalari hatali!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("SSA_GVN_SLP_PASS\n".ptr);
+    dondu 0;
+}

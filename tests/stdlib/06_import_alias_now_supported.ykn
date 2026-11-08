@@ -1,0 +1,7 @@
+﻿# F11.10: ice_aktar alias artik destekleniyor.
+isv ekrana_yaz(m: *u8) {}
+ice_aktar "../../std/metin.ykn" olarak m;
+isv ana() -> tamsayi {
+    ekrana_yaz("ALIAS_WORKS\n".ptr);
+    dondu 0;
+}

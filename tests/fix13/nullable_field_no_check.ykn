@@ -1,0 +1,10 @@
+# FIX-13 olumsuz: nullable struct pointer alan erisimi kontrolsuz reddedilir.
+yapi Nokta {
+    x: tamsayi;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*Nokta = bos;
+    p.x = 1;
+    dondu 0;
+}

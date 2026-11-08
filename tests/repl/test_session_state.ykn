@@ -1,0 +1,48 @@
+# REPL Session state testi
+# repl_oturum_olustur, repl_import_isle, repl_crash_kurtar test eder
+ice_aktar "src/repl.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Oturum olustur
+    degisken ot: *ReplOturumu = repl_oturum_olustur();
+    eger ot == 0 ise {
+        ekrana_yaz("REPL_SESSION: olusturma FAILED\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("REPL_SESSION: oturum olusturuldu OK\n".ptr);
+
+    # Import ekle
+    degisken import_satir: *u8 = "ice_aktar std/metin.ykn;".ptr;
+    degisken import_uzn: tamsayi = 0;
+    dongu import_satir[import_uzn] != 0 { import_uzn = import_uzn + 1; }
+    degisken import_ok: tamsayi = repl_import_isle(ot, import_satir, import_uzn);
+    eger import_ok == 1 ise {
+        ekrana_yaz("REPL_SESSION: import eklendi OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("REPL_SESSION: import FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Kayit noktasi al ve crash recovery test et
+    degisken kayit: tamsayi = ot.kaynak_uzunlugu;
+    # Oturuma ek satir ekle
+    degisken ek: *u8 = "degisken x: tamsayi = 42;\n".ptr;
+    repl_import_isle(ot, ek, 25);
+    # Crash recovery: kayit noktasina geri don
+    degisken kurtar_ok: tamsayi = repl_crash_kurtar(ot, kayit);
+    eger kurtar_ok == 1 ve ot.kaynak_uzunlugu == kayit ise {
+        ekrana_yaz("REPL_SESSION: crash recovery OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("REPL_SESSION: crash recovery FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Temizle
+    repl_oturum_temizle(ot);
+    eger ot.kaynak_uzunlugu == 0 ise {
+        ekrana_yaz("REPL_SESSION: temizle OK\n".ptr);
+    }
+
+    ekrana_yaz("REPL_SESSION: PASS\n".ptr);
+    dondu 0;
+}

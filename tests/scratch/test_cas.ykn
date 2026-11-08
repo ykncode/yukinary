@@ -1,0 +1,13 @@
+ice_aktar "std/metin.ykn";
+ice_aktar "std/os/common.ykn";
+
+isv ana() -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken ok: tamsayi = ykn_atomic_cas_i64(&x, 42, 99);
+    ekrana_yaz("ok=".ptr);
+    sayiyi_yazdir(ok);
+    ekrana_yaz(" x=".ptr);
+    sayiyi_yazdir(x);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

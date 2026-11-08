@@ -1,0 +1,52 @@
+# ============================================================
+# std/os/kernel_real/paging.ykn
+# FAZ 63: Saf x86_64 4-Seviyeli Sayfalama (Paging PML4 & 2MB Identity Mapping)
+# CR3 Sayfa Dizini Tabanı, 1GB Fiziksel Bellek Birebir Haritalama
+# ============================================================
+
+degisken SAYFA_FLAG_PRESENT   = 1;  # 0x01 (Bellekte var)
+degisken SAYFA_FLAG_WRITABLE  = 2;  # 0x02 (Okuma/Yazma)
+degisken SAYFA_FLAG_HUGE_2MB  = 128;# 0x80 (2MB Dev Sayfa - PD seviyesinde)
+
+yapi SayfalamaMotoru {
+    pml4:       *tamsayi; # 512 * 8 = 4096 bayt (Level 4)
+    pdpt:       *tamsayi; # 512 * 8 = 4096 bayt (Level 3)
+    pd:         *tamsayi; # 512 * 8 = 4096 bayt (Level 2 - 2MB sayfalar)
+    cr3_degeri: tamsayi;  # CR3 kontrol yazmacına yüklenecek fiziksel PML4 adresi
+}
+
+isv sayfalama_olustur() -> *SayfalamaMotoru {
+    degisken sm: *SayfalamaMotoru = bellek_tahsis_et(32);
+    degisken pml4_buf: *tamsayi = bellek_tahsis_et(4096);
+    degisken pdpt_buf: *tamsayi = bellek_tahsis_et(4096);
+    degisken pd_buf:   *tamsayi = bellek_tahsis_et(4096);
+
+    sm.pml4 = pml4_buf;
+    sm.pdpt = pdpt_buf;
+    sm.pd   = pd_buf;
+
+    degisken i: tamsayi = 0;
+    dongu i < 512 {
+        pml4_buf[i] = 0;
+        pdpt_buf[i] = 0;
+        pd_buf[i]   = 0;
+        i = i + 1;
+    }
+
+    # 1. PML4[0] -> PDPT'yi işaret eder (Present + Writable: 0x03)
+    pml4_buf[0] = (pdpt_buf) | (SAYFA_FLAG_PRESENT | SAYFA_FLAG_WRITABLE);
+
+    # 2. PDPT[0] -> PD'yi işaret eder (Present + Writable: 0x03)
+    pdpt_buf[0] = (pd_buf) | (SAYFA_FLAG_PRESENT | SAYFA_FLAG_WRITABLE);
+
+    # 3. PD[0..511] -> Her biri 2MB'lık dev sayfalarla 1GB fiziksel belleği birebir (Identity) eşler
+    i = 0;
+    dongu i < 512 {
+        degisken fiziksel_adres: tamsayi = i * 2097152; # i * 2MB
+        pd_buf[i] = fiziksel_adres | (SAYFA_FLAG_PRESENT | SAYFA_FLAG_WRITABLE | SAYFA_FLAG_HUGE_2MB);
+        i = i + 1;
+    }
+
+    sm.cr3_degeri = pml4_buf;
+    dondu sm;
+}

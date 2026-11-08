@@ -1,0 +1,235 @@
+# ============================================================
+# Yukinary Work-Stealing Runtime (FAZ 10 & FAZ 4)
+# Modul: std/es/work_stealing.ykn
+#
+# Lock-Free Chase-Lev Algoritmasi & Cok Cekirdekli OS Thread Havuzu
+# Her worker kendi LIFO kuyrugundan calisir; bosta kalan worker
+# thread'ler diger thread'lerin FIFO ucundan atomik CAS (LOCK CMPXCHG)
+# ile is calar.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+degisken WS_DEQUE_KAPASITE: tamsayi = 1024;
+degisken WS_MAKS_WORKER: tamsayi    = 64;
+
+# Gorev Veri Yapisi
+yapi WSGorev {
+    islev_ptr: tamsayi;
+    gorev_veri: tamsayi;
+}
+
+# Worker Basina Chase-Lev Deque
+yapi WSDeque {
+    top: tamsayi;
+    bottom: tamsayi;
+    islevler: *tamsayi;
+    veriler: *tamsayi;
+}
+
+# Work-Stealing Thread Havuzu
+yapi WSHavuz {
+    calisiyor: tamsayi;
+    worker_sayisi: tamsayi;
+    tamamlanan_gorevler: tamsayi;
+    kuyruklar: **WSDeque;
+    thread_handleleri: *tamsayi;
+}
+
+# Thread calisma baglami
+yapi WSWorkerContext {
+    havuz: *WSHavuz;
+    worker_id: tamsayi;
+}
+
+degisken g_aktif_havuz: *WSHavuz = 0;
+
+# Deque baslatma
+isv ws_deque_olustur() -> *WSDeque {
+    degisken q: *WSDeque = bellek_tahsis_et(32);
+    eger q == 0 ise { dondu 0; }
+    q.top = 0;
+    q.bottom = 0;
+    q.islevler = bellek_tahsis_et(1024 * 8);
+    q.veriler = bellek_tahsis_et(1024 * 8);
+    dondu q;
+}
+
+# Sahip thread LIFO ucuna gorev ekler (push)
+isv ws_deque_push(q: *WSDeque, gorev_fn: tamsayi, veri: tamsayi) -> tamsayi {
+    eger q == 0 ise { dondu 0 - 1; }
+    degisken b: tamsayi = q.bottom;
+    degisken t: tamsayi = q.top;
+    eger (b - t) >= 1024 ise {
+        dondu 0 - 2; # Deque dolu
+    }
+    degisken idx: tamsayi = b % 1024;
+    q.islevler[idx] = gorev_fn;
+    q.veriler[idx] = veri;
+    q.bottom = b + 1;
+    dondu 0;
+}
+
+# Sahip thread LIFO ucundan gorev alir (Lock-Free Chase-Lev Pop)
+isv ws_deque_pop(q: *WSDeque, gorev_cikti: *WSGorev) -> tamsayi {
+    eger q == 0 veya gorev_cikti == 0 ise { dondu 0; }
+    degisken b: tamsayi = q.bottom;
+    eger b <= q.top ise {
+        dondu 0; # Kuyruk bos
+    }
+    b = b - 1;
+    q.bottom = b;
+    degisken t: tamsayi = q.top;
+    eger b > t ise {
+        degisken idx: tamsayi = b % 1024;
+        gorev_cikti.islev_ptr = q.islevler[idx];
+        gorev_cikti.gorev_veri = q.veriler[idx];
+        dondu 1; # Basarili pop
+    }
+    # b == t durumu: son eleman icin steal ile CAS yarisi
+    eger b == t ise {
+        degisken basarili: tamsayi = ykn_atomic_cas_i64(&q.top, t, t + 1);
+        q.bottom = t + 1;
+        eger basarili == 1 ise {
+            degisken idx: tamsayi = b % 1024;
+            gorev_cikti.islev_ptr = q.islevler[idx];
+            gorev_cikti.gorev_veri = q.veriler[idx];
+            dondu 1;
+        }
+    }
+    q.bottom = t + 1;
+    dondu 0; # Bos veya baska thread caldi
+}
+
+# Hirsiz thread FIFO ucundan gorev calar (Lock-Free Chase-Lev Steal)
+isv ws_deque_steal(q: *WSDeque, gorev_cikti: *WSGorev) -> tamsayi {
+    eger q == 0 veya gorev_cikti == 0 ise { dondu 0; }
+    degisken t: tamsayi = q.top;
+    degisken b: tamsayi = q.bottom;
+    eger t >= b ise {
+        dondu 0; # Calinacak is yok
+    }
+    degisken idx: tamsayi = t % 1024;
+    degisken fn_ptr: tamsayi = q.islevler[idx];
+    degisken v_ptr: tamsayi = q.veriler[idx];
+    
+    # Atomik CAS: q.top degerini t iken t+1 yap. Baska hirsiz aldiysa 0 donup cekismeyi onler.
+    degisken basarili: tamsayi = ykn_atomic_cas_i64(&q.top, t, t + 1);
+    eger basarili == 1 ise {
+        gorev_cikti.islev_ptr = fn_ptr;
+        gorev_cikti.gorev_veri = v_ptr;
+        dondu 1; # Basarili calindi
+    }
+    dondu 0; # Cekisme oldu, diger thread aldi
+}
+
+# Work-stealing havuzu olustur
+isv ws_havuz_olustur(worker_adedi: tamsayi) -> *WSHavuz {
+    degisken h: *WSHavuz = bellek_tahsis_et(64);
+    eger h == 0 ise { dondu 0; }
+    degisken w_sayi: tamsayi = worker_adedi;
+    eger w_sayi <= 0 ise { w_sayi = 1; }
+    eger w_sayi > 64 ise { w_sayi = 64; }
+
+    h.calisiyor = 1;
+    h.worker_sayisi = w_sayi;
+    h.tamamlanan_gorevler = 0;
+    h.kuyruklar = bellek_tahsis_et(64 * 8);
+    h.thread_handleleri = bellek_tahsis_et(64 * 8);
+
+    degisken i: tamsayi = 0;
+    dongu i < w_sayi {
+        degisken nq: *WSDeque = ws_deque_olustur();
+        h.kuyruklar[i] = nq;
+        h.thread_handleleri[i] = 0;
+        i = i + 1;
+    }
+    g_aktif_havuz = h;
+    dondu h;
+}
+
+# Havuzdaki belirli bir workera veya round-robin gorev ekle
+isv ws_havuz_gorev_ekle(h: *WSHavuz, worker_id: tamsayi, gorev_fn: tamsayi, veri: tamsayi) -> tamsayi {
+    eger h == 0 veya h.calisiyor == 0 ise { dondu 0 - 1; }
+    degisken wid: tamsayi = worker_id % h.worker_sayisi;
+    degisken q: *WSDeque = h.kuyruklar[wid];
+    dondu ws_deque_push(q, gorev_fn, veri);
+}
+
+# Bir worker icin is calistirma adimi (kendi kuyrugu yoksa hirsizlik yap)
+isv ws_worker_tek_adim(h: *WSHavuz, worker_id: tamsayi) -> tamsayi {
+    eger h == 0 ise { dondu 0; }
+    degisken wid: tamsayi = worker_id % h.worker_sayisi;
+    degisken g: WSGorev;
+    degisken kendi_q: *WSDeque = h.kuyruklar[wid];
+    
+    # 1. Kendi LIFO kuyrugundan al
+    eger ws_deque_pop(kendi_q, &g) == 1 ise {
+        eger g.islev_ptr != 0 ise {
+            ykn_dyn_call_ptr_i64(g.islev_ptr, g.gorev_veri, 0);
+            h.tamamlanan_gorevler = h.tamamlanan_gorevler + 1;
+        }
+        dondu 1;
+    }
+
+    # 2. Kendi kuyrugu bossa diger worker'lardan cal (Lock-Free Work-Stealing)
+    degisken diger: tamsayi = 0;
+    dongu diger < h.worker_sayisi {
+        eger diger != wid ise {
+            degisken diger_q: *WSDeque = h.kuyruklar[diger];
+            eger ws_deque_steal(diger_q, &g) == 1 ise {
+                eger g.islev_ptr != 0 ise {
+                    ykn_dyn_call_ptr_i64(g.islev_ptr, g.gorev_veri, 0);
+                    h.tamamlanan_gorevler = h.tamamlanan_gorevler + 1;
+                }
+                dondu 1;
+            }
+        }
+        diger = diger + 1;
+    }
+
+    dondu 0; # Su anda hicbir kuyrukta is yok
+}
+
+# Havuzdaki tum bekleyen isleri bitirene kadar calistir (Kooperatif & Main thread yardimi)
+isv ws_havuz_tumunu_calistir(h: *WSHavuz) -> tamsayi {
+    eger h == 0 ise { dondu 0; }
+    degisken ilerleme: tamsayi = 1;
+    dongu ilerleme == 1 {
+        ilerleme = 0;
+        degisken w: tamsayi = 0;
+        dongu w < h.worker_sayisi {
+            eger ws_worker_tek_adim(h, w) == 1 ise {
+                ilerleme = 1;
+            }
+            w = w + 1;
+        }
+    }
+    dondu h.tamamlanan_gorevler;
+}
+
+# Havuzu kapat
+isv ws_havuz_kapat(h: *WSHavuz) {
+    eger h == 0 ise { dondu; }
+    h.calisiyor = 0;
+}
+
+# Havuzu ve kuyruklari bellekten temizle
+isv ws_havuz_temizle(h: *WSHavuz) {
+    eger h == 0 ise { dondu; }
+    h.calisiyor = 0;
+    degisken i: tamsayi = 0;
+    dongu i < h.worker_sayisi {
+        degisken q: *WSDeque = h.kuyruklar[i];
+        eger q != 0 ise {
+            eger q.islevler != 0 ise { os_bellek_serbest(q.islevler as *u8); }
+            eger q.veriler != 0 ise { os_bellek_serbest(q.veriler as *u8); }
+            os_bellek_serbest(q as *u8);
+        }
+        i = i + 1;
+    }
+    eger h.kuyruklar != 0 ise { os_bellek_serbest(h.kuyruklar as *u8); }
+    eger h.thread_handleleri != 0 ise { os_bellek_serbest(h.thread_handleleri as *u8); }
+    os_bellek_serbest(h as *u8);
+}

@@ -1,0 +1,6 @@
+isv ana() -> sayi {
+    degisken a = 5;
+    degisken ptr = &a;
+    *ptr = 10;
+    dondu a;
+}

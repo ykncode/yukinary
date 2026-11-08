@@ -1,0 +1,2 @@
+DOUBLE_FREE_TEST: ilk tahsis OK
+DOUBLE_FREE_TEST: ilk serbest birakma OK

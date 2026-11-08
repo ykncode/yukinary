@@ -1,0 +1,57 @@
+# ============================================================
+# Float Literal IR Lowering Dogrulama Testi
+# ir_lower.ykn uzerinde float literal degerinin binary IEEE-754
+# olarak IR'a aktarildigini (sifir olmadigini) dogrular.
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+ice_aktar "../../src/mir.ykn";
+ice_aktar "../../src/ir.ykn";
+ice_aktar "../../src/ir_lower.ykn";
+
+isv ana() -> tamsayi {
+    degisken motor: *IrMotoru = ir_motoru_olustur(65536);
+    eger motor == 0 ise { ekrana_yaz("FAIL: motor\n".ptr); dondu 1; }
+
+    degisken fonk: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 999);
+    eger fonk == 0 ise { ekrana_yaz("FAIL: fonk\n".ptr); dondu 1; }
+
+    # Jeton: "3.14"
+    degisken j: *Jeton = compiler_tahsis_et(40);
+    j.tip = TIP_GERCEK_SAYI;
+    j.baslangic = "3.14".ptr;
+    j.uzunluk = 4;
+
+    # AstDugum: AST_GERCEK_SAYI
+    degisken d: *AstDugum = compiler_tahsis_et(128);
+    d.tip = AST_GERCEK_SAYI;
+    d.ilk_jeton = j;
+
+    # IR'a indirge
+    degisken reg: tamsayi = ir_lower_ifade(motor, d);
+    eger reg <= 0 ise { ekrana_yaz("FAIL: reg <= 0\n".ptr); dondu 1; }
+
+    # Komutu bul ve degerini kontrol et
+    degisken b: *IrBloku = motor.aktif_blok;
+    degisken k: *IrKomutu = b.ilk_komut;
+    eger k == 0 ise { ekrana_yaz("FAIL: komut yok\n".ptr); dondu 1; }
+
+    # 3.14 IEEE-754 double precision degeri 0'dan farkli ve pozitif bir u64 bit pattern olmalidir
+    # (yaklasik 4614256650576692846)
+    eger k.sol == 0 ise {
+        ekrana_yaz("FAIL: Float degeri IR'de 0 kalmis!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FLOAT_IR_PASS\n".ptr);
+    dondu 0;
+}

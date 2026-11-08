@@ -1,0 +1,8 @@
+isv test_num<T>(x: tamsayi) -> tamsayi {
+    dondu x;
+}
+
+isv ana() -> tamsayi {
+    degisken ret: tamsayi = test_num<tamsayi>(12345);
+    dondu ret;
+}

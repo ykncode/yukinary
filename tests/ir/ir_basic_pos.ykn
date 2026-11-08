@@ -1,0 +1,13 @@
+# IR Verifier Pozitif Testi: temel aritmetik IR
+# Beklenen: derleme basarili, IR verifier hata yok
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = topla(3, 4);
+    eger x == 7 ise {
+        ekrana_yaz("IR_BASIC_POS: OK\n".ptr);
+    }
+    dondu 0;
+}

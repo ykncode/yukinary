@@ -1,0 +1,108 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi: std/trait.ykn
+# FAZ 1: Dinamik Trait / Arayuz (VTable) ve Polimorfizm Motoru
+#
+# C++ VTable ve Rust Fat-Pointer ([data_ptr, vtable_ptr]) sozlesmesi:
+# - Her trait nesnesi iki pointer'dan olusur:
+#     1. nesne_ptr : Somut yapiya (struct) isaret eden bellek adresi.
+#     2. vtable    : Fonksiyon isaretcilerinin yer aldigi metod tablosu.
+# - Dinamik dispatch, ABI uyumlu ykn_dyn_call_ptr_3 uzerinden
+#   yapilir. Nesne ilk arguman (self/this) olarak iletilir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# Sanal Fonksiyon Tablosu (Virtual Method Table)
+yapi VTable {
+    fn_sayisi:  tamsayi;
+    kapasite:   tamsayi;
+    fn_tablosu: *tamsayi;
+}
+
+# Dinamik Trait Nesnesi (Fat Pointer: data + vtable)
+yapi TraitNesnesi {
+    nesne_ptr: *u8;
+    vtable:    *tamsayi;
+}
+
+# Yeni bir VTable olusturur
+isv vtable_olustur(kapasite: tamsayi) -> *VTable {
+    degisken kap: tamsayi = kapasite;
+    eger kap <= 0 ise { kap = 8; }
+    degisken vt: *VTable = bellek_tahsis_et(24);
+    eger vt == 0 ise { dondu 0; }
+    vt.fn_sayisi = 0;
+    vt.kapasite = kap;
+    vt.fn_tablosu = bellek_tahsis_et(kap * 8);
+    eger vt.fn_tablosu == 0 ise { dondu 0; }
+    dondu vt;
+}
+
+# VTable icerisine belirli bir metod indeksine fonksiyon isaretcisi ekler
+isv vtable_islev_ekle(vt: *VTable, indeks: tamsayi, fn_ptr: tamsayi) -> tamsayi {
+    eger vt == 0 veya vt.fn_tablosu == 0 ise { dondu 0; }
+    eger indeks < 0 veya indeks >= vt.kapasite ise { dondu 0; }
+    degisken tbl: *tamsayi = vt.fn_tablosu;
+    tbl[indeks] = fn_ptr;
+    eger indeks >= vt.fn_sayisi ise {
+        vt.fn_sayisi = indeks + 1;
+    }
+    dondu 1;
+}
+
+# Somut nesne ile VTable'i birlestirerek dinamik TraitNesnesi uretir
+isv trait_nesnesi_olustur(nesne_ptr: *u8, vt: *VTable) -> *TraitNesnesi {
+    eger nesne_ptr == 0 veya vt == 0 veya vt.fn_tablosu == 0 ise { dondu 0; }
+    degisken obj: *TraitNesnesi = bellek_tahsis_et(16);
+    eger obj == 0 ise { dondu 0; }
+    obj.nesne_ptr = nesne_ptr;
+    obj.vtable = vt.fn_tablosu;
+    dondu obj;
+}
+
+# Trait nesnesinin metodunu 0 ek arguman ile cagirir: fn(self)
+isv trait_cagir_0(obj: *TraitNesnesi, metod_idx: tamsayi) -> tamsayi {
+    eger obj == 0 veya obj.vtable == 0 ise { dondu 0; }
+    degisken tbl: *tamsayi = obj.vtable;
+    degisken fn_ptr: tamsayi = tbl[metod_idx];
+    eger fn_ptr == 0 ise { dondu 0; }
+    degisken ptr_val: tamsayi = obj.nesne_ptr as tamsayi;
+    dondu ykn_dyn_call_ptr_3(fn_ptr, ptr_val, 0, 0);
+}
+
+# Trait nesnesinin metodunu 1 ek arguman ile cagirir: fn(self, arg1)
+isv trait_cagir_1(obj: *TraitNesnesi, metod_idx: tamsayi, arg1: tamsayi) -> tamsayi {
+    eger obj == 0 veya obj.vtable == 0 ise { dondu 0; }
+    degisken tbl: *tamsayi = obj.vtable;
+    degisken fn_ptr: tamsayi = tbl[metod_idx];
+    eger fn_ptr == 0 ise { dondu 0; }
+    degisken ptr_val: tamsayi = obj.nesne_ptr as tamsayi;
+    dondu ykn_dyn_call_ptr_3(fn_ptr, ptr_val, arg1, 0);
+}
+
+# Trait nesnesinin metodunu 2 ek arguman ile cagirir: fn(self, arg1, arg2)
+isv trait_cagir_2(obj: *TraitNesnesi, metod_idx: tamsayi, arg1: tamsayi, arg2: tamsayi) -> tamsayi {
+    eger obj == 0 veya obj.vtable == 0 ise { dondu 0; }
+    degisken tbl: *tamsayi = obj.vtable;
+    degisken fn_ptr: tamsayi = tbl[metod_idx];
+    eger fn_ptr == 0 ise { dondu 0; }
+    degisken ptr_val: tamsayi = obj.nesne_ptr as tamsayi;
+    dondu ykn_dyn_call_ptr_3(fn_ptr, ptr_val, arg1, arg2);
+}
+
+# VTable bellegini serbest birakir
+isv vtable_serbest_birak(vt: *VTable) {
+    eger vt == 0 ise { dondu; }
+    eger vt.fn_tablosu != 0 ise {
+        os_bellek_serbest(vt.fn_tablosu);
+        vt.fn_tablosu = 0;
+    }
+    os_bellek_serbest(vt);
+}
+
+# Trait nesnesi bellegini serbest birakir
+isv trait_nesnesi_serbest_birak(obj: *TraitNesnesi) {
+    eger obj == 0 ise { dondu; }
+    os_bellek_serbest(obj);
+}

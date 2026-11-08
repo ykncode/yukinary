@@ -1,0 +1,5 @@
+# FIX-13 olumlu: nul alias nullable initializer olarak kabul edilir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = nul;
+    dondu 0;
+}

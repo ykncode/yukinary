@@ -1,0 +1,10 @@
+# FIX-6 negative: module member unqualified görünmemeli.
+modul gizli {
+    isv ic() -> tamsayi {
+        dondu 9;
+    }
+}
+
+isv ana() -> tamsayi {
+    dondu ic();
+}

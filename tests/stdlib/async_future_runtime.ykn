@@ -1,0 +1,71 @@
+ice_aktar "std/async/future.ykn";
+
+yapi Sayaç {
+    kalan: tamsayi;
+    toplam: tamsayi;
+}
+
+isv sayaç_poll(ctx: *Sayaç) -> tamsayi {
+    eger ctx == 0 ise { dondu ASYNC_HATA; }
+    eger ctx.kalan > 0 ise {
+        ctx.kalan = ctx.kalan - 1;
+        ctx.toplam = ctx.toplam + 1;
+        dondu ASYNC_BEKLIYOR;
+    }
+    dondu ASYNC_HAZIR;
+}
+
+isv ana() -> tamsayi {
+    degisken a: Sayaç;
+    a.kalan = 2;
+    a.toplam = 0;
+    degisken b: Sayaç;
+    b.kalan = 4;
+    b.toplam = 0;
+
+    degisken fa: *Future = gelecek_olustur(sayaç_poll, &a);
+    degisken fb: *Future = gelecek_olustur(sayaç_poll, &b);
+    eger fa == 0 veya fb == 0 ise { dondu 1; }
+
+    degisken d: OlayDongusu;
+    d.gorevler = 0;
+    d.gorev_sayisi = 0;
+    d.tamamlanan = 0;
+    d.son_tur = 0;
+    d.iptal_edilen = 0;
+    olay_dongusu_sifirla(&d);
+    eger olay_dongusu_gorev_ekle(&d, fa) != 0 ise { dondu 2; }
+    eger olay_dongusu_gorev_ekle(&d, fb) != 0 ise { dondu 3; }
+    eger olay_dongusu_calistir(&d, 8) != 0 ise { dondu 4; }
+
+    # Scheduler her turda iki görevi de bir kez poll etti.
+    eger fa.durum != ASYNC_HAZIR veya fb.durum != ASYNC_HAZIR ise { dondu 5; }
+    eger fa.poll_sayisi != 3 veya fb.poll_sayisi != 5 ise { dondu 6; }
+    eger a.toplam != 2 veya b.toplam != 4 ise { dondu 7; }
+    eger d.tamamlanan != 2 veya d.son_tur != 5 ise { dondu 8; }
+
+    degisken c: Sayaç;
+    c.kalan = 10;
+    c.toplam = 0;
+    degisken fc: *Future = gelecek_olustur(sayaç_poll, &c);
+    eger fc == 0 ise { dondu 9; }
+    eger gelecek_iptal_et(fc) != 0 ise { dondu 10; }
+    eger gelecek_poll(fc) != ASYNC_IPTAL ise { dondu 11; }
+    eger c.toplam != 0 veya fc.poll_sayisi != 0 ise { dondu 12; }
+
+    # Deterministic poll-budget timeout: callback exactly two kez çalışır,
+    # üçüncü poll başlamadan Future terminal timeout durumuna geçer.
+    degisken z: Sayaç;
+    z.kalan = 10;
+    z.toplam = 0;
+    degisken fz: *Future = gelecek_olustur(sayaç_poll, &z);
+    eger fz == 0 veya gelecek_poll_limiti_ayarla(fz, 2) != 0 ise { dondu 13; }
+    degisken dz: OlayDongusu;
+    olay_dongusu_sifirla(&dz);
+    eger olay_dongusu_gorev_ekle(&dz, fz) != 0 ise { dondu 14; }
+    eger olay_dongusu_calistir(&dz, 8) != 0 ise { dondu 15; }
+    eger fz.durum != ASYNC_ZAMAN_ASIMI veya fz.poll_sayisi != 2 ise { dondu 16; }
+    eger z.toplam != 2 veya gelecek_sonuc(fz) != ASYNC_ZAMAN_ASIMI ise { dondu 17; }
+
+    dondu 0;
+}

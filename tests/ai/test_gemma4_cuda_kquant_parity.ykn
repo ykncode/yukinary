@@ -1,0 +1,121 @@
+# Compare the CUDA Q4_K/Q6_K kernels with YKN CPU references on real Gemma rows.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/cuda_backend.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; }
+    dongu adet > 0 { adet = adet - 1; degisken ch: [2]u8; ch[0] = rakamlar[adet]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv gercek_satir_parity(durum: *GGUFDurum, loader: *LLMModelLoader,
+                        tensor: *GGUFTensorInfo, K: tamsayi, N: tamsayi,
+                        block_bytes: tamsayi, quant_type: tamsayi) -> tamsayi {
+    eger tensor == 0 veya tensor->dim_0 != K or tensor->dim_1 < N or
+       tensor->ggml_type != quant_type or K % 256 != 0 { dondu 0; }
+    degisken row_bytes: tamsayi = (K / 256) * block_bytes;
+    degisken packed_bytes: tamsayi = N * row_bytes;
+    degisken weights: *u8 = bellek_tahsis_et(packed_bytes);
+    degisken activation: *tamsayi = bellek_tahsis_et(K * 8);
+    degisken cpu: *tamsayi = bellek_tahsis_et(N * 8);
+    degisken gpu: *tamsayi = bellek_tahsis_et(N * 8);
+    eger weights == 0 or activation == 0 or cpu == 0 or gpu == 0 { dondu 0; }
+    eger llm_model_aralik_oku(loader, tensor->veri_offset,
+        weights, packed_bytes) != packed_bytes { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < K { activation[i] = ((i % 13) - 6) * 4096; i = i + 1; }
+    degisken cpu_ok: tamsayi = 0;
+    degisken gpu_ok: tamsayi = 0;
+    eger quant_type == GGML_TYPE_Q4_K {
+        cpu_ok = llm_q4_k_matris_carp(weights, activation, cpu, 1, K, N);
+        gpu_ok = ykn_cuda_q4_k_matvec(weights, activation, gpu, K, N, packed_bytes);
+    } yoksa {
+        cpu_ok = llm_q6_k_matris_carp(weights, activation, cpu, 1, K, N);
+        gpu_ok = ykn_cuda_q6_k_matvec(weights, activation, gpu, K, N, packed_bytes);
+    }
+    eger cpu_ok != 1 or gpu_ok != 1 { dondu 0 - 1; }
+    i = 0;
+    dongu i < N {
+        eger cpu[i] != gpu[i] {
+            ekrana_yaz("Q4_PARITY_MISMATCH row=".ptr); sayi_yaz(i);
+            ekrana_yaz(" cpu=".ptr); sayi_yaz(cpu[i]);
+            ekrana_yaz(" gpu=".ptr); sayi_yaz(gpu[i]); ekrana_yaz("\n".ptr);
+            dondu 0 - 2;
+        }
+        i = i + 1;
+    }
+    # Exercise the production tensor dispatcher with a deliberately smaller
+    # scratch area than the full matrix; it must stream multiple row chunks.
+    degisken execution: LLMTransformerExecution;
+    degisken scratch_capacity: tamsayi = 1048576;
+    degisken scratch: *u8 = bellek_tahsis_et(scratch_capacity);
+    degisken full_output: *tamsayi = bellek_tahsis_et(tensor->dim_1 * 8);
+    eger scratch == 0 or full_output == 0 { dondu 0; }
+    execution.loader = loader;
+    execution.agirlik_buffer = scratch;
+    execution.agirlik_kapasitesi = scratch_capacity;
+    g_llm_tensor_icra = &execution;
+    g_llm_tensor_bilgi = tensor;
+    g_llm_tensor_girdi = activation;
+    g_llm_tensor_cikti = full_output;
+    g_llm_tensor_K = K;
+    g_llm_tensor_N = tensor->dim_1;
+    eger llm_transformer_tensor_ileri_global() != 1 { dondu 0 - 3; }
+    i = 0;
+    dongu i < N {
+        eger cpu[i] != full_output[i] { dondu 0 - 4; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken path: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle(path, durum) == 0 { ExitProcess(2); }
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, path, durum) == 0 { ExitProcess(3); }
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("GEMMA_QK_CUDA_UNAVAILABLE=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); ExitProcess(4);
+    }
+    degisken q4: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "blk.0.attn_q.weight".ptr);
+    degisken q6: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "blk.0.attn_v.weight".ptr);
+    degisken q4_status: tamsayi = gercek_satir_parity(durum, &loader, q4, 2560, 8, 144, GGML_TYPE_Q4_K);
+    eger q4_status != 1 {
+        ekrana_yaz("GEMMA_REAL_Q4_K_CUDA_PARITY_FAIL status=".ptr);
+        sayi_yaz(q4_status); ekrana_yaz(" cuda=".ptr); sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); ExitProcess(5);
+    }
+    ekrana_yaz("GEMMA_REAL_Q4_K_CUDA_PARITY_PASS rows=8\n".ptr);
+    eger gercek_satir_parity(durum, &loader, q6, 2560, 8, 210, GGML_TYPE_Q6_K) != 1 {
+        ekrana_yaz("GEMMA_REAL_Q6_K_CUDA_PARITY_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); ExitProcess(6);
+    }
+    ekrana_yaz("GEMMA_REAL_Q6_K_CUDA_PARITY_PASS rows=8\n".ptr);
+    eger YKN_CUDA_Q4K_CALLS <= 1 or YKN_CUDA_Q6K_CALLS <= 1 { ExitProcess(7); }
+    ykn_cuda_backend_stop();
+    dondu 0;
+}

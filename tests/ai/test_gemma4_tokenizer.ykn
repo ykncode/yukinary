@@ -1,0 +1,81 @@
+# Gemma-4 BPE smoke/oracle harness over the real GGUF vocab and merges.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle("models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr, durum) == 0 {
+        ExitProcess(2);
+    }
+
+    degisken tok_offsets: *tamsayi = bellek_tahsis_et(262144 * 8);
+    degisken tok_lengths: *tamsayi = bellek_tahsis_et(262144 * 8);
+    degisken merge_offsets: *tamsayi = bellek_tahsis_et(514906 * 8);
+    degisken merge_lengths: *tamsayi = bellek_tahsis_et(514906 * 8);
+    eger tok_offsets == 0 veya tok_lengths == 0 veya merge_offsets == 0 veya merge_lengths == 0 {
+        ExitProcess(3);
+    }
+    degisken tok_count: tamsayi = 0;
+    degisken merge_count: tamsayi = 0;
+    eger bitnet_tokenizer_metadata_yukle(durum, tok_offsets, tok_lengths, 262144,
+        merge_offsets, merge_lengths, 514906, &tok_count, &merge_count) == 0 {
+        ExitProcess(4);
+    }
+    eger tok_count != 262144 veya merge_count != 514906 { ExitProcess(5); }
+
+    degisken ids: *tamsayi = bellek_tahsis_et(256 * 8);
+    eger ids == 0 { ExitProcess(6); }
+    degisken prompt: *u8 = "Hello world!".ptr;
+    GEMMA4_TOKEN_BUFFER = durum->buffer;
+    GEMMA4_TOKEN_OFFSETS = tok_offsets;
+    GEMMA4_TOKEN_LENGTHS = tok_lengths;
+    GEMMA4_TOKEN_COUNT = tok_count;
+    GEMMA4_MERGE_OFFSETS = merge_offsets;
+    GEMMA4_MERGE_LENGTHS = merge_lengths;
+    GEMMA4_MERGE_COUNT = merge_count;
+
+    degisken body_probe: *u8 = "user\nHello world!".ptr;
+    degisken raw_probe: tamsayi = bitnet_gemma4_bpe_kodla(durum->buffer,
+        tok_offsets, tok_lengths, tok_count, merge_offsets, merge_lengths,
+        merge_count, body_probe, 17, ids, 256);
+    eger raw_probe <= 0 { ExitProcess(20); }
+    GEMMA4_CHAT_USER_TEXT = prompt;
+    GEMMA4_CHAT_USER_LENGTH = 12;
+    GEMMA4_CHAT_OUTPUT = ids;
+    GEMMA4_CHAT_OUTPUT_CAPACITY = 256;
+    degisken count: tamsayi = bitnet_gemma4_chat_prompt_global();
+    eger count <= 0 { ExitProcess(30 + GEMMA4_CHAT_STAGE); }
+    degisken bos_id: tamsayi = bitnet_token_id_bul(durum->buffer,
+        tok_offsets, tok_lengths, tok_count, "<bos>".ptr, 5);
+    eger ids[0] != bos_id { ExitProcess(18); }
+    degisken turn_id: tamsayi = bitnet_token_id_bul(durum->buffer,
+        tok_offsets, tok_lengths, tok_count, "<|turn>".ptr, 7);
+    degisken turn_end_id: tamsayi = bitnet_token_id_bul(durum->buffer,
+        tok_offsets, tok_lengths, tok_count, "<turn|>".ptr, 7);
+    eger ids[1] != turn_id { ExitProcess(8); }
+    degisken i: tamsayi = 0;
+    degisken found_end: tamsayi = 0;
+    dongu i < count {
+        eger ids[i] < 0 veya ids[i] >= tok_count { ExitProcess(9); }
+        eger ids[i] == turn_end_id ise {
+            found_end = 1;
+            eger i + 2 >= count veya ids[i + 1] != 107 veya ids[i + 2] != turn_id { ExitProcess(10); }
+        }
+        i = i + 1;
+    }
+    eger found_end == 0 ise { ExitProcess(11); }
+    ekrana_yaz("GEMMA4_CHAT_BPE_REAL_VOCAB_PASS tokens=".ptr);
+    degisken n: tamsayi = count;
+    degisken rev: [16]u8;
+    degisken r: tamsayi = 0;
+    dongu n > 0 { rev[r] = 48 + n % 10; n = n / 10; r = r + 1; }
+    dongu r > 0 { r = r - 1; degisken ch: [2]u8; ch[0] = rev[r]; ch[1] = 0; ekrana_yaz(ch.ptr); }
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,27 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - Is Parcaciklari ve Senkronizasyon
+# ============================================================
+
+harici isv yukinary_sys_mutex_create() -> tamsayi;
+harici isv yukinary_sys_mutex_lock(mutex: tamsayi) -> tamsayi;
+harici isv yukinary_sys_mutex_unlock(mutex: tamsayi) -> tamsayi;
+
+yapi Mutex {
+    isaretci: tamsayi;
+}
+
+isv kilit_olustur() -> Mutex {
+    degisken m: Mutex;
+    m.isaretci = yukinary_sys_mutex_create();
+    dondu m;
+}
+
+isv kilitle(m: Mutex) -> tamsayi {
+    yukinary_sys_mutex_lock(m.isaretci);
+    dondu 0;
+}
+
+isv kilit_ac(m: Mutex) -> tamsayi {
+    yukinary_sys_mutex_unlock(m.isaretci);
+    dondu 0;
+}

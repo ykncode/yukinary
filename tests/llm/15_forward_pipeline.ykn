@@ -1,0 +1,147 @@
+# Gerçek loader/kernel/KV/logits/sampler/tokenizer zinciri smoke testi.
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/runtime.ykn";
+ice_aktar "../../std/ai/model_loader.ykn";
+ice_aktar "../../std/ai/bitnet_backend.ykn";
+ice_aktar "../../std/ai/architecture_adapter.ykn";
+ice_aktar "../../std/ai/attention.ykn";
+ice_aktar "../../std/ai/sampler.ykn";
+ice_aktar "../../std/ai/inference.ykn";
+ice_aktar "../../std/ai/tokenizer.ykn";
+
+isv ana() -> tamsayi {
+    # Packed BitNet: K=4,N=1, raw codes [+,0,-,+] = 2,1,0,2.
+    degisken paket: [1]u8;
+    paket[0] = 134;
+    # Tensor range loader sınırları: geçerli pencere kabul, kısa hedef reddi.
+    degisken loader_durum: GGUFDurum;
+    loader_durum.buffer = paket;
+    loader_durum.ilk_veri_offset = 128;
+    degisken loader: LLMModelLoader;
+    degisken tensor: GGUFTensorInfo;
+    tensor.veri_offset = 128;
+    tensor.bayt_sayisi = 1;
+    eger llm_model_loader_baslat(&loader, "mini.gguf".ptr, &loader_durum) != 1 veya
+       llm_model_tensor_araligi_dogrula(&loader, &tensor, paket, 1) != 1 veya
+       llm_model_tensor_araligi_dogrula(&loader, &tensor, paket, 0) != 0 { dondu 1; }
+
+    degisken aktivasyon: [4]tamsayi;
+    aktivasyon[0] = 65536;
+    aktivasyon[1] = 131072;
+    aktivasyon[2] = 196608;
+    aktivasyon[3] = 262144;
+    degisken logits: [1]tamsayi;
+    degisken plan: LLMForwardPlan;
+    llm_forward_plan_sifirla(&plan);
+    plan.backend = LLM_BACKEND_BITNET_NATIVE;
+    plan.quant_tipi = LLM_QUANT_IQ2_S;
+    plan.agirlik = paket;
+    plan.agirlik_bayti = 1;
+    plan.aktivasyon = aktivasyon;
+    plan.M = 1;
+    plan.K = 4;
+    plan.N = 1;
+    plan.logits = logits;
+    plan.logits_boyutu = 1;
+
+    # Aynı forward adımı KV cache write + attention + argmax çalıştırır.
+    degisken anahtar_cache: [8]tamsayi;
+    degisken deger_cache: [8]tamsayi;
+    degisken sorgu: [2]tamsayi;
+    degisken token_anahtar: [2]tamsayi;
+    degisken token_deger: [2]tamsayi;
+    degisken dikkat_cikti: [2]tamsayi;
+    sorgu[0] = 65536; sorgu[1] = 0;
+    token_anahtar[0] = 65536; token_anahtar[1] = 0;
+    token_deger[0] = 65536; token_deger[1] = 131072;
+    plan.kv_anahtar = anahtar_cache;
+    plan.kv_deger = deger_cache;
+    plan.kv_sorgu = sorgu;
+    plan.kv_cikti = dikkat_cikti;
+    plan.kv_kafa_sayisi = 1;
+    plan.kv_kafa_boyutu = 2;
+    plan.kv_kapasitesi = 4;
+    plan.token_anahtar = token_anahtar;
+    plan.token_deger = token_deger;
+    degisken ilk_token: tamsayi = llm_forward_plan_calistir(&plan);
+    eger ilk_token == 0 - 1 ise { ekrana_yaz("FAIL-PACKED-RETURN\n".ptr); dondu 1; }
+    eger logits[0] != 131072 ise { ekrana_yaz("FAIL-PACKED-LOGIT\n".ptr); dondu 1; }
+    eger dikkat_cikti[0] <= 0 veya dikkat_cikti[1] <= 0 ise { ekrana_yaz("FAIL-KV\n".ptr); dondu 1; }
+
+    # MoE: router expert-1'i seçer; expert-1 packed -1 ağırlık taşır.
+    degisken expert_paketleri: [2]u8;
+    expert_paketleri[0] = 2;
+    expert_paketleri[1] = 0;
+    degisken router: [2]tamsayi;
+    router[0] = 1; router[1] = 5;
+    degisken moe_cikti: [1]tamsayi;
+    degisken moe_ara: [1]tamsayi;
+    degisken moe_plan: LLMForwardPlan;
+    llm_forward_plan_sifirla(&moe_plan);
+    moe_plan.backend = LLM_BACKEND_BITNET_MOE_NATIVE;
+    moe_plan.quant_tipi = LLM_QUANT_IQ2_S;
+    moe_plan.agirlik = paket;
+    moe_plan.agirlik_bayti = 1;
+    moe_plan.aktivasyon = aktivasyon;
+    moe_plan.M = 1; moe_plan.K = 1; moe_plan.N = 1;
+    moe_plan.logits = moe_cikti; moe_plan.logits_boyutu = 1;
+    moe_plan.expert_ara_cikti = moe_ara;
+    moe_plan.expert_agirlik = expert_paketleri;
+    moe_plan.expert_stride = 1;
+    moe_plan.router_logits = router;
+    moe_plan.expert_sayisi = 2; moe_plan.top_k = 1;
+    eger llm_forward_plan_calistir(&moe_plan) == 0 - 1 veya moe_cikti[0] != 0 - 65536 ise { ekrana_yaz("FAIL-MOE\n".ptr); dondu 2; }
+
+    # Architecture adapter F16: 0x3c00 = 1.0, 2.0 input -> 2.0 output.
+    degisken mimari_adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(LLM_MIMARI_LLAMA, &mimari_adapter) != 1 ise { dondu 3; }
+    degisken f16_agirlik: [2]u8;
+    f16_agirlik[0] = 0; f16_agirlik[1] = 60;
+    degisken f16_girdi: [1]tamsayi;
+    degisken f16_cikti: [1]tamsayi;
+    degisken adapter_plan: LLMForwardPlan;
+    f16_girdi[0] = 131072;
+    llm_forward_plan_sifirla(&adapter_plan);
+    adapter_plan.backend = LLM_BACKEND_ARCH_ADAPTER;
+    adapter_plan.quant_tipi = LLM_QUANT_F16;
+    adapter_plan.adapter = &mimari_adapter;
+    adapter_plan.agirlik = f16_agirlik; adapter_plan.agirlik_bayti = 2;
+    adapter_plan.aktivasyon = f16_girdi; adapter_plan.M = 1;
+    adapter_plan.K = 1; adapter_plan.N = 1;
+    adapter_plan.logits = f16_cikti; adapter_plan.logits_boyutu = 1;
+    eger llm_forward_plan_calistir(&adapter_plan) == 0 - 1 veya f16_cikti[0] != 131072 ise { ekrana_yaz("FAIL-F16\n".ptr); dondu 3; }
+
+    # F32 adapter: 0x3f800000 = 1.0, aynı Q16.16 sonucu vermeli.
+    degisken f32_agirlik: [4]u8;
+    f32_agirlik[0] = 0; f32_agirlik[1] = 0;
+    f32_agirlik[2] = 128; f32_agirlik[3] = 63;
+    degisken f32_cikti: [1]tamsayi;
+    degisken f32_plan: LLMForwardPlan;
+    llm_forward_plan_sifirla(&f32_plan);
+    f32_plan.backend = LLM_BACKEND_ARCH_ADAPTER;
+    f32_plan.quant_tipi = LLM_QUANT_F32;
+    f32_plan.adapter = &mimari_adapter;
+    f32_plan.agirlik = f32_agirlik; f32_plan.agirlik_bayti = 4;
+    f32_plan.aktivasyon = f16_girdi; f32_plan.M = 1;
+    f32_plan.K = 1; f32_plan.N = 1;
+    f32_plan.logits = f32_cikti; f32_plan.logits_boyutu = 1;
+    eger llm_forward_plan_calistir(&f32_plan) == 0 - 1 veya f32_cikti[0] != 131072 ise { ekrana_yaz("FAIL-F32\n".ptr); dondu 3; }
+
+    # Logits'ten token ID'sini vocab byte aralığına decode et.
+    degisken vocab: [2]u8;
+    vocab[0] = 65; vocab[1] = 66;
+    degisken ofsetler: [2]tamsayi;
+    degisken uzunluklar: [2]tamsayi;
+    ofsetler[0] = 0; ofsetler[1] = 1;
+    uzunluklar[0] = 1; uzunluklar[1] = 1;
+    degisken token_ids: [2]tamsayi;
+    token_ids[0] = 0; token_ids[1] = 1;
+    degisken metin: [3]u8;
+    eger bitnet_tokenleri_metine_yaz(vocab, ofsetler, uzunluklar, 2,
+       token_ids, 2, metin, 3) != 2 veya metin[0] != 65 veya metin[1] != 66 veya metin[2] != 0 { ekrana_yaz("FAIL-DECODE\n".ptr); dondu 4; }
+
+    ekrana_yaz("LLM-FORWARD-PIPELINE-PASS\n".ptr);
+    dondu 0;
+}

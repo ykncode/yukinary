@@ -1,0 +1,14 @@
+# FAZ 5 Test 1: Generic identity fonksiyonu
+isv ozdeslik<T>(x: T) -> T {
+    dondu x;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken a: tamsayi = ozdeslik<tamsayi>(42);
+    eger a == 42 ise {
+        ekrana_yaz("TEST 01 GENERICS: IDENTITY OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 01 GENERICS: IDENTITY FAILED\n".ptr);
+    }
+    dondu 0;
+}

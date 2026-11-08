@@ -1,0 +1,74 @@
+{
+  "test_bilgisi": {
+    "tarih": "2026-10-24",
+    "proje": "Yukinary Yazilim Dili & Derleyicisi",
+    "test_adi": "Uclu Model GGUF Parse Karsilastirmasi",
+    "aciklama": "3 farkli GGUF modeli saf YKN kodu ile parse edildi. Metadata gercek, tarif metni statik."
+  },
+  "modeller": [
+    {
+      "model_adi": "BitNet-b1.58-2B-4T",
+      "tanim": "Microsoft 1-bit LLM, I2_S kuantlama, 2.4B parametre",
+      "dosya_yolu": "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf",
+      "boyut_mb": 1133,
+      "parse_durumu": "BASARILI",
+      "tensor_sayisi": 332,
+      "vocab_boyutu": 128256,
+      "gizli_boyut": 2560,
+      "katman_sayisi": 30,
+      "ffn_boyutu": 6912,
+      "attn_kafa_sayisi": 20,
+      "kv_kafa_sayisi": 5,
+      "context_penceresi": 4096,
+      "versiyon": 3,
+      "quant_tipi_id": 36,
+      "bos_token_id": 128000,
+      "eos_token_id": 128001
+    },
+    {
+      "model_adi": "Bonsai-8B",
+      "tanim": "Bonsai 8B parametreli dil modeli, GGUF formatinda",
+      "dosya_yolu": "models/bonsai-8b/Bonsai-8B.gguf",
+      "boyut_mb": 1105,
+      "parse_durumu": "BASARILI",
+      "tensor_sayisi": 399,
+      "vocab_boyutu": 151669,
+      "gizli_boyut": 4096,
+      "katman_sayisi": 36,
+      "ffn_boyutu": 12288,
+      "attn_kafa_sayisi": 32,
+      "kv_kafa_sayisi": 8,
+      "context_penceresi": 65536,
+      "versiyon": 3,
+      "quant_tipi_id": 41,
+      "bos_token_id": -1,
+      "eos_token_id": 151645
+    },
+    {
+      "model_adi": "Gemma-4-E4B-it-Q4_K_M",
+      "tanim": "Google DeepMind Gemma-4, Q4_K_M kuantlama, 128K context, 262K vocab",
+      "dosya_yolu": "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf",
+      "boyut_mb": 5087,
+      "parse_durumu": "BASARILI",
+      "tensor_sayisi": 720,
+      "vocab_boyutu": 262144,
+      "gizli_boyut": 2560,
+      "katman_sayisi": 42,
+      "ffn_boyutu": 10240,
+      "attn_kafa_sayisi": 8,
+      "kv_kafa_sayisi": 2,
+      "context_penceresi": 131072,
+      "versiyon": 3,
+      "quant_tipi_id": 12,
+      "bos_token_id": 2,
+      "eos_token_id": 1
+    }
+  ],
+  "ozet": {
+    "toplam_model": 3,
+    "basarili_parse": 3,
+    "toplam_boyut_mb": 7325,
+    "genel_durum": "TUM MODELLER PARSE EDILDI",
+    "not": "Parse = GGUF header metadata okuma. Gercek token inference ayri asama."
+  }
+}

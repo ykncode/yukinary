@@ -1,0 +1,65 @@
+# FAZ 7 - std/dosya.ykn tek test
+# Calisma dizini: d:\YukiLLM\yukinary_vanilla
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 {
+    dondu VirtualAlloc(0, boyut, 0x3000, 0x04);
+}
+isv dosya_oku(yol: *u8, tampon: *u8, kapasite: tamsayi) -> tamsayi {
+    degisken handle: tamsayi = CreateFileA(yol, 0x80000000, 1, 0, 3, 0x80, 0);
+    eger handle == 0 - 1 ise { dondu 0; }
+    degisken okunan: tamsayi = 0;
+    os_dosya_oku(handle, tampon, kapasite, &okunan);
+    os_dosya_kapat(handle);
+    dondu okunan;
+}
+isv diske_bas_ve_kapat(yol: *u8, veri: *u8, boyut: tamsayi) -> tamsayi {
+    degisken handle: tamsayi = CreateFileA(yol, 0x40000000, 0, 0, 2, 0x80, 0);
+    eger handle == 0 - 1 ise { dondu 0; }
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(handle, veri, boyut, &yazilan);
+    os_dosya_kapat(handle);
+    dondu yazilan;
+}
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    if sayi == 0 ise { buf[0]=48; buf[1]=0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    if n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i]=(n%10)+48; n=n/10; i=i+1; }
+    if neg == 1 ise { buf[i]=45; i=i+1; }
+    degisken j: tamsayi = 0;
+    dongu j < i/2 {
+        degisken t: u8 = buf[j]; buf[j]=buf[i-1-j]; buf[i-1-j]=t;
+        j=j+1;
+    }
+    buf[i]=0;
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../std/dosya.ykn";
+
+isv ana() -> tamsayi {
+    degisken yaz_m: *u8 = "Satir-A\nSatir-B\nSatir-C\n".ptr;
+    degisken y_uz: tamsayi = 0;
+    dongu yaz_m[y_uz] != 0 { y_uz = y_uz + 1; }
+    ekrana_yaz("yaz=".ptr);
+    degisken yb: tamsayi = dosya_yaz_tamami("__test_dosya.txt".ptr, yaz_m, y_uz);
+    sayiyi_yazdir(yb);                         # 24
+    ekrana_yaz(" var_mi=".ptr);
+    sayiyi_yazdir(dosya_var_mi("__test_dosya.txt".ptr));  # 1
+    ekrana_yaz(" satir=".ptr);
+    sayiyi_yazdir(dosya_satir_sayisi("__test_dosya.txt".ptr));  # 3
+    ekrana_yaz(" oku=");
+    degisken oku_uz: tamsayi = 0;
+    degisken ic: *u8 = dosya_oku_tamami("__test_dosya.txt".ptr, oku_uz);
+    if ic != 0 ise {
+        ekrana_yaz(ic);
+        sayiyi_yazdir(oku_uz);
+        ekrana_yaz("B\n".ptr);
+    }
+    ekrana_yaz("std-dosya-PASS\n".ptr);
+    dondu 0;
+}

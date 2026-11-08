@@ -1,0 +1,22 @@
+isv ekrana_yaz(m: *u8) {}
+ice_aktar "../std/metin.ykn";
+
+isv ana() -> tamsayi {
+    degisken m_obj: *Metin = metin_olustur("Versiyon: ".ptr);
+    ekrana_yaz("m_obj.veri ilk: ".ptr);
+    ekrana_yaz(m_obj.veri);
+    ekrana_yaz("\n".ptr);
+
+    metin_ekle(m_obj, "1.0.0".ptr);
+    ekrana_yaz("m_obj.veri sonra: ".ptr);
+    ekrana_yaz(m_obj.veri);
+    ekrana_yaz("\n".ptr);
+
+    degisken kars: tamsayi = metin_karsilastir(m_obj.veri, "Versiyon: 1.0.0".ptr);
+    eger kars == 0 ise {
+        ekrana_yaz("MATCH OK!\n".ptr);
+    } yoksa {
+        ekrana_yaz("MATCH FAIL!\n".ptr);
+    }
+    dondu 0;
+}

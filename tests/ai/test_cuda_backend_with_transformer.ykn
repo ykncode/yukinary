@@ -1,0 +1,22 @@
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("CUDA_TRANSFORMER_IMPORT_START\n".ptr);
+    degisken status: tamsayi = ykn_cuda_backend_start();
+    ekrana_yaz("CUDA_TRANSFORMER_IMPORT_STATUS=".ptr);
+    eger status == 1 { ekrana_yaz("PASS\n".ptr); dondu 0; }
+    ekrana_yaz("FAIL\n".ptr); dondu 1;
+}

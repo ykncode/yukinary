@@ -1,0 +1,36 @@
+# tests/abi/02_abi_calling_convention.ykn
+# Windows x64 Calling Convention & Stack Alignment Test
+
+isv ekrana_yaz(m: *u8) {}
+
+isv hesapla_sekiz_arguman(a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi,
+                          e: tamsayi, f: tamsayi, g: tamsayi, h: tamsayi) -> tamsayi {
+    # 4 register arg (RCX, RDX, R8, R9) + 4 stack arg ([RBP+48], [RBP+56], vb.)
+    dondu a + b + c + d + e + f + g + h;
+}
+
+isv recursive_call(derinlik: tamsayi, toplam: tamsayi) -> tamsayi {
+    eger derinlik <= 0 ise {
+        dondu toplam;
+    }
+    dondu recursive_call(derinlik - 1, toplam + derinlik);
+}
+
+isv ana() -> tamsayi {
+    # 1. 8 argumanli cagri testi (reg + stack parametreleri)
+    degisken sonuc: tamsayi = hesapla_sekiz_arguman(1, 2, 3, 4, 5, 6, 7, 8);
+    eger sonuc != 36 ise {
+        ekrana_yaz("HATA: 8 arguman toplami eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Rekursif cagri ile stack alignment (16-byte) testi
+    degisken rec_sonuc: tamsayi = recursive_call(10, 0);
+    eger rec_sonuc != 55 ise {
+        ekrana_yaz("HATA: Rekursif cagri toplami eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("ABI_CALLING_CONVENTION_PASS\n".ptr);
+    dondu 0;
+}

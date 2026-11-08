@@ -1,0 +1,165 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/ai/semantik.ykn
+# Neural-Symbolic Native Language Runtime (YKN Is The Model)
+# SIFIR HARICI BAGIMLILIK (No Python, No Ollama, No PyTorch, No #prompt)
+# ============================================================
+
+ice_aktar "std/ai/ops.ykn";
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+# Metinden 64-boyutlu anlamsal subword/trigram embedding vektoru cikartir.
+isv semantik_vektor_uret(metin_ptr: *u8, uzunluk: tamsayi, out_vektor: *tamsayi) {
+    eger metin_ptr == 0 veya out_vektor == 0 veya uzunluk <= 0 ise {
+        dondu;
+    }
+
+    degisken d: tamsayi = 0;
+    dongu d < 64 {
+        out_vektor[d] = 0;
+        d = d + 1;
+    }
+
+    degisken kelime_hash: tamsayi = 0;
+    degisken kelime_uzn: tamsayi = 0;
+    degisken c1: tamsayi = 0;
+    degisken c2: tamsayi = 0;
+    degisken i: tamsayi = 0;
+
+    dongu i < uzunluk {
+        degisken c: tamsayi = metin_ptr[i];
+
+        eger c == 32 veya c == 10 veya c == 13 veya c == 9 veya c == 0 ise {
+            eger kelime_uzn > 0 ise {
+                degisken slot: tamsayi = kelime_hash % 64;
+                eger slot < 0 ise { slot = 0 - slot; }
+                out_vektor[slot] = out_vektor[slot] + 10;
+
+                kelime_hash = 0;
+                kelime_uzn = 0;
+                c1 = 0;
+                c2 = 0;
+            }
+        } yoksa {
+            # Subword character trigram (FastText / Neural Tokenization)
+            eger c1 > 0 ve c2 > 0 ise {
+                degisken tri: tamsayi = (c2 * 131 + c1 * 17 + c) % 64;
+                eger tri < 0 ise { tri = 0 - tri; }
+                out_vektor[tri] = out_vektor[tri] + 4;
+            }
+            c2 = c1;
+            c1 = c;
+
+            kelime_hash = (kelime_hash * 37 + c) % 65536;
+            kelime_uzn = kelime_uzn + 1;
+        }
+        i = i + 1;
+    }
+
+    eger kelime_uzn > 0 ise {
+        degisken slot: tamsayi = kelime_hash % 64;
+        eger slot < 0 ise { slot = 0 - slot; }
+        out_vektor[slot] = out_vektor[slot] + 10;
+    }
+}
+
+# Iki metin arasindaki anlamsal benzerligi hesaplar (Kosinus Benzerligi).
+# Donus degeri: Q16.16 formatinda (0 = alakasiz, 65536 = %100 ayni).
+isv semantik_benzerlik(m1: *u8, len1: tamsayi, m2: *u8, len2: tamsayi) -> tamsayi {
+    eger m1 == 0 veya m2 == 0 veya len1 <= 0 veya len2 <= 0 ise {
+        dondu 0;
+    }
+
+    degisken v1: [64]tamsayi;
+    degisken v2: [64]tamsayi;
+
+    semantik_vektor_uret(m1, len1, v1);
+    semantik_vektor_uret(m2, len2, v2);
+
+    degisken dot: tamsayi = 0;
+    degisken norm1_sq: tamsayi = 0;
+    degisken norm2_sq: tamsayi = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        dot = dot + (v1[i] * v2[i]);
+        norm1_sq = norm1_sq + (v1[i] * v1[i]);
+        norm2_sq = norm2_sq + (v2[i] * v2[i]);
+        i = i + 1;
+    }
+
+    eger dot <= 0 veya norm1_sq <= 0 veya norm2_sq <= 0 ise {
+        dondu 0;
+    }
+
+    degisken n1: tamsayi = ai_q16_sqrt(norm1_sq * 65536) / 256;
+    degisken n2: tamsayi = ai_q16_sqrt(norm2_sq * 65536) / 256;
+
+    degisken payda: tamsayi = (n1 * n2) / 256;
+    eger payda <= 0 ise { dondu 0; }
+
+    degisken skor: tamsayi = ((dot * 256) * 65536) / payda;
+    dondu skor;
+}
+
+# Dogal dil girdisini, verilen aday kume icerisindeki en yakin anlama siniflandirir.
+# #prompt DIREKTIFINE GEREK KALMAZ!
+# Girdi: metin, adaylar listesi
+# Cikti: En yuksek anlamsal skoru alan adayin indeksi (0..aday_sayisi-1)
+isv semantik_siniflandir(girdi: *u8, girdi_uzn: tamsayi,
+                         adaylar: **u8, aday_uzunluklari: *tamsayi,
+                         aday_sayisi: tamsayi) -> tamsayi {
+    eger girdi == 0 veya adaylar == 0 veya aday_sayisi <= 0 ise {
+        dondu -1;
+    }
+
+    degisken en_iyi_indeks: tamsayi = -1;
+    degisken en_yuksek_skor: tamsayi = -1;
+
+    degisken k: tamsayi = 0;
+    dongu k < aday_sayisi {
+        degisken aday_ptr: *u8 = adaylar[k];
+        degisken aday_len: tamsayi = aday_uzunluklari[k];
+        
+        degisken skor: tamsayi = semantik_benzerlik(girdi, girdi_uzn, aday_ptr, aday_len);
+        
+        eger skor > en_yuksek_skor ise {
+            en_yuksek_skor = skor;
+            en_iyi_indeks = k;
+        }
+        k = k + 1;
+    }
+
+    dondu en_iyi_indeks;
+}
+
+# Dogal dildeki cumleden bir niyetin dogrulanmasi (Zero-shot intent matching)
+isv semantik_eslesiyor_mu(girdi: *u8, girdi_uzn: tamsayi,
+                          hedef_kavram: *u8, hedef_uzn: tamsayi,
+                          esik_yuzde: tamsayi) -> tamsayi {
+    degisken skor: tamsayi = semantik_benzerlik(girdi, girdi_uzn, hedef_kavram, hedef_uzn);
+    # esik_yuzde: 0..100 (ornek 50 = %50 benzerlik)
+    degisken esik_q16: tamsayi = (esik_yuzde * 65536) / 100;
+    eger skor >= esik_q16 ise {
+        dondu 1;
+    }
+    dondu 0;
+}

@@ -1,0 +1,65 @@
+# ============================================================
+# tests/stdlib/09_metin_tipi.ykn
+# Metin (String) Birinci Sinif Yapi ve Islemleri Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+yapi MetinIc {
+    veri: *u8;
+    uzunluk: tamsayi;
+    kapasite: tamsayi;
+}
+
+isv metin_yarat(s: *u8, len: tamsayi) -> *MetinIc {
+    degisken m: *MetinIc = bellek_tahsis_et(24);
+    m.veri = s;
+    m.uzunluk = len;
+    m.kapasite = len;
+    dondu m;
+}
+
+isv metin_uzunluk_al(m: *MetinIc) -> tamsayi {
+    dondu m.uzunluk;
+}
+
+isv metin_esit_mi(m1: *MetinIc, m2: *MetinIc) -> tamsayi {
+    eger m1.uzunluk != m2.uzunluk ise { dondu 0; }
+    degisken p1: *u8 = m1.veri;
+    degisken p2: *u8 = m2.veri;
+    degisken i: tamsayi = 0;
+    dongu i < m1.uzunluk {
+        eger p1[i] != p2[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken s1: *MetinIc = metin_yarat("Merhaba".ptr, 7);
+    degisken s2: *MetinIc = metin_yarat("Merhaba".ptr, 7);
+    degisken s3: *MetinIc = metin_yarat("Dunya".ptr, 5);
+
+    # 1. Uzunluk kontrolleri
+    eger metin_uzunluk_al(s1) != 7 ise {
+        ekrana_yaz("FAIL: s1 uzunluk yanlis\n".ptr);
+        dondu 1;
+    }
+    eger metin_uzunluk_al(s3) != 5 ise {
+        ekrana_yaz("FAIL: s3 uzunluk yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Esitlik kontrolleri
+    eger metin_esit_mi(s1, s2) != 1 ise {
+        ekrana_yaz("FAIL: s1 == s2 olmali\n".ptr);
+        dondu 1;
+    }
+    eger metin_esit_mi(s1, s3) != 0 ise {
+        ekrana_yaz("FAIL: s1 != s3 olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("METIN-TIPI-PASS\n".ptr);
+    dondu 0;
+}

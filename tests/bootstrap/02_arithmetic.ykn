@@ -1,0 +1,33 @@
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken a: tamsayi = 10;
+    degisken b: tamsayi = 25;
+    degisken c: tamsayi = a + b; # 35
+    degisken d: tamsayi = b - a; # 15
+    degisken e: tamsayi = a * 4; # 40
+    degisken f: tamsayi = b / 5; # 5
+    degisken g: tamsayi = b % 4; # 1
+    
+    eger c != 35 ise {
+        ekrana_yaz("TEST 02: c FAILED\n".ptr);
+        dondu 1;
+    }
+    eger d != 15 ise {
+        ekrana_yaz("TEST 02: d FAILED\n".ptr);
+        dondu 1;
+    }
+    eger e != 40 ise {
+        ekrana_yaz("TEST 02: e FAILED\n".ptr);
+        dondu 1;
+    }
+    eger f != 5 ise {
+        ekrana_yaz("TEST 02: f FAILED\n".ptr);
+        dondu 1;
+    }
+    eger g != 1 ise {
+        ekrana_yaz("TEST 02: g FAILED\n".ptr);
+        dondu 1;
+    }
+    
+    ekrana_yaz("TEST 02: ARITHMETIC OK\n".ptr);
+    dondu 0;
+}

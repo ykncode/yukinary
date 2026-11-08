@@ -1,0 +1,124 @@
+# Q4_K GGML reference dequantization + matmul regression.
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+ice_aktar "../../std/ai/bitnet_backend.ykn";
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+
+ice_aktar "../../std/ai/runtime.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken model_spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&model_spec);
+    model_spec.mimari = LLM_MIMARI_GEMMA;
+    model_spec.vocab_boyutu = 262144;
+    model_spec.gizli_boyut = 2560;
+    model_spec.katman_sayisi = 42;
+    model_spec.context_boyutu = 131072;
+    model_spec.quant_tipi = LLM_QUANT_Q4_K;
+    eger llm_runtime_spec_dogrula(&model_spec) == 0 ise { dondu 9; }
+    model_spec.quant_tipi = LLM_QUANT_Q6_K;
+    eger llm_runtime_spec_dogrula(&model_spec) == 0 ise { dondu 10; }
+    model_spec.quant_tipi = LLM_QUANT_IQ4_NL;
+    eger llm_runtime_spec_dogrula(&model_spec) == 0 ise { dondu 11; }
+    model_spec.quant_tipi = LLM_QUANT_BF16;
+    eger llm_runtime_spec_dogrula(&model_spec) == 0 ise { dondu 12; }
+
+    eger GGML_TYPE_Q4_K != 12 veya GGML_TYPE_Q6_K != 14 veya
+       GGML_TYPE_IQ4_NL != 20 veya GGML_TYPE_BF16 != 30 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_Q4_K, 2, 256, 1, 0, 0) != 144 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_Q4_K, 2, 255, 1, 0, 0) != 0 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_Q6_K, 2, 256, 1, 0, 0) != 210 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_Q6_K, 2, 257, 1, 0, 0) != 0 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_IQ4_NL, 2, 32, 1, 0, 0) != 18 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_IQ4_NL, 2, 31, 1, 0, 0) != 0 veya
+       gguf_ggml_bayt_sayisi(GGML_TYPE_BF16, 1, 1, 0, 0, 0) != 2 ise {
+        ekrana_yaz("Q4_K_SIZE_FAIL\n".ptr);
+        dondu 3;
+    }
+    degisken blok: [144]u8;
+    degisken i: tamsayi = 0;
+    dongu i < 144 { blok[i] = 0; i = i + 1; }
+
+    # d=1.0, dmin=0, eight sub-block scales=1, min-scales=0.
+    blok[0] = 0;
+    blok[1] = 60;
+    blok[4] = 1; blok[5] = 1; blok[6] = 1; blok[7] = 1;
+    blok[12] = 1; blok[13] = 1; blok[14] = 1; blok[15] = 1;
+    # Every packed byte has low q=1 and high q=2.
+    i = 16;
+    dongu i < 144 { blok[i] = 33; i = i + 1; }
+
+    eger llm_q4_k_eleman_q16(blok, 0, 0) != 65536 veya
+       llm_q4_k_eleman_q16(blok, 0, 128) != 131072 veya
+       llm_q4_k_eleman_q16(blok, 0, 255) != 131072 ise {
+        ekrana_yaz("Q4_K_DEQUANT_FAIL\n".ptr);
+        dondu 1;
+    }
+
+    degisken x: [256]tamsayi;
+    degisken y: [1]tamsayi;
+    i = 0;
+    dongu i < 256 { x[i] = 65536; i = i + 1; }
+
+    eger llm_q4_k_matris_carp(blok, x, y, 1, 256, 1) == 0 veya
+       y[0] != 25164288 ise {
+
+
+        ekrana_yaz("Q4_K_MATMUL_FAIL\n".ptr);
+        dondu 2;
+    }
+    degisken q6: [210]u8;
+    i = 0;
+    dongu i < 210 { q6[i] = 0; i = i + 1; }
+    i = 0;
+    dongu i < 192 { q6[i] = 255; i = i + 1; }
+    i = 192;
+    dongu i < 208 { q6[i] = 1; i = i + 1; }
+    q6[194] = 2; q6[195] = 2;
+    q6[208] = 0; q6[209] = 60;
+    eger llm_q6_k_eleman_q16(q6, 0, 0) != 2031616 veya
+       llm_q6_k_eleman_q16(q6, 0, 32) != 4063232 veya
+       llm_q6_k_eleman_q16(q6, 0, 48) != 4063232 veya
+       llm_q6_k_eleman_q16(q6, 0, 127) != 2031616 veya
+       llm_q6_k_eleman_q16(q6, 0, 128) != 2031616 veya
+       llm_q6_k_eleman_q16(q6, 0, 255) != 2031616 ise {
+        ekrana_yaz("Q6_K_DEQUANT_FAIL\n".ptr);
+        dondu 4;
+    }
+    eger llm_q6_k_matris_carp(q6, x, y, 1, 256, 1) == 0 veya
+       y[0] != 585105408 ise {
+        ekrana_yaz("Q6_K_MATMUL_FAIL\n".ptr);
+        dondu 5;
+    }
+    degisken iq4: [18]u8;
+    i = 0;
+    dongu i < 18 { iq4[i] = 136; i = i + 1; }
+    iq4[0] = 0; iq4[1] = 60;
+    eger llm_iq4_nl_eleman_q16(iq4, 0, 0) != 65536 veya
+       llm_iq4_nl_eleman_q16(iq4, 0, 31) != 65536 ise {
+        ekrana_yaz("IQ4_NL_DEQUANT_FAIL\n".ptr);
+        dondu 6;
+    }
+    degisken iq4_x: [32]tamsayi;
+    i = 0;
+    dongu i < 32 { iq4_x[i] = 65536; i = i + 1; }
+    eger llm_iq4_nl_matris_carp(iq4, iq4_x, y, 1, 32, 1) == 0 veya y[0] != 2097152 {
+        ekrana_yaz("IQ4_NL_MATMUL_FAIL\n".ptr);
+        dondu 7;
+    }
+    degisken bf16: [2]u8;
+    bf16[0] = 128; bf16[1] = 63;
+    degisken bf16_x: [1]tamsayi;
+    degisken bf16_y: [1]tamsayi;
+    bf16_x[0] = 131072;
+    eger llm_bf16_q16_coz(bf16[0], bf16[1]) != 65536 veya
+       llm_bf16_matris_carp(bf16, bf16_x, bf16_y, 1, 1, 1) == 0 veya
+       bf16_y[0] != 131072 {
+        ekrana_yaz("BF16_MATMUL_FAIL\n".ptr);
+        dondu 8;
+    }
+    ekrana_yaz("Q4_Q6_IQ4_BF16_KERNEL_PASS\n".ptr);
+    dondu 0;
+}

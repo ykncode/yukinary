@@ -1,0 +1,240 @@
+# ============================================================
+# tests/faz7_std_ecosystem_test.ykn
+# FAZ 7: Standart Kütüphane (std/*) Çekirdek, Eşzamanlılık ve Veritabanı Testi
+# ============================================================
+
+ice_aktar "std/dosya.ykn";
+ice_aktar "std/metin.ykn";
+ice_aktar "std/collection/vec.ykn";
+ice_aktar "std/collection/hashmap.ykn";
+ice_aktar "std/es/work_stealing.ykn";
+ice_aktar "std/bulut/rpc.ykn";
+ice_aktar "std/dagitik/raft.ykn";
+ice_aktar "std/veritabani/b_tree.ykn";
+ice_aktar "std/veritabani/wal.ykn";
+ice_aktar "std/veritabani/hnsw.ykn";
+ice_aktar "std/gui/cizim.ykn";
+
+isv test_metin_ve_utf8() -> tamsayi {
+    # 1. INT64_MIN donusumu
+    degisken min_i64: tamsayi = (0 - 9223372036854775807) - 1;
+    degisken str_min: *u8 = tamsayi_metne(min_i64);
+    eger strcmp(str_min, "-9223372036854775808".ptr) != 0 ise {
+        ekrana_yaz("HATA: INT64_MIN metne donusturulemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. RFC 3629 UTF-8 dogrulamasi
+    degisken gecerli_utf8: *u8 = "Yukinary Dili ve Yapay Zeka".ptr;
+    eger utf8_gecerli_mi(gecerli_utf8) != 1 ise {
+        ekrana_yaz("HATA: Gecerli UTF-8 hatali reddedildi!\n".ptr);
+        dondu 2;
+    }
+
+    # Overlong / gecersiz UTF-8 testi (0xC0 0xAF gecersizdir)
+    degisken bozuk_utf8: [4]u8;
+    bozuk_utf8[0] = 192; # 0xC0 (overlong 2-byte)
+    bozuk_utf8[1] = 175; # 0xAF
+    bozuk_utf8[2] = 0;
+    eger utf8_gecerli_mi(bozuk_utf8.ptr) != 0 ise {
+        ekrana_yaz("HATA: Overlong UTF-8 guvenlik acigi yakalanamadi!\n".ptr);
+        dondu 3;
+    }
+
+    dondu 0;
+}
+
+isv test_koleksiyonlar() -> tamsayi {
+    # 1. Vec testi
+    degisken v: *Vec = vec_olustur(2);
+    vec_push_tamsayi(v, 100);
+    vec_push_tamsayi(v, 200);
+    vec_push_tamsayi(v, 300); # Yeniden boyutlandirma (2 -> 4)
+    eger v.uzunluk != 3 veya vec_get_tamsayi(v, 2) != 300 ise {
+        ekrana_yaz("HATA: Vec buyume veya get hatasi!\n".ptr);
+        dondu 1;
+    }
+    vec_yok_et(v);
+
+    # 2. HashMap ve Tombstone testi
+    degisken hm: *HashMap = hashmap_olustur(16);
+    hashmap_ekle(hm, "anahtar1".ptr, 10);
+    hashmap_ekle(hm, "anahtar2".ptr, 20);
+    hashmap_ekle(hm, "anahtar3".ptr, 30);
+
+    # Silme (tombstone = 2 olusturur)
+    hashmap_sil(hm, "anahtar2".ptr);
+    eger hashmap_al(hm, "anahtar2".ptr) != (0 - 1) ise {
+        ekrana_yaz("HATA: Silinen anahtar halen tabloda!\n".ptr);
+        dondu 2;
+    }
+
+    # Tekrar ekleme: cift anahtar olusmamali
+    hashmap_ekle(hm, "anahtar2".ptr, 222);
+    eger hashmap_al(hm, "anahtar2".ptr) != 222 ise {
+        ekrana_yaz("HATA: Mezar tasina yeniden eklenen deger okunamadi!\n".ptr);
+        dondu 3;
+    }
+    eger hashmap_al(hm, "anahtar3".ptr) != 30 ise {
+        ekrana_yaz("HATA: Mezar tasi sonrasi anahtar erisilemedi!\n".ptr);
+        dondu 4;
+    }
+
+    dondu 0;
+}
+
+isv test_work_stealing() -> tamsayi {
+    degisken q: *WSDeque = ws_deque_olustur();
+    ws_deque_push(q, 1001, 10);
+    degisken gorev: WSGorev;
+    degisken pop_ok: tamsayi = ws_deque_pop(q, &gorev);
+    eger pop_ok != 1 veya gorev.islev_ptr != 1001 ise {
+        ekrana_yaz("HATA: ws_deque_pop tek eleman basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # Bosken pop
+    degisken bos_pop: tamsayi = ws_deque_pop(q, &gorev);
+    eger bos_pop != 0 ise {
+        ekrana_yaz("HATA: Bos dequeden pop basarili dondu!\n".ptr);
+        dondu 2;
+    }
+
+    dondu 0;
+}
+
+isv test_rpc_ve_raft() -> tamsayi {
+    # 1. RPC paketi olusturma ve dogrulama
+    degisken p: *RpcPaket = rpc_paket_olustur(1, 2, 10, 3);
+    degisken v_ptr: *tamsayi = p.veri;
+    v_ptr[0] = 11; v_ptr[1] = 22; v_ptr[2] = 33;
+
+    degisken tampon: [32]tamsayi;
+    degisken sz: tamsayi = rpc_serilestir(p, tampon.ptr);
+    eger sz <= 0 ise {
+        ekrana_yaz("HATA: rpc_serilestir basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    degisken p_cozulmus: *RpcPaket = rpc_ayristir(tampon.ptr);
+    eger p_cozulmus == 0 veya rpc_paket_dogrula(p_cozulmus) != 1 ise {
+        ekrana_yaz("HATA: rpc_ayristir veya saglama dogrulama basarisiz!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. Raft secim guvenligi (son_log_donem karsilastirmasi)
+    degisken dugum: *RaftDugum = raft_dugum_olustur(1, 10);
+    # dugum donemi 1 olsun
+    dugum.guncel_donem = 1;
+    dugum.log_sayisi = 1;
+    degisken ld: *tamsayi = dugum.log_donemler;
+    ld[0] = 2; # Dugumun son logunun donemi 2
+
+    # Aday donem 1, son_log_donem 1 (yerel log donemi 2'den kucuk, dolayisiyla aday geridedir!)
+    degisken oy: tamsayi = raft_oy_iste(dugum, 2, 1, 1, 1);
+    eger oy != 0 ise {
+        ekrana_yaz("HATA: Raft eski log donemli adaya oy verdi (guvenlik ihlali)!\n".ptr);
+        dondu 3;
+    }
+
+    # Aday son_log_donem 2 ve log_indis >= yerel_son_indis ise oy vermeli
+    degisken oy2: tamsayi = raft_oy_iste(dugum, 2, 1, 1, 2);
+    eger oy2 != 1 ise {
+        ekrana_yaz("HATA: Raft guncel loglu adaya oy vermedi!\n".ptr);
+        dondu 4;
+    }
+
+    dondu 0;
+}
+
+isv test_veritabani() -> tamsayi {
+    ekrana_yaz("5.1 B+Tree testi...\n".ptr);
+    # 1. B+Tree testi (Bolunme ve arama)
+    degisken agac: *BTreeAgac = btree_agac_olustur();
+    degisken i: tamsayi = 1;
+    dongu i <= 20 {
+        btree_agaca_ekle(agac, i * 10, i * 100);
+        i = i + 1;
+    }
+    degisken val: tamsayi = btree_ara(agac.kok, 50);
+    eger val != 500 ise {
+        ekrana_yaz("HATA: B+Tree arama hatasi!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("5.2 WAL testi...\n".ptr);
+    # 2. WAL testi
+    degisken wal: *WalYoneticisi = wal_yoneticisi_olustur();
+    wal_tx_baslat(wal);
+    wal_kayit_ekle(wal, WAL_ISLEM_EKLE, 1, 0, 100);
+    wal_commit(wal);
+    degisken kurtarilan: tamsayi = wal_cokme_kurtarma_analizi(wal);
+    eger kurtarilan != 1 ise {
+        ekrana_yaz("HATA: WAL cokme kurtarma hatasi!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("5.3 HNSW testi...\n".ptr);
+    # 3. HNSW K-komsu testi
+    degisken h: *HnswGraf = hnsw_olustur(2);
+    degisken v1: [2]tamsayi; v1[0] = 0; v1[1] = 0;
+    degisken v2: [2]tamsayi; v2[0] = 1; v2[1] = 1;
+    degisken v3: [2]tamsayi; v3[0] = 10; v3[1] = 10;
+    hnsw_ekle(h, 1, v1.ptr);
+    hnsw_ekle(h, 2, v2.ptr);
+    hnsw_ekle(h, 3, v3.ptr);
+
+    degisken sorgu: [2]tamsayi; sorgu[0] = 0; sorgu[1] = 1;
+    degisken k_sonuc: [2]tamsayi;
+    degisken bulunan_k: tamsayi = hnsw_k_ara(h, sorgu.ptr, 2, k_sonuc.ptr);
+    eger bulunan_k != 2 ise {
+        ekrana_yaz("HATA: HNSW K komsu bulunamadi!\n".ptr);
+        dondu 3;
+    }
+
+    dondu 0;
+}
+
+isv test_gui_cizim() -> tamsayi {
+    degisken y: CizimYuzeyi;
+    degisken ok: tamsayi = cizim_yuzeyi_olustur(&y, 10, 10);
+    eger ok != 0 ise { dondu 1; }
+
+    cizim_piksel_koy(&y, 2, 3, 0xFF112233);
+    degisken p: tamsayi = cizim_piksel_al(&y, 2, 3);
+    eger p != 0xFF112233 ise {
+        ekrana_yaz("HATA: GUI 4-bayt ARGB piksel adimi hatali!\n".ptr);
+        dondu 2;
+    }
+    cizim_yuzeyi_serbest_birak(&y);
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("1. test_metin_ve_utf8...\n".ptr);
+    degisken t1: tamsayi = test_metin_ve_utf8();
+    eger t1 != 0 ise { dondu t1; }
+
+    ekrana_yaz("2. test_koleksiyonlar...\n".ptr);
+    degisken t2: tamsayi = test_koleksiyonlar();
+    eger t2 != 0 ise { dondu t2; }
+
+    ekrana_yaz("3. test_work_stealing...\n".ptr);
+    degisken t3: tamsayi = test_work_stealing();
+    eger t3 != 0 ise { dondu t3; }
+
+    ekrana_yaz("4. test_rpc_ve_raft...\n".ptr);
+    degisken t4: tamsayi = test_rpc_ve_raft();
+    eger t4 != 0 ise { dondu t4; }
+
+    ekrana_yaz("5. test_veritabani...\n".ptr);
+    degisken t5: tamsayi = test_veritabani();
+    eger t5 != 0 ise { dondu t5; }
+
+    ekrana_yaz("6. test_gui_cizim...\n".ptr);
+    degisken t6: tamsayi = test_gui_cizim();
+    eger t6 != 0 ise { dondu t6; }
+
+    ekrana_yaz("FAZ 7 STANDART KUTUPHANE EKOSISTEM TESTLERI BASARILI!\n".ptr);
+    dondu 0;
+}

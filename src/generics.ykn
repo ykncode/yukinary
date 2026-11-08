@@ -1,0 +1,898 @@
+# ============================================================
+# Yukinary (YKN) Generics (Sablonlar) ve Trait Sistemi
+# ============================================================
+
+degisken AST_GENERIC_TANIM    = 24;
+degisken AST_TRAIT_TANIM      = 25;
+degisken AST_TRAIT_UYGULAMA   = 40;
+degisken MAKRO_GENERIC_MAKS_UZMANLASMA: tamsayi = 1024;
+degisken g_generic_uzmanlasma_sayaci: tamsayi = 0;
+
+
+# ============================================================
+# Veri Yapilari
+# ============================================================
+yapi GenericSablon {
+    isim_ptr: *u8;
+    isim_uzunluk: tamsayi;
+    isim_hash: tamsayi;
+    parametreler_ast: *AstDugum;
+    govde_ast: *AstDugum;
+    sonraki: *GenericSablon;
+}
+
+yapi MonomorphKayit {
+    mangled_ptr: *u8;
+    mangled_uzunluk: tamsayi;
+    mangled_hash: tamsayi;
+    islev_ast: *AstDugum;
+    sonraki: *MonomorphKayit;
+}
+
+yapi TraitGirdisi {
+    trait_hash: tamsayi;
+    uygulanan_tip: tamsayi;
+    sonraki: *TraitGirdisi;
+}
+
+yapi GenericsMotoru {
+    sablon_listesi: *GenericSablon;
+    monomorph_listesi: *MonomorphKayit;
+    trait_tablosu: *TraitGirdisi;
+    arena: *AstArena;
+    yapi_sablon_listesi: *GenericSablon;
+    yapi_monomorph_listesi: *MonomorphKayit;
+}
+
+# ============================================================
+# Trait Denetimi
+# ============================================================
+isv trait_uygulandi_mi(motor: *GenericsMotoru, trait_hash: tamsayi, kontrol_edilen_tip: tamsayi) -> tamsayi {
+    degisken iter: *TraitGirdisi = motor.trait_tablosu;
+    dongu iter != 0 {
+        eger iter.trait_hash == trait_hash ve iter.uygulanan_tip == kontrol_edilen_tip ise {
+            dondu 1;
+        }
+        iter = iter.sonraki;
+    }
+    dondu tc_trait_uygulandi_mi(trait_hash, kontrol_edilen_tip);
+}
+
+isv trait_uygulamasi_kaydet(motor: *GenericsMotoru, trait_isim_jetonu: *Jeton, hedef_tip: tamsayi) {
+    degisken hash: tamsayi = djb2_sembol(trait_isim_jetonu.baslangic, trait_isim_jetonu.uzunluk);
+    degisken yeni_girdi: *TraitGirdisi = compiler_tahsis_et(64);
+    yeni_girdi.trait_hash = hash;
+    yeni_girdi.uygulanan_tip = hedef_tip;
+    yeni_girdi.sonraki = motor.trait_tablosu;
+    motor.trait_tablosu = yeni_girdi;
+}
+
+# Built-in trait'leri hash degeriyle kaydetmek icin yardimci
+# (Jeton altyapisi gerektirmeden string'den hash hesapla)
+isv trait_hash_kaydet(motor: *GenericsMotoru, trait_isim: *u8, trait_isim_uzn: tamsayi, hedef_tip: tamsayi) {
+    degisken hash: tamsayi = djb2_sembol(trait_isim, trait_isim_uzn);
+    degisken yeni_girdi: *TraitGirdisi = compiler_tahsis_et(64);
+    yeni_girdi.trait_hash = hash;
+    yeni_girdi.uygulanan_tip = hedef_tip;
+    yeni_girdi.sonraki = motor.trait_tablosu;
+    motor.trait_tablosu = yeni_girdi;
+}
+
+# ============================================================
+# Built-in Trait Default Uygulamalari
+# TIP_ID: tamsayi=1, gercek=2, metin=3, mantik=4, u8=5
+# Trait'ler: Boyut, Kopyala, Esit, Hash, Toplama
+# ============================================================
+isv trait_cift_kaydet(motor: *GenericsMotoru, tr_hash: tamsayi, t_id: tamsayi, t_hash: tamsayi) {
+    degisken g1: *TraitGirdisi = compiler_tahsis_et(64);
+    g1.trait_hash = tr_hash; g1.uygulanan_tip = t_id;
+    g1.sonraki = motor.trait_tablosu; motor.trait_tablosu = g1;
+
+    degisken g2: *TraitGirdisi = compiler_tahsis_et(64);
+    g2.trait_hash = tr_hash; g2.uygulanan_tip = t_hash;
+    g2.sonraki = motor.trait_tablosu; motor.trait_tablosu = g2;
+}
+
+# ============================================================
+# Built-in Trait Default Uygulamalari
+# TIP_ID: tamsayi=1, gercek=2, metin=3, mantik=4, u8=5
+# Trait'ler: Boyut, Kopyala, Esit, Hash, Toplama, Karsilastir, Goster, Klonla
+# ============================================================
+isv builtin_traitleri_kaydet(motor: *GenericsMotoru) {
+    degisken boyut_hash: tamsayi       = djb2_sembol("Boyut".ptr, 5);
+    degisken kopyala_hash: tamsayi     = djb2_sembol("Kopyala".ptr, 7);
+    degisken esit_hash: tamsayi        = djb2_sembol("Esit".ptr, 4);
+    degisken hash_hash: tamsayi        = djb2_sembol("Hash".ptr, 4);
+    degisken toplama_hash: tamsayi     = djb2_sembol("Toplama".ptr, 7);
+    degisken karsilastir_hash: tamsayi = djb2_sembol("Karsilastir".ptr, 11);
+    degisken goster_hash: tamsayi      = djb2_sembol("Goster".ptr, 6);
+    degisken klonla_hash: tamsayi      = djb2_sembol("Klonla".ptr, 6);
+
+    degisken h_tamsayi: tamsayi = djb2_sembol("tamsayi".ptr, 7);
+    degisken h_gercek: tamsayi  = djb2_sembol("gercek".ptr, 6);
+    degisken h_metin: tamsayi   = djb2_sembol("metin".ptr, 5);
+    degisken h_mantik: tamsayi  = djb2_sembol("mantik".ptr, 6);
+    degisken h_u8: tamsayi      = djb2_sembol("u8".ptr, 2);
+
+    # tamsayi (id=1)
+    trait_cift_kaydet(motor, boyut_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, kopyala_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, esit_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, hash_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, toplama_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, karsilastir_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, goster_hash, 1, h_tamsayi);
+    trait_cift_kaydet(motor, klonla_hash, 1, h_tamsayi);
+
+    # gercek (id=2)
+    trait_cift_kaydet(motor, boyut_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, kopyala_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, esit_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, hash_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, toplama_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, karsilastir_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, goster_hash, 2, h_gercek);
+    trait_cift_kaydet(motor, klonla_hash, 2, h_gercek);
+
+    # metin (id=3)
+    trait_cift_kaydet(motor, boyut_hash, 3, h_metin);
+    trait_cift_kaydet(motor, kopyala_hash, 3, h_metin);
+    trait_cift_kaydet(motor, esit_hash, 3, h_metin);
+    trait_cift_kaydet(motor, hash_hash, 3, h_metin);
+    trait_cift_kaydet(motor, toplama_hash, 3, h_metin);
+    trait_cift_kaydet(motor, karsilastir_hash, 3, h_metin);
+    trait_cift_kaydet(motor, goster_hash, 3, h_metin);
+    trait_cift_kaydet(motor, klonla_hash, 3, h_metin);
+
+    # mantik (id=4)
+    trait_cift_kaydet(motor, boyut_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, kopyala_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, esit_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, hash_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, toplama_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, karsilastir_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, goster_hash, 4, h_mantik);
+    trait_cift_kaydet(motor, klonla_hash, 4, h_mantik);
+
+    # u8 (id=5)
+    trait_cift_kaydet(motor, boyut_hash, 5, h_u8);
+    trait_cift_kaydet(motor, kopyala_hash, 5, h_u8);
+    trait_cift_kaydet(motor, esit_hash, 5, h_u8);
+    trait_cift_kaydet(motor, hash_hash, 5, h_u8);
+    trait_cift_kaydet(motor, toplama_hash, 5, h_u8);
+    trait_cift_kaydet(motor, karsilastir_hash, 5, h_u8);
+    trait_cift_kaydet(motor, goster_hash, 5, h_u8);
+    trait_cift_kaydet(motor, klonla_hash, 5, h_u8);
+}
+
+# Somut tip adini TIP_ID sayisina cevir (kaba)
+isv tip_adi_id_cevir(tip_ptr: *u8, tip_uzn: tamsayi) -> tamsayi {
+    eger tip_uzn == 7 ve bellek_esit_mi(tip_ptr, "tamsayi".ptr, 7) == 1 ise { dondu 1; }
+    eger tip_uzn == 6 ve bellek_esit_mi(tip_ptr, "gercek".ptr, 6) == 1 ise { dondu 2; }
+    eger tip_uzn == 5 ve bellek_esit_mi(tip_ptr, "metin".ptr, 5) == 1 ise { dondu 3; }
+    eger tip_uzn == 6 ve bellek_esit_mi(tip_ptr, "mantik".ptr, 6) == 1 ise { dondu 4; }
+    eger tip_uzn == 2 ve bellek_esit_mi(tip_ptr, "u8".ptr, 2) == 1 ise { dondu 5; }
+    dondu 0; # bilinmiyor
+}
+
+# ============================================================
+# Sablon Kaydi
+# ============================================================
+isv generic_sablon_ekle(motor: *GenericsMotoru, islev_d: *AstDugum) {
+    degisken j: *Jeton = islev_d.ilk_jeton;
+    degisken hash: tamsayi = djb2_sembol(j.baslangic, j.uzunluk);
+
+    degisken sablon: *GenericSablon = compiler_tahsis_et(160);
+    sablon.isim_ptr = j.baslangic;
+    sablon.isim_uzunluk = j.uzunluk;
+    sablon.isim_hash = hash;
+
+    sablon.parametreler_ast = islev_d.sol;
+    sablon.govde_ast = islev_d;
+    sablon.sonraki = motor.sablon_listesi;
+    motor.sablon_listesi = sablon;
+}
+
+isv generic_sablon_bul(motor: *GenericsMotoru, isim_ptr: *u8, isim_uzunluk: tamsayi) -> *GenericSablon {
+    degisken h: tamsayi = djb2_sembol(isim_ptr, isim_uzunluk);
+    degisken iter: *GenericSablon = motor.sablon_listesi;
+    dongu iter != 0 {
+        eger iter.isim_hash == h ve iter.isim_uzunluk == isim_uzunluk ve
+            bellek_esit_mi(iter.isim_ptr, isim_ptr, isim_uzunluk) == 1 ise {
+            dondu iter;
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+isv generic_yapi_sablon_ekle(motor: *GenericsMotoru, yapi_d: *AstDugum) {
+    degisken j: *Jeton = yapi_d.ilk_jeton;
+    eger j == 0 ise { dondu; }
+    degisken hash: tamsayi = djb2_sembol(j.baslangic, j.uzunluk);
+
+    degisken sablon: *GenericSablon = compiler_tahsis_et(160);
+    sablon.isim_ptr = j.baslangic;
+    sablon.isim_uzunluk = j.uzunluk;
+    sablon.isim_hash = hash;
+    sablon.parametreler_ast = yapi_d.parametreler;
+    sablon.govde_ast = yapi_d;
+    sablon.sonraki = motor.yapi_sablon_listesi;
+    motor.yapi_sablon_listesi = sablon;
+}
+
+isv generic_yapi_sablon_bul(motor: *GenericsMotoru, isim_ptr: *u8, isim_uzunluk: tamsayi) -> *GenericSablon {
+    eger isim_ptr == 0 veya isim_uzunluk <= 0 ise { dondu 0; }
+    degisken h: tamsayi = djb2_sembol(isim_ptr, isim_uzunluk);
+    degisken iter: *GenericSablon = motor.yapi_sablon_listesi;
+    dongu iter != 0 {
+        eger iter.isim_hash == h ve iter.isim_uzunluk == isim_uzunluk ve
+            bellek_esit_mi(iter.isim_ptr, isim_ptr, isim_uzunluk) == 1 ise {
+            dondu iter;
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+isv yapi_monomorph_kaydi_bul(motor: *GenericsMotoru, mangled_ptr: *u8, mangled_uzunluk: tamsayi) -> *AstDugum {
+    degisken h: tamsayi = djb2_sembol(mangled_ptr, mangled_uzunluk);
+    degisken iter: *MonomorphKayit = motor.yapi_monomorph_listesi;
+    dongu iter != 0 {
+        eger iter.mangled_hash == h ve iter.mangled_uzunluk == mangled_uzunluk ve
+            bellek_esit_mi(iter.mangled_ptr, mangled_ptr, mangled_uzunluk) == 1 ise {
+            dondu iter.islev_ast;
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Monomorphization & AST Klonlama
+# ============================================================
+isv ast_klonla_ve_tip_yerlestir(motor: *GenericsMotoru, kok: *AstDugum, parametreler_ast: *AstDugum, somut_ast: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+
+    degisken kopya: *AstDugum = arena_dugum_yarat(motor.arena, kok.tip, kok.ilk_jeton);
+    kopya.son_jeton = kok.son_jeton;
+    kopya.tip_adi = kok.tip_adi;
+    kopya.tip_adi_uzunluk = kok.tip_adi_uzunluk;
+    kopya.cozumlenmis_tip = kok.cozumlenmis_tip;
+    kopya.dizi_boyutu = kok.dizi_boyutu;
+
+    eger kopya.tip_adi != 0 ise {
+        degisken p_it: *AstDugum = parametreler_ast;
+        degisken s_it: *AstDugum = somut_ast;
+        dongu p_it != 0 ve s_it != 0 {
+            eger p_it.tip_adi != 0 ve p_it.tip_adi_uzunluk == kopya.tip_adi_uzunluk ise {
+                eger bellek_esit_mi(p_it.tip_adi, kopya.tip_adi, kopya.tip_adi_uzunluk) == 1 ise {
+                    kopya.tip_adi = s_it.tip_adi;
+                    kopya.tip_adi_uzunluk = s_it.tip_adi_uzunluk;
+                    durdur;
+                }
+            }
+            p_it = p_it.sonraki;
+            s_it = s_it.sonraki;
+        }
+    }
+
+    # Parametre listesi klonla
+    eger kok.parametreler != 0 ise {
+        degisken ilk_p: *AstDugum = 0;
+        degisken son_p: *AstDugum = 0;
+        degisken p_iter: *AstDugum = kok.parametreler;
+        dongu p_iter != 0 {
+            degisken p_kopya: *AstDugum = arena_dugum_yarat(motor.arena, p_iter.tip, p_iter.ilk_jeton);
+            p_kopya.tip_adi = p_iter.tip_adi;
+            p_kopya.tip_adi_uzunluk = p_iter.tip_adi_uzunluk;
+            p_kopya.cozumlenmis_tip = p_iter.cozumlenmis_tip;
+            eger p_kopya.tip_adi != 0 ise {
+                degisken p_it2: *AstDugum = parametreler_ast;
+                degisken s_it2: *AstDugum = somut_ast;
+                dongu p_it2 != 0 ve s_it2 != 0 {
+                    eger p_it2.tip_adi != 0 ve p_it2.tip_adi_uzunluk == p_kopya.tip_adi_uzunluk ise {
+                        eger bellek_esit_mi(p_it2.tip_adi, p_kopya.tip_adi, p_kopya.tip_adi_uzunluk) == 1 ise {
+                            p_kopya.tip_adi = s_it2.tip_adi;
+                            p_kopya.tip_adi_uzunluk = s_it2.tip_adi_uzunluk;
+                            durdur;
+                        }
+                    }
+                    p_it2 = p_it2.sonraki;
+                    s_it2 = s_it2.sonraki;
+                }
+            }
+            eger p_iter.tip_arglari != 0 ise {
+                degisken ilk_pta: *AstDugum = 0;
+                degisken son_pta: *AstDugum = 0;
+                degisken pta_iter: *AstDugum = p_iter.tip_arglari;
+                dongu pta_iter != 0 {
+                    degisken pta_kopya: *AstDugum = arena_dugum_yarat(motor.arena, pta_iter.tip, pta_iter.ilk_jeton);
+                    pta_kopya.tip_adi = pta_iter.tip_adi;
+                    pta_kopya.tip_adi_uzunluk = pta_iter.tip_adi_uzunluk;
+                    pta_kopya.cozumlenmis_tip = pta_iter.cozumlenmis_tip;
+                    eger pta_kopya.tip_adi != 0 ise {
+                        degisken p_it_ta: *AstDugum = parametreler_ast;
+                        degisken s_it_ta: *AstDugum = somut_ast;
+                        dongu p_it_ta != 0 ve s_it_ta != 0 {
+                            eger p_it_ta.tip_adi != 0 ve p_it_ta.tip_adi_uzunluk == pta_kopya.tip_adi_uzunluk ise {
+                                eger bellek_esit_mi(p_it_ta.tip_adi, pta_kopya.tip_adi, pta_kopya.tip_adi_uzunluk) == 1 ise {
+                                    pta_kopya.tip_adi = s_it_ta.tip_adi;
+                                    pta_kopya.tip_adi_uzunluk = s_it_ta.tip_adi_uzunluk;
+                                    durdur;
+                                }
+                            }
+                            p_it_ta = p_it_ta.sonraki;
+                            s_it_ta = s_it_ta.sonraki;
+                        }
+                    }
+                    eger ilk_pta == 0 ise { ilk_pta = pta_kopya; son_pta = pta_kopya; }
+                    yoksa { son_pta.sonraki = pta_kopya; son_pta = pta_kopya; }
+                    pta_iter = pta_iter.sonraki;
+                }
+                p_kopya.tip_arglari = ilk_pta;
+                p_kopya.tip_arg_sayisi = p_iter.tip_arg_sayisi;
+            }
+            eger ilk_p == 0 ise { ilk_p = p_kopya; son_p = p_kopya; }
+            yoksa { son_p.sonraki = p_kopya; son_p = p_kopya; }
+            p_iter = p_iter.sonraki;
+        }
+        kopya.parametreler = ilk_p;
+    }
+
+    eger kok.tip_arglari != 0 ise {
+        degisken ilk_ta: *AstDugum = 0;
+        degisken son_ta: *AstDugum = 0;
+        degisken ta_iter: *AstDugum = kok.tip_arglari;
+        dongu ta_iter != 0 {
+            degisken ta_kopya: *AstDugum = arena_dugum_yarat(motor.arena, ta_iter.tip, ta_iter.ilk_jeton);
+            ta_kopya.tip_adi = ta_iter.tip_adi;
+            ta_kopya.tip_adi_uzunluk = ta_iter.tip_adi_uzunluk;
+            ta_kopya.cozumlenmis_tip = ta_iter.cozumlenmis_tip;
+            eger ta_kopya.tip_adi != 0 ise {
+                degisken p_it3: *AstDugum = parametreler_ast;
+                degisken s_it3: *AstDugum = somut_ast;
+                dongu p_it3 != 0 ve s_it3 != 0 {
+                    eger p_it3.tip_adi != 0 ve p_it3.tip_adi_uzunluk == ta_kopya.tip_adi_uzunluk ise {
+                        eger bellek_esit_mi(p_it3.tip_adi, ta_kopya.tip_adi, ta_kopya.tip_adi_uzunluk) == 1 ise {
+                            ta_kopya.tip_adi = s_it3.tip_adi;
+                            ta_kopya.tip_adi_uzunluk = s_it3.tip_adi_uzunluk;
+                            durdur;
+                        }
+                    }
+                    p_it3 = p_it3.sonraki;
+                    s_it3 = s_it3.sonraki;
+                }
+            }
+            eger ilk_ta == 0 ise { ilk_ta = ta_kopya; son_ta = ta_kopya; }
+            yoksa { son_ta.sonraki = ta_kopya; son_ta = ta_kopya; }
+            ta_iter = ta_iter.sonraki;
+        }
+        kopya.tip_arglari = ilk_ta;
+        kopya.tip_arg_sayisi = kok.tip_arg_sayisi;
+    }
+
+    kopya.sol = ast_klonla_ve_tip_yerlestir(motor, kok.sol, parametreler_ast, somut_ast);
+    kopya.sag = ast_klonla_ve_tip_yerlestir(motor, kok.sag, parametreler_ast, somut_ast);
+    kopya.govde = ast_klonla_ve_tip_yerlestir(motor, kok.govde, parametreler_ast, somut_ast);
+    kopya.yoksa_govde = ast_klonla_ve_tip_yerlestir(motor, kok.yoksa_govde, parametreler_ast, somut_ast);
+    eger kok.sonraki != 0 ise {
+        kopya.sonraki = ast_klonla_ve_tip_yerlestir(motor, kok.sonraki, parametreler_ast, somut_ast);
+    }
+    dondu kopya;
+}
+
+isv monomorph_kaydi_bul(motor: *GenericsMotoru, mangled_ptr: *u8, mangled_uzunluk: tamsayi) -> *AstDugum {
+    degisken h: tamsayi = djb2_sembol(mangled_ptr, mangled_uzunluk);
+    degisken iter: *MonomorphKayit = motor.monomorph_listesi;
+    dongu iter != 0 {
+        eger iter.mangled_hash == h ve iter.mangled_uzunluk == mangled_uzunluk ve
+            bellek_esit_mi(iter.mangled_ptr, mangled_ptr, mangled_uzunluk) == 1 ise {
+            dondu iter.islev_ast;
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+isv generic_yapi_monomorfize_et(motor: *GenericsMotoru, tip_dugumu: *AstDugum, uretilen_fonklar_bas: **AstDugum) {
+    eger tip_dugumu == 0 veya tip_dugumu.tip_adi == 0 veya tip_dugumu.tip_arglari == 0 ise { dondu; }
+
+    # Eger tip argumanlarindan herhangi biri henuz cozulmemis generic tip parametresi ise
+    # (ornek: tek buyuk harf 'T', 'U'), somutlastirma yapilamaz.
+    degisken chk_arg: *AstDugum = tip_dugumu.tip_arglari;
+    dongu chk_arg != 0 {
+        eger chk_arg.tip_adi != 0 ve chk_arg.tip_adi_uzunluk == 1 ise {
+            degisken ilk_ch: u8 = chk_arg.tip_adi[0];
+            eger ilk_ch >= 65 ve ilk_ch <= 90 ise {
+                dondu;
+            }
+        }
+        chk_arg = chk_arg.sonraki;
+    }
+
+    degisken sablon: *GenericSablon = generic_yapi_sablon_bul(motor, tip_dugumu.tip_adi, tip_dugumu.tip_adi_uzunluk);
+    eger sablon == 0 ise { dondu; }
+
+    degisken p_ast: *AstDugum = sablon.parametreler_ast;
+    degisken s_ast: *AstDugum = tip_dugumu.tip_arglari;
+
+    degisken param_sayisi: tamsayi = 0;
+    degisken arg_sayisi: tamsayi = 0;
+    degisken iter_p: *AstDugum = p_ast;
+    degisken iter_s: *AstDugum = s_ast;
+    dongu iter_p != 0 { param_sayisi = param_sayisi + 1; iter_p = iter_p.sonraki; }
+    dongu iter_s != 0 { arg_sayisi = arg_sayisi + 1; iter_s = iter_s.sonraki; }
+
+    eger param_sayisi != arg_sayisi ise {
+        hata_bas_parser("HATA [E015] [ERR_GENERIC_MISMATCH]: Generic yapi parametre sayisi uyumsuz".ptr, tip_dugumu.ilk_jeton);
+        dondu;
+    }
+
+    # Mangled isim: Isim__T__U
+    degisken m_uzn: tamsayi = sablon.isim_uzunluk;
+    degisken iter_s: *AstDugum = s_ast;
+    dongu iter_s != 0 {
+        eger iter_s.tip_adi != 0 ise {
+            m_uzn = m_uzn + 2 + iter_s.tip_adi_uzunluk;
+        }
+        iter_s = iter_s.sonraki;
+    }
+
+    degisken m_buf: *u8 = compiler_tahsis_et(m_uzn + 1);
+    degisken bi: tamsayi = 0;
+    degisken src_idx: tamsayi = 0;
+    dongu src_idx < sablon.isim_uzunluk {
+        m_buf[bi] = sablon.isim_ptr[src_idx];
+        bi = bi + 1;
+        src_idx = src_idx + 1;
+    }
+    iter_s = s_ast;
+    dongu iter_s != 0 {
+        m_buf[bi] = 95; bi = bi + 1; # '_'
+        m_buf[bi] = 95; bi = bi + 1; # '_'
+        src_idx = 0;
+        eger iter_s.tip_adi != 0 ise {
+            dongu src_idx < iter_s.tip_adi_uzunluk {
+                m_buf[bi] = iter_s.tip_adi[src_idx];
+                bi = bi + 1;
+                src_idx = src_idx + 1;
+            }
+        }
+        iter_s = iter_s.sonraki;
+    }
+    m_buf[bi] = 0;
+
+    degisken mevcut: *AstDugum = yapi_monomorph_kaydi_bul(motor, m_buf, m_uzn);
+    eger mevcut == 0 ise {
+        # Yeni somut yapı AST'si üret
+        degisken yeni_jeton: *Jeton = compiler_tahsis_et(40);
+        yeni_jeton.tip = TIP_KIMLIK;
+        yeni_jeton.baslangic = m_buf;
+        yeni_jeton.uzunluk = m_uzn;
+        yeni_jeton.satir = sablon.govde_ast.ilk_jeton.satir;
+        yeni_jeton.sutun = sablon.govde_ast.ilk_jeton.sutun;
+
+        degisken yeni_yapi: *AstDugum = arena_dugum_yarat(motor.arena, 16, yeni_jeton); # 16 = AST_YAPI_TANIMI
+        yeni_yapi.gorunurluk = sablon.govde_ast.gorunurluk;
+        yeni_yapi.parametreler = 0; # somut yapinin artik parametresi yok!
+
+        # Alanlari klonla ve tip parametrelerini somut argumanlarla degistir
+        degisken ilk_alan: *AstDugum = 0;
+        degisken son_alan: *AstDugum = 0;
+        degisken a_iter: *AstDugum = sablon.govde_ast.sol;
+        dongu a_iter != 0 {
+            degisken a_kopya: *AstDugum = arena_dugum_yarat(motor.arena, a_iter.tip, a_iter.ilk_jeton);
+            a_kopya.tip_adi = a_iter.tip_adi;
+            a_kopya.tip_adi_uzunluk = a_iter.tip_adi_uzunluk;
+            a_kopya.cozumlenmis_tip = a_iter.cozumlenmis_tip;
+            a_kopya.dizi_boyutu = a_iter.dizi_boyutu;
+            a_kopya.tip_arglari = a_iter.tip_arglari;
+            a_kopya.tip_arg_sayisi = a_iter.tip_arg_sayisi;
+
+            # Eger bu alanin tipi şablon parametrelerinden biri ise:
+            eger a_kopya.tip_adi != 0 ise {
+                degisken p_it: *AstDugum = p_ast;
+                degisken s_it: *AstDugum = s_ast;
+                dongu p_it != 0 ve s_it != 0 {
+                    eger p_it.tip_adi != 0 ve p_it.tip_adi_uzunluk == a_kopya.tip_adi_uzunluk ise {
+                        eger bellek_esit_mi(p_it.tip_adi, a_kopya.tip_adi, a_kopya.tip_adi_uzunluk) == 1 ise {
+                            a_kopya.tip_adi = s_it.tip_adi;
+                            a_kopya.tip_adi_uzunluk = s_it.tip_adi_uzunluk;
+                            durdur;
+                        }
+                    }
+                    p_it = p_it.sonraki;
+                    s_it = s_it.sonraki;
+                }
+            }
+
+            # Eger bu alan da baska bir generic yapiysa (orn: Kutu<Kutu<T>>), recursive monomorfize et:
+            eger a_kopya.tip_arglari != 0 ise {
+                generic_yapi_monomorfize_et(motor, a_kopya, uretilen_fonklar_bas);
+            }
+
+            eger ilk_alan == 0 ise { ilk_alan = a_kopya; son_alan = a_kopya; }
+            yoksa { son_alan.sonraki = a_kopya; son_alan = a_kopya; }
+            a_iter = a_iter.sonraki;
+        }
+        yeni_yapi.sol = ilk_alan;
+
+        # Monomorph kaydina ekle
+        degisken mk: *MonomorphKayit = compiler_tahsis_et(64);
+        mk.mangled_ptr = m_buf;
+        mk.mangled_uzunluk = m_uzn;
+        mk.mangled_hash = djb2_sembol(m_buf, m_uzn);
+        mk.islev_ast = yeni_yapi;
+        mk.sonraki = motor.yapi_monomorph_listesi;
+        motor.yapi_monomorph_listesi = mk;
+
+        # Uretilen yapilar listesine ekle
+        yeni_yapi.sonraki = *uretilen_fonklar_bas;
+        *uretilen_fonklar_bas = yeni_yapi;
+    }
+
+    # Kullanım düğümünün tipini mangled ada guncelle
+    tip_dugumu.tip_adi = m_buf;
+    tip_dugumu.tip_adi_uzunluk = m_uzn;
+    tip_dugumu.tip_arglari = 0;
+    tip_dugumu.tip_arg_sayisi = 0;
+}
+
+# ============================================================
+# Generics AST Traversal & Pipeline
+# ============================================================
+isv generics_ifade_tara(motor: *GenericsMotoru, dugum: *AstDugum, uretilen_fonklar_bas: **AstDugum) {
+    degisken sonraki_iter: *AstDugum = dugum;
+    dongu sonraki_iter != 0 {
+        degisken siradaki: *AstDugum = sonraki_iter.sonraki;
+
+        # Generic sablonlar (fonksiyon veya yapi sablonu) yerinde monomorfize edilemez
+        eger sonraki_iter.tip == AST_GENERIC_TANIM ise {
+            sonraki_iter = siradaki;
+            devam_et;
+        }
+        eger sonraki_iter.tip == AST_YAPI_TANIMI ve sonraki_iter.parametreler != 0 ise {
+            sonraki_iter = siradaki;
+            devam_et;
+        }
+
+        # Generic yapi / enum tipi referansi kontrolu: dugumde tip_arglari ve tip_adi varsa
+        eger sonraki_iter.tip_arglari != 0 ve sonraki_iter.tip_adi != 0 ise {
+            generic_yapi_monomorfize_et(motor, sonraki_iter, uretilen_fonklar_bas);
+        }
+
+        # Parametrelerde generic yapi referansi kontrolu
+        degisken p_tara: *AstDugum = sonraki_iter.parametreler;
+        dongu p_tara != 0 {
+            eger p_tara.tip_arglari != 0 ve p_tara.tip_adi != 0 ise {
+                generic_yapi_monomorfize_et(motor, p_tara, uretilen_fonklar_bas);
+            }
+            p_tara = p_tara.sonraki;
+        }
+
+        # Fonksiyon cagrisi kontrolu: fonk<tip>(...) veya generic fonk cagrisi
+        eger sonraki_iter.tip == AST_ISLEV_CAGRISI ise {
+            degisken kimlik: *AstDugum = sonraki_iter.sol;
+            eger kimlik != 0 ve kimlik.ilk_jeton != 0 ise {
+                degisken f_ptr: *u8 = kimlik.ilk_jeton.baslangic;
+                degisken f_uzn: tamsayi = kimlik.ilk_jeton.uzunluk;
+                degisken sablon: *GenericSablon = generic_sablon_bul(motor, f_ptr, f_uzn);
+                eger sablon != 0 ise {
+                    degisken p_ast: *AstDugum = sablon.parametreler_ast;
+                    degisken s_ast: *AstDugum = sonraki_iter.yoksa_govde;
+                    eger s_ast == 0 ve sonraki_iter.sag != 0 ise {
+                        degisken ilk_inf: *AstDugum = 0;
+                        degisken son_inf: *AstDugum = 0;
+                        degisken tp_iter: *AstDugum = p_ast;
+                        degisken pos_arg: *AstDugum = sonraki_iter.sag;
+                        dongu tp_iter != 0 {
+                            degisken eslesen_arg: *AstDugum = 0;
+                            eger sablon.govde_ast != 0 ve tp_iter.tip_adi != 0 ise {
+                                degisken fp_iter: *AstDugum = sablon.govde_ast.parametreler;
+                                degisken ca_iter: *AstDugum = sonraki_iter.sag;
+                                dongu fp_iter != 0 ve ca_iter != 0 {
+                                    eger fp_iter.tip_adi != 0 ve fp_iter.tip_adi_uzunluk == tp_iter.tip_adi_uzunluk ise {
+                                        eger bellek_esit_mi(fp_iter.tip_adi, tp_iter.tip_adi, tp_iter.tip_adi_uzunluk) == 1 ise {
+                                            eslesen_arg = ca_iter;
+                                            durdur;
+                                        }
+                                    }
+                                    fp_iter = fp_iter.sonraki;
+                                    ca_iter = ca_iter.sonraki;
+                                }
+                            }
+                            eger eslesen_arg == 0 ise {
+                                eslesen_arg = pos_arg;
+                            }
+                            eger eslesen_arg != 0 ise {
+                                degisken ded_tip: *u8 = 0;
+                                degisken ded_uzn: tamsayi = 0;
+                                eger eslesen_arg.tip == 1 ise { ded_tip = "tamsayi".ptr; ded_uzn = 7; }
+                                yoksa eger eslesen_arg.tip == 2 ise { ded_tip = "gercek".ptr; ded_uzn = 6; }
+                                yoksa eger eslesen_arg.tip == 3 ise { ded_tip = "metin".ptr; ded_uzn = 5; }
+                                yoksa eger eslesen_arg.tip == 26 ise { ded_tip = "mantik".ptr; ded_uzn = 6; }
+                                yoksa eger eslesen_arg.tip_adi != 0 ise { ded_tip = eslesen_arg.tip_adi; ded_uzn = eslesen_arg.tip_adi_uzunluk; }
+                                eger ded_tip != 0 ise {
+                                    degisken inf_d: *AstDugum = arena_dugum_yarat(motor.arena, AST_GENERIC_TANIM, eslesen_arg.ilk_jeton);
+                                    inf_d.tip_adi = ded_tip;
+                                    inf_d.tip_adi_uzunluk = ded_uzn;
+                                    eger ilk_inf == 0 ise { ilk_inf = inf_d; son_inf = inf_d; }
+                                    yoksa { son_inf.sonraki = inf_d; son_inf = inf_d; }
+                                }
+                            }
+                            eger pos_arg != 0 ise { pos_arg = pos_arg.sonraki; }
+                            tp_iter = tp_iter.sonraki;
+                        }
+                        s_ast = ilk_inf;
+                    }
+                    
+                    degisken arg_sayisi: tamsayi = 0;
+                    degisken param_sayisi: tamsayi = 0;
+                    degisken iter_p: *AstDugum = p_ast;
+                    degisken iter_s: *AstDugum = s_ast;
+                    dongu iter_p != 0 { param_sayisi = param_sayisi + 1; iter_p = iter_p.sonraki; }
+                    
+                    degisken m_uzn: tamsayi = f_uzn;
+                    dongu iter_s != 0 {
+                        arg_sayisi = arg_sayisi + 1;
+                        eger iter_s.tip_adi != 0 ise {
+                            m_uzn = m_uzn + 2 + iter_s.tip_adi_uzunluk;
+                        }
+                        iter_s = iter_s.sonraki;
+                    }
+
+                    eger param_sayisi != arg_sayisi ise {
+                        hata_bas_parser("HATA: Generic parametre sayisi uyumsuz".ptr, kimlik.ilk_jeton);
+                        dondu;
+                    }
+
+                    degisken trait_kisit_gecti: tamsayi = 1;
+                    iter_p = p_ast;
+                    iter_s = s_ast;
+                    dongu iter_p != 0 ve iter_s != 0 {
+                        eger iter_p.sag != 0 ise {
+                            degisken somut_tip_id: tamsayi = tip_adi_id_cevir(iter_s.tip_adi, iter_s.tip_adi_uzunluk);
+                            degisken somut_tip_h: tamsayi = djb2_sembol(iter_s.tip_adi, iter_s.tip_adi_uzunluk);
+                            eger somut_tip_id == 0 ise {
+                                somut_tip_id = somut_tip_h;
+                            }
+                            degisken iter_tb: *AstDugum = iter_p.sag;
+                            dongu iter_tb != 0 {
+                                degisken tb: *Jeton = iter_tb.ilk_jeton;
+                                degisken trait_hash: tamsayi = djb2_sembol(tb.baslangic, tb.uzunluk);
+                                degisken bu_kisit_var: tamsayi = trait_uygulandi_mi(motor, trait_hash, somut_tip_id);
+                                eger bu_kisit_var == 0 ise {
+                                    bu_kisit_var = trait_uygulandi_mi(motor, trait_hash, somut_tip_h);
+                                }
+                                eger bu_kisit_var == 0 ise {
+                                    trait_kisit_gecti = 0;
+                                    degisken h_satir: tamsayi = 0;
+                                    degisken h_sutun: tamsayi = 0;
+                                    eger tb != 0 ise { h_satir = tb.satir; h_sutun = tb.sutun; }
+                                    trait_ihlali_hatasi(h_satir, h_sutun, "Generic trait kisiti saglanmiyor".ptr);
+                                    durdur;
+                                }
+                                iter_tb = iter_tb.sonraki;
+                            }
+                            eger trait_kisit_gecti == 0 ise {
+                                durdur;
+                            }
+                        }
+                        iter_p = iter_p.sonraki;
+                        iter_s = iter_s.sonraki;
+                    }
+
+                    eger trait_kisit_gecti == 1 ise {
+                        degisken m_buf: *u8 = compiler_tahsis_et(m_uzn + 1);
+                        degisken bi: tamsayi = 0;
+                        degisken src_idx: tamsayi = 0;
+                        dongu src_idx < f_uzn { m_buf[bi] = f_ptr[src_idx]; bi = bi + 1; src_idx = src_idx + 1; }
+
+                        iter_s = s_ast;
+                        dongu iter_s != 0 {
+                            m_buf[bi] = 95; bi = bi + 1; # '_'
+                            m_buf[bi] = 95; bi = bi + 1; # '_'
+                            src_idx = 0;
+                            eger iter_s.tip_adi != 0 ise {
+                                dongu src_idx < iter_s.tip_adi_uzunluk { m_buf[bi] = iter_s.tip_adi[src_idx]; bi = bi + 1; src_idx = src_idx + 1; }
+                            }
+                            iter_s = iter_s.sonraki;
+                        }
+                        m_buf[bi] = 0;
+
+                        degisken mevcut: *AstDugum = monomorph_kaydi_bul(motor, m_buf, m_uzn);
+                        eger mevcut == 0 ise {
+                            eger g_generic_uzmanlasma_sayaci >= MAKRO_GENERIC_MAKS_UZMANLASMA ise {
+                                hata_bas_parser("HATA [E015] [ERR_RECURSION_DEPTH] [class=generics]: Generic uzmanlasma kapasitesi (1024) asildi".ptr, kimlik.ilk_jeton);
+                                dondu;
+                            }
+                            g_generic_uzmanlasma_sayaci = g_generic_uzmanlasma_sayaci + 1;
+                            degisken yeni_islev: *AstDugum = ast_klonla_ve_tip_yerlestir(motor, sablon.govde_ast, p_ast, s_ast);
+                            yeni_islev.tip = AST_ISLEV;
+                            yeni_islev.sol = 0; # generic parametreleri temizle
+
+                        # Fonksiyon ismini mangled isimle degistir
+                        degisken yeni_jeton: *Jeton = compiler_tahsis_et(40);
+                        yeni_jeton.tip = TIP_KIMLIK;
+                        yeni_jeton.baslangic = m_buf;
+                        yeni_jeton.uzunluk = m_uzn;
+                        yeni_jeton.satir = sablon.govde_ast.ilk_jeton.satir;
+                        yeni_jeton.sutun = sablon.govde_ast.ilk_jeton.sutun;
+                        yeni_islev.ilk_jeton = yeni_jeton;
+
+                        # Monomorph kaydina ekle
+                        degisken mk: *MonomorphKayit = compiler_tahsis_et(64);
+                        mk.mangled_ptr = m_buf;
+                        mk.mangled_uzunluk = m_uzn;
+                        mk.mangled_hash = djb2_sembol(m_buf, m_uzn);
+                        mk.islev_ast = yeni_islev;
+                        mk.sonraki = motor.monomorph_listesi;
+                        motor.monomorph_listesi = mk;
+
+                        # Uretilen fonksiyonlar listesine bagla
+                        yeni_islev.sonraki = *uretilen_fonklar_bas;
+                        *uretilen_fonklar_bas = yeni_islev;
+
+                        # Uretilen fonksiyonun donus tipi generic yapi ise monomorfize et
+                        eger yeni_islev.tip_arglari != 0 ve yeni_islev.tip_adi != 0 ise {
+                            generic_yapi_monomorfize_et(motor, yeni_islev, uretilen_fonklar_bas);
+                        }
+
+                        # Uretilen fonksiyonun parametrelerindeki generic yapilari monomorfize et
+                        degisken yf_param: *AstDugum = yeni_islev.parametreler;
+                        dongu yf_param != 0 {
+                            eger yf_param.tip_arglari != 0 ve yf_param.tip_adi != 0 ise {
+                                generic_yapi_monomorfize_et(motor, yf_param, uretilen_fonklar_bas);
+                            }
+                            yf_param = yf_param.sonraki;
+                        }
+
+                        # Uretilen fonksiyonun govdesini tara (ic generic cagrilari ve degiskenleri monomorfize et)
+                        generics_ifade_tara(motor, yeni_islev.govde, uretilen_fonklar_bas);
+                    }
+
+                    # Cagri hedef ismini mangled isimle degistir
+                    degisken cagri_jeton: *Jeton = compiler_tahsis_et(40);
+                    cagri_jeton.tip = TIP_KIMLIK;
+                    cagri_jeton.baslangic = m_buf;
+                    cagri_jeton.uzunluk = m_uzn;
+                    cagri_jeton.satir = kimlik.ilk_jeton.satir;
+                    cagri_jeton.sutun = kimlik.ilk_jeton.sutun;
+                    kimlik.ilk_jeton = cagri_jeton;
+                    # Generic tip argumanlari yalnızca monomorphization metadata'sidir.
+                    # Mangled somut hedefe dönüştükten sonra codegen'e taşınamaz.
+                    sonraki_iter.yoksa_govde = 0;
+                } # trait_kisit_gecti == 1
+                } # sablon != 0
+            } # kimlik != 0
+        } # AST_ISLEV_CAGRISI
+
+        generics_ifade_tara(motor, sonraki_iter.sol, uretilen_fonklar_bas);
+        generics_ifade_tara(motor, sonraki_iter.sag, uretilen_fonklar_bas);
+        generics_ifade_tara(motor, sonraki_iter.govde, uretilen_fonklar_bas);
+        generics_ifade_tara(motor, sonraki_iter.yoksa_govde, uretilen_fonklar_bas);
+        generics_ifade_tara(motor, sonraki_iter.parametreler, uretilen_fonklar_bas);
+
+        sonraki_iter = siradaki;
+    }
+}
+
+isv generics_pipeline_calistir(motor: *GenericsMotoru, kok: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+
+    g_generic_uzmanlasma_sayaci = 0;
+    degisken liste_koku: *AstDugum = kok;
+    degisken is_root_block: tamsayi = 0;
+    eger kok.tip == AST_BLOK ve kok.sol != 0 ise {
+        liste_koku = kok.sol;
+        is_root_block = 1;
+    }
+
+    # 0. Asama: Built-in trait uygulamalarini kaydet (tamsayi, gercek, u8, mantik icin)
+    builtin_traitleri_kaydet(motor);
+    tc_builtin_traitleri_kaydet(0);
+
+    degisken uretilen_fonklar: *AstDugum = 0;
+    degisken uretilen_ptr: **AstDugum = &uretilen_fonklar;
+
+    # 1. Asama: Kullanici tanimli trait uygulamalarini kaydet (AST_TRAIT_UYGULAMA)
+    # + Generic fonksiyon ve yapi sablonlarini kaydet
+    degisken iter: *AstDugum = liste_koku;
+    dongu iter != 0 {
+        eger iter.tip == AST_GENERIC_TANIM ise {
+            generic_sablon_ekle(motor, iter);
+        }
+        eger iter.tip == AST_YAPI_TANIMI ve iter.parametreler != 0 ise {
+            generic_yapi_sablon_ekle(motor, iter);
+        }
+        eger iter.tip == AST_TRAIT_UYGULAMA ise {
+            # AST_TRAIT_UYGULAMA: ilk_jeton = trait adi, sol.ilk_jeton = hedef tip adi
+            eger iter.ilk_jeton != 0 ve iter.sol != 0 ve iter.sol.ilk_jeton != 0 ise {
+                degisken hedef_ptr: *u8 = iter.sol.ilk_jeton.baslangic;
+                degisken hedef_uzn: tamsayi = iter.sol.ilk_jeton.uzunluk;
+                degisken hedef_id: tamsayi = tip_adi_id_cevir(hedef_ptr, hedef_uzn);
+                degisken hedef_h: tamsayi = djb2_sembol(hedef_ptr, hedef_uzn);
+                eger hedef_id == 0 ise {
+                    hedef_id = hedef_h;
+                }
+                trait_uygulamasi_kaydet(motor, iter.ilk_jeton, hedef_id);
+                trait_uygulamasi_kaydet(motor, iter.ilk_jeton, hedef_h);
+
+                # Trait uygulamasindaki metodlari somut fonksiyon olarak ekle
+                degisken m_iter: *AstDugum = iter.govde;
+                dongu m_iter != 0 {
+                    degisken m_siradaki: *AstDugum = m_iter.sonraki;
+                    eger (m_iter.tip == AST_ISLEV veya m_iter.tip == 10) ve m_iter.ilk_jeton != 0 ise {
+                        degisken eski_m_j: *Jeton = m_iter.ilk_jeton;
+                        degisken m_uzn: tamsayi = hedef_uzn + 2 + eski_m_j.uzunluk;
+                        degisken m_buf: *u8 = compiler_tahsis_et(m_uzn + 1);
+                        degisken mi: tamsayi = 0;
+                        dongu mi < hedef_uzn { m_buf[mi] = hedef_ptr[mi]; mi = mi + 1; }
+                        m_buf[mi] = 95; mi = mi + 1; # '_'
+                        m_buf[mi] = 95; mi = mi + 1; # '_'
+                        degisken eski_bas: *u8 = eski_m_j.baslangic;
+                        degisken s_idx: tamsayi = 0;
+                        dongu s_idx < eski_m_j.uzunluk { m_buf[mi] = eski_bas[s_idx]; mi = mi + 1; s_idx = s_idx + 1; }
+                        m_buf[mi] = 0;
+                        degisken yeni_m_j: *Jeton = compiler_tahsis_et(40);
+                        yeni_m_j.tip = TIP_KIMLIK;
+                        yeni_m_j.baslangic = m_buf;
+                        yeni_m_j.uzunluk = m_uzn;
+                        yeni_m_j.satir = eski_m_j.satir;
+                        yeni_m_j.sutun = eski_m_j.sutun;
+                        degisken m_kopya: *AstDugum = arena_dugum_yarat(motor.arena, AST_ISLEV, yeni_m_j);
+                        m_kopya.parametreler = m_iter.parametreler;
+                        m_kopya.tip_adi = m_iter.tip_adi;
+                        m_kopya.tip_adi_uzunluk = m_iter.tip_adi_uzunluk;
+                        m_kopya.govde = m_iter.govde;
+                        m_kopya.sonraki = *uretilen_ptr;
+                        *uretilen_ptr = m_kopya;
+                    }
+                    m_iter = m_siradaki;
+                }
+            }
+        }
+        iter = iter.sonraki;
+    }
+
+    # 2. Asama: Cagri sitelerini tara ve monomorphize et
+    generics_ifade_tara(motor, liste_koku, uretilen_ptr);
+
+    # 3. Asama: AST listesini birlestir (uretilen fonksiyonlari ekle, ham sablonlari cikar)
+    degisken yeni_liste: *AstDugum = 0;
+    degisken son_dugum: *AstDugum = 0;
+
+    # Once uretilen somut fonksiyonlari ekle
+    degisken uf: *AstDugum = uretilen_fonklar;
+    dongu uf != 0 {
+        degisken siradaki_uf: *AstDugum = uf.sonraki;
+        uf.sonraki = 0;
+        eger yeni_liste == 0 ise { yeni_liste = uf; son_dugum = uf; }
+        yoksa { son_dugum.sonraki = uf; son_dugum = uf; }
+        uf = siradaki_uf;
+    }
+
+    # Sonra diger (generic olmayan) dugumleri ekle
+    iter = liste_koku;
+    dongu iter != 0 {
+        degisken siradaki: *AstDugum = iter.sonraki;
+        iter.sonraki = 0;
+        degisken yapi_sablon_mu: tamsayi = 0;
+        eger iter.tip == AST_YAPI_TANIMI ve iter.parametreler != 0 ise {
+            yapi_sablon_mu = 1;
+        }
+        # AST_GENERIC_TANIM ve parametreli yapi sablonlari derleme kaydina alindi, AST_TRAIT_UYGULAMA ise typechecker dogrulamasi icin tutulur
+        eger iter.tip != AST_GENERIC_TANIM ve yapi_sablon_mu == 0 ise {
+            eger yeni_liste == 0 ise { yeni_liste = iter; son_dugum = iter; }
+            yoksa { son_dugum.sonraki = iter; son_dugum = iter; }
+        }
+        iter = siradaki;
+    }
+
+    eger is_root_block == 1 ise {
+        kok.sol = yeni_liste;
+        dondu kok;
+    }
+    dondu yeni_liste;
+}

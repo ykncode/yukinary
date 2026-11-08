@@ -1,0 +1,3892 @@
+# ============================================================
+# Yukinary Tip Denetleyicisi v4 (Stable)
+# GÖREV 2.2: f32/u16/u32/i32/i64 ayri tip ID, struct field dogrulama,
+#             param sayisi hata sayaci, dongu kapsam, **T pointer takibi
+# ============================================================
+
+# Temel tip kimlikleri — her biri AYRI bir ID (hepsi tamsayi degil)
+degisken TIP_ID_BILINMIYOR  = 0;   # bilinmiyor / cozumlenemedi
+degisken TIP_ID_TAMSAYI     = 1;   # tamsayi (i64 platformun varsayilani)
+degisken TIP_ID_GERCEK      = 2;   # gercek / f64
+degisken TIP_ID_METIN       = 3;   # metin / *u8 string
+degisken TIP_ID_MANTIK      = 4;   # mantik / bool
+degisken TIP_ID_U8          = 5;   # u8 (byte)
+degisken TIP_ID_ISLEV       = 6;   # islev / function pointer
+degisken TIP_ID_YAPI        = 7;   # yapi / struct (hash olarak temel_id)
+degisken TIP_ID_POINTER     = 8;   # pointer
+degisken TIP_ID_HIC         = 9;   # hic / void
+degisken TIP_ID_U16         = 10;  # u16 — AYRI TIP
+degisken TIP_ID_U32         = 11;  # u32 — AYRI TIP
+degisken TIP_ID_I32         = 12;  # i32 — AYRI TIP
+degisken TIP_ID_I64         = 13;  # i64 — AYRI TIP (tamsayi ile bit-uyumlu ama ayri)
+degisken TIP_ID_F32         = 14;  # f32 — AYRI TIP (gercek ile bit-uyumsuz)
+degisken TIP_ID_F64         = 15;  # f64 — AYRI TIP (gercek ile esanlamli)
+degisken TIP_ID_SONUC       = 16;  # sonuc<T> / Result<T,E>
+degisken TIP_ID_FUTURE      = 17;  # Future<T> — async callable handle
+
+degisken SELF_HEAL_TANIMSIZ_DEGISKEN        = 1;
+degisken SELF_HEAL_TIP_UYUMSUZLUGU         = 2;
+degisken SELF_HEAL_EKSIK_DONUS             = 3;
+degisken SELF_HEAL_FONKSIYON_SAYISI_UYUMSUZ = 4;  # GOREV 2.2: aktif sayac
+degisken g_self_heal_aktif = 0;
+
+degisken KAT_TEMEL = 1;
+degisken KAT_YAPI = 2;
+
+yapi TipBilgisi {
+    kategori: tamsayi;
+    temel_id: tamsayi;
+    pointer_seviyesi: tamsayi;
+    dizi_boyutu: tamsayi;
+    nominal_id: tamsayi;
+    ic_tip: *TipBilgisi;
+    nullable: tamsayi;
+    
+    # MIR Metadata
+    enum_layout: tamsayi;
+    call_signature: *tamsayi;
+    is_owned: tamsayi;
+}
+
+# Nominal struct tipleri için dinamik zincirli canonical ID tablosu.
+# TipBilgisi layout'u değişmez; ID dizi metadata alanında taşınır.
+yapi NominalDugum {
+    nominal_id: tamsayi;
+    ad: *u8;
+    uzunluk: tamsayi;
+    sonraki: *NominalDugum;
+}
+degisken g_nominal_liste: *NominalDugum = 0;
+degisken g_nominal_sayisi: tamsayi = 0;
+degisken g_tip_donusum_hatasi: tamsayi = 0;
+# Type/symbol arenasinda sessiz truncationi engelleyen fail-closed durum.
+degisken g_typechecker_kapasite_hatasi: tamsayi = 0;
+degisken g_typechecker_kapasite_kodu: tamsayi = 0;
+degisken g_typechecker_sembol_sayisi: tamsayi = 0;
+degisken g_typechecker_kapsam_sayisi: tamsayi = 0;
+
+isv typechecker_kapasite_reddet(kod: tamsayi) {
+    eger g_typechecker_kapasite_hatasi == 0 ise {
+        g_typechecker_kapasite_hatasi = 1;
+        g_typechecker_kapasite_kodu = kod;
+    }
+}
+# Monomorphized body sırasında tek harfli type placeholder'ları
+# (T/K gibi) değer sembolü sanılıp false-positive üretmemelidir.
+degisken g_generic_specialization_aktif: tamsayi = 0;
+# AST body traversal sırasında TipMotoru alanı bozulsa bile return tipini
+# kaybetmemek için ayrı, geçici strict return context'i.
+degisken g_strict_donus_tipi: *TipBilgisi = 0;
+# Async body context: return expressions are T, while calls expose Future<T>.
+degisken g_async_islev_aktif: tamsayi = 0;
+# Self-host scope fallback: aktif fonksiyon parametreleri AST traversal
+# sırasında child scope bozulsa bile isim çözümlemesinde görünür kalır.
+degisken g_aktif_parametreler: *AstDugum = 0;
+# FIX13: aktif if block'inde kanitlanmis non-null guard durumu.
+degisken g_nullable_guard_aktif: tamsayi = 0;
+degisken g_nullable_guard_ad: *u8 = 0;
+degisken g_nullable_guard_ad_uzunluk: tamsayi = 0;
+degisken g_nullable_guard_ad2: *u8 = 0;
+degisken g_nullable_guard_ad2_uzunluk: tamsayi = 0;
+degisken g_nullable_guard_alan: *u8 = 0;
+degisken g_nullable_guard_alan_uzunluk: tamsayi = 0;
+degisken g_nullable_guard_gecersiz: tamsayi = 0;
+
+# Ownership/Move semantics tracking (Dinamik arena-tabanlı liste)
+yapi MoveDugum {
+    ad: *u8;
+    uzunluk: tamsayi;
+    sonraki: *MoveDugum;
+}
+
+# Borrow tracking: aktif mutable ve paylasimli borrow listesi (Dinamik arena-tabanlı liste)
+yapi BorrowDugum {
+    ad: *u8;
+    uzunluk: tamsayi;
+    mutable_mi: tamsayi;
+    kapsam: *u8;
+    gecici_mi: tamsayi;
+    sonraki: *BorrowDugum;
+}
+
+degisken g_moved_liste: *MoveDugum = 0;
+degisken g_moved_sayisi: tamsayi = 0;
+
+degisken g_borrow_liste: *BorrowDugum = 0;
+degisken g_borrow_sayisi: tamsayi = 0;
+degisken g_in_binding: tamsayi = 0;
+
+isv degisken_tasi(ad: *u8, uzunluk: tamsayi) {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu; }
+    degisken yeni: *MoveDugum = compiler_tahsis_et(24);
+    eger yeni == 0 ise { dondu; }
+    yeni.ad = ad;
+    yeni.uzunluk = uzunluk;
+    yeni.sonraki = g_moved_liste;
+    g_moved_liste = yeni;
+    g_moved_sayisi = g_moved_sayisi + 1;
+}
+
+isv degisken_tasindi_mi(ad: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken curr: *MoveDugum = g_moved_liste;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise { dondu 1; }
+        curr = curr.sonraki;
+    }
+    dondu 0;
+}
+
+isv degisken_odunc_birak(ad: *u8, uzunluk: tamsayi);
+
+# NLL: Tasinmis degiskene yeniden atama yapildiginda (reassignment) sahiplik geri kazanilir
+isv degisken_tasinma_geri_al(ad: *u8, uzunluk: tamsayi) {
+    degisken_odunc_birak(ad, uzunluk);
+    eger ad == 0 veya uzunluk <= 0 veya g_moved_liste == 0 ise { dondu; }
+    degisken curr: *MoveDugum = g_moved_liste;
+    degisken onceki: *MoveDugum = 0;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise {
+            eger onceki == 0 ise {
+                g_moved_liste = curr.sonraki;
+            } yoksa {
+                onceki.sonraki = curr.sonraki;
+            }
+            g_moved_sayisi = g_moved_sayisi - 1;
+            dondu;
+        }
+        onceki = curr;
+        curr = curr.sonraki;
+    }
+}
+
+isv degisken_odunc_alindi_mi(ad: *u8, uzunluk: tamsayi, mut_istek: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken curr: *BorrowDugum = g_borrow_liste;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise {
+            eger curr.mutable_mi == 1 veya mut_istek == 1 ise {
+                dondu 1;
+            }
+        }
+        curr = curr.sonraki;
+    }
+    dondu 0;
+}
+
+isv degisken_odunc_var_mi(ad: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken curr: *BorrowDugum = g_borrow_liste;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise {
+            dondu 1;
+        }
+        curr = curr.sonraki;
+    }
+    dondu 0;
+}
+
+isv degisken_odunc_al(ad: *u8, uzunluk: tamsayi, mutable_mi: tamsayi, kapsam: *u8, gecici_mi: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken yeni: *BorrowDugum = compiler_tahsis_et(48);
+    eger yeni == 0 ise { dondu 0; }
+    yeni.ad = ad;
+    yeni.uzunluk = uzunluk;
+    yeni.mutable_mi = mutable_mi;
+    yeni.kapsam = kapsam;
+    yeni.gecici_mi = gecici_mi;
+    yeni.sonraki = g_borrow_liste;
+    g_borrow_liste = yeni;
+    g_borrow_sayisi = g_borrow_sayisi + 1;
+    dondu 1;
+}
+
+isv degisken_odunc_birak(ad: *u8, uzunluk: tamsayi) {
+    eger ad == 0 veya uzunluk <= 0 veya g_borrow_liste == 0 ise { dondu; }
+    dongu g_borrow_liste != 0 ve g_borrow_liste.uzunluk == uzunluk ve
+        bellek_esit_mi(g_borrow_liste.ad, ad, uzunluk) == 1 {
+        g_borrow_liste = g_borrow_liste.sonraki;
+        g_borrow_sayisi = g_borrow_sayisi - 1;
+    }
+    eger g_borrow_liste == 0 ise { dondu; }
+    degisken curr: *BorrowDugum = g_borrow_liste;
+    dongu curr.sonraki != 0 {
+        eger curr.sonraki.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.sonraki.ad, ad, uzunluk) == 1 ise {
+            curr.sonraki = curr.sonraki.sonraki;
+            g_borrow_sayisi = g_borrow_sayisi - 1;
+        } yoksa {
+            curr = curr.sonraki;
+        }
+    }
+}
+
+isv gecici_oduncleri_birak() {
+    dongu g_borrow_liste != 0 ve g_borrow_liste.gecici_mi == 1 {
+        g_borrow_liste = g_borrow_liste.sonraki;
+        g_borrow_sayisi = g_borrow_sayisi - 1;
+    }
+    eger g_borrow_liste == 0 ise { dondu; }
+    degisken curr: *BorrowDugum = g_borrow_liste;
+    dongu curr.sonraki != 0 {
+        eger curr.sonraki.gecici_mi == 1 ise {
+            curr.sonraki = curr.sonraki.sonraki;
+            g_borrow_sayisi = g_borrow_sayisi - 1;
+        } yoksa {
+            curr = curr.sonraki;
+        }
+    }
+}
+
+isv kapsam_oduncleri_birak(kapsam: *u8) {
+    dongu g_borrow_liste != 0 ve g_borrow_liste.kapsam == kapsam {
+        g_borrow_liste = g_borrow_liste.sonraki;
+        g_borrow_sayisi = g_borrow_sayisi - 1;
+    }
+    eger g_borrow_liste == 0 ise { dondu; }
+    degisken curr: *BorrowDugum = g_borrow_liste;
+    dongu curr.sonraki != 0 {
+        eger curr.sonraki.kapsam == kapsam ise {
+            curr.sonraki = curr.sonraki.sonraki;
+            g_borrow_sayisi = g_borrow_sayisi - 1;
+        } yoksa {
+            curr = curr.sonraki;
+        }
+    }
+}
+
+isv move_listesi_kopyala(liste: *MoveDugum) -> *MoveDugum {
+    degisken yeni_bas: *MoveDugum = 0;
+    degisken curr: *MoveDugum = liste;
+    dongu curr != 0 {
+        degisken yeni: *MoveDugum = compiler_tahsis_et(24);
+        eger yeni != 0 ise {
+            yeni.ad = curr.ad;
+            yeni.uzunluk = curr.uzunluk;
+            yeni.sonraki = yeni_bas;
+            yeni_bas = yeni;
+        }
+        curr = curr.sonraki;
+    }
+    dondu yeni_bas;
+}
+
+isv move_listesi_birlestir(liste1: *MoveDugum, liste2: *MoveDugum) -> *MoveDugum {
+    degisken sonuc: *MoveDugum = liste1;
+    degisken curr: *MoveDugum = liste2;
+    dongu curr != 0 {
+        degisken var_mi: tamsayi = 0;
+        degisken c2: *MoveDugum = sonuc;
+        dongu c2 != 0 {
+            eger c2.uzunluk == curr.uzunluk ve
+                bellek_esit_mi(c2.ad, curr.ad, curr.uzunluk) == 1 ise {
+                var_mi = 1;
+                durdur;
+            }
+            c2 = c2.sonraki;
+        }
+        eger var_mi == 0 ise {
+            degisken yeni: *MoveDugum = compiler_tahsis_et(24);
+            eger yeni != 0 ise {
+                yeni.ad = curr.ad;
+                yeni.uzunluk = curr.uzunluk;
+                yeni.sonraki = sonuc;
+                sonuc = yeni;
+            }
+        }
+        curr = curr.sonraki;
+    }
+    dondu sonuc;
+}
+
+degisken g_uninit_liste: *MoveDugum = 0;
+degisken g_uninit_sayisi: tamsayi = 0;
+
+isv degisken_uninit_mi(ad: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken curr: *MoveDugum = g_uninit_liste;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise {
+            dondu 1;
+        }
+        curr = curr.sonraki;
+    }
+    dondu 0;
+}
+
+isv degisken_uninit_ekle(ad: *u8, uzunluk: tamsayi) {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu; }
+    degisken yeni: *MoveDugum = compiler_tahsis_et(24);
+    eger yeni == 0 ise { dondu; }
+    yeni.ad = ad;
+    yeni.uzunluk = uzunluk;
+    yeni.sonraki = g_uninit_liste;
+    g_uninit_liste = yeni;
+    g_uninit_sayisi = g_uninit_sayisi + 1;
+}
+
+isv degisken_uninit_sil(ad: *u8, uzunluk: tamsayi) {
+    eger ad == 0 veya uzunluk <= 0 veya g_uninit_liste == 0 ise { dondu; }
+    degisken curr: *MoveDugum = g_uninit_liste;
+    degisken onceki: *MoveDugum = 0;
+    dongu curr != 0 {
+        eger curr.uzunluk == uzunluk ve
+            bellek_esit_mi(curr.ad, ad, uzunluk) == 1 ise {
+            eger onceki == 0 ise {
+                g_uninit_liste = curr.sonraki;
+            } yoksa {
+                onceki.sonraki = curr.sonraki;
+            }
+            g_uninit_sayisi = g_uninit_sayisi - 1;
+            dondu;
+        }
+        onceki = curr;
+        curr = curr.sonraki;
+    }
+}
+
+isv move_borrow_tablolarini_sifirla() {
+    g_moved_liste = 0;
+    g_moved_sayisi = 0;
+    g_borrow_liste = 0;
+    g_borrow_sayisi = 0;
+    g_uninit_liste = 0;
+    g_uninit_sayisi = 0;
+}
+
+# FIX-13 Alias tracking: guard aktifken bir alias degiskenine null atanirsa
+# orijinal pointer'in guard'i da gecersiz kilinmalidir.
+# Maksimum 8 alias ciftini takip ederiz.
+degisken g_alias_kaynak: [8]*u8;
+degisken g_alias_kaynak_uzunluk: [8]tamsayi;
+degisken g_alias_hedef: [8]*u8;
+degisken g_alias_hedef_uzunluk: [8]tamsayi;
+degisken g_alias_sayisi: tamsayi = 0;
+
+isv nullable_guard_eslesiyor(dugum: *AstDugum) -> tamsayi {
+    eger g_nullable_guard_aktif == 0 veya dugum == 0 ise { dondu 0; }
+    eger g_nullable_guard_alan != 0 ise {
+        eger dugum.tip != AST_ALAN_ERISIMI veya dugum.sol == 0 veya dugum.sag == 0 ise { dondu 0; }
+        eger dugum.sol.tip != AST_KIMLIK veya dugum.sol.ilk_jeton == 0 ise { dondu 0; }
+        eger dugum.sol.ilk_jeton.uzunluk != g_nullable_guard_ad_uzunluk ise { dondu 0; }
+        eger bellek_esit_mi(dugum.sol.ilk_jeton.baslangic, g_nullable_guard_ad, g_nullable_guard_ad_uzunluk) == 0 ise { dondu 0; }
+        eger dugum.sag.tip != AST_KIMLIK veya dugum.sag.ilk_jeton == 0 ise { dondu 0; }
+        eger dugum.sag.ilk_jeton.uzunluk != g_nullable_guard_alan_uzunluk ise { dondu 0; }
+        eger bellek_esit_mi(dugum.sag.ilk_jeton.baslangic, g_nullable_guard_alan, g_nullable_guard_alan_uzunluk) == 0 ise { dondu 0; }
+        dondu 1;
+    }
+    eger g_nullable_guard_ad == 0 veya dugum.tip != AST_KIMLIK veya dugum.ilk_jeton == 0 veya
+        dugum.ilk_jeton.uzunluk != g_nullable_guard_ad_uzunluk ise { dondu 0; }
+    eger bellek_esit_mi(dugum.ilk_jeton.baslangic, g_nullable_guard_ad, g_nullable_guard_ad_uzunluk) == 1 ise {
+        dondu 1;
+    }
+    eger g_nullable_guard_ad2 != 0 ve dugum.ilk_jeton.uzunluk == g_nullable_guard_ad2_uzunluk ve
+        bellek_esit_mi(dugum.ilk_jeton.baslangic, g_nullable_guard_ad2, g_nullable_guard_ad2_uzunluk) == 1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+
+# Self-host pointer indexing'i her zaman byte offseti vermediği için generic
+# placeholder kontrolü güvenli bellek karşılaştırmasıyla yapılır.
+isv buyuk_tek_harf_generic_mi(ad: *u8, uzn: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzn != 1 ise { dondu 0; }
+    eger bellek_esit_mi(ad, "A".ptr, 1) == 1 veya bellek_esit_mi(ad, "B".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "C".ptr, 1) == 1 veya bellek_esit_mi(ad, "D".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "E".ptr, 1) == 1 veya bellek_esit_mi(ad, "F".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "G".ptr, 1) == 1 veya bellek_esit_mi(ad, "H".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "I".ptr, 1) == 1 veya bellek_esit_mi(ad, "J".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "K".ptr, 1) == 1 veya bellek_esit_mi(ad, "L".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "M".ptr, 1) == 1 veya bellek_esit_mi(ad, "N".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "O".ptr, 1) == 1 veya bellek_esit_mi(ad, "P".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "Q".ptr, 1) == 1 veya bellek_esit_mi(ad, "R".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "S".ptr, 1) == 1 veya bellek_esit_mi(ad, "T".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "U".ptr, 1) == 1 veya bellek_esit_mi(ad, "V".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "W".ptr, 1) == 1 veya bellek_esit_mi(ad, "X".ptr, 1) == 1 veya
+        bellek_esit_mi(ad, "Y".ptr, 1) == 1 veya bellek_esit_mi(ad, "Z".ptr, 1) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+# Pointer'sız recursive struct grafiği için DFS yolu. 256 derinlik, kullanıcı
+# kaynaklarının sınırsız recursion ile compiler stack'ini tüketmesini engeller.
+degisken g_recursive_adlar: [256]*u8;
+degisken g_recursive_uzunluklar: [256]tamsayi;
+degisken g_recursive_butce: tamsayi = 0;
+degisken g_recursive_hatasi: tamsayi = 0;
+
+# Global public symbol registry: sembol_ekle bu tabloya kaydeder,
+# sembol_ara_flat cross-module erisimde kontrol eder.
+degisken g_genel_semboller_hash: [16384]tamsayi;
+degisken g_genel_semboller_adet: tamsayi = 0;
+
+isv g_genel_sembol_ekle(hash: tamsayi) {
+    eger g_genel_semboller_adet >= 16384 ise {
+        typechecker_kapasite_reddet(1);
+        dondu;
+    }
+    g_genel_semboller_hash[g_genel_semboller_adet] = hash;
+    g_genel_semboller_adet = g_genel_semboller_adet + 1;
+}
+
+isv g_genel_sembol_mi(hash: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_genel_semboller_adet {
+        eger g_genel_semboller_hash[i] == hash ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+yapi SembolGirdisi {
+    isim_hash: tamsayi;
+    tanim_jetonu: *Jeton;
+    veri_tipi: *TipBilgisi;
+    donus_tipi: *TipBilgisi;
+    ast_tanimi: *AstDugum;
+    sonraki: *SembolGirdisi;
+    gorunurluk: tamsayi;
+}
+
+yapi Kapsam {
+    tablo: **SembolGirdisi;
+    kapasite: tamsayi;
+    ust_kapsam: *Kapsam;
+    modul_adi: *u8;
+    modul_adi_uzunluk: tamsayi;
+}
+
+yapi TipMotoru {
+    guncel_kapsam: *Kapsam;
+    arena: *AstArena;
+    hata_sayisi: tamsayi;
+    guncel_donus_tipi: *TipBilgisi;
+
+    tip_tamsayi: *TipBilgisi;
+    tip_gercek: *TipBilgisi;
+    tip_metin: *TipBilgisi;
+    tip_mantik: *TipBilgisi;
+    tip_u8: *TipBilgisi;
+    tip_islev: *TipBilgisi;
+    tip_hic: *TipBilgisi;
+    tip_bilinmiyor: *TipBilgisi;
+    tip_sonuc: *TipBilgisi;
+
+    tanimsiz_hata_sayisi: tamsayi;
+    tip_uyumsuz_hata_sayisi: tamsayi;
+    donus_hata_sayisi: tamsayi;
+    param_sayisi_hata_sayisi: tamsayi;  # GOREV 2.2: SELF_HEAL_FONKSIYON_SAYISI_UYUMSUZ sayaci
+    self_heal_adayi: *AstDugum;
+    self_heal_deger_konteksti: tamsayi;
+}
+
+isv hata_rapor_et(motor: *TipMotoru) {
+    motor.hata_sayisi = motor.hata_sayisi + 1;
+}
+
+# djb2_sembol fonksiyonu src/utils.ykn icinden saglanir.
+
+isv yeni_tip(arena: *AstArena, kat: tamsayi, id: tamsayi, ptr_sev: tamsayi, dizi_boyut: tamsayi) -> *TipBilgisi {
+    eger arena == 0 ise { dondu 0; }
+
+    # Overrun kontrolu (arena dinamik buyume)
+    degisken max_kullanilan: tamsayi = arena.kapasite;
+    eger arena.kullanilan + 80 > max_kullanilan ise {
+        degisken yeni_kapasite: tamsayi = arena.kapasite * 2;
+        eger yeni_kapasite < 524288 ise { yeni_kapasite = 524288; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek == 0 ise { dondu 0; }
+        arena.bellek = yeni_bellek;
+        arena.kapasite = yeni_kapasite;
+        arena.kullanilan = 0;
+    }
+
+    degisken kullanilan: tamsayi = arena.kullanilan;
+    degisken ptr: *TipBilgisi = arena.bellek + kullanilan;
+    arena.kullanilan = kullanilan + 80;
+    ptr.kategori = kat;
+    ptr.temel_id = id;
+    ptr.pointer_seviyesi = ptr_sev;
+    ptr.dizi_boyutu = dizi_boyut;
+    ptr.nominal_id = 0;
+    ptr.ic_tip = 0;
+    ptr.nullable = 0;
+    ptr.enum_layout = 0;
+    ptr.call_signature = 0;
+    ptr.is_owned = 0;
+    dondu ptr;
+}
+
+# Compiler-level Future<T> is a distinct nominal handle. The payload is kept
+# in TipBilgisi.ic_tip; it is never treated as *u8 or tamsayi implicitly.
+isv gelecek_tipi_olustur(motor: *TipMotoru, payload: *TipBilgisi) -> *TipBilgisi {
+    eger motor == 0 veya payload == 0 veya payload.temel_id == TIP_ID_BILINMIYOR ise { dondu 0; }
+    degisken sonuc: *TipBilgisi = yeni_tip(motor.arena, KAT_YAPI, TIP_ID_FUTURE, 1, 0);
+    eger sonuc == 0 ise { dondu 0; }
+    sonuc.ic_tip = payload;
+    dondu sonuc;
+}
+
+isv future_tipi_mi(tip: *TipBilgisi) -> tamsayi {
+    eger tip != 0 ve tip.temel_id == TIP_ID_FUTURE ise { dondu 1; }
+    dondu 0;
+}
+
+isv future_payload_esit_mi(a: *TipBilgisi, b: *TipBilgisi) -> tamsayi {
+    eger a == 0 veya b == 0 ise { dondu 0; }
+    eger a.temel_id == TIP_ID_FUTURE veya b.temel_id == TIP_ID_FUTURE ise {
+        eger a.temel_id != TIP_ID_FUTURE veya b.temel_id != TIP_ID_FUTURE veya
+            a.ic_tip == 0 veya b.ic_tip == 0 ise { dondu 0; }
+        dondu future_payload_esit_mi(a.ic_tip, b.ic_tip);
+    }
+    eger a.kategori != b.kategori veya a.temel_id != b.temel_id veya
+        a.pointer_seviyesi != b.pointer_seviyesi veya a.dizi_boyutu != b.dizi_boyutu ise { dondu 0; }
+    eger a.kategori == KAT_YAPI ve a.nominal_id >= 100000 ve
+        b.nominal_id >= 100000 ve a.nominal_id != b.nominal_id ise { dondu 0; }
+    dondu 1;
+}
+
+# Malformed source-level Future<T> annotations are a type error, not a
+# runtime-yapi lookup. The AST marker prevents duplicate diagnostics when the
+# declaration is visited once by the forward pass and once by normal checking.
+isv future_tip_hatasi(motor: *TipMotoru, dugum: *AstDugum, mesaj: *u8) {
+    eger motor == 0 veya dugum == 0 ise { dondu; }
+    eger dugum.cozumlenmis_tip == 0 - 44 ise { dondu; }
+    dugum.cozumlenmis_tip = 0 - 44;
+    degisken satir: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    degisken uzunluk: tamsayi = 1;
+    eger dugum.ilk_jeton != 0 ise {
+        satir = dugum.ilk_jeton.satir;
+        sutun = dugum.ilk_jeton.sutun;
+        uzunluk = dugum.ilk_jeton.uzunluk;
+        eger uzunluk <= 0 ise { uzunluk = 1; }
+    }
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 45, satir, sutun, mesaj, 0);
+    hk.isaret_uzunluk = uzunluk;
+    hata_kaydi_yazdir(&hk);
+    hata_rapor_et(motor);
+    motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+}
+
+# async return contract is Future<T>. An explicit Future<T> annotation is
+# already the callable result and must not become Future<Future<T>>. Nested
+# source spelling such as Future<Future<T>> remains intentionally nested.
+isv async_donus_tipi_olustur(motor: *TipMotoru, beden_tipi: *TipBilgisi) -> *TipBilgisi {
+    eger motor == 0 veya beden_tipi == 0 ise { dondu 0; }
+    eger future_tipi_mi(beden_tipi) == 1 ise { dondu beden_tipi; }
+    dondu gelecek_tipi_olustur(motor, beden_tipi);
+}
+
+isv tamsayi_tipi_mi(id: tamsayi) -> tamsayi {
+    # Mevcut dil ABI'sinde mantik, koşul ve karşılaştırma sonuçlarıyla
+    # integer uyumluluğunu korur; daha dar widening kuralları sonraki IR
+    # dönüşüm tablosunda ayrıştırılacaktır.
+    eger id == TIP_ID_TAMSAYI veya id == TIP_ID_U8 veya id == TIP_ID_MANTIK veya id == TIP_ID_U16 veya id == TIP_ID_U32 veya id == TIP_ID_I32 veya id == TIP_ID_I64 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv kesirli_tipi_mi(id: tamsayi) -> tamsayi {
+    eger id == TIP_ID_GERCEK veya id == TIP_ID_F32 veya id == TIP_ID_F64 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# Tek merkezli implicit conversion tablosu.
+# Sonuçlar: 1 = izinli, 0 = reddet. Bilinmeyen tipler normal kullanıcı
+# dönüşümüne girmez; compiler'ın generic/deferred AST ifadeleri için ayrı
+# deferred sonucu kullanılır.
+isv ast_null_literali_mi(n: *AstDugum) -> tamsayi {
+    eger n == 0 ise { dondu 1; }
+    eger n.tip == AST_SAYI ise {
+        degisken j: *Jeton = n.ilk_jeton;
+        eger j == 0 ise { dondu 1; }
+        eger j.tip == TIP_BOS ise { dondu 1; }
+        eger j.uzunluk == 1 ve j.baslangic != 0 ve j.baslangic[0] == 48 ise { dondu 1; }
+    }
+    dondu 0;
+}
+
+isv tip_donusum_kurali(t1: *TipBilgisi, t2: *TipBilgisi) -> tamsayi {
+    g_tip_donusum_hatasi = 0;
+    eger t1 == 0 veya t2 == 0 ise { dondu 1; }
+    # Self-host compiler kaynaklarında bazı builtin alan erişimleri parse
+    # sonrasında deferred kalır; bu durumun güvenli sınırı çağıranlardaki
+    # explicit bilinmeyen kontrolleridir.
+    eger t1.temel_id == TIP_ID_BILINMIYOR veya t2.temel_id == TIP_ID_BILINMIYOR ise { dondu 1; }
+
+    # Future<T> is nominal and invariant. It must never pass through the
+    # general pointer/integer ABI escape hatch below.
+    eger future_tipi_mi(t1) == 1 veya future_tipi_mi(t2) == 1 ise {
+        eger future_tipi_mi(t1) == 0 veya future_tipi_mi(t2) == 0 veya
+            t1.pointer_seviyesi != t2.pointer_seviyesi veya
+            future_payload_esit_mi(t1.ic_tip, t2.ic_tip) == 0 ise {
+            g_tip_donusum_hatasi = 17;
+            dondu 0;
+        }
+        dondu 1;
+    }
+
+    # FIX-13 Null Safety: implicit nullability kontrolu.
+    # YALNIZCA pointer tipleri (seviye > 0) ve ayni tip ise:
+    #   nonnullable (0) -> nullable (1)  : IZINLI (genisletme)
+    #   nullable   (1) -> nonnullable (0): HATA (E032 implicit null deref)
+    eger t1.pointer_seviyesi > 0 ve t1.pointer_seviyesi == t2.pointer_seviyesi ve
+         t1.kategori == t2.kategori ve t1.temel_id == t2.temel_id ise {
+        eger t1.nullable == 1 ve t2.nullable == 0 ise {
+            g_tip_donusum_hatasi = 32;
+            dondu 0;
+        }
+    }
+
+    # Function değerleri function tipine veya mevcut callback ABI'sindeki
+    # opaque *u8 slotuna atanabilir. Ters yönde normal pointer kabul edilmez.
+    eger t1.temel_id == TIP_ID_ISLEV veya t2.temel_id == TIP_ID_ISLEV ise {
+        eger t1.temel_id == TIP_ID_ISLEV ve t2.temel_id == TIP_ID_ISLEV ise { dondu 1; }
+        eger t1.temel_id == TIP_ID_ISLEV ve t2.temel_id == TIP_ID_U8 ve t2.pointer_seviyesi > 0 ise { dondu 1; }
+        eger t2.temel_id == TIP_ID_ISLEV ve t1.temel_id == TIP_ID_U8 ve t1.pointer_seviyesi > 0 ise { dondu 1; }
+        eger tamsayi_tipi_mi(t1.temel_id) == 1 veya tamsayi_tipi_mi(t2.temel_id) == 1 ise { dondu 0; }
+        eger t1.pointer_seviyesi > 0 veya t2.pointer_seviyesi > 0 ise { dondu 1; }
+        dondu 0;
+    }
+
+
+    # Pointer/integer, pointer/void ve byte-pointer istisnaları mevcut
+    # makine ABI'sinin parçasıdır; merkezi tabloda açıkça tanımlıdır.
+    eger t1.pointer_seviyesi > 0 veya t2.pointer_seviyesi > 0 ise {
+        eger (t1.temel_id == TIP_ID_METIN ve t2.temel_id == TIP_ID_U8 ve t2.pointer_seviyesi > 0) veya
+             (t2.temel_id == TIP_ID_METIN ve t1.temel_id == TIP_ID_U8 ve t1.pointer_seviyesi > 0) ise {
+            dondu 1;
+        }
+        eger (t1.pointer_seviyesi > 0 ve t2.pointer_seviyesi == 0) veya
+             (t2.pointer_seviyesi > 0 ve t1.pointer_seviyesi == 0) ise {
+            dondu 0;
+        }
+        eger t1.temel_id == TIP_ID_HIC veya t2.temel_id == TIP_ID_HIC ise { dondu 1; }
+        eger t1.temel_id == TIP_ID_U8 veya t2.temel_id == TIP_ID_U8 ise {
+            dondu 1;
+        }
+        eger t1.kategori == KAT_YAPI ve t2.kategori == KAT_YAPI ise {
+            eger (t1.nominal_id == 99999 veya t2.nominal_id == 99999) ise { dondu 1; }
+            eger t1.nominal_id >= 100000 ve t2.nominal_id >= 100000 ve t1.nominal_id != t2.nominal_id ise {
+                g_tip_donusum_hatasi = 17;
+                dondu 0;
+            }
+            dondu 1;
+        }
+        dondu 1;
+    }
+
+    # Integer ailesi: mevcut ABI mantik değerlerini 0/1 olarak taşır.
+    eger tamsayi_tipi_mi(t1.temel_id) == 1 ve tamsayi_tipi_mi(t2.temel_id) == 1 ise { dondu 1; }
+    # Floating ailesi birbirine dönüştürülebilir; integer -> float implicit
+    # cast yoktur.
+    eger kesirli_tipi_mi(t1.temel_id) == 1 ve kesirli_tipi_mi(t2.temel_id) == 1 ise { dondu 1; }
+    # metin ve byte ABI uyumluluğu.
+    eger t1.temel_id == TIP_ID_METIN ve t2.temel_id == TIP_ID_U8 ise { dondu 1; }
+    eger t2.temel_id == TIP_ID_METIN ve t1.temel_id == TIP_ID_U8 ise { dondu 1; }
+
+    # Struct'lar nominaldir. temel_id field lookup hash'i, nominal_id ise
+    # gerçek type identity'dir. Enum tipleri discriminant tamsayi ile de uyumludur.
+    eger t1.kategori == KAT_YAPI veya t2.kategori == KAT_YAPI ise {
+        eger t1.kategori == t2.kategori ve t1.temel_id == t2.temel_id ve
+            (t1.nominal_id < 100000 veya t2.nominal_id < 100000 veya t1.nominal_id == t2.nominal_id) ise { dondu 1; }
+        eger (t1.enum_layout == 1 ve (tamsayi_tipi_mi(t2.temel_id) == 1 veya t2.temel_id == TIP_ID_POINTER)) veya
+             (t2.enum_layout == 1 ve (tamsayi_tipi_mi(t1.temel_id) == 1 veya t1.temel_id == TIP_ID_POINTER)) ise { dondu 1; }
+        g_tip_donusum_hatasi = 17;
+        dondu 0;
+    }
+    eger t1.kategori != t2.kategori veya t1.temel_id != t2.temel_id ise { dondu 0; }
+    dondu 1;
+}
+
+# Return tipi kontrolü genel ABI conversion tablosundan daha sıkıdır.
+# Pointer/integer uyumluluğu çağrı ve atama ABI'sinde geçerli olabilir; ancak
+# bir fonksiyonun ilan edilen dönüş tipini değiştirmemelidir. Bilinmeyen tipler
+# self-host bootstrap sırasında deferred kalabildiği için burada kabul edilir.
+isv donus_tipleri_esit_mi(t1: *TipBilgisi, t2: *TipBilgisi) -> tamsayi {
+    dondu tip_donusum_kurali(t1, t2);
+}
+
+isv tipler_esit_mi(t1: *TipBilgisi, t2: *TipBilgisi) -> tamsayi {
+    # Bütün atama ve argüman kontrolleri merkezi conversion tablosundan geçer.
+    # Return kontrolleri aşağıda donus_tipleri_esit_mi ile ayrıca strict'tir.
+    dondu tip_donusum_kurali(t1, t2);
+}
+
+isv tip_uyumsuzluk_kodu() -> tamsayi {
+    eger g_tip_donusum_hatasi == 17 veya g_tip_donusum_hatasi == 18 veya g_tip_donusum_hatasi == 32 ise {
+        dondu g_tip_donusum_hatasi;
+    }
+    dondu 3;
+}
+
+isv kapsam_olustur(motor: *TipMotoru, kapasite: tamsayi) {
+    eger motor == 0 ise { dondu; }
+    eger motor.arena == 0 ise { dondu; }
+    # Scope zinciri sınırsız büyüyerek compiler belleğini tüketemez.
+    # 1048576, geçerli programlar için üst sınır; aşımı tanılı ve fail-closed'dur.
+    eger g_typechecker_kapsam_sayisi >= 1048576 ise {
+        typechecker_kapasite_reddet(2);
+        dondu;
+    }
+
+    degisken boyut: tamsayi = kapasite * 8;
+    degisken ar: *AstArena = motor.arena;
+
+    # Overrun kontrolu ve dinamik arena buyumesi
+    eger ar.kullanilan + boyut + 48 > ar.kapasite ise {
+        degisken yeni_kapasite: tamsayi = ar.kapasite * 2;
+        eger yeni_kapasite < boyut * 2 + 1048576 ise { yeni_kapasite = boyut * 2 + 1048576; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek != 0 ise {
+            ar.bellek = yeni_bellek;
+            ar.kapasite = yeni_kapasite;
+            ar.kullanilan = 0;
+        } yoksa {
+            typechecker_kapasite_reddet(2);
+            dondu;
+        }
+    }
+
+    eger ar.kullanilan + boyut + 48 > ar.kapasite ise {
+        typechecker_kapasite_reddet(2);
+        dondu;
+    }
+    degisken tablo: **SembolGirdisi = ar.bellek + ar.kullanilan;
+    ar.kullanilan = ar.kullanilan + boyut;
+
+    degisken zi: tamsayi = 0;
+    dongu zi < kapasite {
+        tablo[zi] = 0;
+        zi = zi + 1;
+    }
+
+    degisken yeni: *Kapsam = ar.bellek + ar.kullanilan;
+    ar.kullanilan = ar.kullanilan + 40;
+    yeni.tablo = tablo;
+    yeni.kapasite = kapasite;
+    yeni.ust_kapsam = motor.guncel_kapsam;
+    yeni.modul_adi = 0;
+    yeni.modul_adi_uzunluk = 0;
+    motor.guncel_kapsam = yeni;
+    g_typechecker_kapsam_sayisi = g_typechecker_kapsam_sayisi + 1;
+}
+
+isv kapsamdan_cik(motor: *TipMotoru) {
+    eger motor == 0 ise { dondu; }
+    eger motor.guncel_kapsam != 0 ise {
+        kapsam_oduncleri_birak(motor.guncel_kapsam as *u8);
+        degisken kp_cik: *Kapsam = motor.guncel_kapsam;
+        motor.guncel_kapsam = kp_cik.ust_kapsam;
+    }
+}
+
+isv sembol_ekle(motor: *TipMotoru, isim_j: *Jeton, tip: *TipBilgisi, donus: *TipBilgisi, ast: *AstDugum) {
+    eger isim_j == 0 ise { dondu; }
+    eger motor == 0 ise { dondu; }
+    eger motor.guncel_kapsam == 0 ise { dondu; }
+    eger motor.arena == 0 ise { dondu; }
+
+    eger isim_j.baslangic != 0 ve ast != 0 ve ast.tip == AST_ISLEV ise {
+        degisken shadow_tb: *TipBilgisi = tip_adini_coz(motor, isim_j.baslangic, isim_j.uzunluk);
+        eger shadow_tb != 0 ise {
+            degisken shadow_tid: tamsayi = shadow_tb.temel_id;
+            eger shadow_tid != TIP_ID_BILINMIYOR ve shadow_tid != TIP_ID_YAPI ise {
+                degisken satir_sh: tamsayi = isim_j.satir;
+                degisken sutun_sh: tamsayi = isim_j.sutun;
+                tani_olustur(motor, 50, satir_sh, sutun_sh, "TC HATA: Yerlesik tip adi fonksiyon adi olarak kullanilamaz (type shadowing)".ptr, 0);
+                motor.hata_sayisi = motor.hata_sayisi + 1;
+                dondu;
+            }
+        }
+    }
+
+    degisken kp_ekle: *Kapsam = motor.guncel_kapsam;
+    degisken gercek_isim: *u8 = isim_j.baslangic;
+    degisken gercek_uzn: tamsayi = isim_j.uzunluk;
+
+    eger kp_ekle.modul_adi != 0 ve kp_ekle.ust_kapsam == 0 ise {
+        # Mangling yap: modul_adi__uye
+        degisken yeni_uzn: tamsayi = kp_ekle.modul_adi_uzunluk + 2 + isim_j.uzunluk;
+        degisken ar_m: *AstArena = motor.arena;
+        eger ar_m.kullanilan + yeni_uzn + 1 <= ar_m.kapasite ise {
+            degisken yeni_buf: *u8 = ar_m.bellek + ar_m.kullanilan;
+            ar_m.kullanilan = ar_m.kullanilan + yeni_uzn + 1;
+            
+            degisken bi: tamsayi = 0;
+            dongu bi < kp_ekle.modul_adi_uzunluk {
+                yeni_buf[bi] = kp_ekle.modul_adi[bi];
+                bi = bi + 1;
+            }
+            yeni_buf[bi] = 95; # '_'
+            yeni_buf[bi+1] = 95; # '_'
+            bi = bi + 2;
+            degisken sai: tamsayi = 0;
+            dongu sai < isim_j.uzunluk {
+                yeni_buf[bi + sai] = isim_j.baslangic[sai];
+                sai = sai + 1;
+            }
+            yeni_buf[yeni_uzn] = 0;
+            
+            gercek_isim = yeni_buf;
+            gercek_uzn = yeni_uzn;
+            
+            # AST'yi kalici olarak guncelle ki codegen de bu mangled ismi gorsun
+            isim_j.baslangic = yeni_buf;
+            isim_j.uzunluk = yeni_uzn;
+        }
+    }
+
+    degisken hash: tamsayi = djb2_sembol(gercek_isim, gercek_uzn);
+    degisken indeks: tamsayi = hash % kp_ekle.kapasite;
+    eger indeks < 0 ise { indeks = 0 - indeks; }
+
+    # Overrun kontrolu
+    degisken ar2: *AstArena = motor.arena;
+    # Ayni kapsamda ayni isim daha once pre-pass ile kaydedildiyse kaydi
+    # gercek deklarasyon bilgileriyle guncelle; ikinci bir zincir kaydi ekleme.
+    degisken mevcut: *SembolGirdisi = kp_ekle.tablo[indeks];
+    dongu mevcut != 0 {
+        eger mevcut.isim_hash == hash ve mevcut.tanim_jetonu != 0 ise {
+            eger mevcut.tanim_jetonu.uzunluk == gercek_uzn ve
+                bellek_esit_mi(mevcut.tanim_jetonu.baslangic, gercek_isim, gercek_uzn) == 1 ise {
+                mevcut.tanim_jetonu = isim_j;
+                mevcut.veri_tipi = tip;
+                mevcut.donus_tipi = donus;
+                mevcut.ast_tanimi = ast;
+                dondu;
+            }
+        }
+        mevcut = mevcut.sonraki;
+    }
+
+    eger ar2.kullanilan + 56 > ar2.kapasite ise {
+        degisken yeni_kapasite: tamsayi = ar2.kapasite * 2;
+        eger yeni_kapasite < 524288 ise { yeni_kapasite = 524288; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek != 0 ise {
+            ar2.bellek = yeni_bellek;
+            ar2.kapasite = yeni_kapasite;
+            ar2.kullanilan = 0;
+        } yoksa {
+            typechecker_kapasite_reddet(3);
+            dondu;
+        }
+    }
+
+    eger g_typechecker_sembol_sayisi >= 16384 ise {
+        typechecker_kapasite_reddet(3);
+        dondu;
+    }
+    eger ar2.kullanilan + 56 > ar2.kapasite ise {
+        typechecker_kapasite_reddet(3);
+        dondu;
+    }
+    degisken yeni: *SembolGirdisi = ar2.bellek + ar2.kullanilan;
+    ar2.kullanilan = ar2.kullanilan + 56;
+    yeni.isim_hash = hash;
+    yeni.tanim_jetonu = isim_j;
+    yeni.veri_tipi = tip;
+    yeni.donus_tipi = donus;
+    yeni.ast_tanimi = ast;
+    yeni.sonraki = kp_ekle.tablo[indeks];
+    eger ast != 0 ise {
+        yeni.gorunurluk = ast.gorunurluk;
+    } yoksa {
+        yeni.gorunurluk = g_son_gorunurluk;
+    }
+    kp_ekle.tablo[indeks] = yeni;
+    g_typechecker_sembol_sayisi = g_typechecker_sembol_sayisi + 1;
+    eger g_son_gorunurluk != 0 ise {
+        g_genel_sembol_ekle(hash);
+        g_son_gorunurluk = 0;
+    }
+}
+
+isv sembol_ara(motor: *TipMotoru, isim_j: *Jeton) -> *SembolGirdisi {
+    eger isim_j == 0 ise { dondu 0; }
+    eger motor == 0 ise { dondu 0; }
+    eger motor.guncel_kapsam == 0 ise { dondu 0; }
+    degisken hash: tamsayi = djb2_sembol(isim_j.baslangic, isim_j.uzunluk);
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken indeks: tamsayi = hash % k.kapasite;
+        eger indeks < 0 ise { indeks = 0 - indeks; }
+        degisken iter: *SembolGirdisi = k.tablo[indeks];
+        dongu iter != 0 {
+            # Hash yalnızca kovayı bulur; eşleşmeyi uzunluk ve byte içeriği
+            # doğrular. Böylece hash collision sembol kaçırma/kaçırmama
+            # güvenlik açığına dönüşmez.
+            eger iter.isim_hash == hash ve iter.tanim_jetonu != 0 ise {
+                eger iter.tanim_jetonu.uzunluk == isim_j.uzunluk ve
+                    bellek_esit_mi(iter.tanim_jetonu.baslangic, isim_j.baslangic, isim_j.uzunluk) == 1 {
+                    dondu iter;
+                }
+            }
+            iter = iter.sonraki;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+isv kapsam_derinligi(k: *Kapsam) -> tamsayi {
+    degisken d: tamsayi = 0;
+    degisken cur: *Kapsam = k;
+    dongu cur != 0 {
+        eger cur.ust_kapsam != 0 ise {
+            d = d + 1;
+        }
+        cur = cur.ust_kapsam;
+    }
+    dondu d;
+}
+
+isv sembolun_kapsami(motor: *TipMotoru, isim_j: *Jeton) -> *Kapsam {
+    eger isim_j == 0 ise { dondu 0; }
+    eger motor == 0 ise { dondu 0; }
+    eger motor.guncel_kapsam == 0 ise { dondu 0; }
+    degisken hash: tamsayi = djb2_sembol(isim_j.baslangic, isim_j.uzunluk);
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken indeks: tamsayi = hash % k.kapasite;
+        eger indeks < 0 ise { indeks = 0 - indeks; }
+        degisken iter: *SembolGirdisi = k.tablo[indeks];
+        dongu iter != 0 {
+            eger iter.isim_hash == hash ve iter.tanim_jetonu != 0 ise {
+                eger iter.tanim_jetonu.uzunluk == isim_j.uzunluk ve
+                    bellek_esit_mi(iter.tanim_jetonu.baslangic, isim_j.baslangic, isim_j.uzunluk) == 1 {
+                    dondu k;
+                }
+            }
+            iter = iter.sonraki;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+isv sembol_ara_hash(motor: *TipMotoru, hash: tamsayi) -> *SembolGirdisi {
+    eger motor == 0 ise { dondu 0; }
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken indeks: tamsayi = hash % k.kapasite;
+        eger indeks < 0 ise { indeks = 0 - indeks; }
+        degisken iter: *SembolGirdisi = k.tablo[indeks];
+        dongu iter != 0 {
+            eger iter.isim_hash == hash ise { dondu iter; }
+            iter = iter.sonraki;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+isv yapi_tanimini_bul(motor: *TipMotoru, tname: *u8, tlen: tamsayi) -> *AstDugum {
+    eger motor == 0 veya tname == 0 veya tlen <= 0 ise { dondu 0; }
+    dongu tlen > 0 ve (tname[0] == 42 veya tname[0] == 38 veya tname[0] == 63 veya tname[0] == 32) {
+        tname = tname + 1;
+        tlen = tlen - 1;
+    }
+    eger tlen <= 0 ise { dondu 0; }
+    degisken s_hash: tamsayi = djb2_sembol(tname, tlen);
+    degisken struct_s: *SembolGirdisi = sembol_ara_hash(motor, s_hash);
+    eger struct_s != 0 ve struct_s.ast_tanimi != 0 ve (struct_s.ast_tanimi.tip == AST_YAPI_TANIMI veya struct_s.ast_tanimi.tip == 16) ise {
+        dondu struct_s.ast_tanimi;
+    }
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken ki: tamsayi = 0;
+        dongu ki < k.kapasite {
+            degisken it: *SembolGirdisi = k.tablo[ki];
+            dongu it != 0 {
+                eger it.ast_tanimi != 0 ve (it.ast_tanimi.tip == AST_YAPI_TANIMI veya it.ast_tanimi.tip == 16) ve it.tanim_jetonu != 0 ise {
+                    eger it.tanim_jetonu.uzunluk == tlen ve bellek_esit_mi(it.tanim_jetonu.baslangic, tname, tlen) == 1 ise {
+                        dondu it.ast_tanimi;
+                    }
+                }
+                it = it.sonraki;
+            }
+            ki = ki + 1;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+# Qualified isimler normalde parser tarafında canonical `modul__uye`
+# token'ına dönüştürülür. Bazı legacy AST yollarında ham `::` token'ı
+# kalabildiği için yalnızca qualified biçimin deterministik normalizasyonu
+# yapılır; unqualified isimler için suffix/flat fallback yoktur.
+isv sembol_ara_flat(motor: *TipMotoru, isim_j: *Jeton) -> *SembolGirdisi {
+    degisken dogrudan: *SembolGirdisi = sembol_ara(motor, isim_j);
+    eger dogrudan != 0 ise {
+        # Modul uyeleri parser tarafinda modul__uye olarak canonicalize edilir.
+        # Mevcut dil sozlesmesinde modul govdesi dis API'dir; `genel` token'i
+        # henuz declaration AST'sine guvenilir bicimde tasinmadigi icin burada
+        # varsayilan private reddi uygulanmaz.
+        dondu dogrudan;
+    }
+    eger isim_j == 0 veya isim_j.baslangic == 0 veya isim_j.uzunluk <= 0 ise { dondu 0; }
+    eger motor.guncel_kapsam != 0 ise {
+        degisken cur_k: *Kapsam = motor.guncel_kapsam;
+        dongu cur_k != 0 {
+            eger cur_k.modul_adi != 0 ve cur_k.modul_adi_uzunluk > 0 ise {
+                degisken m_uzn: tamsayi = cur_k.modul_adi_uzunluk;
+                degisken qualified_uzn: tamsayi = m_uzn + 2 + isim_j.uzunluk;
+                degisken q_buf: *u8 = compiler_tahsis_et(qualified_uzn + 1);
+                degisken qb: tamsayi = 0;
+                dongu qb < m_uzn {
+                    q_buf[qb] = cur_k.modul_adi[qb];
+                    qb = qb + 1;
+                }
+                q_buf[qb] = 95;
+                q_buf[qb + 1] = 95;
+                qb = qb + 2;
+                degisken s_idx: tamsayi = 0;
+                dongu s_idx < isim_j.uzunluk {
+                    q_buf[qb + s_idx] = isim_j.baslangic[s_idx];
+                    s_idx = s_idx + 1;
+                }
+                q_buf[qualified_uzn] = 0;
+
+                degisken q_j: *Jeton = compiler_tahsis_et(40);
+                q_j.tip = isim_j.tip;
+                q_j.baslangic = q_buf;
+                q_j.uzunluk = qualified_uzn;
+                q_j.satir = isim_j.satir;
+                q_j.sutun = isim_j.sutun;
+
+                degisken q_res: *SembolGirdisi = sembol_ara(motor, q_j);
+                eger q_res != 0 ise {
+                    isim_j.baslangic = q_buf;
+                    isim_j.uzunluk = qualified_uzn;
+                    dondu q_res;
+                }
+            }
+            cur_k = cur_k.ust_kapsam;
+        }
+    }
+    degisken ad: *u8 = isim_j.baslangic;
+    degisken uzn: tamsayi = isim_j.uzunluk;
+    degisken ayrac_var: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < uzn - 1 {
+        eger ad[i] == 58 ve ad[i + 1] == 58 ise { ayrac_var = 1; }
+        i = i + 1;
+    }
+    eger ayrac_var == 0 ise { dondu 0; }
+    degisken flat_buf: *u8 = compiler_tahsis_et(uzn + 1);
+    degisken bi: tamsayi = 0;
+    degisken oi: tamsayi = 0;
+    dongu oi < uzn {
+        eger oi < uzn - 1 ve ad[oi] == 58 ve ad[oi + 1] == 58 ise {
+            flat_buf[bi] = 95;
+            flat_buf[bi + 1] = 95;
+            bi = bi + 2;
+            oi = oi + 2;
+        } yoksa {
+            flat_buf[bi] = ad[oi];
+            bi = bi + 1;
+            oi = oi + 1;
+        }
+    }
+    flat_buf[uzn] = 0;
+    degisken flat_j: *Jeton = compiler_tahsis_et(40);
+    flat_j.tip = isim_j.tip;
+    flat_j.baslangic = flat_buf;
+    flat_j.uzunluk = uzn;
+    flat_j.satir = isim_j.satir;
+    flat_j.sutun = isim_j.sutun;
+    degisken sonuc: *SembolGirdisi = sembol_ara(motor, flat_j);
+    # Modul uyeleri default-public kabul edilir; visibility enforcement'i
+    # declaration AST'sine genelleyen ayri bir gorevde ele alinmalidir.
+    dondu sonuc;
+}
+
+# Typechecker struct tanimi bulucu: KIMLIK, INDEKS_ERISIMI ve nested ALAN_ERISIMI
+# dugumlerinden ait olduklari AST_YAPI_TANIMI dugumunu tespit eder.
+isv tc_struct_tanimi_bul(motor: *TipMotoru, sol_dugum: *AstDugum) -> *AstDugum {
+    eger motor == 0 veya sol_dugum == 0 ise { dondu 0; }
+    degisken tname: *u8 = 0;
+    degisken tlen: tamsayi = 0;
+
+    eger sol_dugum.tip == AST_KIMLIK ve sol_dugum.ilk_jeton != 0 ise {
+        degisken s: *SembolGirdisi = sembol_ara_flat(motor, sol_dugum.ilk_jeton);
+        eger s != 0 ve s.ast_tanimi != 0 ise {
+            eger s.ast_tanimi.tip == AST_YAPI_TANIMI veya s.ast_tanimi.tip == 16 ise {
+                dondu s.ast_tanimi;
+            }
+            eger s.ast_tanimi.tip_adi != 0 ise {
+                tname = s.ast_tanimi.tip_adi;
+                tlen = s.ast_tanimi.tip_adi_uzunluk;
+            }
+        }
+    } yoksa eger sol_dugum.tip == AST_INDEKS_ERISIMI ve sol_dugum.sol != 0 ise {
+        degisken base: *AstDugum = sol_dugum.sol;
+        dongu base != 0 ve base.tip == AST_INDEKS_ERISIMI {
+            base = base.sol;
+        }
+        eger base != 0 ve base.tip == AST_KIMLIK ve base.ilk_jeton != 0 ise {
+            degisken s_idx: *SembolGirdisi = sembol_ara_flat(motor, base.ilk_jeton);
+            eger s_idx != 0 ve s_idx.ast_tanimi != 0 ve s_idx.ast_tanimi.tip_adi != 0 ise {
+                tname = s_idx.ast_tanimi.tip_adi;
+                tlen = s_idx.ast_tanimi.tip_adi_uzunluk;
+            }
+        } yoksa eger base != 0 ve base.tip == AST_ALAN_ERISIMI ve base.sol != 0 ve base.sag != 0 ve base.sag.ilk_jeton != 0 ise {
+            degisken ps: *AstDugum = tc_struct_tanimi_bul(motor, base.sol);
+            eger ps != 0 ve (ps.tip == AST_YAPI_TANIMI veya ps.tip == 16) ise {
+                degisken f: *AstDugum = ps.sol;
+                dongu f != 0 {
+                    eger f.ilk_jeton != 0 ve f.ilk_jeton.uzunluk == base.sag.ilk_jeton.uzunluk ve
+                        bellek_esit_mi(f.ilk_jeton.baslangic, base.sag.ilk_jeton.baslangic, f.ilk_jeton.uzunluk) == 1 ise {
+                        eger f.tip_adi != 0 ise {
+                            tname = f.tip_adi;
+                            tlen = f.tip_adi_uzunluk;
+                        }
+                        durdur;
+                    }
+                    f = f.sonraki;
+                }
+            }
+        }
+    } yoksa eger sol_dugum.tip == AST_ALAN_ERISIMI ise {
+        degisken parent_struct: *AstDugum = tc_struct_tanimi_bul(motor, sol_dugum.sol);
+        eger parent_struct != 0 ve (parent_struct.tip == AST_YAPI_TANIMI veya parent_struct.tip == 16) ve
+            sol_dugum.sag != 0 ve sol_dugum.sag.ilk_jeton != 0 ise {
+            degisken f: *AstDugum = parent_struct.sol;
+            dongu f != 0 {
+                eger f.ilk_jeton != 0 ve f.ilk_jeton.uzunluk == sol_dugum.sag.ilk_jeton.uzunluk ve
+                    bellek_esit_mi(f.ilk_jeton.baslangic, sol_dugum.sag.ilk_jeton.baslangic, f.ilk_jeton.uzunluk) == 1 ise {
+                    eger f.tip_adi != 0 ise {
+                        tname = f.tip_adi;
+                        tlen = f.tip_adi_uzunluk;
+                    }
+                    durdur;
+                }
+                f = f.sonraki;
+            }
+        }
+    } yoksa eger sol_dugum.tip_adi != 0 ise {
+        tname = sol_dugum.tip_adi;
+        tlen = sol_dugum.tip_adi_uzunluk;
+    }
+
+    eger tname != 0 ve tlen > 0 ise {
+        dondu yapi_tanimini_bul(motor, tname, tlen);
+    }
+    dondu 0;
+}
+
+# Unqualified call için yalnızca diagnostik amaçlı suffix taraması. Bu bir
+# lookup fallback'i değildir; yalnızca `modul__uye` sembolü mevcutken `uye`
+# çağrısının qualified yazılması gerektiğini tespit eder.
+isv modul_uyesi_kisa_adi_mi(motor: *TipMotoru, isim_j: *Jeton) -> tamsayi {
+    eger motor == 0 veya isim_j == 0 veya isim_j.baslangic == 0 ise { dondu 0; }
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken bi: tamsayi = 0;
+        dongu bi < k.kapasite {
+            degisken iter: *SembolGirdisi = k.tablo[bi];
+            dongu iter != 0 {
+                eger iter.tanim_jetonu != 0 ve iter.tanim_jetonu.baslangic != 0 ise {
+                    degisken ad: *u8 = iter.tanim_jetonu.baslangic;
+                    degisken uzn: tamsayi = iter.tanim_jetonu.uzunluk;
+                    degisken ayirac: tamsayi = 0 - 1;
+                    degisken qi: tamsayi = 0;
+                    dongu qi < uzn - 1 {
+                        eger ad[qi] == 95 ve ad[qi + 1] == 95 ise { ayirac = qi; }
+                        qi = qi + 1;
+                    }
+                    eger ayirac >= 0 ve uzn - ayirac - 2 == isim_j.uzunluk ve
+                        bellek_esit_mi(ad + ayirac + 2, isim_j.baslangic, isim_j.uzunluk) == 1 ise {
+                        dondu 1;
+                    }
+                }
+                iter = iter.sonraki;
+            }
+            bi = bi + 1;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Trait Tanım ve Katı Trait Kısıtları (F11.12 & F11.13)
+# ============================================================
+degisken g_tc_trait_sayisi: tamsayi = 0;
+degisken g_tc_trait_isim: [64]*u8;
+degisken g_tc_trait_uzunluk: [64]tamsayi;
+degisken g_tc_trait_metod_bas: [64]tamsayi;
+degisken g_tc_trait_metod_adet: [64]tamsayi;
+
+degisken g_tc_metod_toplam: tamsayi = 0;
+degisken g_tc_metod_isim: [256]*u8;
+degisken g_tc_metod_uzunluk: [256]tamsayi;
+degisken g_tc_metod_ast: [256]*AstDugum;
+
+degisken g_tc_impl_sayisi: tamsayi = 0;
+degisken g_tc_impl_trait_hash: [256]tamsayi;
+degisken g_tc_impl_tip_hash: [256]tamsayi;
+
+isv tc_trait_kaydet(tr_j: *Jeton, govde: *AstDugum) {
+    eger tr_j == 0 veya g_tc_trait_sayisi >= 64 ise { dondu; }
+    degisken ti: tamsayi = g_tc_trait_sayisi;
+    g_tc_trait_isim[ti] = tr_j.baslangic;
+    g_tc_trait_uzunluk[ti] = tr_j.uzunluk;
+    g_tc_trait_metod_bas[ti] = g_tc_metod_toplam;
+    degisken m_sayac: tamsayi = 0;
+    degisken it: *AstDugum = govde;
+    dongu it != 0 {
+        eger it.ilk_jeton != 0 ve g_tc_metod_toplam < 256 ise {
+            g_tc_metod_isim[g_tc_metod_toplam] = it.ilk_jeton.baslangic;
+            g_tc_metod_uzunluk[g_tc_metod_toplam] = it.ilk_jeton.uzunluk;
+            g_tc_metod_ast[g_tc_metod_toplam] = it;
+            g_tc_metod_toplam = g_tc_metod_toplam + 1;
+            m_sayac = m_sayac + 1;
+        }
+        it = it.sonraki;
+    }
+    g_tc_trait_metod_adet[ti] = m_sayac;
+    g_tc_trait_sayisi = g_tc_trait_sayisi + 1;
+}
+
+isv tc_trait_uygulamasi_dogrula(motor: *TipMotoru, tr_j: *Jeton, hedef_j: *Jeton, govde: *AstDugum) {
+    eger tr_j == 0 veya hedef_j == 0 ise { dondu; }
+    # 1. Trait tanımını bul
+    degisken ti: tamsayi = 0;
+    degisken tr_idx: tamsayi = 0 - 1;
+    dongu ti < g_tc_trait_sayisi {
+        eger g_tc_trait_uzunluk[ti] == tr_j.uzunluk ve
+            bellek_esit_mi(g_tc_trait_isim[ti], tr_j.baslangic, tr_j.uzunluk) == 1 ise {
+            tr_idx = ti;
+        }
+        ti = ti + 1;
+    }
+    eger tr_idx != 0 - 1 ise {
+        degisken mb: tamsayi = g_tc_trait_metod_bas[tr_idx];
+        degisken ma: tamsayi = g_tc_trait_metod_adet[tr_idx];
+        degisken mi: tamsayi = 0;
+        dongu mi < ma {
+            degisken req_isim: *u8 = g_tc_metod_isim[mb + mi];
+            degisken req_uzn: tamsayi = g_tc_metod_uzunluk[mb + mi];
+            degisken req_ast: *AstDugum = g_tc_metod_ast[mb + mi];
+            degisken bulundu: tamsayi = 0;
+            degisken bulunan_metod: *AstDugum = 0;
+            degisken it: *AstDugum = govde;
+            dongu it != 0 {
+                eger it.ilk_jeton != 0 ve it.ilk_jeton.uzunluk == req_uzn ve
+                    bellek_esit_mi(it.ilk_jeton.baslangic, req_isim, req_uzn) == 1 ise {
+                    bulundu = 1;
+                    bulunan_metod = it;
+                }
+                it = it.sonraki;
+            }
+            eger bulundu == 0 ise {
+                degisken hk: HataKaydi;
+                degisken sat: tamsayi = tr_j.satir;
+                degisken sut: tamsayi = tr_j.sutun;
+                tani_olustur(&hk, 20, sat, sut, "Trait uygulamasi eksik metod iceriyor".ptr, 0);
+                hata_kaydi_yazdir(&hk);
+                hata_rapor_et(motor);
+                motor.hata_sayisi = motor.hata_sayisi + 1;
+            } yoksa eger req_ast != 0 ve bulunan_metod != 0 ise {
+                # Tam Trait İmza Doğrulaması (F11.12 / Görev 2.4)
+                # 1. Parametre sayisi kontrolu
+                degisken p_req_sayisi: tamsayi = 0;
+                degisken p_impl_sayisi: tamsayi = 0;
+                degisken p_req_it: *AstDugum = req_ast.parametreler;
+                degisken p_impl_it: *AstDugum = bulunan_metod.parametreler;
+
+                degisken temp_p: *AstDugum = p_req_it;
+                dongu temp_p != 0 { p_req_sayisi = p_req_sayisi + 1; temp_p = temp_p.sonraki; }
+                temp_p = p_impl_it;
+                dongu temp_p != 0 { p_impl_sayisi = p_impl_sayisi + 1; temp_p = temp_p.sonraki; }
+
+                eger p_req_sayisi != p_impl_sayisi ise {
+                    degisken hk_p: HataKaydi;
+                    degisken sat_p: tamsayi = 0;
+                    degisken sut_p: tamsayi = 0;
+                    eger bulunan_metod.ilk_jeton != 0 ise {
+                        sat_p = bulunan_metod.ilk_jeton.satir;
+                        sut_p = bulunan_metod.ilk_jeton.sutun;
+                    }
+                    tani_olustur(&hk_p, 20, sat_p, sut_p, "Trait metodu parametre sayisi uyumsuz".ptr, 0);
+                    hata_kaydi_yazdir(&hk_p);
+                    hata_rapor_et(motor);
+                    motor.hata_sayisi = motor.hata_sayisi + 1;
+                } yoksa {
+                    # 2. Parametre tipleri kontrolu
+                    dongu p_req_it != 0 ve p_impl_it != 0 {
+                        degisken p_uyumlu: tamsayi = 1;
+                        eger p_req_it.cozumlenmis_tip != p_impl_it.cozumlenmis_tip ise {
+                            p_uyumlu = 0;
+                        } yoksa eger p_req_it.tip_adi != 0 ve p_impl_it.tip_adi != 0 ise {
+                            degisken is_self: tamsayi = 0;
+                            eger p_req_it.tip_adi_uzunluk == 4 ve bellek_esit_mi(p_req_it.tip_adi, "Self".ptr, 4) == 1 ise {
+                                is_self = 1;
+                            }
+                            eger is_self == 1 ise {
+                                eger (p_impl_it.tip_adi_uzunluk != hedef_j.uzunluk veya bellek_esit_mi(p_impl_it.tip_adi, hedef_j.baslangic, hedef_j.uzunluk) == 0) ve
+                                     (p_impl_it.tip_adi_uzunluk != 4 veya bellek_esit_mi(p_impl_it.tip_adi, "Self".ptr, 4) == 0) ise {
+                                    p_uyumlu = 0;
+                                }
+                            } yoksa {
+                                eger p_req_it.tip_adi_uzunluk != p_impl_it.tip_adi_uzunluk veya bellek_esit_mi(p_req_it.tip_adi, p_impl_it.tip_adi, p_req_it.tip_adi_uzunluk) == 0 ise {
+                                    p_uyumlu = 0;
+                                }
+                            }
+                        } yoksa eger (p_req_it.tip_adi != 0 ve p_impl_it.tip_adi == 0) veya (p_req_it.tip_adi == 0 ve p_impl_it.tip_adi != 0) ise {
+                            p_uyumlu = 0;
+                        }
+
+                        eger p_uyumlu == 0 ise {
+                            degisken hk_t: HataKaydi;
+                            degisken sat_t: tamsayi = 0;
+                            degisken sut_t: tamsayi = 0;
+                            eger p_impl_it.ilk_jeton != 0 ise {
+                                sat_t = p_impl_it.ilk_jeton.satir;
+                                sut_t = p_impl_it.ilk_jeton.sutun;
+                            }
+                            tani_olustur(&hk_t, 20, sat_t, sut_t, "Trait metodu parametre tipi uyumsuz".ptr, 0);
+                            hata_kaydi_yazdir(&hk_t);
+                            hata_rapor_et(motor);
+                            motor.hata_sayisi = motor.hata_sayisi + 1;
+                            durdur;
+                        }
+                        p_req_it = p_req_it.sonraki;
+                        p_impl_it = p_impl_it.sonraki;
+                    }
+                }
+
+                # 3. Donus tipi kontrolu
+                degisken ret_uyumlu: tamsayi = 1;
+                eger req_ast.cozumlenmis_tip != bulunan_metod.cozumlenmis_tip ise {
+                    ret_uyumlu = 0;
+                } yoksa eger req_ast.tip_adi != 0 ve bulunan_metod.tip_adi != 0 ise {
+                    degisken ret_is_self: tamsayi = 0;
+                    eger req_ast.tip_adi_uzunluk == 4 ve bellek_esit_mi(req_ast.tip_adi, "Self".ptr, 4) == 1 ise {
+                        ret_is_self = 1;
+                    }
+                    eger ret_is_self == 1 ise {
+                        eger (bulunan_metod.tip_adi_uzunluk != hedef_j.uzunluk veya bellek_esit_mi(bulunan_metod.tip_adi, hedef_j.baslangic, hedef_j.uzunluk) == 0) ve
+                             (bulunan_metod.tip_adi_uzunluk != 4 veya bellek_esit_mi(bulunan_metod.tip_adi, "Self".ptr, 4) == 0) ise {
+                            ret_uyumlu = 0;
+                        }
+                    } yoksa {
+                        eger req_ast.tip_adi_uzunluk != bulunan_metod.tip_adi_uzunluk veya bellek_esit_mi(req_ast.tip_adi, bulunan_metod.tip_adi, req_ast.tip_adi_uzunluk) == 0 ise {
+                            ret_uyumlu = 0;
+                        }
+                    }
+                } yoksa eger (req_ast.tip_adi != 0 ve bulunan_metod.tip_adi == 0) veya (req_ast.tip_adi == 0 ve bulunan_metod.tip_adi != 0) ise {
+                    ret_uyumlu = 0;
+                }
+
+                eger ret_uyumlu == 0 ise {
+                    degisken hk_r: HataKaydi;
+                    degisken sat_r: tamsayi = 0;
+                    degisken sut_r: tamsayi = 0;
+                    eger bulunan_metod.ilk_jeton != 0 ise {
+                        sat_r = bulunan_metod.ilk_jeton.satir;
+                        sut_r = bulunan_metod.ilk_jeton.sutun;
+                    }
+                    tani_olustur(&hk_r, 20, sat_r, sut_r, "Trait metodu donus tipi uyumsuz".ptr, 0);
+                    hata_kaydi_yazdir(&hk_r);
+                    hata_rapor_et(motor);
+                    motor.hata_sayisi = motor.hata_sayisi + 1;
+                }
+            }
+            mi = mi + 1;
+        }
+    }
+    # Kaydet
+    eger g_tc_impl_sayisi < 256 ise {
+        g_tc_impl_trait_hash[g_tc_impl_sayisi] = djb2_sembol(tr_j.baslangic, tr_j.uzunluk);
+        g_tc_impl_tip_hash[g_tc_impl_sayisi] = djb2_sembol(hedef_j.baslangic, hedef_j.uzunluk);
+        g_tc_impl_sayisi = g_tc_impl_sayisi + 1;
+    }
+}
+
+isv tc_trait_uygulandi_mi(trait_hash: tamsayi, tip_hash: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_tc_impl_sayisi {
+        eger g_tc_impl_trait_hash[i] == trait_hash ve g_tc_impl_tip_hash[i] == tip_hash ise {
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv tc_builtin_traitleri_kaydet(motor: *TipMotoru) {
+    degisken boyut_h: tamsayi       = djb2_sembol("Boyut".ptr, 5);
+    degisken kopyala_h: tamsayi     = djb2_sembol("Kopyala".ptr, 7);
+    degisken esit_h: tamsayi        = djb2_sembol("Esit".ptr, 4);
+    degisken hash_h: tamsayi        = djb2_sembol("Hash".ptr, 4);
+    degisken toplama_h: tamsayi     = djb2_sembol("Toplama".ptr, 7);
+    degisken karsilastir_h: tamsayi = djb2_sembol("Karsilastir".ptr, 11);
+    degisken goster_h: tamsayi      = djb2_sembol("Goster".ptr, 6);
+    degisken klonla_h: tamsayi      = djb2_sembol("Klonla".ptr, 6);
+    degisken gonder_h: tamsayi      = djb2_sembol("Gonder".ptr, 6);
+    degisken send_h: tamsayi        = djb2_sembol("Send".ptr, 4);
+    degisken paylas_h: tamsayi      = djb2_sembol("Paylas".ptr, 6);
+    degisken sync_h: tamsayi        = djb2_sembol("Sync".ptr, 4);
+
+    degisken t_adlar: [5]*u8;
+    t_adlar[0] = "tamsayi".ptr;
+    t_adlar[1] = "gercek".ptr;
+    t_adlar[2] = "metin".ptr;
+    t_adlar[3] = "mantik".ptr;
+    t_adlar[4] = "u8".ptr;
+
+    degisken t_uzn: [5]tamsayi;
+    t_uzn[0] = 7; t_uzn[1] = 6; t_uzn[2] = 5; t_uzn[3] = 6; t_uzn[4] = 2;
+
+    degisken ti: tamsayi = 0;
+    dongu ti < 5 {
+        degisken t_id: tamsayi = ti + 1;
+        degisken t_h: tamsayi = djb2_sembol(t_adlar[ti], t_uzn[ti]);
+        degisken hi: tamsayi = 0;
+        dongu hi < 12 {
+            degisken tr_h: tamsayi = 0;
+            eger hi == 0 ise { tr_h = boyut_h; }
+            yoksa eger hi == 1 ise { tr_h = kopyala_h; }
+            yoksa eger hi == 2 ise { tr_h = esit_h; }
+            yoksa eger hi == 3 ise { tr_h = hash_h; }
+            yoksa eger hi == 4 ise { tr_h = toplama_h; }
+            yoksa eger hi == 5 ise { tr_h = karsilastir_h; }
+            yoksa eger hi == 6 ise { tr_h = goster_h; }
+            yoksa eger hi == 7 ise { tr_h = klonla_h; }
+            yoksa eger hi == 8 ise { tr_h = gonder_h; }
+            yoksa eger hi == 9 ise { tr_h = send_h; }
+            yoksa eger hi == 10 ise { tr_h = paylas_h; }
+            yoksa eger hi == 11 ise { tr_h = sync_h; }
+
+            eger g_tc_impl_sayisi < 256 ise {
+                g_tc_impl_trait_hash[g_tc_impl_sayisi] = tr_h;
+                g_tc_impl_tip_hash[g_tc_impl_sayisi] = t_id;
+                g_tc_impl_sayisi = g_tc_impl_sayisi + 1;
+            }
+            eger g_tc_impl_sayisi < 256 ise {
+                g_tc_impl_trait_hash[g_tc_impl_sayisi] = tr_h;
+                g_tc_impl_tip_hash[g_tc_impl_sayisi] = t_h;
+                g_tc_impl_sayisi = g_tc_impl_sayisi + 1;
+            }
+            hi = hi + 1;
+        }
+        ti = ti + 1;
+    }
+}
+
+isv tip_adi_tanimli_mi(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger motor == 0 veya ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    eger uzunluk > 4 ve bellek_esit_mi(ad, "dyn ".ptr, 4) == 1 ise { dondu 1; }
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken idx: tamsayi = 0;
+        dongu idx < k.kapasite {
+            degisken iter: *SembolGirdisi = k.tablo[idx];
+            dongu iter != 0 {
+                eger iter.tanim_jetonu != 0 ve iter.tanim_jetonu.uzunluk == uzunluk ve
+                    bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 {
+                    eger iter.ast_tanimi != 0 ve (iter.ast_tanimi.tip == AST_YAPI_TANIMI veya iter.ast_tanimi.tip == AST_ENUM_TANIMI) ise { dondu 1; }
+                }
+                iter = iter.sonraki;
+            }
+            idx = idx + 1;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+isv tip_alias_tipi_bul(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
+    eger motor == 0 veya ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 {
+        degisken idx: tamsayi = 0;
+        dongu idx < k.kapasite {
+            degisken iter: *SembolGirdisi = k.tablo[idx];
+            dongu iter != 0 {
+                eger iter.tanim_jetonu != 0 ve iter.ast_tanimi != 0 ve
+                    iter.ast_tanimi.tip == AST_TIP_ALIAS ve
+                    iter.tanim_jetonu.uzunluk == uzunluk ve
+                    bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 ise {
+                    dondu iter.veri_tipi;
+                }
+                iter = iter.sonraki;
+            }
+            idx = idx + 1;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu 0;
+}
+
+isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
+    eger motor == 0 ise { dondu 0; }
+    eger uzunluk == 0 ise { dondu motor.tip_bilinmiyor; }
+    eger ad == 0 ise { dondu motor.tip_bilinmiyor; }
+
+    degisken p_seviye: tamsayi = 0;
+    dongu uzunluk > 0 ve ad[0] == 42 {
+        p_seviye = p_seviye + 1;
+        ad = ad + 1;
+        uzunluk = uzunluk - 1;
+    }
+
+    # Generic fonksiyon/struct govdelerinde T, K gibi tek harfli tip
+    # parametreleri monomorphization tarafindan daha sonra somutlasir.
+    # Bunlari bilinmeyen nominal yapi saymak yerine deferred type olarak
+    # tut; boylece generic govde, somut cagri tipiyle karsilastirilmadan
+    # once sahte bir struct uyumsuzlugu uretmez.
+    eger uzunluk == 1 ve ad[0] >= 65 ve ad[0] <= 90 ise {
+        dondu motor.tip_bilinmiyor;
+    }
+
+    degisken temel_id: tamsayi = 0;
+    degisken kat: tamsayi = KAT_TEMEL;
+
+    # Uzunluk 2: "u8"
+    eger uzunluk == 2 ise {
+        eger ad[0] == 117 ve ad[1] == 56 ise { temel_id = TIP_ID_U8; }
+    }
+    # Uzunluk 3: "hic", "int", "i64", "u64", "i32", "u32", "u16", "i16", "str", "f32", "f64", "空", "無"
+    eger uzunluk == 3 ise {
+        eger bellek_esit_mi(ad, "hic".ptr, 3) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "int".ptr, 3) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "i64".ptr, 3) == 1 ise { temel_id = TIP_ID_I64; }
+        eger bellek_esit_mi(ad, "u64".ptr, 3) == 1 ise { temel_id = TIP_ID_I64; }
+        eger bellek_esit_mi(ad, "i32".ptr, 3) == 1 ise { temel_id = TIP_ID_I32; }
+        eger bellek_esit_mi(ad, "u32".ptr, 3) == 1 ise { temel_id = TIP_ID_U32; }
+        eger bellek_esit_mi(ad, "u16".ptr, 3) == 1 ise { temel_id = TIP_ID_U16; }
+        eger bellek_esit_mi(ad, "i16".ptr, 3) == 1 ise { temel_id = TIP_ID_U16; }
+        eger bellek_esit_mi(ad, "str".ptr, 3) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "f32".ptr, 3) == 1 ise { temel_id = TIP_ID_F32; }
+        eger bellek_esit_mi(ad, "f64".ptr, 3) == 1 ise { temel_id = TIP_ID_F64; }
+        eger bellek_esit_mi(ad, "空".ptr, 3) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "無".ptr, 3) == 1 ise { temel_id = TIP_ID_HIC; }
+    }
+    # Uzunluk 4: "sayi", "bool", "char", "byte", "void", "null"
+    eger uzunluk == 4 ise {
+        eger bellek_esit_mi(ad, "sayi".ptr, 4) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "bool".ptr, 4) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "char".ptr, 4) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "byte".ptr, 4) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "bayt".ptr, 4) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "void".ptr, 4) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "null".ptr, 4) == 1 ise { temel_id = TIP_ID_HIC; }
+    }
+    # Uzunluk 5: "metin", "float", "sonuc"
+    eger uzunluk == 5 ise {
+        eger bellek_esit_mi(ad, "metin".ptr, 5) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "float".ptr, 5) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "sonuc".ptr, 5) == 1 veya
+            bellek_esit_mi(ad, "Sonuc".ptr, 5) == 1 ise {
+            temel_id = TIP_ID_SONUC;
+            kat = KAT_YAPI;
+        }
+    }
+    # Result ve EnumSonuc canonical sonuc<T> için açık compatibility
+    # alias'larıdır; ayrı nominal Result storage/layout'u oluşturmazlar.
+    eger uzunluk == 6 ve bellek_esit_mi(ad, "Result".ptr, 6) == 1 ise {
+        temel_id = TIP_ID_SONUC;
+        kat = KAT_YAPI;
+    }
+    eger uzunluk == 9 ve bellek_esit_mi(ad, "EnumSonuc".ptr, 9) == 1 ise {
+        temel_id = TIP_ID_SONUC;
+        kat = KAT_YAPI;
+    }
+    # `Future` remains available as a normal std/async runtime yapi. The
+    # compiler-internal TIP_ID_FUTURE is produced only for async call symbols;
+    # source-name resolution must not shadow the runtime layout declaration.
+    # Uzunluk 6: "gercek", "mantik", "string", "double", "вещ", "浮動", "小数", "소수", "整数", "정수", "字节", "浮点", "실수", "布尔", "論理", "없음"
+    eger uzunluk == 6 ise {
+        eger bellek_esit_mi(ad, "gercek".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "double".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "вещ".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "浮動".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "小数".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "소수".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "mantik".ptr, 6) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "string".ptr, 6) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "整数".ptr, 6) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "정수".ptr, 6) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "字节".ptr, 6) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "浮点".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "실수".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "布尔".ptr, 6) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "論理".ptr, 6) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "없음".ptr, 6) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "bosluk".ptr, 6) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "実数".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "文字".ptr, 6) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "字符".ptr, 6) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "문자".ptr, 6) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "공백".ptr, 6) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "논리".ptr, 6) == 1 ise { temel_id = TIP_ID_MANTIK; }
+    }
+    # Uzunluk 7: "tamsayi", "boolean", "kesirli", "decimal"
+    eger uzunluk == 7 ise {
+        eger bellek_esit_mi(ad, "tamsayi".ptr, 7) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "boolean".ptr, 7) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "kesirli".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "ondalik".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "decimal".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
+    }
+    # Uzunluk 8: "flottant", "décimal"
+    eger uzunluk == 8 ise {
+        eger bellek_esit_mi(ad, "flottant".ptr, 8) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "décimal".ptr, 8) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "karakter".ptr, 8) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "байт".ptr, 8) == 1 ise { temel_id = TIP_ID_U8; }
+    }
+    # Uzunluk 9: "kesirli32", "kesirli64", "バイト", "바이트", "불리언"
+    eger uzunluk == 9 ise {
+        eger bellek_esit_mi(ad, "kesirli32".ptr, 9) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "kesirli64".ptr, 9) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "バイト".ptr, 9) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "바이트".ptr, 9) == 1 ise { temel_id = TIP_ID_U8; }
+        eger bellek_esit_mi(ad, "불리언".ptr, 9) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "mantiksal".ptr, 9) == 1 ise { temel_id = TIP_ID_MANTIK; }
+        eger bellek_esit_mi(ad, "文字列".ptr, 9) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "字符串".ptr, 9) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "문자열".ptr, 9) == 1 ise { temel_id = TIP_ID_METIN; }
+    }
+    # Uzunluk 10: "целое", "пусто"
+    eger uzunluk == 10 ise {
+        eger bellek_esit_mi(ad, "целое".ptr, 10) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "пусто".ptr, 10) == 1 ise { temel_id = TIP_ID_HIC; }
+    }
+    # Uzunluk 12: "строка", "символ"
+    eger uzunluk == 12 ise {
+        eger bellek_esit_mi(ad, "строка".ptr, 12) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "символ".ptr, 12) == 1 ise { temel_id = TIP_ID_U8; }
+    }
+    # Uzunluk 14: "дробное"
+    eger uzunluk == 14 ise {
+        eger bellek_esit_mi(ad, "дробное".ptr, 14) == 1 ise { temel_id = TIP_ID_GERCEK; }
+    }
+    # Uzunluk 20: "логическое"
+    eger uzunluk == 20 ise {
+        eger bellek_esit_mi(ad, "логическое".ptr, 20) == 1 ise { temel_id = TIP_ID_MANTIK; }
+    }
+
+    eger temel_id == 0 ise {
+        eger uzunluk > 4 ve bellek_esit_mi(ad, "dyn ".ptr, 4) == 1 ise {
+            temel_id = djb2_sembol(ad, uzunluk);
+            kat = KAT_YAPI;
+            degisken dyn_tip: *TipBilgisi = yeni_tip(motor.arena, kat, temel_id, p_seviye, 16);
+            dyn_tip.nominal_id = 99999;
+            dondu dyn_tip;
+        }
+        degisken alias_tip: *TipBilgisi = tip_alias_tipi_bul(motor, ad, uzunluk);
+        eger alias_tip != 0 ise { dondu alias_tip; }
+        # Bilinmeyen bir tip adı rastgele nominal struct hash'i olarak kabul edilmez.
+        # Generic parametreleri yukarıdaki deferred kuralı üzerinden geçer.
+        eger p_seviye == 0 ve tip_adi_tanimli_mi(motor, ad, uzunluk) == 0 ise {
+            dondu motor.tip_bilinmiyor;
+        }
+        temel_id = djb2_sembol(ad, uzunluk);
+        kat = KAT_YAPI;
+    }
+
+    # Named struct'lara canonical nominal ID ata. Result builtin'i bu
+    # tablodan hariçtir; onun metadata alanı payload ID'sidir.
+    degisken nominal_id: tamsayi = 0;
+    eger kat == KAT_YAPI ve
+        (uzunluk != 5 veya
+         (bellek_esit_mi(ad, "sonuc".ptr, 5) == 0 ve
+          bellek_esit_mi(ad, "Sonuc".ptr, 5) == 0)) ve
+        (uzunluk != 6 veya bellek_esit_mi(ad, "Result".ptr, 6) == 0) ve
+        (uzunluk != 9 veya bellek_esit_mi(ad, "EnumSonuc".ptr, 9) == 0) ise {
+        degisken curr_nom: *NominalDugum = g_nominal_liste;
+        dongu curr_nom != 0 {
+            eger curr_nom.uzunluk == uzunluk ve
+                bellek_esit_mi(curr_nom.ad, ad, uzunluk) == 1 ise {
+                nominal_id = curr_nom.nominal_id;
+                durdur;
+            }
+            curr_nom = curr_nom.sonraki;
+        }
+        eger nominal_id == 0 ise {
+            nominal_id = 100000 + g_nominal_sayisi;
+            degisken yeni_nom: *NominalDugum = compiler_tahsis_et(32);
+            eger yeni_nom != 0 ise {
+                yeni_nom.nominal_id = nominal_id;
+                yeni_nom.ad = ad;
+                yeni_nom.uzunluk = uzunluk;
+                yeni_nom.sonraki = g_nominal_liste;
+                g_nominal_liste = yeni_nom;
+                g_nominal_sayisi = g_nominal_sayisi + 1;
+            } yoksa {
+                typechecker_kapasite_reddet(4);
+            }
+        }
+    }
+    degisken sonuc: *TipBilgisi = yeni_tip(motor.arena, kat, temel_id, p_seviye, 0);
+    eger sonuc == 0 ise { dondu motor.tip_bilinmiyor; }
+    sonuc.nominal_id = nominal_id;
+    eger kat == KAT_YAPI ve enum_turu_mi(ad, uzunluk) == 1 ise {
+        sonuc.enum_layout = 1;
+    }
+    dondu sonuc;
+}
+
+isv tip_dugumunden_coz(motor: *TipMotoru, dugum: *AstDugum) -> *TipBilgisi {
+    eger motor == 0 veya dugum == 0 ise { dondu 0; }
+    eger dugum.cozumlenmis_tip == 0 - 44 ise { dondu motor.tip_bilinmiyor; }
+    eger dugum.tip_adi == 0 ise { dondu motor.tip_bilinmiyor; }
+
+    # Future is a normal runtime yapi when used without generic metadata.
+    # Only Future<T> enters the compiler-level Future payload path.
+    degisken future_adi_mi: tamsayi = 0;
+    eger dugum.tip_adi_uzunluk == 6 ve
+        bellek_esit_mi(dugum.tip_adi, "Future".ptr, 6) == 1 ise {
+        future_adi_mi = 1;
+    }
+    eger future_adi_mi == 1 ve dugum.tip_arg_sayisi != 0 ise {
+        eger dugum.tip_arg_sayisi != 1 veya dugum.tip_arglari == 0 ise {
+            future_tip_hatasi(motor, dugum, "Future tam olarak bir tip parametresi alir".ptr);
+            dondu motor.tip_bilinmiyor;
+        }
+        degisken payload: *TipBilgisi = tip_dugumunden_coz(motor, dugum.tip_arglari);
+        eger payload == 0 veya payload.temel_id == TIP_ID_BILINMIYOR ise {
+            future_tip_hatasi(motor, dugum, "Future payload tipi cozumlenemedi".ptr);
+            dondu motor.tip_bilinmiyor;
+        }
+        degisken future_tip: *TipBilgisi = gelecek_tipi_olustur(motor, payload);
+        eger future_tip == 0 ise { dondu motor.tip_bilinmiyor; }
+        eger dugum.cozumlenmis_tip > 0 ise {
+            future_tip.pointer_seviyesi = future_tip.pointer_seviyesi + dugum.cozumlenmis_tip;
+        }
+        eger dugum.nullable == 1 ise { future_tip.nullable = 1; }
+        dondu future_tip;
+    }
+
+    degisken t: *TipBilgisi = tip_adini_coz(motor, dugum.tip_adi, dugum.tip_adi_uzunluk);
+    eger t == 0 ise { dondu motor.tip_bilinmiyor; }
+    eger t.temel_id == TIP_ID_BILINMIYOR ve dugum.tip_adi_uzunluk > 0 ise {
+        eger dugum.cozumlenmis_tip > 0 ise {
+            degisken ptr_t: *TipBilgisi = yeni_tip(motor.arena, KAT_YAPI, TIP_ID_POINTER, dugum.cozumlenmis_tip, 0);
+            dondu ptr_t;
+        }
+        # Tek harfli büyük isimler generic parametre olabilir; diğer bilinmeyen
+        # tip adları derleme hatasıdır ve self-heal kapsamına girmez.
+        eger buyuk_tek_harf_generic_mi(dugum.tip_adi, dugum.tip_adi_uzunluk) == 0 ise {
+            degisken hk_tip: HataKaydi;
+            degisken tip_satir: tamsayi = 0;
+            degisken tip_sutun: tamsayi = 0;
+            eger dugum.ilk_jeton != 0 ise {
+                tip_satir = dugum.ilk_jeton.satir;
+                tip_sutun = dugum.ilk_jeton.sutun;
+            }
+            tani_olustur(&hk_tip, 1, tip_satir, tip_sutun, "Bilinmeyen tip adi".ptr, 0);
+            hata_kaydi_yazdir(&hk_tip);
+            hata_rapor_et(motor);
+            motor.tanimsiz_hata_sayisi = motor.tanimsiz_hata_sayisi + 1;
+        }
+        dondu motor.tip_bilinmiyor;
+    }
+    # Canonical Result her zaman pointer-backed'tir. Kaynakta `sonuc<T>`
+    # yazıldığında yıldız belirtilmese bile aynı 24-byte heap layout'una
+    # lower edilir; `*Sonuc` compatibility spelling'iyle ABI eşitliği burada
+    # sağlanır.
+    eger dugum.cozumlenmis_tip > 0 veya dugum.dizi_boyutu > 0 veya
+        t.dizi_boyutu > 0 veya t.temel_id == TIP_ID_SONUC ise {
+        degisken metadata_dizi: tamsayi = dugum.dizi_boyutu;
+        degisken nominal_kimlik: tamsayi = t.nominal_id;
+        degisken ic_tip_kopya: *TipBilgisi = t.ic_tip;
+        degisken enum_layout_kopya: tamsayi = t.enum_layout;
+        degisken canonical_ptr: tamsayi = dugum.cozumlenmis_tip;
+        eger t.temel_id == TIP_ID_SONUC ve canonical_ptr == 0 ise { canonical_ptr = 1; }
+        t = yeni_tip(motor.arena, t.kategori, t.temel_id, canonical_ptr, metadata_dizi);
+        t.nominal_id = nominal_kimlik;
+        t.ic_tip = ic_tip_kopya;
+        t.enum_layout = enum_layout_kopya;
+        eger t.temel_id == TIP_ID_SONUC ve t.ic_tip == 0 ise {
+            eger metadata_dizi == TIP_ID_TAMSAYI ise { t.ic_tip = motor.tip_tamsayi; }
+            eger metadata_dizi == TIP_ID_GERCEK ise { t.ic_tip = motor.tip_gercek; }
+            eger metadata_dizi == TIP_ID_METIN ise { t.ic_tip = motor.tip_metin; }
+            eger metadata_dizi == TIP_ID_MANTIK ise { t.ic_tip = motor.tip_mantik; }
+            eger metadata_dizi == TIP_ID_U8 ise { t.ic_tip = motor.tip_u8; }
+        }
+    }
+    eger dugum.nullable == 1 ise { t.nullable = 1; }
+    # Future without generic metadata intentionally remains the runtime yapi.
+    dondu t;
+}
+
+isv sembol_en_yakin_oner(motor: *TipMotoru, isim_j: *Jeton) -> *u8 {
+    eger motor == 0 veya isim_j == 0 ise { dondu 0; }
+    eger isim_j.baslangic == 0 veya isim_j.uzunluk <= 0 ise { dondu 0; }
+
+    degisken toplam_sembol: tamsayi = 0;
+    degisken k_say: *Kapsam = motor.guncel_kapsam;
+    dongu k_say != 0 {
+        degisken idx_s: tamsayi = 0;
+        dongu idx_s < k_say.kapasite {
+            degisken iter_s: *SembolGirdisi = k_say.tablo[idx_s];
+            dongu iter_s != 0 {
+                toplam_sembol = toplam_sembol + 1;
+                iter_s = iter_s.sonraki;
+            }
+            idx_s = idx_s + 1;
+        }
+        k_say = k_say.ust_kapsam;
+    }
+
+    degisken limit: tamsayi = 50;
+    eger toplam_sembol > 50 ise {
+        limit = 20;
+    }
+
+    degisken en_yakin_mesafe: tamsayi = 3;
+    degisken en_yakin_isim: *u8 = 0;
+    degisken taranan: tamsayi = 0;
+
+    degisken k: *Kapsam = motor.guncel_kapsam;
+    dongu k != 0 ve taranan < limit {
+        degisken idx: tamsayi = 0;
+        dongu idx < k.kapasite ve taranan < limit {
+            degisken iter: *SembolGirdisi = k.tablo[idx];
+            dongu iter != 0 ve taranan < limit {
+                taranan = taranan + 1;
+                degisken tj: *Jeton = iter.tanim_jetonu;
+                eger tj != 0 ve tj.baslangic != 0 ve tj.uzunluk > 0 ise {
+                    # Yerel kopyaya al: struct field'i dogrudan indexlemek codegen'de yanlis sonuc veriyor
+                    degisken tj_bas: *u8 = tj.baslangic;
+                    degisken tj_uzn: tamsayi = tj.uzunluk;
+                    degisken isim_bas: *u8 = isim_j.baslangic;
+                    degisken isim_uzn: tamsayi = isim_j.uzunluk;
+                    degisken m: tamsayi = levenshtein_mesafesi(
+                        isim_bas, isim_uzn,
+                        tj_bas, tj_uzn
+                    );
+                    eger m <= 2 ve m < en_yakin_mesafe ise {
+                        en_yakin_mesafe = m;
+                        degisken buf: *u8 = compiler_tahsis_et(tj_uzn + 1);
+                        degisken bi: tamsayi = 0;
+                        dongu bi < tj_uzn {
+                            buf[bi] = tj_bas[bi];
+                            bi = bi + 1;
+                        }
+                        buf[bi] = 0;
+                        en_yakin_isim = buf;
+                    }
+                }
+                iter = iter.sonraki;
+            }
+            idx = idx + 1;
+        }
+        k = k.ust_kapsam;
+    }
+    dondu en_yakin_isim;
+}
+
+# Generic specialization listesi özgün struct deklarasyonlarından önce
+# geldiğinde dönüş/parametre tipleri forward-resolve edilebilsin.
+isv ust_tip_adlarini_onceden_kaydet(motor: *TipMotoru, kok: *AstDugum) {
+    eger motor == 0 veya kok == 0 ise { dondu; }
+    degisken iter: *AstDugum = kok;
+    dongu iter != 0 {
+        eger (iter.tip == AST_YAPI_TANIMI veya iter.tip == AST_ENUM_TANIMI) ve
+             iter.ilk_jeton != 0 ise {
+            sembol_ekle(motor, iter.ilk_jeton, motor.tip_bilinmiyor, motor.tip_hic, iter);
+        }
+        iter = iter.sonraki;
+    }
+}
+
+# Top-level deklarasyonlari normal traversal'dan once sembol tablosuna al.
+# Bu gecis function body veya nested block analiz etmez; tek amaci forward
+# referanslar icin global isimleri ve deklarasyon tiplerini erkenden hazirlamaktir.
+isv ust_deklarasyonlari_topla(motor: *TipMotoru, kok: *AstDugum) {
+    eger motor == 0 veya kok == 0 ise { dondu; }
+
+    degisken iter: *AstDugum = kok;
+    dongu iter != 0 {
+        eger iter.ilk_jeton != 0 ise {
+            # Islev deklarasyonu: adini, function tipini ve donus tipini kaydet.
+            eger iter.tip == AST_ISLEV veya iter.tip == AST_ASYNC_ISLEV ise {
+                degisken beden_donus_tipi: *TipBilgisi = motor.tip_hic;
+                degisken don_tip: *TipBilgisi = motor.tip_hic;
+                eger iter.tip_adi != 0 ise {
+                    beden_donus_tipi = tip_dugumunden_coz(motor, iter);
+                    eger beden_donus_tipi == 0 veya beden_donus_tipi.temel_id == TIP_ID_BILINMIYOR ise {
+                        beden_donus_tipi = motor.tip_hic;
+                    }
+                    don_tip = beden_donus_tipi;
+                    eger iter.tip == AST_ASYNC_ISLEV ise {
+                        don_tip = async_donus_tipi_olustur(motor, beden_donus_tipi);
+                        eger don_tip == 0 ise { don_tip = motor.tip_bilinmiyor; }
+                    }
+                }
+                sembol_ekle(motor, iter.ilk_jeton, motor.tip_islev, don_tip, iter);
+            }
+            # Global degisken: acik tip veya basit literal initializer varsa
+            # tipini kaydet; karmasik initializer normal geciste cozulur.
+            yoksa eger iter.tip == AST_DEGISKEN_TANIMI ise {
+                degisken veri_tip: *TipBilgisi = motor.tip_bilinmiyor;
+                degisken donus_tip: *TipBilgisi = motor.tip_hic;
+
+                eger iter.tip_adi != 0 ise {
+                    veri_tip = tip_dugumunden_coz(motor, iter);
+                } yoksa eger iter.sag != 0 ise {
+                    eger iter.sag.tip == AST_SAYI ise {
+                        veri_tip = motor.tip_tamsayi;
+                    } yoksa eger iter.sag.tip == AST_GERCEK_SAYI ise {
+                        veri_tip = motor.tip_gercek;
+                    } yoksa eger iter.sag.tip == AST_METIN ise {
+                        veri_tip = motor.tip_metin;
+                    } yoksa eger iter.sag.tip == AST_MANTIK ise {
+                        veri_tip = motor.tip_mantik;
+                    } yoksa eger iter.sag.tip == AST_ISLEV ise {
+                        veri_tip = motor.tip_islev;
+                        eger iter.sag.tip_adi != 0 ise {
+                            donus_tip = tip_dugumunden_coz(motor, iter.sag);
+                            eger donus_tip == 0 veya donus_tip.temel_id == TIP_ID_BILINMIYOR ise {
+                                donus_tip = motor.tip_hic;
+                            }
+                        }
+                    }
+                }
+                eger veri_tip == 0 ise { veri_tip = motor.tip_bilinmiyor; }
+                sembol_ekle(motor, iter.ilk_jeton, veri_tip, donus_tip, iter);
+            }
+            # Struct ve enum adlari, alan erisiminde hash tabanli arama
+            # yapilabilmesi icin kendi AST tanimlariyla kaydedilir.
+            yoksa eger iter.tip == AST_YAPI_TANIMI veya iter.tip == AST_ENUM_TANIMI ise {
+                degisken yapi_tip: *TipBilgisi = tip_adini_coz(
+                    motor, iter.ilk_jeton.baslangic, iter.ilk_jeton.uzunluk
+                );
+                eger yapi_tip == 0 ise { yapi_tip = motor.tip_bilinmiyor; }
+                sembol_ekle(motor, iter.ilk_jeton, yapi_tip, motor.tip_hic, iter);
+            }
+            yoksa eger iter.tip == AST_TIP_ALIAS ise {
+                degisken alias_tip: *TipBilgisi = tip_dugumunden_coz(motor, iter);
+                eger alias_tip == 0 veya alias_tip.temel_id == TIP_ID_BILINMIYOR ise {
+                    alias_tip = motor.tip_bilinmiyor;
+                }
+                sembol_ekle(motor, iter.ilk_jeton, alias_tip, motor.tip_hic, iter);
+            }
+            # Module/trait/generic adlari da en azindan global sembol olarak
+            # bilinsin; modül üyeleri normal traversal'da kendi scope'unda
+            # mangled olarak kaydedilmeye devam eder.
+            yoksa eger iter.tip == AST_MODUL veya iter.tip == AST_TRAIT_TANIM veya
+                iter.tip == AST_GENERIC_TANIM veya iter.tip == AST_TRAIT_UYGULAMA ise {
+                sembol_ekle(motor, iter.ilk_jeton, motor.tip_bilinmiyor, motor.tip_hic, iter);
+            }
+        }
+        iter = iter.sonraki;
+    }
+}
+
+# Pointer'sız alanları izleyen genel recursive type DFS'i. Pointer alanları
+# layout'ta sabit boyutlu olduğu için graph edge'i sayılmaz.
+isv recursive_yapi_dfs(motor: *TipMotoru, tip_dugumu: *AstDugum, derinlik: tamsayi) -> tamsayi {
+    eger motor == 0 veya tip_dugumu == 0 veya tip_dugumu.ilk_jeton == 0 ise { dondu 0; }
+    eger g_recursive_hatasi == 1 ise { dondu 1; }
+    eger derinlik > 250 veya g_recursive_butce == 0 ise { dondu 0; }
+    g_recursive_butce = g_recursive_butce - 1;
+
+    degisken ad: *u8 = tip_dugumu.ilk_jeton.baslangic;
+    degisken uzn: tamsayi = tip_dugumu.ilk_jeton.uzunluk;
+    degisken rec_sayac: tamsayi = 0;
+    dongu rec_sayac < derinlik {
+        eger g_recursive_uzunluklar[rec_sayac] == uzn ve
+            bellek_esit_mi(g_recursive_adlar[rec_sayac], ad, uzn) == 1 ise {
+            degisken hk_cycle: HataKaydi;
+            tani_olustur(&hk_cycle, 19, tip_dugumu.ilk_jeton.satir, tip_dugumu.ilk_jeton.sutun, "Pointer'siz recursive struct dongusu".ptr, 0);
+            hata_kaydi_yazdir(&hk_cycle);
+            hata_rapor_et(motor);
+            motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+            g_recursive_hatasi = 1;
+            dondu 1;
+        }
+        rec_sayac = rec_sayac + 1;
+    }
+    g_recursive_adlar[derinlik] = ad;
+    g_recursive_uzunluklar[derinlik] = uzn;
+
+    degisken alan: *AstDugum = tip_dugumu.sol;
+    dongu alan != 0 {
+        eger alan.tip_adi != 0 ve alan.cozumlenmis_tip == 0 ise {
+            degisken hedef: *AstDugum = yapi_tanimini_bul(motor, alan.tip_adi, alan.tip_adi_uzunluk);
+            eger hedef != 0 ise {
+                eger recursive_yapi_dfs(motor, hedef, derinlik + 1) == 1 ise { dondu 1; }
+            }
+        }
+        alan = alan.sonraki;
+    }
+    dondu 0;
+}
+
+isv recursive_yapilari_kontrol_et(motor: *TipMotoru, kok: *AstDugum) {
+    eger motor == 0 veya kok == 0 veya g_recursive_hatasi == 1 ise { dondu; }
+    g_recursive_butce = 4096;
+    degisken iter: *AstDugum = kok;
+    dongu iter != 0 ve g_recursive_hatasi == 0 {
+        eger iter.tip == AST_YAPI_TANIMI ise {
+            recursive_yapi_dfs(motor, iter, 0);
+        }
+        iter = iter.sonraki;
+    }
+}
+
+isv tc_bos_fpu_intrinsic_mi(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 veya dugum.ilk_jeton == 0 ise { dondu 0; }
+    degisken ad: *u8 = dugum.ilk_jeton.baslangic;
+    degisken uzn: tamsayi = dugum.ilk_jeton.uzunluk;
+    eger uzn == 8 ve bellek_esit_mi(ad, "kare_kok".ptr, 8) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(ad, "sinus".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn == 7 ve bellek_esit_mi(ad, "kosinus".ptr, 7) == 1 ise { dondu 1; }
+    eger uzn == 13 ve bellek_esit_mi(ad, "gercek_mutlak".ptr, 13) == 1 ise { dondu 1; }
+    eger uzn == 14 ve bellek_esit_mi(ad, "gercek_minimum".ptr, 14) == 1 ise { dondu 1; }
+    eger uzn == 15 ve bellek_esit_mi(ad, "gercek_maksimum".ptr, 15) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv ast_donus_var_mi(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_DONDUR ise { dondu 1; }
+    eger ast_donus_var_mi(dugum.sol) == 1 ise { dondu 1; }
+    eger ast_donus_var_mi(dugum.sag) == 1 ise { dondu 1; }
+    eger ast_donus_var_mi(dugum.govde) == 1 ise { dondu 1; }
+    eger ast_donus_var_mi(dugum.yoksa_govde) == 1 ise { dondu 1; }
+    eger ast_donus_var_mi(dugum.sonraki) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv tip_cikar(motor: *TipMotoru, dugum: *AstDugum) -> *TipBilgisi {
+    eger motor == 0 ise { dondu 0; }
+    eger dugum == 0 ise { dondu motor.tip_bilinmiyor; }
+    eger motor.guncel_kapsam == 0 ise { dondu motor.tip_bilinmiyor; }
+
+    eger dugum.tip == AST_SAYI ise { dondu motor.tip_tamsayi; }
+    eger dugum.tip == AST_GERCEK_SAYI ise { dondu motor.tip_gercek; }
+    eger dugum.tip == AST_METIN ise { dondu motor.tip_metin; }
+    eger dugum.tip == AST_FSTRING ise { dondu motor.tip_metin; }
+    eger dugum.tip == AST_MANTIK ise { dondu motor.tip_mantik; }
+
+    # BUG-4 FIX: tip Sayi = tamsayi; — tip alias bildirimi, deger uretmez
+    eger dugum.tip == AST_TIP_ALIAS ise {
+        degisken alias_t: *TipBilgisi = tip_dugumunden_coz(motor, dugum);
+        eger alias_t == 0 veya alias_t.temel_id == TIP_ID_BILINMIYOR ise {
+            alias_t = motor.tip_tamsayi; # fallback: tamsayi
+        }
+        sembol_ekle(motor, dugum.ilk_jeton, alias_t, motor.tip_hic, dugum);
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_KIMLIK ise {
+        eger dugum.ilk_jeton != 0 ve degisken_tasindi_mi(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk) == 1 ise {
+            degisken hk_move: HataKaydi;
+            degisken sat_m: tamsayi = dugum.ilk_jeton.satir;
+            degisken sut_m: tamsayi = dugum.ilk_jeton.sutun;
+            tani_olustur(&hk_move, 40, sat_m, sut_m, "OWNERSHIP HATA: Tasinmis degisken kullanildi (use-after-move)".ptr, 0);
+            hata_kaydi_yazdir(&hk_move);
+            hata_rapor_et(motor);
+            dondu motor.tip_bilinmiyor;
+        }
+        eger motor.self_heal_deger_konteksti == 1 ve dugum.ilk_jeton != 0 ve degisken_uninit_mi(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk) == 1 ise {
+            degisken hk_un: HataKaydi;
+            degisken sat_u: tamsayi = dugum.ilk_jeton.satir;
+            degisken sut_u: tamsayi = dugum.ilk_jeton.sutun;
+            tani_olustur(&hk_un, 47, sat_u, sut_u, "SAFETY HATA: Ilklenmemis degisken kullanildi (uninitialized variable read)".ptr, 0);
+            hata_kaydi_yazdir(&hk_un);
+            hata_rapor_et(motor);
+            dondu motor.tip_bilinmiyor;
+        }
+        eger dugum.ilk_jeton != 0 ve degisken_odunc_alindi_mi(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk, 0) == 1 ise {
+            degisken hk_aliasing: HataKaydi;
+            degisken sat_al: tamsayi = dugum.ilk_jeton.satir;
+            degisken sut_al: tamsayi = dugum.ilk_jeton.sutun;
+            tani_olustur(&hk_aliasing, 41, sat_al, sut_al, "OWNERSHIP HATA: Mutable odunc alinmis degisken baska bir yerden okunamaz (aliasing violation)".ptr, 0);
+            hk_aliasing.isaret_uzunluk = dugum.ilk_jeton.uzunluk;
+            hata_kaydi_yazdir(&hk_aliasing);
+            hata_rapor_et(motor);
+        }
+        degisken s: *SembolGirdisi = sembol_ara_flat(motor, dugum.ilk_jeton);
+        eger s == 0 ve g_aktif_parametreler != 0 ve dugum.ilk_jeton != 0 ise {
+            degisken aktif_p: *AstDugum = g_aktif_parametreler;
+            dongu aktif_p != 0 {
+                eger aktif_p.ilk_jeton != 0 ve
+                    aktif_p.ilk_jeton.uzunluk == dugum.ilk_jeton.uzunluk ve
+                    bellek_esit_mi(aktif_p.ilk_jeton.baslangic, dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk) == 1 ise {
+                    dondu tip_dugumunden_coz(motor, aktif_p);
+                }
+                aktif_p = aktif_p.sonraki;
+            }
+        }
+        eger s == 0 ise {
+            eger g_generic_specialization_aktif == 1 ve dugum.ilk_jeton != 0 ve
+               buyuk_tek_harf_generic_mi(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk) == 1 ise {
+                dondu motor.tip_bilinmiyor;
+            }
+            degisken oneri: *u8 = sembol_en_yakin_oner(motor, dugum.ilk_jeton);
+            degisken hk: HataKaydi;
+            degisken satir: tamsayi = 0;
+            degisken sutun: tamsayi = 0;
+            degisken u: tamsayi = 1;
+            eger dugum.ilk_jeton != 0 ise {
+                satir = dugum.ilk_jeton.satir;
+                sutun = dugum.ilk_jeton.sutun;
+                u = dugum.ilk_jeton.uzunluk;
+                eger u <= 0 ise { u = 1; }
+            }
+            degisken sembol_buf: *u8 = compiler_tahsis_et(u + 1);
+            degisken sbi: tamsayi = 0;
+            dongu sbi < u { sembol_buf[sbi] = dugum.ilk_jeton.baslangic[sbi]; sbi = sbi + 1; }
+            sembol_buf[u] = 0;
+            tani_olustur(&hk, 1, satir, sutun, sembol_buf, oneri);
+            hk.isaret_uzunluk = u;
+            hata_kaydi_yazdir(&hk);
+            hata_rapor_et(motor);
+            motor.tanimsiz_hata_sayisi = motor.tanimsiz_hata_sayisi + 1;
+            eger g_self_heal_aktif == 1 ve motor.self_heal_deger_konteksti == 1 ve motor.self_heal_adayi == 0 ise {
+                motor.self_heal_adayi = dugum;
+            }
+            dondu motor.tip_bilinmiyor;
+        }
+        eger s.ast_tanimi != 0 ve s.ast_tanimi.dizi_boyutu > 0 ve s.veri_tipi != 0 ise {
+            dondu yeni_tip(motor.arena, s.veri_tipi.kategori, s.veri_tipi.temel_id, s.veri_tipi.pointer_seviyesi + 1, 0);
+        }
+        dondu s.veri_tipi;
+    }
+
+    eger dugum.tip == AST_DEGISKEN_TANIMI ise {
+        eger dugum.sag == 0 ve dugum.dizi_boyutu <= 0 ve dugum.ilk_jeton != 0 ise {
+            degisken_uninit_ekle(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk);
+        }
+        degisken onceki_self_heal_konteksti: tamsayi = motor.self_heal_deger_konteksti;
+        motor.self_heal_deger_konteksti = 1;
+        degisken is_ref_binding: tamsayi = 0;
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_REFERANS ise {
+            is_ref_binding = 1;
+        }
+        degisken prev_binding: tamsayi = g_in_binding;
+        eger is_ref_binding == 1 ise {
+            g_in_binding = 1;
+        }
+        degisken atanan_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        g_in_binding = prev_binding;
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti;
+        degisken donus_sembol_tipi: *TipBilgisi = motor.tip_hic;
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_ISLEV ise {
+            eger dugum.sag.tip_adi != 0 ise {
+                donus_sembol_tipi = tip_dugumunden_coz(motor, dugum.sag);
+                eger donus_sembol_tipi == 0 ise { donus_sembol_tipi = motor.tip_tamsayi; }
+            } yoksa {
+                donus_sembol_tipi = motor.tip_tamsayi;
+            }
+        } yoksa eger dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ise {
+            degisken sag_s: *SembolGirdisi = sembol_ara_flat(motor, dugum.sag.ilk_jeton);
+            eger sag_s != 0 ve sag_s.donus_tipi != 0 ve (sag_s.donus_tipi.temel_id != TIP_ID_HIC veya sag_s.donus_tipi.pointer_seviyesi > 0) ise {
+                donus_sembol_tipi = sag_s.donus_tipi;
+            }
+        }
+        eger dugum.tip_adi != 0 ise {
+            degisken beyan_tip: *TipBilgisi = tip_dugumunden_coz(motor, dugum);
+            eger dugum.sag != 0 ve dugum.sag.tip == AST_ALAN_ERISIMI ve dugum.sag.cozumlenmis_tip == 77 ve beyan_tip != 0 ise {
+                atanan_tip = beyan_tip;
+            }
+            eger beyan_tip != 0 ve atanan_tip != 0 ise {
+                # Tip uyumsuzlugu kontrolu (bilinmiyor ignorele - runtime hatadir)
+                eger atanan_tip.temel_id != TIP_ID_BILINMIYOR ise {
+                    degisken esit_atama: tamsayi = tipler_esit_mi(beyan_tip, atanan_tip);
+                    eger esit_atama == 0 ve beyan_tip.pointer_seviyesi > 0 ve ast_null_literali_mi(dugum.sag) == 1 ise {
+                        esit_atama = 1;
+                    }
+                    eger esit_atama == 0 ise {
+                        degisken hk: HataKaydi;
+                        degisken satir: tamsayi = 0;
+                        degisken sutun: tamsayi = 0;
+                        degisken u: tamsayi = 1;
+                        eger dugum.ilk_jeton != 0 ise {
+                            satir = dugum.ilk_jeton.satir;
+                            sutun = dugum.ilk_jeton.sutun;
+                            # Hata konumunu atanan deger bolgesine sabitle.
+                            # 8.x lexer string tokenleri kapanis tirnagindan
+                            # geriye hesaplandigi icin declaration anchor'i
+                            # ile deterministik source-range konumu uretilir.
+                            eger dugum.tip_adi_uzunluk > 0 ise {
+                                sutun = dugum.ilk_jeton.sutun + dugum.ilk_jeton.uzunluk + dugum.tip_adi_uzunluk + 4;
+                            }
+                            u = dugum.ilk_jeton.uzunluk;
+                            eger u <= 0 ise { u = 1; }
+                        }
+                        tani_olustur(&hk, tip_uyumsuzluk_kodu(), satir, sutun, "Tip uyumsuzlugu: Beyan edilen tip ile atanan deger tipi uyusmuyor".ptr, 0);
+                        hk.isaret_uzunluk = u;
+                        hata_kaydi_yazdir(&hk);
+                        hata_rapor_et(motor);
+                        motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+                    }
+                }
+            }
+            atanan_tip = beyan_tip;
+        }
+        eger atanan_tip == 0 ise { atanan_tip = motor.tip_bilinmiyor; }
+        eger dugum.ilk_jeton != 0 ise {
+            sembol_ekle(motor, dugum.ilk_jeton, atanan_tip, donus_sembol_tipi, dugum);
+        }
+        # FIX-13 Alias kayit: nullable pointer baska bir nullable pointer'dan
+        # ataninca alias ikilisini kaydet (q = p -> q hedef, p kaynak).
+        eger dugum.ilk_jeton != 0 ve dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ve
+            dugum.sag.ilk_jeton != 0 ve atanan_tip != 0 ve
+            atanan_tip.nullable == 1 ve atanan_tip.pointer_seviyesi > 0 ve
+            g_alias_sayisi < 8 ise {
+            g_alias_kaynak[g_alias_sayisi] = dugum.sag.ilk_jeton.baslangic;
+            g_alias_kaynak_uzunluk[g_alias_sayisi] = dugum.sag.ilk_jeton.uzunluk;
+            g_alias_hedef[g_alias_sayisi] = dugum.ilk_jeton.baslangic;
+            g_alias_hedef_uzunluk[g_alias_sayisi] = dugum.ilk_jeton.uzunluk;
+            g_alias_sayisi = g_alias_sayisi + 1;
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_ATAMA ise {
+        # FIX13: guard edilen nullable sembol yeniden ataninca narrowing
+        # gecersizlesir; sembol sonraki erisim icin nullable'a doner.
+        eger g_nullable_guard_aktif == 1 ve nullable_guard_eslesiyor(dugum.sol) == 1 ise {
+            degisken re_s: *SembolGirdisi = 0;
+            eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+                re_s = sembol_ara(motor, dugum.sol.ilk_jeton);
+            }
+            eger re_s != 0 ve re_s.ast_tanimi != 0 ve re_s.ast_tanimi.nullable == 1 ise {
+                re_s.veri_tipi.nullable = 1;
+                g_nullable_guard_gecersiz = 1;
+            }
+        }
+
+        # FIX-13 Alias invalidation: herhangi bir aliase null ataninca,
+        # o alias'in kaynagi olan pointer'in guard'i da gecersiz kilinir.
+        eger g_nullable_guard_aktif == 1 ve dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+            degisken ai: tamsayi = 0;
+            dongu ai < g_alias_sayisi {
+                eger g_alias_hedef_uzunluk[ai] == dugum.sol.ilk_jeton.uzunluk ve
+                    bellek_esit_mi(g_alias_hedef[ai], dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk) == 1 ise {
+                    # Bu alias'in kaynagi guard edilen pointer mi?
+                    eger g_nullable_guard_ad != 0 ve
+                        g_alias_kaynak_uzunluk[ai] == g_nullable_guard_ad_uzunluk ve
+                        bellek_esit_mi(g_alias_kaynak[ai], g_nullable_guard_ad, g_nullable_guard_ad_uzunluk) == 1 ise {
+                        g_nullable_guard_gecersiz = 1;
+                    }
+                }
+                ai = ai + 1;
+            }
+        }
+
+        # NLL / Ownership: Yeniden atama (reassignment) sahipligi geri kazandirir
+        degisken atama_hedef: *AstDugum = dugum.sol;
+        dongu atama_hedef != 0 ve (atama_hedef.tip == AST_INDEKS_ERISIMI veya atama_hedef.tip == AST_ALAN_ERISIMI) {
+            atama_hedef = atama_hedef.sol;
+        }
+        eger atama_hedef != 0 ve atama_hedef.ilk_jeton != 0 ise {
+            degisken onceki_uninit: tamsayi = degisken_uninit_mi(atama_hedef.ilk_jeton.baslangic, atama_hedef.ilk_jeton.uzunluk);
+            degisken_tasinma_geri_al(atama_hedef.ilk_jeton.baslangic, atama_hedef.ilk_jeton.uzunluk);
+            degisken_uninit_sil(atama_hedef.ilk_jeton.baslangic, atama_hedef.ilk_jeton.uzunluk);
+            # Gorev 1.2: Sabit (immutable) degiskene yeniden atama denetimi
+            degisken hedef_sembol: *SembolGirdisi = sembol_ara_flat(motor, atama_hedef.ilk_jeton);
+            degisken imm_engelle: tamsayi = 0;
+            eger hedef_sembol != 0 ise {
+                eger hedef_sembol.gorunurluk >= 2 ise { imm_engelle = 1; }
+                degisken h_ast: *AstDugum = hedef_sembol.ast_tanimi;
+                eger h_ast != 0 ve h_ast.gorunurluk >= 2 ise { imm_engelle = 1; }
+            }
+            eger imm_engelle == 1 ve onceki_uninit == 0 ise {
+                degisken hk_imm: HataKaydi;
+                degisken sat_imm: tamsayi = atama_hedef.ilk_jeton.satir;
+                degisken sut_imm: tamsayi = atama_hedef.ilk_jeton.sutun;
+                tani_olustur(&hk_imm, 49, sat_imm, sut_imm,
+                    "TC HATA: Sabit (immutable) degiskene yeniden atama yapilamaz".ptr, 0);
+                hk_imm.isaret_uzunluk = atama_hedef.ilk_jeton.uzunluk;
+                hata_kaydi_yazdir(&hk_imm);
+                hata_rapor_et(motor);
+            }
+            # Odunc alinmis degiskene atama yapilamaz (borrow mutation conflict)
+            eger degisken_odunc_var_mi(atama_hedef.ilk_jeton.baslangic, atama_hedef.ilk_jeton.uzunluk) == 1 ise {
+                degisken hk_b_mut: HataKaydi;
+                degisken sat_b_mut: tamsayi = atama_hedef.ilk_jeton.satir;
+                degisken sut_b_mut: tamsayi = atama_hedef.ilk_jeton.sutun;
+                tani_olustur(&hk_b_mut, 41, sat_b_mut, sut_b_mut,
+                    "OWNERSHIP HATA: Odunc alinmis degisken degistirilemez (cannot mutate while borrowed)".ptr, 0);
+                hata_kaydi_yazdir(&hk_b_mut);
+                hata_rapor_et(motor);
+            }
+        }
+
+        # SAFETY: Ic blok degiskeninin adresi dis kapsama atanamaz (dangling reference)
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_REFERANS ise {
+            degisken ref_hedef_atama: *AstDugum = dugum.sag.sag;
+            degisken sag_j_atama: *Jeton = 0;
+            eger ref_hedef_atama != 0 ise {
+                eger ref_hedef_atama.tip == AST_KIMLIK ise {
+                    sag_j_atama = ref_hedef_atama.ilk_jeton;
+                } yoksa eger ref_hedef_atama.tip == AST_ALAN_ERISIMI ve ref_hedef_atama.sol != 0 ve ref_hedef_atama.sol.tip == AST_KIMLIK ise {
+                    sag_j_atama = ref_hedef_atama.sol.ilk_jeton;
+                }
+            }
+            degisken sol_j_atama: *Jeton = 0;
+            eger dugum.sol != 0 ise {
+                eger dugum.sol.tip == AST_KIMLIK ise {
+                    sol_j_atama = dugum.sol.ilk_jeton;
+                } yoksa eger dugum.sol.tip == AST_ALAN_ERISIMI ve dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ise {
+                    sol_j_atama = dugum.sol.sol.ilk_jeton;
+                }
+            }
+            eger sol_j_atama != 0 ve sag_j_atama != 0 ise {
+                degisken k_sol: *Kapsam = sembolun_kapsami(motor, sol_j_atama);
+                degisken k_sag: *Kapsam = sembolun_kapsami(motor, sag_j_atama);
+                eger k_sol != 0 ve k_sag != 0 ise {
+                    degisken d_sol: tamsayi = kapsam_derinligi(k_sol);
+                    degisken d_sag: tamsayi = kapsam_derinligi(k_sag);
+                    eger d_sag > d_sol ise {
+                        degisken hk_dang_atama: HataKaydi;
+                        degisken sat_dang_atama: tamsayi = sag_j_atama.satir;
+                        degisken sut_dang_atama: tamsayi = sag_j_atama.sutun;
+                        tani_olustur(&hk_dang_atama, 46, sat_dang_atama, sut_dang_atama,
+                            "SAFETY HATA: Ic blok degiskeninin adresi dis kapsama atanamaz (dangling reference)".ptr, 0);
+                        hk_dang_atama.isaret_uzunluk = sag_j_atama.uzunluk;
+                        hata_kaydi_yazdir(&hk_dang_atama);
+                        hata_rapor_et(motor);
+                    }
+                }
+            }
+        }
+
+        degisken onceki_self_heal_konteksti_atama: tamsayi = motor.self_heal_deger_konteksti;
+        motor.self_heal_deger_konteksti = 0;
+        degisken sol_tip: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        motor.self_heal_deger_konteksti = 1;
+        degisken is_ref_binding_atama: tamsayi = 0;
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_REFERANS ise {
+            is_ref_binding_atama = 1;
+        }
+        degisken prev_binding_atama: tamsayi = g_in_binding;
+        eger is_ref_binding_atama == 1 ise {
+            g_in_binding = 1;
+        }
+        degisken sag_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        g_in_binding = prev_binding_atama;
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti_atama;
+        eger sol_tip != 0 ve sag_tip != 0 ise {
+            eger sol_tip.temel_id != TIP_ID_BILINMIYOR ve sag_tip.temel_id != TIP_ID_BILINMIYOR ise {
+                degisken esit_atama2: tamsayi = tipler_esit_mi(sol_tip, sag_tip);
+                eger esit_atama2 == 0 ve sol_tip.pointer_seviyesi > 0 ve ast_null_literali_mi(dugum.sag) == 1 ise {
+                    esit_atama2 = 1;
+                }
+                eger esit_atama2 == 0 ise {
+                    degisken hk: HataKaydi;
+                    degisken satir: tamsayi = 0;
+                    degisken sutun: tamsayi = 0;
+                    degisken u: tamsayi = 1;
+                    eger dugum.ilk_jeton != 0 ise {
+                        satir = dugum.ilk_jeton.satir;
+                        sutun = dugum.ilk_jeton.sutun;
+                        u = dugum.ilk_jeton.uzunluk;
+                        eger u <= 0 ise { u = 1; }
+                    }
+                    eger dugum.sol != 0 ve dugum.sol.tip == AST_ALAN_ERISIMI ise {
+                        tani_olustur(&hk, tip_uyumsuzluk_kodu(), satir, sutun, "Struct field atama tip uyumsuzlugu".ptr, 0);
+                    } yoksa {
+                        tani_olustur(&hk, tip_uyumsuzluk_kodu(), satir, sutun, "Atama tip uyumsuzlugu".ptr, 0);
+                    }
+                    hk.isaret_uzunluk = u;
+                    hata_kaydi_yazdir(&hk);
+                    hata_rapor_et(motor);
+                    motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+                }
+            }
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_IKILI_OP ise {
+        degisken onceki_self_heal_konteksti_ikili: tamsayi = motor.self_heal_deger_konteksti;
+        motor.self_heal_deger_konteksti = 1;
+        degisken sol_t: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        degisken sag_t: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti_ikili;
+        eger dugum.ilk_jeton != 0 ise {
+            degisken op_tip: tamsayi = dugum.ilk_jeton.tip;
+            eger op_tip >= 35 ve op_tip <= 40 ise { dondu motor.tip_mantik; }
+            eger op_tip == TIP_XOR veya op_tip == TIP_AMPERSAND veya op_tip == TIP_DIKEY_CUBUK ise { dondu sol_t; }
+            eger op_tip == 30 ise { # TIP_ARTI
+                eger (sol_t != 0 ve sol_t.temel_id == TIP_ID_METIN) veya (sag_t != 0 ve sag_t.temel_id == TIP_ID_METIN) ise {
+                    dondu motor.tip_metin;
+                }
+            }
+            eger op_tip == 31 veya op_tip == TIP_EKSI ise {
+                eger sol_t != 0 ve sag_t != 0 ise {
+                    degisken sol_is_ptr: tamsayi = 0;
+                    degisken sag_is_ptr: tamsayi = 0;
+                    eger sol_t.pointer_seviyesi > 0 veya sol_t.temel_id == TIP_ID_POINTER veya sol_t.temel_id == TIP_ID_METIN veya sol_t.dizi_boyutu > 0 ise { sol_is_ptr = 1; }
+                    eger sag_t.pointer_seviyesi > 0 veya sag_t.temel_id == TIP_ID_POINTER veya sag_t.temel_id == TIP_ID_METIN veya sag_t.dizi_boyutu > 0 ise { sag_is_ptr = 1; }
+                    eger sol_is_ptr != 0 ve sag_is_ptr != 0 ise {
+                        dondu motor.tip_tamsayi;
+                    }
+                }
+            }
+        }
+        eger (sol_t != 0 ve sol_t.temel_id == TIP_ID_GERCEK) veya (sag_t != 0 ve sag_t.temel_id == TIP_ID_GERCEK) ise {
+            dondu motor.tip_gercek;
+        }
+        dondu sol_t;
+    }
+
+    eger dugum.tip == AST_UNARY ise {
+        degisken onceki_self_heal_konteksti_unary: tamsayi = motor.self_heal_deger_konteksti;
+        eger dugum.ilk_jeton != 0 ve (dugum.ilk_jeton.tip == TIP_DEGIL veya dugum.ilk_jeton.tip == TIP_EKSI veya dugum.ilk_jeton.tip == TIP_TILDE) ise {
+            motor.self_heal_deger_konteksti = 1;
+        } yoksa {
+            motor.self_heal_deger_konteksti = 0;
+        }
+        degisken ic_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti_unary;
+        eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.tip == TIP_DEGIL ise {
+            dondu motor.tip_mantik;
+        }
+        eger ic_tip == 0 ise { dondu motor.tip_bilinmiyor; }
+        eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.tip == TIP_EKSI ise {
+            eger (ic_tip.pointer_seviyesi > 0) veya (ic_tip.kategori == KAT_YAPI) veya
+                 (tamsayi_tipi_mi(ic_tip.temel_id) == 0 ve kesirli_tipi_mi(ic_tip.temel_id) == 0) ise {
+                degisken hk_u: HataKaydi;
+                degisken u_sat: tamsayi = dugum.ilk_jeton.satir;
+                degisken u_sut: tamsayi = dugum.ilk_jeton.sutun;
+                tani_olustur(&hk_u, 3, u_sat, u_sut, "TC HATA: Unary eksi yalnizca sayisal tiplere uygulanabilir".ptr, 0);
+                hata_kaydi_yazdir(&hk_u);
+                hata_rapor_et(motor);
+                dondu motor.tip_bilinmiyor;
+            }
+            dondu ic_tip;
+        }
+        eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.tip == TIP_TILDE ise {
+            eger ic_tip.pointer_seviyesi > 0 veya tamsayi_tipi_mi(ic_tip.temel_id) == 0 ise {
+                degisken hk_t: HataKaydi;
+                degisken t_sat: tamsayi = dugum.ilk_jeton.satir;
+                degisken t_sut: tamsayi = dugum.ilk_jeton.sutun;
+                tani_olustur(&hk_t, 3, t_sat, t_sut, "TC HATA: Bitwise NOT yalnizca tamsayi tiplerine uygulanabilir".ptr, 0);
+                hata_kaydi_yazdir(&hk_t);
+                hata_rapor_et(motor);
+                dondu motor.tip_bilinmiyor;
+            }
+            dondu ic_tip;
+        }
+        eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.tip == TIP_CARPI ise {
+            eger ic_tip.pointer_seviyesi <= 0 ise {
+                degisken hk_d: HataKaydi;
+                degisken d_sat: tamsayi = dugum.ilk_jeton.satir;
+                degisken d_sut: tamsayi = dugum.ilk_jeton.sutun;
+                tani_olustur(&hk_d, 3, d_sat, d_sut, "TC HATA: Pointer olmayan tipe dereference (*) uygulanamaz".ptr, 0);
+                hata_kaydi_yazdir(&hk_d);
+                hata_rapor_et(motor);
+                dondu motor.tip_bilinmiyor;
+            }
+            degisken dt: *TipBilgisi = yeni_tip(motor.arena, ic_tip.kategori, ic_tip.temel_id, ic_tip.pointer_seviyesi - 1, ic_tip.dizi_boyutu);
+            eger dt == 0 ise { dondu motor.tip_bilinmiyor; }
+            dt.nominal_id = ic_tip.nominal_id;
+            dt.ic_tip = ic_tip.ic_tip;
+            dondu dt;
+        }
+        eger ic_tip.pointer_seviyesi > 0 ise {
+            degisken dt2: *TipBilgisi = yeni_tip(motor.arena, ic_tip.kategori, ic_tip.temel_id, ic_tip.pointer_seviyesi - 1, ic_tip.dizi_boyutu);
+            eger dt2 == 0 ise { dondu motor.tip_bilinmiyor; }
+            dt2.nominal_id = ic_tip.nominal_id;
+            dt2.ic_tip = ic_tip.ic_tip;
+            dondu dt2;
+        }
+        dondu motor.tip_bilinmiyor;
+    }
+
+    eger dugum.tip == AST_DONUSUM ise {
+        degisken sol_t: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        degisken hedef_t: *TipBilgisi = tip_dugumunden_coz(motor, dugum);
+        eger hedef_t == 0 ise { dondu motor.tip_bilinmiyor; }
+        dondu hedef_t;
+    }
+
+    eger dugum.tip == AST_REFERANS ise {
+        degisken want_mut: tamsayi = dugum.gorunurluk;
+        degisken ref_ad: *u8 = 0;
+        degisken ref_uzn: tamsayi = 0;
+        degisken has_id: tamsayi = 0;
+        degisken is_temp: tamsayi = 1;
+        eger g_in_binding == 1 ise { is_temp = 0; }
+
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ve dugum.sag.ilk_jeton != 0 ise {
+            ref_ad = dugum.sag.ilk_jeton.baslangic;
+            ref_uzn = dugum.sag.ilk_jeton.uzunluk;
+            degisken_uninit_sil(ref_ad, ref_uzn);
+            eger degisken_tasindi_mi(ref_ad, ref_uzn) == 1 ise {
+                degisken hk_mv: HataKaydi;
+                tani_olustur(&hk_mv, 40, dugum.sag.ilk_jeton.satir, dugum.sag.ilk_jeton.sutun,
+                    "OWNERSHIP HATA: Tasinmis degiskenin referansi alinamaz (borrow of moved value)".ptr, 0);
+                hk_mv.isaret_uzunluk = ref_uzn;
+                hata_kaydi_yazdir(&hk_mv);
+                hata_rapor_et(motor);
+            } yoksa eger degisken_odunc_alindi_mi(ref_ad, ref_uzn, want_mut) == 1 ise {
+                degisken hk_b: HataKaydi;
+                degisken sat_b: tamsayi = dugum.sag.ilk_jeton.satir;
+                degisken sut_b: tamsayi = dugum.sag.ilk_jeton.sutun;
+                tani_olustur(&hk_b, 41, sat_b, sut_b, "OWNERSHIP HATA: Ayni anda mutable ve baska odunc alma cakismasi (borrow conflict)".ptr, 0);
+                hk_b.isaret_uzunluk = ref_uzn;
+                hata_kaydi_yazdir(&hk_b);
+                hata_rapor_et(motor);
+            } yoksa {
+                has_id = 1;
+            }
+        }
+        degisken onceki_self_heal_konteksti_referans: tamsayi = motor.self_heal_deger_konteksti;
+        motor.self_heal_deger_konteksti = 0;
+        degisken ref_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti_referans;
+        eger has_id == 1 ise {
+            degisken kp_b: *u8 = 0;
+            eger motor.guncel_kapsam != 0 ise { kp_b = motor.guncel_kapsam as *u8; }
+            degisken_odunc_al(ref_ad, ref_uzn, want_mut, kp_b, is_temp);
+        }
+        eger ref_tip == 0 ise { dondu motor.tip_bilinmiyor; }
+        degisken rt: *TipBilgisi = yeni_tip(motor.arena, ref_tip.kategori, ref_tip.temel_id, ref_tip.pointer_seviyesi + 1, ref_tip.dizi_boyutu);
+        eger rt == 0 ise { dondu motor.tip_bilinmiyor; }
+        dondu rt;
+    }
+
+    eger dugum.tip == AST_DONDUR ise {
+        # SAFETY: Yerel yigit (stack) degiskeninin adresi dondurulemez (dangling reference)
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_REFERANS ise {
+            degisken ref_hedef_donus: *AstDugum = dugum.sag.sag;
+            degisken ref_j_donus: *Jeton = 0;
+            eger ref_hedef_donus != 0 ise {
+                eger ref_hedef_donus.tip == AST_KIMLIK ise {
+                    ref_j_donus = ref_hedef_donus.ilk_jeton;
+                } yoksa eger ref_hedef_donus.tip == AST_ALAN_ERISIMI ve ref_hedef_donus.sol != 0 ve ref_hedef_donus.sol.tip == AST_KIMLIK ise {
+                    ref_j_donus = ref_hedef_donus.sol.ilk_jeton;
+                }
+            }
+            eger ref_j_donus != 0 ise {
+                degisken hk_kapsam: *Kapsam = sembolun_kapsami(motor, ref_j_donus);
+                degisken d: tamsayi = kapsam_derinligi(hk_kapsam);
+                eger d > 0 ise {
+                    degisken hk_dang_ret: HataKaydi;
+                    degisken sat_dang_ret: tamsayi = ref_j_donus.satir;
+                    degisken sut_dang_ret: tamsayi = ref_j_donus.sutun;
+                    tani_olustur(&hk_dang_ret, 46, sat_dang_ret, sut_dang_ret,
+                        "SAFETY HATA: Yerel yigit (stack) degiskeninin adresi dondurulemez (dangling reference)".ptr, 0);
+                    hk_dang_ret.isaret_uzunluk = ref_j_donus.uzunluk;
+                    hata_kaydi_yazdir(&hk_dang_ret);
+                    hata_rapor_et(motor);
+                }
+            }
+        }
+
+        degisken onceki_self_heal_konteksti_donus: tamsayi = motor.self_heal_deger_konteksti;
+        motor.self_heal_deger_konteksti = 1;
+        degisken don_val_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        motor.self_heal_deger_konteksti = onceki_self_heal_konteksti_donus;
+        # Donus tipi kontrolu: strict context, AST traversal'daki motor alanindan
+        # bagimsiz tutulur.
+        eger g_strict_donus_tipi != 0 ve don_val_tip != 0 ise {
+            eger g_strict_donus_tipi.temel_id != TIP_ID_BILINMIYOR ise {
+                eger (g_strict_donus_tipi.temel_id != TIP_ID_HIC veya g_strict_donus_tipi.pointer_seviyesi > 0) ise {
+                    eger don_val_tip.temel_id != TIP_ID_BILINMIYOR ise {
+                        # Result pointer-backed ABI'sinde scalar bir deger
+                        # doğrudan Result dönüşü olamaz; constructor/helper
+                        # üzerinden canonical heap değeri döndürülmelidir.
+                        eger g_strict_donus_tipi.temel_id == TIP_ID_SONUC ve
+                            don_val_tip.temel_id != TIP_ID_SONUC ve
+                            (dugum.sag.tip != AST_SAYI veya dugum.sag.ilk_jeton == 0 veya
+                             dugum.sag.ilk_jeton.uzunluk != 1 veya
+                             bellek_esit_mi(dugum.sag.ilk_jeton.baslangic, "0".ptr, 1) == 0) ise {
+                            degisken hk: HataKaydi;
+                            degisken satir: tamsayi = 0;
+                            degisken sutun: tamsayi = 0;
+                            degisken u: tamsayi = 1;
+                            eger dugum.ilk_jeton != 0 ise {
+                                satir = dugum.ilk_jeton.satir;
+                                sutun = dugum.ilk_jeton.sutun + dugum.ilk_jeton.uzunluk + 1;
+                                u = dugum.ilk_jeton.uzunluk;
+                                eger u <= 0 ise { u = 1; }
+                            }
+                            tani_olustur(&hk, tip_uyumsuzluk_kodu(), satir, sutun, "Canonical sonuc<T> dönüşü constructor/pointer gerektirir".ptr, 0);
+                            hk.isaret_uzunluk = u;
+                            hata_kaydi_yazdir(&hk);
+                            hata_rapor_et(motor);
+                            motor.donus_hata_sayisi = motor.donus_hata_sayisi + 1;
+                        }
+                        yoksa {
+                            degisken ret_uyumlu: tamsayi = donus_tipleri_esit_mi(g_strict_donus_tipi, don_val_tip);
+                            eger ret_uyumlu == 0 ve g_strict_donus_tipi.pointer_seviyesi > 0 ve ast_null_literali_mi(dugum.sag) == 1 ise {
+                                ret_uyumlu = 1;
+                            }
+                            eger ret_uyumlu == 0 ise {
+                                degisken hk: HataKaydi;
+                                degisken satir: tamsayi = 0;
+                                degisken sutun: tamsayi = 0;
+                                degisken u: tamsayi = 1;
+                                eger dugum.ilk_jeton != 0 ise {
+                                    satir = dugum.ilk_jeton.satir;
+                                    sutun = dugum.ilk_jeton.sutun + dugum.ilk_jeton.uzunluk + 1;
+                                    u = dugum.ilk_jeton.uzunluk;
+                                    eger u <= 0 ise { u = 1; }
+                                }
+                                tani_olustur(&hk, 4, satir, sutun, "Donus tipi uyumsuzlugu: Fonksiyon donus tipi ile dondurulen deger tipi eslesmiyor".ptr, 0);
+                                hk.isaret_uzunluk = u;
+                                hata_kaydi_yazdir(&hk);
+                                hata_rapor_et(motor);
+                                motor.donus_hata_sayisi = motor.donus_hata_sayisi + 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_DURDUR ise { dondu motor.tip_hic; }
+    eger dugum.tip == AST_DEVAM_ET ise { dondu motor.tip_hic; }
+    eger dugum.tip == AST_ICE_AKTAR ise { dondu motor.tip_hic; }
+    eger dugum.tip == AST_DIREKTIF_C_LIB veya dugum.tip == AST_DIREKTIF_CPP_LIB veya
+         dugum.tip == AST_DIREKTIF_PY_LIB veya dugum.tip == AST_DIREKTIF_RS_LIB veya
+         dugum.tip == AST_DIREKTIF_CONVERT veya dugum.tip == AST_DIREKTIF_CONFIG veya
+         dugum.tip == AST_DIREKTIF_PROMPT veya dugum.tip == AST_DIREKTIF_AI veya
+         dugum.tip == 29 veya dugum.tip == 30 veya dugum.tip == 31 veya dugum.tip == 32 veya
+         dugum.tip == 38 veya dugum.tip == 44 ise {
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_EGER ise {
+        degisken kosul_tipi: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        gecici_oduncleri_birak();
+
+        # ==============================================================
+        # FIX-13 Null Safety: Data-flow narrowing (if-null guard)
+        # Eger kosul:  (ptr)  veya  (ptr != bos)  ise → blok içinde ptr'yi
+        # non-null (nullable=0) olarak daralt, blok sonunda geri al
+        # ==============================================================
+        degisken guard_onceki: tamsayi = g_nullable_guard_aktif;
+        degisken guard_ad_onceki: *u8 = g_nullable_guard_ad;
+        degisken guard_ad_uzunluk_onceki: tamsayi = g_nullable_guard_ad_uzunluk;
+        degisken guard_ad2_onceki: *u8 = g_nullable_guard_ad2;
+        degisken guard_ad2_uzunluk_onceki: tamsayi = g_nullable_guard_ad2_uzunluk;
+        degisken guard_alan_onceki: *u8 = g_nullable_guard_alan;
+        degisken guard_alan_uzunluk_onceki: tamsayi = g_nullable_guard_alan_uzunluk;
+        degisken guard_gecersiz_onceki: tamsayi = g_nullable_guard_gecersiz;
+        g_nullable_guard_gecersiz = 0;
+
+        g_nullable_guard_ad = 0;
+        g_nullable_guard_ad_uzunluk = 0;
+        g_nullable_guard_ad2 = 0;
+        g_nullable_guard_ad2_uzunluk = 0;
+        g_nullable_guard_alan = 0;
+        g_nullable_guard_alan_uzunluk = 0;
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ise {
+            g_nullable_guard_aktif = 1;
+            g_nullable_guard_ad = dugum.sol.ilk_jeton.baslangic;
+            g_nullable_guard_ad_uzunluk = dugum.sol.ilk_jeton.uzunluk;
+        } yoksa eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ise {
+            eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.ilk_jeton.uzunluk;
+            } yoksa eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_ALAN_ERISIMI ve
+                dugum.sol.sol.sol != 0 ve dugum.sol.sol.sol.tip == AST_KIMLIK ve
+                dugum.sol.sol.sag != 0 ve dugum.sol.sol.sag.tip == AST_KIMLIK ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.sol.ilk_jeton.uzunluk;
+                g_nullable_guard_alan = dugum.sol.sol.sag.ilk_jeton.baslangic;
+                g_nullable_guard_alan_uzunluk = dugum.sol.sol.sag.ilk_jeton.uzunluk;
+            }
+        } yoksa {
+            g_nullable_guard_aktif = 0;
+        }
+
+        # `p != bos ve q != bos`: iki sembolü ayni branch'te daralt.
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_VE ise {
+            g_nullable_guard_aktif = 1;
+            eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_IKILI_OP ve
+                dugum.sol.sol.ilk_jeton != 0 ve dugum.sol.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+                dugum.sol.sol.sol != 0 ve dugum.sol.sol.sol.tip == AST_KIMLIK ise {
+                g_nullable_guard_ad = dugum.sol.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.sol.ilk_jeton.uzunluk;
+            }
+            eger dugum.sol.sag != 0 ve dugum.sol.sag.tip == AST_IKILI_OP ve
+                dugum.sol.sag.ilk_jeton != 0 ve dugum.sol.sag.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+                dugum.sol.sag.sol != 0 ve dugum.sol.sag.sol.tip == AST_KIMLIK ise {
+                g_nullable_guard_ad2 = dugum.sol.sag.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad2_uzunluk = dugum.sol.sag.sol.ilk_jeton.uzunluk;
+            }
+        }
+
+        # `p != bos veya p != bos`: ayni sembol tekrarlaniyorsa guvenli.
+        # Farkli sembollerde OR, hangisinin non-null oldugunu kanitlamaz;
+        # guard state bilerek kapali kalir.
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_VEYA ve
+            dugum.sol.sol != 0 ve dugum.sol.sag != 0 ve
+            dugum.sol.sol.tip == AST_IKILI_OP ve dugum.sol.sag.tip == AST_IKILI_OP ve
+            dugum.sol.sol.sol != 0 ve dugum.sol.sag.sol != 0 ve
+            dugum.sol.sol.sol.tip == AST_KIMLIK ve dugum.sol.sag.sol.tip == AST_KIMLIK ve
+            dugum.sol.sol.ilk_jeton != 0 ve dugum.sol.sag.ilk_jeton != 0 ve
+            dugum.sol.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve dugum.sol.sag.ilk_jeton.tip == TIP_ESIT_DEGIL ise {
+            eger dugum.sol.sol.sol.ilk_jeton.uzunluk == dugum.sol.sag.sol.ilk_jeton.uzunluk ve
+                bellek_esit_mi(dugum.sol.sol.sol.ilk_jeton.baslangic, dugum.sol.sag.sol.ilk_jeton.baslangic, dugum.sol.sol.sol.ilk_jeton.uzunluk) == 1 ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.sol.ilk_jeton.uzunluk;
+            } yoksa {
+                g_nullable_guard_aktif = 0;
+            }
+        }
+
+        degisken daralt_sembol: *SembolGirdisi = 0;
+        degisken daralt_eski_nullable: tamsayi = 0;
+        degisken daralt_tip_eski_nullable: tamsayi = 0;
+
+        # DURUM 1: tek kimlik (ptr)
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.ilk_jeton);
+        }
+        # DURUM 2: ikili op (ptr != bos) veya (bos != ptr)
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve dugum.sol.ilk_jeton != 0 ise {
+            degisken op_kod: tamsayi = dugum.sol.ilk_jeton.tip;
+            # karsilastirma operatorleri (35-40 arasi) ve != (36 veya ters deger kabul)
+            eger op_kod >= 35 ve op_kod <= 40 ise {
+                degisken sol_kimlik: *Jeton = 0;
+                degisken sag_kimlik: *Jeton = 0;
+                eger dugum.sol.sol != 0 ve (dugum.sol.sol.tip == AST_KIMLIK veya dugum.sol.sol.tip == AST_SAYI) ise { sol_kimlik = dugum.sol.sol.ilk_jeton; }
+                eger dugum.sol.sag != 0 ve (dugum.sol.sag.tip == AST_KIMLIK veya dugum.sol.sag.tip == AST_SAYI) ise { sag_kimlik = dugum.sol.sag.ilk_jeton; }
+                # Sagda bos mu? (jeton.tip == TIP_BOS = 43)
+                eger sag_kimlik != 0 ve sag_kimlik.tip == 43 ve sol_kimlik != 0 ise {
+                    daralt_sembol = sembol_ara(motor, sol_kimlik);
+                }
+                # Solda bos mu?
+                eger sol_kimlik != 0 ve sol_kimlik.tip == 43 ve sag_kimlik != 0 ise {
+                    daralt_sembol = sembol_ara(motor, sag_kimlik);
+                }
+                # Eger (ptr == bos) ise daraltma YAPMA — bu null-dur
+                eger op_kod == 35 ve daralt_sembol != 0 ise {
+                    # muhtemelen ==, geri al
+                    daralt_sembol = 0;
+                }
+            }
+        }
+
+        # Parser/seed sürümleri arasında null literal AST düğümü AST_SAYI veya
+        # AST_KIMLIK olarak gelebilir. Sağ operand gerçekten TIP_BOS ise,
+        # eşitlik dışındaki karşılaştırmayı non-null guard kabul et.
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.sag != 0 ve dugum.sol.sag.ilk_jeton != 0 ve
+            dugum.sol.sag.ilk_jeton.tip == TIP_BOS ve dugum.sol.ilk_jeton != 0 ve
+            dugum.sol.ilk_jeton.tip != TIP_ESIT_MI ve dugum.sol.sol != 0 ve
+            dugum.sol.sol.tip == AST_KIMLIK ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.sol.ilk_jeton);
+        }
+
+        # Eşitsizlikte sol operand kimlik ve sağ operand null/sayısal
+        # literal ise sol pointer'ı daralt. Bu, parser'ın literal token'ını
+        # AST_SAYI olarak normalize ettiği Stage-3 yolunu da kapsar.
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+            dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ve
+            dugum.sol.sag != 0 ve dugum.sol.sag.tip == AST_SAYI ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.sol.ilk_jeton);
+        }
+
+        # Daraltma uygula. Symbol ve kosul ifadesinin paylastigi TipBilgisi
+        # nesnesini birlikte güncelle; bu, Stage-3 scope lookup farklarinda
+        # erişim denetiminin eski nullable kopyasını kullanmasını önler.
+        eger daralt_sembol != 0 ve daralt_sembol.veri_tipi != 0 ve daralt_sembol.veri_tipi.nullable == 1 ise {
+            daralt_eski_nullable = 1;
+            daralt_sembol.veri_tipi.nullable = 0;
+        }
+        eger daralt_sembol != 0 ve kosul_tipi != 0 ve kosul_tipi.pointer_seviyesi > 0 ve kosul_tipi.nullable == 1 ise {
+            daralt_tip_eski_nullable = 1;
+            kosul_tipi.nullable = 0;
+        }
+
+        degisken init_moves: *MoveDugum = move_listesi_kopyala(g_moved_liste);
+        kapsam_olustur(motor, 64);
+        tip_cikar(motor, dugum.govde);
+        kapsamdan_cik(motor);
+        degisken then_moves: *MoveDugum = g_moved_liste;
+        g_nullable_guard_aktif = guard_onceki;
+        g_nullable_guard_ad = guard_ad_onceki;
+        g_nullable_guard_ad_uzunluk = guard_ad_uzunluk_onceki;
+        g_nullable_guard_ad2 = guard_ad2_onceki;
+        g_nullable_guard_ad2_uzunluk = guard_ad2_uzunluk_onceki;
+        g_nullable_guard_alan = guard_alan_onceki;
+        g_nullable_guard_alan_uzunluk = guard_alan_uzunluk_onceki;
+        g_nullable_guard_gecersiz = guard_gecersiz_onceki;
+
+        # Daraltma geri al
+        eger daralt_sembol != 0 ve daralt_sembol.veri_tipi != 0 ve daralt_eski_nullable == 1 ise {
+            daralt_sembol.veri_tipi.nullable = 1;
+        }
+        eger daralt_sembol != 0 ve kosul_tipi != 0 ve daralt_tip_eski_nullable == 1 ise {
+            kosul_tipi.nullable = 1;
+        }
+
+        eger dugum.yoksa_govde != 0 ise {
+            # == bos kosulunun yoksa dali: tip nesnesini mutate etmeden
+            # branch-local guard state ile non-null erisime izin ver.
+            degisken else_guard_onceki: tamsayi = g_nullable_guard_aktif;
+            degisken else_ad_onceki: *u8 = g_nullable_guard_ad;
+            degisken else_uzunluk_onceki: tamsayi = g_nullable_guard_ad_uzunluk;
+            degisken else_ad2_onceki: *u8 = g_nullable_guard_ad2;
+            degisken else_uzunluk2_onceki: tamsayi = g_nullable_guard_ad2_uzunluk;
+            degisken else_gecersiz_onceki: tamsayi = g_nullable_guard_gecersiz;
+            eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+                dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_ESIT_MI ve
+                dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ve
+                dugum.sol.sag != 0 ve dugum.sol.sag.ilk_jeton != 0 ve
+                dugum.sol.sag.ilk_jeton.tip == TIP_BOS ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.ilk_jeton.uzunluk;
+                g_nullable_guard_gecersiz = 0;
+            }
+            g_moved_liste = init_moves;
+            kapsam_olustur(motor, 64);
+            tip_cikar(motor, dugum.yoksa_govde);
+            kapsamdan_cik(motor);
+            g_moved_liste = move_listesi_birlestir(g_moved_liste, then_moves);
+            g_nullable_guard_aktif = else_guard_onceki;
+            g_nullable_guard_ad = else_ad_onceki;
+            g_nullable_guard_ad_uzunluk = else_uzunluk_onceki;
+            g_nullable_guard_ad2 = else_ad2_onceki;
+            g_nullable_guard_ad2_uzunluk = else_uzunluk2_onceki;
+            g_nullable_guard_gecersiz = else_gecersiz_onceki;
+        } yoksa {
+            g_moved_liste = then_moves;
+        }
+        gecici_oduncleri_birak();
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_DONGU ise {
+        degisken dongu_giris_borrows: *BorrowDugum = g_borrow_liste;
+        # GOREV 2.2: dongu kosul ifadesi dongu kapsaminin DISINDA degerlendirilir
+        # Bu sekilde, kosulda kullanilan degiskenler dongu govdesine sizamaz
+        degisken kosul_tipi: *TipBilgisi = 0;
+        eger dugum.sol != 0 ise {
+            kosul_tipi = tip_cikar(motor, dugum.sol);
+            gecici_oduncleri_birak();
+        }
+
+        # FIX-13 Null Safety: Loop body data-flow narrowing
+        degisken guard_onceki: tamsayi = g_nullable_guard_aktif;
+        degisken guard_ad_onceki: *u8 = g_nullable_guard_ad;
+        degisken guard_ad_uzunluk_onceki: tamsayi = g_nullable_guard_ad_uzunluk;
+        degisken guard_ad2_onceki: *u8 = g_nullable_guard_ad2;
+        degisken guard_ad2_uzunluk_onceki: tamsayi = g_nullable_guard_ad2_uzunluk;
+        degisken guard_alan_onceki: *u8 = g_nullable_guard_alan;
+        degisken guard_alan_uzunluk_onceki: tamsayi = g_nullable_guard_alan_uzunluk;
+        degisken guard_gecersiz_onceki: tamsayi = g_nullable_guard_gecersiz;
+        g_nullable_guard_gecersiz = 0;
+
+        g_nullable_guard_ad = 0;
+        g_nullable_guard_ad_uzunluk = 0;
+        g_nullable_guard_ad2 = 0;
+        g_nullable_guard_ad2_uzunluk = 0;
+        g_nullable_guard_alan = 0;
+        g_nullable_guard_alan_uzunluk = 0;
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ise {
+            g_nullable_guard_aktif = 1;
+            g_nullable_guard_ad = dugum.sol.ilk_jeton.baslangic;
+            g_nullable_guard_ad_uzunluk = dugum.sol.ilk_jeton.uzunluk;
+        } yoksa eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+            dugum.sol.sag != 0 ve dugum.sol.sag.ilk_jeton != 0 ve
+            (dugum.sol.sag.ilk_jeton.tip == TIP_BOS veya dugum.sol.sag.ilk_jeton.tip == 43) ise {
+            eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.ilk_jeton.uzunluk;
+            } yoksa eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_ALAN_ERISIMI ve
+                dugum.sol.sol.sol != 0 ve dugum.sol.sol.sol.tip == AST_KIMLIK ve
+                dugum.sol.sol.sag != 0 ve dugum.sol.sol.sag.tip == AST_KIMLIK ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.sol.ilk_jeton.uzunluk;
+                g_nullable_guard_alan = dugum.sol.sol.sag.ilk_jeton.baslangic;
+                g_nullable_guard_alan_uzunluk = dugum.sol.sol.sag.ilk_jeton.uzunluk;
+            }
+        } yoksa {
+            g_nullable_guard_aktif = 0;
+        }
+
+        # `p != bos ve q != bos`: iki sembolü ayni loop govdesinde daralt.
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_VE ise {
+            eger dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_IKILI_OP ve
+                dugum.sol.sol.ilk_jeton != 0 ve dugum.sol.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+                dugum.sol.sol.sol != 0 ve dugum.sol.sol.sol.tip == AST_KIMLIK ve
+                dugum.sol.sol.sag != 0 ve dugum.sol.sol.sag.ilk_jeton != 0 ve
+                (dugum.sol.sol.sag.ilk_jeton.tip == TIP_BOS veya dugum.sol.sol.sag.ilk_jeton.tip == 64 veya dugum.sol.sol.sag.ilk_jeton.tip == 43) ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad = dugum.sol.sol.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad_uzunluk = dugum.sol.sol.sol.ilk_jeton.uzunluk;
+            }
+            eger dugum.sol.sag != 0 ve dugum.sol.sag.tip == AST_IKILI_OP ve
+                dugum.sol.sag.ilk_jeton != 0 ve dugum.sol.sag.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+                dugum.sol.sag.sol != 0 ve dugum.sol.sag.sol.tip == AST_KIMLIK ve
+                dugum.sol.sag.sag != 0 ve dugum.sol.sag.sag.ilk_jeton != 0 ve
+                (dugum.sol.sag.sag.ilk_jeton.tip == TIP_BOS veya dugum.sol.sag.sag.ilk_jeton.tip == 64 veya dugum.sol.sag.sag.ilk_jeton.tip == 43) ise {
+                g_nullable_guard_aktif = 1;
+                g_nullable_guard_ad2 = dugum.sol.sag.sol.ilk_jeton.baslangic;
+                g_nullable_guard_ad2_uzunluk = dugum.sol.sag.sol.ilk_jeton.uzunluk;
+            }
+        }
+
+        degisken daralt_sembol: *SembolGirdisi = 0;
+        degisken daralt_eski_nullable: tamsayi = 0;
+        degisken daralt_tip_eski_nullable: tamsayi = 0;
+
+        # DURUM 1: tek kimlik (ptr)
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.ilk_jeton);
+        }
+        # DURUM 2: ikili op (ptr != bos) veya (bos != ptr)
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve dugum.sol.ilk_jeton != 0 ise {
+            degisken op_kod: tamsayi = dugum.sol.ilk_jeton.tip;
+            eger op_kod >= 35 ve op_kod <= 40 ise {
+                degisken sol_kimlik: *Jeton = 0;
+                degisken sag_kimlik: *Jeton = 0;
+                eger dugum.sol.sol != 0 ve (dugum.sol.sol.tip == AST_KIMLIK veya dugum.sol.sol.tip == AST_SAYI) ise { sol_kimlik = dugum.sol.sol.ilk_jeton; }
+                eger dugum.sol.sag != 0 ve (dugum.sol.sag.tip == AST_KIMLIK veya dugum.sol.sag.tip == AST_SAYI) ise { sag_kimlik = dugum.sol.sag.ilk_jeton; }
+                eger sag_kimlik != 0 ve (sag_kimlik.tip == TIP_BOS veya sag_kimlik.tip == 64 veya sag_kimlik.tip == 43) ve sol_kimlik != 0 ise {
+                    daralt_sembol = sembol_ara(motor, sol_kimlik);
+                }
+                eger sol_kimlik != 0 ve (sol_kimlik.tip == TIP_BOS veya sol_kimlik.tip == 64 veya sol_kimlik.tip == 43) ve sag_kimlik != 0 ise {
+                    daralt_sembol = sembol_ara(motor, sag_kimlik);
+                }
+                eger op_kod == 35 ve daralt_sembol != 0 ise {
+                    daralt_sembol = 0;
+                }
+            }
+        }
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.sag != 0 ve dugum.sol.sag.ilk_jeton != 0 ve
+            (dugum.sol.sag.ilk_jeton.tip == TIP_BOS veya dugum.sol.sag.ilk_jeton.tip == 64 veya dugum.sol.sag.ilk_jeton.tip == 43) ve dugum.sol.ilk_jeton != 0 ve
+            dugum.sol.ilk_jeton.tip != TIP_ESIT_MI ve dugum.sol.sol != 0 ve
+            dugum.sol.sol.tip == AST_KIMLIK ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.sol.ilk_jeton);
+        }
+        eger daralt_sembol == 0 ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve
+            dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_ESIT_DEGIL ve
+            dugum.sol.sol != 0 ve dugum.sol.sol.tip == AST_KIMLIK ve
+            dugum.sol.sag != 0 ve dugum.sol.sag.tip == AST_SAYI ise {
+            daralt_sembol = sembol_ara(motor, dugum.sol.sol.ilk_jeton);
+        }
+
+        eger daralt_sembol != 0 ve daralt_sembol.veri_tipi != 0 ve daralt_sembol.veri_tipi.nullable == 1 ise {
+            daralt_eski_nullable = 1;
+            daralt_sembol.veri_tipi.nullable = 0;
+        }
+        eger daralt_sembol != 0 ve kosul_tipi != 0 ve kosul_tipi.pointer_seviyesi > 0 ve kosul_tipi.nullable == 1 ise {
+            daralt_tip_eski_nullable = 1;
+            kosul_tipi.nullable = 0;
+        }
+
+        kapsam_olustur(motor, 64);
+        tip_cikar(motor, dugum.govde);
+        eger dugum.yoksa_govde != 0 ise {
+            tip_cikar(motor, dugum.yoksa_govde);
+        }
+        kapsamdan_cik(motor);
+
+        # NLL: Dongu govdesinde olusturulan yerel kiralama omurleri
+        # dongu sonunda biter; sonraki dongu turlari veya dis kod icin
+        # kiralamalar temizlenir (false-positive onleme).
+        g_borrow_liste = dongu_giris_borrows;
+        degisken b_say: tamsayi = 0;
+        degisken b_it: *BorrowDugum = g_borrow_liste;
+        dongu b_it != 0 {
+            b_say = b_say + 1;
+            b_it = b_it.sonraki;
+        }
+        g_borrow_sayisi = b_say;
+
+        g_nullable_guard_aktif = guard_onceki;
+        g_nullable_guard_ad = guard_ad_onceki;
+        g_nullable_guard_ad_uzunluk = guard_ad_uzunluk_onceki;
+        g_nullable_guard_ad2 = guard_ad2_onceki;
+        g_nullable_guard_ad2_uzunluk = guard_ad2_uzunluk_onceki;
+        g_nullable_guard_alan = guard_alan_onceki;
+        g_nullable_guard_alan_uzunluk = guard_alan_uzunluk_onceki;
+        g_nullable_guard_gecersiz = guard_gecersiz_onceki;
+
+        # Daraltma geri al
+        eger daralt_sembol != 0 ve daralt_sembol.veri_tipi != 0 ve daralt_eski_nullable == 1 ise {
+            daralt_sembol.veri_tipi.nullable = 1;
+        }
+        eger daralt_sembol != 0 ve kosul_tipi != 0 ve daralt_tip_eski_nullable == 1 ise {
+            kosul_tipi.nullable = 1;
+        }
+
+        gecici_oduncleri_birak();
+        dondu motor.tip_hic;
+    }
+
+    # AST_AWAIT (42): unwrap only a compiler-typed Future<T> in async body.
+    eger dugum.tip == AST_AWAIT ise {
+        degisken await_satir: tamsayi = 0;
+        degisken await_sutun: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            await_satir = dugum.ilk_jeton.satir;
+            await_sutun = dugum.ilk_jeton.sutun;
+        }
+        eger g_async_islev_aktif == 0 ise {
+            degisken await_hk: HataKaydi;
+            tani_olustur(&await_hk, 44, await_satir, await_sutun, "await yalnızca async islev govdesinde kullanilabilir".ptr, 0);
+            await_hk.isaret_uzunluk = 5;
+            hata_kaydi_yazdir(&await_hk);
+            hata_rapor_et(motor);
+            motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+            dondu motor.tip_bilinmiyor;
+        }
+        degisken await_tip: *TipBilgisi = tip_cikar(motor, dugum.sag);
+        eger await_tip == 0 veya future_tipi_mi(await_tip) == 0 veya await_tip.ic_tip == 0 ise {
+            degisken await_hk2: HataKaydi;
+            tani_olustur(&await_hk2, 44, await_satir, await_sutun, "await operandi Future<T> olmalidir".ptr, 0);
+            await_hk2.isaret_uzunluk = 5;
+            hata_kaydi_yazdir(&await_hk2);
+            hata_rapor_et(motor);
+            motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+            dondu motor.tip_bilinmiyor;
+        }
+        dondu await_tip.ic_tip;
+    }
+
+    # AST_SORU_ISLEMI (33): ? error propagation
+    eger dugum.tip == AST_SORU_ISLEMI ise {
+        degisken op_tip: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        # Result<T,E> metadata'sı dizi_boyutu alanında temel tip ID olarak
+        # korunur; ? artık varsayılan tamsayıya düşmez.
+        eger op_tip != 0 ve op_tip.temel_id == TIP_ID_SONUC ise {
+            eger op_tip.ic_tip != 0 ise { dondu op_tip.ic_tip; }
+            eger op_tip.dizi_boyutu == TIP_ID_TAMSAYI ise { dondu motor.tip_tamsayi; }
+            eger op_tip.dizi_boyutu == TIP_ID_GERCEK ise { dondu motor.tip_gercek; }
+            eger op_tip.dizi_boyutu == TIP_ID_METIN ise { dondu motor.tip_metin; }
+            eger op_tip.dizi_boyutu == TIP_ID_MANTIK ise { dondu motor.tip_mantik; }
+            eger op_tip.dizi_boyutu == TIP_ID_U8 ise { dondu motor.tip_u8; }
+            # Geçerli fakat henüz çözümlenmemiş generic payload, birincil
+            # Result hatası değildir; monomorphization bunu sonraki aşamada
+            # doldurabilir.
+            dondu motor.tip_bilinmiyor;
+        }
+
+        # Bilinen scalar/pointer/struct üzerinde '?' sessizce tamsayıya
+        # düşmemeli. Bilinmeyen operand için asıl undefined-symbol tanısı
+        # korunur ve ikinci, yanıltıcı tanı üretilmez.
+        eger op_tip != 0 ve op_tip.temel_id != TIP_ID_BILINMIYOR ise {
+            degisken soru_hk: HataKaydi;
+            degisken soru_satir: tamsayi = 0;
+            degisken soru_sutun: tamsayi = 0;
+            degisken soru_uzunluk: tamsayi = 1;
+            eger dugum.ilk_jeton != 0 ise {
+                soru_satir = dugum.ilk_jeton.satir;
+                soru_sutun = dugum.ilk_jeton.sutun;
+                soru_uzunluk = dugum.ilk_jeton.uzunluk;
+                eger soru_uzunluk <= 0 ise { soru_uzunluk = 1; }
+            }
+            tani_olustur(&soru_hk, tip_uyumsuzluk_kodu(), soru_satir, soru_sutun,
+                "? operatoru yalnızca canonical sonuc<T> operandında kullanılabilir".ptr, 0);
+            soru_hk.isaret_uzunluk = soru_uzunluk;
+            hata_kaydi_yazdir(&soru_hk);
+            hata_rapor_et(motor);
+            motor.tip_uyumsuz_hata_sayisi = motor.tip_uyumsuz_hata_sayisi + 1;
+        }
+        dondu motor.tip_bilinmiyor;
+    }
+
+    eger dugum.tip == AST_BLOK ise {
+        kapsam_olustur(motor, 128);
+        degisken iter: *AstDugum = dugum.sol;
+        degisken son_tip: *TipBilgisi = motor.tip_hic;
+        dongu iter != 0 {
+            son_tip = tip_cikar(motor, iter);
+            gecici_oduncleri_birak();
+            iter = iter.sonraki;
+        }
+        kapsamdan_cik(motor);
+        dondu son_tip;
+    }
+
+    eger dugum.tip == 35 ise { # AST_MODUL
+        kapsam_olustur(motor, 128);
+        eger motor.guncel_kapsam != 0 ve dugum.ilk_jeton != 0 ise {
+            motor.guncel_kapsam.modul_adi = dugum.ilk_jeton.baslangic;
+            motor.guncel_kapsam.modul_adi_uzunluk = dugum.ilk_jeton.uzunluk;
+        }
+        eger dugum.govde != 0 ise {
+            degisken m_iter: *AstDugum = dugum.govde.sol;
+            dongu m_iter != 0 {
+                tip_cikar(motor, m_iter);
+                m_iter = m_iter.sonraki;
+            }
+        }
+        kapsamdan_cik(motor);
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_GENERIC_TANIM ise {
+        # Generic sablon - typechecker gecmez, monomorphization sonrasi somutlastirilir
+        eger dugum.ilk_jeton != 0 ise {
+            sembol_ekle(motor, dugum.ilk_jeton, motor.tip_bilinmiyor, motor.tip_hic, dugum);
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_ISLEV veya dugum.tip == AST_ASYNC_ISLEV ise {
+        move_borrow_tablolarini_sifirla();
+        degisken beden_donus_tipi: *TipBilgisi = motor.tip_hic;
+        degisken don_tip: *TipBilgisi = motor.tip_hic;
+        eger dugum.tip_adi != 0 ise {
+            beden_donus_tipi = tip_dugumunden_coz(motor, dugum);
+            eger beden_donus_tipi == 0 veya beden_donus_tipi == motor.tip_bilinmiyor ise { beden_donus_tipi = motor.tip_hic; }
+            don_tip = beden_donus_tipi;
+            eger dugum.tip == AST_ASYNC_ISLEV ise {
+                degisken future_donus: *TipBilgisi = async_donus_tipi_olustur(motor, beden_donus_tipi);
+                eger future_donus == 0 ise { dondu motor.tip_bilinmiyor; }
+                don_tip = future_donus;
+            }
+        }
+
+        eger dugum.ilk_jeton != 0 ise {
+            sembol_ekle(motor, dugum.ilk_jeton, motor.tip_islev, don_tip, dugum);
+        }
+
+        kapsam_olustur(motor, 64);
+        eger dugum.yoksa_govde != 0 ve dugum.yoksa_govde.ilk_jeton != 0 ise {
+            motor.guncel_kapsam.modul_adi = dugum.yoksa_govde.ilk_jeton.baslangic;
+            motor.guncel_kapsam.modul_adi_uzunluk = dugum.yoksa_govde.ilk_jeton.uzunluk;
+        }
+        degisken onceki_donus: *TipBilgisi = motor.guncel_donus_tipi;
+        degisken onceki_strict_donus: *TipBilgisi = g_strict_donus_tipi;
+        degisken onceki_aktif_parametreler: *AstDugum = g_aktif_parametreler;
+        degisken onceki_async_aktif: tamsayi = g_async_islev_aktif;
+        motor.guncel_donus_tipi = don_tip;
+        degisken strict_beden_tipi: *TipBilgisi = beden_donus_tipi;
+        eger dugum.tip == AST_ASYNC_ISLEV ve future_tipi_mi(beden_donus_tipi) == 1 ve
+            beden_donus_tipi.ic_tip != 0 ise {
+            # async -> Future<T> is source-compatible shorthand for async -> T.
+            strict_beden_tipi = beden_donus_tipi.ic_tip;
+        }
+        g_strict_donus_tipi = strict_beden_tipi;
+        eger dugum.tip == AST_ASYNC_ISLEV ise {
+            g_async_islev_aktif = 1;
+        } yoksa {
+            g_async_islev_aktif = 0;
+        }
+        g_aktif_parametreler = dugum.parametreler;
+        # FIX-13 Alias tracking: her fonksiyona girerken alias tablosunu sifirla.
+        g_alias_sayisi = 0;
+
+        degisken param: *AstDugum = dugum.parametreler;
+        dongu param != 0 {
+            degisken p_tip: *TipBilgisi = motor.tip_bilinmiyor;
+            eger param.tip_adi != 0 ise {
+                p_tip = tip_dugumunden_coz(motor, param);
+                eger p_tip == 0 ise { p_tip = motor.tip_bilinmiyor; }
+            }
+            eger param.ilk_jeton != 0 ise {
+                # FIX13: nullable parametre metadata'sini sembole aktar.
+                sembol_ekle(motor, param.ilk_jeton, p_tip, motor.tip_hic, param);
+            }
+            param = param.sonraki;
+        }
+        eger dugum.govde != 0 ise {
+            tip_cikar(motor, dugum.govde);
+        }
+
+        eger dugum.govde != 0 ve beden_donus_tipi != 0 ve beden_donus_tipi != motor.tip_hic ve beden_donus_tipi != motor.tip_bilinmiyor ise {
+            degisken is_main: tamsayi = 0;
+            eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.uzunluk == 3 ve
+                dugum.ilk_jeton.baslangic[0] == 97 ve dugum.ilk_jeton.baslangic[1] == 110 ve dugum.ilk_jeton.baslangic[2] == 97 ise {
+                is_main = 1;
+            }
+            eger is_main == 0 ve ast_donus_var_mi(dugum.govde) == 0 ve tc_bos_fpu_intrinsic_mi(dugum) == 0 ise {
+                degisken hk_ret: HataKaydi;
+                degisken r_sat: tamsayi = 0;
+                degisken r_sut: tamsayi = 0;
+                eger dugum.ilk_jeton != 0 ise {
+                    r_sat = dugum.ilk_jeton.satir;
+                    r_sut = dugum.ilk_jeton.sutun;
+                }
+                tani_olustur(&hk_ret, 4, r_sat, r_sut, "TC HATA: Fonksiyonda donus ifadesi eksik (missing return)".ptr, 0);
+                hata_kaydi_yazdir(&hk_ret);
+                hata_rapor_et(motor);
+                motor.donus_hata_sayisi = motor.donus_hata_sayisi + 1;
+            }
+        }
+
+        motor.guncel_donus_tipi = onceki_donus;
+        g_strict_donus_tipi = onceki_strict_donus;
+        g_async_islev_aktif = onceki_async_aktif;
+        g_aktif_parametreler = onceki_aktif_parametreler;
+        kapsamdan_cik(motor);
+        dondu motor.tip_islev;
+    }
+
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        degisken arg_sayisi: tamsayi = 0;
+        degisken arg: *AstDugum = dugum.sag;
+        # FIX-13: Fonksiyon cagrisinda aktif nullable guard state'ini gecersiz kil.
+        # Bir fonksiyon cagrisinin narrowed pointer'i null yapip yapmadigini
+        # statik olarak bilemeyiz; bu yuzden guard state'ini sifirliyoruz.
+        eger g_nullable_guard_aktif == 1 ise {
+            g_nullable_guard_gecersiz = 1;
+        }
+        # Alan-cagrisi olan `Enum.Varyant(x)` dugumunde sag alaninin
+        # kendisi callee'dir; gercek arguman listesi sag.sag altindadir.
+        # Sadece sag kimligi gercekten enum varyanti ise bu normalizasyonu yap.
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ve
+            dugum.sag.ilk_jeton != 0 ise {
+            degisken alan_enum_idx: tamsayi = enum_varyant_bul_kisa(
+                dugum.sag.ilk_jeton.baslangic,
+                dugum.sag.ilk_jeton.uzunluk
+            );
+            eger alan_enum_idx >= 0 ise { arg = dugum.sag.sag; }
+        }
+        dongu arg != 0 {
+            arg_sayisi = arg_sayisi + 1;
+            tip_cikar(motor, arg);
+            arg = arg.sonraki;
+        }
+        gecici_oduncleri_birak();
+
+        # Enum constructor'lari iki AST biçiminde gelebilir:
+        #   Deger(42)       -> sol=Deger, sag=arg listesi
+        #   Durum.Deger(42) -> sol=Durum, sag=Deger.sag=arg listesi
+        # Bunlar fonksiyon sembolu degil, tagged-union degeri uretir.
+        degisken enum_taban: *AstDugum = dugum.sol;
+        degisken enum_varyant_dugum: *AstDugum = 0;
+        degisken enum_arglar: *AstDugum = dugum.sag;
+        eger dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ve
+            dugum.sag.ilk_jeton != 0 ise {
+            enum_varyant_dugum = dugum.sag;
+            enum_arglar = dugum.sag.sag;
+        } yoksa {
+            enum_varyant_dugum = dugum.sol;
+        }
+        eger enum_varyant_dugum != 0 ve enum_varyant_dugum.ilk_jeton != 0 ise {
+            degisken enum_idx_tc: tamsayi = enum_varyant_bul_tam(
+                enum_varyant_dugum.ilk_jeton.baslangic,
+                enum_varyant_dugum.ilk_jeton.uzunluk
+            );
+            eger enum_idx_tc == (0 - 1) ise {
+                enum_idx_tc = enum_varyant_bul_kisa(
+                    enum_varyant_dugum.ilk_jeton.baslangic,
+                    enum_varyant_dugum.ilk_jeton.uzunluk
+                );
+            }
+            eger enum_idx_tc >= 0 ise {
+                degisken tam_ad_tc: *u8 = g_enum_var_tam_isim[enum_idx_tc];
+                degisken tam_uzn_tc: tamsayi = g_enum_var_tam_uzn[enum_idx_tc];
+                degisken en_uzn_tc: tamsayi = 0;
+                dongu en_uzn_tc + 1 < tam_uzn_tc {
+                    eger tam_ad_tc[en_uzn_tc] == 95 ve tam_ad_tc[en_uzn_tc + 1] == 95 ise {
+                        durdur;
+                    }
+                    en_uzn_tc = en_uzn_tc + 1;
+                }
+                eger en_uzn_tc > 0 ve en_uzn_tc < tam_uzn_tc ise {
+                    degisken enum_tip_tc: *TipBilgisi = tip_adini_coz(motor, tam_ad_tc, en_uzn_tc);
+                    eger enum_tip_tc != 0 ve enum_tip_tc.temel_id != TIP_ID_BILINMIYOR ise {
+                        dondu enum_tip_tc;
+                    }
+                }
+                eger enum_taban != 0 ve enum_taban.ilk_jeton != 0 ise {
+                    degisken enum_tip_tc2: *TipBilgisi = tip_adini_coz(
+                        motor,
+                        enum_taban.ilk_jeton.baslangic,
+                        enum_taban.ilk_jeton.uzunluk
+                    );
+                    eger enum_tip_tc2 != 0 ve enum_tip_tc2.temel_id != TIP_ID_BILINMIYOR ise {
+                        dondu enum_tip_tc2;
+                    }
+                }
+                eger g_enum_var_payload[enum_idx_tc] != 0 veya enum_arglar != 0 ise {
+                    degisken enum_ptr_tip: *TipBilgisi = yeni_tip(motor.arena, KAT_TEMEL, TIP_ID_POINTER, 1, 8);
+                    dondu enum_ptr_tip;
+                }
+                dondu motor.tip_tamsayi;
+            }
+        }
+
+        # Canonical Result constructor'lari runtime fonksiyonu degil, AST
+        # codegen'in urettiği heap-backed tagged result degerleridir. Bu
+        # nedenle sembol tablosunda aranmayacaklari gibi typechecker da
+        # *Sonuc donus tipini dogrudan vermelidir.
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+            degisken ctor_ad: *u8 = dugum.sol.ilk_jeton.baslangic;
+            degisken ctor_uzn: tamsayi = dugum.sol.ilk_jeton.uzunluk;
+            eger (ctor_uzn == 5 ve bellek_esit_mi(ctor_ad, "Tamam".ptr, 5) == 1) veya
+                 (ctor_uzn == 4 ve bellek_esit_mi(ctor_ad, "Hata".ptr, 4) == 1) ise {
+                degisken sonuc_ctor_tipi: *TipBilgisi = yeni_tip(motor.arena, KAT_YAPI, TIP_ID_SONUC, 1, 0);
+                sonuc_ctor_tipi.ic_tip = motor.tip_tamsayi;
+                dondu sonuc_ctor_tipi;
+            }
+        }
+
+        # Generics asamasi normal cagri dugumunun solundaki callee
+        # token'ini mangled ada cevirir (or. dizi_al__tamsayi). Cagri
+        # dugumunun ilk token'i ise parse zamanindaki eski addir; onu
+        # sembol aramasinda kullanmak generic donus tipini kaybettirir.
+        degisken cagri_jetonu: *Jeton = dugum.ilk_jeton;
+        eger dugum.sol != 0 ve dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+            cagri_jetonu = dugum.sol.ilk_jeton;
+        }
+        eger cagri_jetonu != 0 ise {
+            eger cagri_jetonu.uzunluk >= 8 ve bellek_esit_mi(cagri_jetonu.baslangic, "vtable__".ptr, 8) == 1 ise {
+                degisken vt_tip: *TipBilgisi = yeni_tip(motor.arena, KAT_TEMEL, TIP_ID_METIN, 1, 0);
+                dondu vt_tip;
+            }
+            eger cagri_jetonu.uzunluk == 9 ve bellek_esit_mi(cagri_jetonu.baslangic, "dyn_yarat".ptr, 9) == 1 ise {
+                degisken dyn_ret: *TipBilgisi = yeni_tip(motor.arena, KAT_YAPI, djb2_sembol("dyn", 3), 1, 16);
+                dyn_ret.nominal_id = 99999;
+                dondu dyn_ret;
+            }
+            degisken cast_t: *TipBilgisi = tip_adini_coz(motor, cagri_jetonu.baslangic, cagri_jetonu.uzunluk);
+            eger cast_t != 0 ve cast_t.temel_id != TIP_ID_BILINMIYOR ve cast_t.temel_id != TIP_ID_HIC ve cast_t.kategori != KAT_YAPI ise {
+                dondu cast_t;
+            }
+        }
+        # Dynamic dispatch trait nesnesi cagrisi: sekil.metod(...)
+        eger dugum.ilk_jeton != 0 ve (dugum.ilk_jeton.tip == TIP_NOKTA veya dugum.ilk_jeton.tip == TIP_OK) ve
+            dugum.sag != 0 ve dugum.sag.tip == AST_KIMLIK ve dugum.sol != 0 ise {
+            eger dugum.sol.tip == AST_KIMLIK ve dugum.sol.ilk_jeton != 0 ise {
+                degisken sol_sym: *SembolGirdisi = sembol_ara_flat(motor, dugum.sol.ilk_jeton);
+                eger sol_sym != 0 ve sol_sym.veri_tipi != 0 ve sol_sym.veri_tipi.nominal_id == 99999 ise {
+                    dondu motor.tip_tamsayi;
+                }
+            }
+            degisken sol_tip_t: *TipBilgisi = tip_cikar(motor, dugum.sol);
+            eger sol_tip_t != 0 ve sol_tip_t.nominal_id == 99999 ise {
+                dondu motor.tip_tamsayi;
+            }
+        }
+        degisken fonk_s: *SembolGirdisi = sembol_ara_flat(motor, cagri_jetonu);
+        eger fonk_s != 0 ise {
+            eger fonk_s.ast_tanimi != 0 ve (fonk_s.ast_tanimi.tip == AST_ISLEV veya fonk_s.ast_tanimi.tip == AST_ASYNC_ISLEV) ise {
+                degisken param_sayisi: tamsayi = 0;
+                degisken p_iter: *AstDugum = fonk_s.ast_tanimi.parametreler;
+                dongu p_iter != 0 {
+                    param_sayisi = param_sayisi + 1;
+                    p_iter = p_iter.sonraki;
+                }
+                # GOREV 2.2: SELF_HEAL_FONKSIYON_SAYISI_UYUMSUZ sayaci aktif
+                eger arg_sayisi != param_sayisi ise {
+                    degisken hk: HataKaydi;
+                    degisken satir: tamsayi = 0;
+                    degisken sutun: tamsayi = 0;
+                    degisken u: tamsayi = 1;
+                    eger dugum.ilk_jeton != 0 ise {
+                        satir = dugum.ilk_jeton.satir;
+                        sutun = dugum.ilk_jeton.sutun;
+                        u = dugum.ilk_jeton.uzunluk;
+                        eger u <= 0 ise { u = 1; }
+                    }
+                    tani_olustur(&hk, 5, satir, sutun, "Fonksiyon parametre sayisi uyumsuz".ptr, 0);
+                    hk.isaret_uzunluk = u;
+                    hata_kaydi_yazdir(&hk);
+                    hata_rapor_et(motor);
+                    motor.param_sayisi_hata_sayisi = motor.param_sayisi_hata_sayisi + 1;
+                } yoksa {
+                    # Sayı doğruysa her argümanı karşılık gelen parametreyle
+                    # karşılaştır. Bilinmeyen tipler burada sessizce uyumlu
+                    # kabul edilmez; yalnızca generic gövde deferred kalır.
+                    degisken fn_is_tasi: tamsayi = 0;
+                    eger dugum.ilk_jeton != 0 ve dugum.ilk_jeton.uzunluk == 4 ve bellek_esit_mi(dugum.ilk_jeton.baslangic, "tasi".ptr, 4) == 1 ise {
+                        fn_is_tasi = 1;
+                    } yoksa eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.uzunluk == 4 ve bellek_esit_mi(dugum.sol.ilk_jeton.baslangic, "tasi".ptr, 4) == 1 ise {
+                        fn_is_tasi = 1;
+                    }
+                    degisken fn_tanimi: *AstDugum = fonk_s.ast_tanimi;
+                    degisken beklenen: *AstDugum = fn_tanimi.parametreler;
+                    degisken verilen: *AstDugum = dugum.sag;
+                    dongu beklenen != 0 ve verilen != 0 {
+                        degisken bek_tip: *TipBilgisi = tip_dugumunden_coz(motor, beklenen);
+                        degisken ver_tip: *TipBilgisi = tip_cikar(motor, verilen);
+                        # Gercek ad-bagimsiz move analizi: Struct/composite by-value parametreler sahipligi tasir
+                        eger verilen.tip == AST_KIMLIK ve verilen.ilk_jeton != 0 ise {
+                            degisken tasinmali_mi: tamsayi = 0;
+                            eger bek_tip != 0 ve bek_tip.kategori == KAT_YAPI ve bek_tip.pointer_seviyesi == 0 ise {
+                                eger ver_tip != 0 ve ver_tip.pointer_seviyesi == 0 ise {
+                                    tasinmali_mi = 1;
+                                }
+                            }
+                            eger tasinmali_mi == 1 veya fn_is_tasi == 1 ise {
+                                eger degisken_odunc_var_mi(verilen.ilk_jeton.baslangic, verilen.ilk_jeton.uzunluk) == 1 ise {
+                                    degisken hk_mv_b: HataKaydi;
+                                    degisken mv_sat: tamsayi = verilen.ilk_jeton.satir;
+                                    degisken mv_sut: tamsayi = verilen.ilk_jeton.sutun;
+                                    tani_olustur(&hk_mv_b, 41, mv_sat, mv_sut,
+                                        "OWNERSHIP HATA: Odunc alinmis degisken tasinamaz (cannot move out of borrowed context)".ptr, 0);
+                                    hk_mv_b.isaret_uzunluk = verilen.ilk_jeton.uzunluk;
+                                    hata_kaydi_yazdir(&hk_mv_b);
+                                    hata_rapor_et(motor);
+                                }
+                                degisken_tasi(verilen.ilk_jeton.baslangic, verilen.ilk_jeton.uzunluk);
+                            }
+                        }
+                        beklenen = beklenen.sonraki;
+                        verilen = verilen.sonraki;
+                    }
+                }
+            }
+            eger fonk_s.donus_tipi != 0 ve (fonk_s.donus_tipi.temel_id != TIP_ID_HIC veya fonk_s.donus_tipi.pointer_seviyesi > 0) ise {
+                gecici_oduncleri_birak();
+                dondu fonk_s.donus_tipi;
+            }
+            gecici_oduncleri_birak();
+            dondu motor.tip_tamsayi;
+        }
+        gecici_oduncleri_birak();
+        dondu motor.tip_tamsayi;
+    }
+
+    eger dugum.tip == AST_ALAN_ERISIMI ise {
+        degisken struct_tipi: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        eger struct_tipi == 0 ise { dondu motor.tip_bilinmiyor; }
+        eger dugum.sag != 0 ve dugum.sag.ilk_jeton != 0 ise {
+            degisken ds_j: *Jeton = dugum.sag.ilk_jeton;
+            eger ds_j.uzunluk == 3 ve bellek_esit_mi(ds_j.baslangic, "ptr".ptr, 3) == 1 ise {
+                dondu yeni_tip(motor.arena, KAT_TEMEL, TIP_ID_U8, 1, 0);
+            } yoksa eger struct_tipi.temel_id == TIP_ID_METIN ve ds_j.uzunluk == 7 ve bellek_esit_mi(ds_j.baslangic, "uzunluk".ptr, 7) == 1 ise {
+                dondu motor.tip_tamsayi;
+            }
+        }
+        # FIX-13: nullable pointer alan erişimi, narrowing yapılmadan reddedilir.
+        eger struct_tipi.nullable == 1 ve struct_tipi.pointer_seviyesi > 0 ve
+            (g_nullable_guard_gecersiz == 1 veya nullable_guard_eslesiyor(dugum.sol) == 0) ise {
+            degisken nullable_hk: HataKaydi;
+            degisken nullable_satir: tamsayi = 0;
+            degisken nullable_sutun: tamsayi = 0;
+            eger dugum.ilk_jeton != 0 ise {
+                nullable_satir = dugum.ilk_jeton.satir;
+                nullable_sutun = dugum.ilk_jeton.sutun;
+            }
+            tani_olustur(&nullable_hk, 33, nullable_satir, nullable_sutun,
+                "FIX13 HATA: Nullable pointer erisimi kontrolsuz".ptr, 0);
+            hata_kaydi_yazdir(&nullable_hk);
+            hata_rapor_et(motor);
+            dondu motor.tip_bilinmiyor;
+        }
+        degisken st_ast: *AstDugum = 0;
+        eger struct_tipi.kategori == KAT_YAPI veya struct_tipi.pointer_seviyesi > 0 ise {
+            degisken s_tanim: *SembolGirdisi = sembol_ara_hash(motor, struct_tipi.temel_id);
+            eger s_tanim != 0 ve s_tanim.ast_tanimi != 0 ise {
+                st_ast = s_tanim.ast_tanimi;
+            }
+        }
+        eger st_ast == 0 ise {
+            st_ast = tc_struct_tanimi_bul(motor, dugum.sol);
+        }
+        eger st_ast != 0 ve (st_ast.tip == AST_YAPI_TANIMI veya st_ast.tip == 16) ise {
+            eger dugum.sag != 0 ise {
+                degisken dsag_j: *Jeton = dugum.sag.ilk_jeton;
+                eger dsag_j != 0 ise {
+                    degisken alan_adi_hash: tamsayi = djb2_sembol(dsag_j.baslangic, dsag_j.uzunluk);
+                    degisken f_iter: *AstDugum = st_ast.sol;
+                    degisken alan_bulundu: tamsayi = 0;
+                    degisken alan_off: tamsayi = 0;
+                    dongu f_iter != 0 {
+                        degisken f_iter_j: *Jeton = f_iter.ilk_jeton;
+                        eger f_iter_j != 0 ise {
+                            eger (f_iter_j.uzunluk == dsag_j.uzunluk ve
+                                  bellek_esit_mi(f_iter_j.baslangic, dsag_j.baslangic, dsag_j.uzunluk) == 1) ise {
+                                alan_bulundu = 1;
+                                dugum.dizi_boyutu = alan_off;
+                                degisken ft: *TipBilgisi = tip_dugumunden_coz(motor, f_iter);
+                                eger ft == 0 ise { dondu motor.tip_bilinmiyor; }
+                                dondu ft;
+                            }
+                        }
+                        degisken f_sz: tamsayi = 8;
+                        eger f_iter.dizi_boyutu > 0 ise { f_sz = f_iter.dizi_boyutu * 8; }
+                        alan_off = alan_off + f_sz;
+                        f_iter = f_iter.sonraki;
+                    }
+                    eger alan_bulundu == 0 ise {
+                        degisken hk_field: HataKaydi;
+                        tani_olustur(&hk_field, 1, dsag_j.satir, dsag_j.sutun, "Struct icinde boyle bir alan tanimli degil".ptr, 0);
+                        hk_field.isaret_uzunluk = dsag_j.uzunluk;
+                        hata_kaydi_yazdir(&hk_field);
+                        hata_rapor_et(motor);
+                        motor.tanimsiz_hata_sayisi = motor.tanimsiz_hata_sayisi + 1;
+                        dondu motor.tip_bilinmiyor;
+                    }
+                }
+            }
+        }
+        dondu motor.tip_tamsayi;
+    }
+
+    eger dugum.tip == AST_INDEKS_ERISIMI ise {
+        degisken dizi_tip: *TipBilgisi = tip_cikar(motor, dugum.sol);
+        tip_cikar(motor, dugum.sag);
+        eger dizi_tip == 0 ise { dondu motor.tip_bilinmiyor; }
+        # FIX-13: nullable pointer indeks erişimi, narrowing yapılmadan reddedilir.
+        eger dizi_tip.nullable == 1 ve dizi_tip.pointer_seviyesi > 0 ve
+            (g_nullable_guard_gecersiz == 1 veya nullable_guard_eslesiyor(dugum.sol) == 0) ise {
+            degisken nullable_indeks_hk: HataKaydi;
+            degisken nullable_indeks_satir: tamsayi = 0;
+            degisken nullable_indeks_sutun: tamsayi = 0;
+            eger dugum.ilk_jeton != 0 ise {
+                nullable_indeks_satir = dugum.ilk_jeton.satir;
+                nullable_indeks_sutun = dugum.ilk_jeton.sutun;
+            }
+            tani_olustur(&nullable_indeks_hk, 33, nullable_indeks_satir, nullable_indeks_sutun,
+                "FIX13 HATA: Nullable pointer erisimi kontrolsuz".ptr, 0);
+            hata_kaydi_yazdir(&nullable_indeks_hk);
+            hata_rapor_et(motor);
+            dondu motor.tip_bilinmiyor;
+        }
+        eger dizi_tip.dizi_boyutu > 0 ise {
+            degisken sabit_indeks_var: tamsayi = 0;
+            degisken sabit_indeks: tamsayi = 0;
+            eger dugum.sag != 0 ise {
+                eger dugum.sag.tip == AST_SAYI ve dugum.sag.ilk_jeton != 0 ise {
+                    sabit_indeks = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                    sabit_indeks_var = 1;
+                } yoksa eger dugum.sag.tip == AST_UNARY ve dugum.sag.ilk_jeton != 0 ve
+                    (dugum.sag.ilk_jeton.tip == TIP_EKSI veya dugum.sag.ilk_jeton.baslangic[0] == 45) ve
+                    dugum.sag.sag != 0 ve dugum.sag.sag.tip == AST_SAYI ve dugum.sag.sag.ilk_jeton != 0 ise {
+                    sabit_indeks = 0 - string_tamsayiya(dugum.sag.sag.ilk_jeton.baslangic, dugum.sag.sag.ilk_jeton.uzunluk);
+                    sabit_indeks_var = 1;
+                }
+            }
+            eger sabit_indeks_var == 1 ise {
+                eger sabit_indeks < 0 veya sabit_indeks >= dizi_tip.dizi_boyutu ise {
+                    degisken oob_hk: HataKaydi;
+                    degisken oob_satir: tamsayi = 0;
+                    degisken oob_sutun: tamsayi = 0;
+                    eger dugum.sag != 0 ve dugum.sag.ilk_jeton != 0 ise {
+                        oob_satir = dugum.sag.ilk_jeton.satir;
+                        oob_sutun = dugum.sag.ilk_jeton.sutun;
+                    } yoksa eger dugum.ilk_jeton != 0 ise {
+                        oob_satir = dugum.ilk_jeton.satir;
+                        oob_sutun = dugum.ilk_jeton.sutun;
+                    }
+                    tani_olustur(&oob_hk, 48, oob_satir, oob_sutun,
+                        "SAFETY HATA: Sabit dizi indeks siniri asildi (fixed-size array index out of bounds)".ptr, 0);
+                    hata_kaydi_yazdir(&oob_hk);
+                    hata_rapor_et(motor);
+                }
+            }
+            degisken it2: *TipBilgisi = yeni_tip(motor.arena, dizi_tip.kategori, dizi_tip.temel_id, dizi_tip.pointer_seviyesi, 0);
+            eger it2 == 0 ise { dondu motor.tip_bilinmiyor; }
+            it2.nominal_id = dizi_tip.nominal_id;
+            it2.ic_tip = dizi_tip.ic_tip;
+            dondu it2;
+        }
+        eger dizi_tip.pointer_seviyesi > 0 ise {
+            degisken it: *TipBilgisi = yeni_tip(motor.arena, dizi_tip.kategori, dizi_tip.temel_id, dizi_tip.pointer_seviyesi - 1, 0);
+            eger it == 0 ise { dondu motor.tip_bilinmiyor; }
+            it.nominal_id = dizi_tip.nominal_id;
+            it.ic_tip = dizi_tip.ic_tip;
+            dondu it;
+        }
+        eger dizi_tip.temel_id == TIP_ID_U8 veya dizi_tip.temel_id == TIP_ID_TAMSAYI ise {
+            dondu motor.tip_u8;
+        }
+        dondu motor.tip_bilinmiyor;
+    }
+
+    eger dugum.tip == AST_YAPI_TANIMI ise {
+        # Pointer olmayan bütün alan bağımlılıklarını tek DFS ile kontrol et.
+        # Böylece A->B->C->A gibi daha uzun layout döngüleri de yakalanır.
+        eger g_recursive_hatasi == 0 ise {
+            recursive_yapilari_kontrol_et(motor, dugum);
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_TRAIT_TANIM ise {
+        tc_trait_kaydet(dugum.ilk_jeton, dugum.govde);
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_TRAIT_UYGULAMA ise {
+        degisken hedef_j: *Jeton = 0;
+        eger dugum.sol != 0 ise { hedef_j = dugum.sol.ilk_jeton; }
+        tc_trait_uygulamasi_dogrula(motor, dugum.ilk_jeton, hedef_j, dugum.govde);
+        degisken m_it: *AstDugum = dugum.govde;
+        dongu m_it != 0 {
+            tip_cikar(motor, m_it);
+            m_it = m_it.sonraki;
+        }
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_GENERIC_TANIM ise {
+        dondu motor.tip_hic;
+    }
+
+    eger dugum.tip == AST_COMPTIME ise {
+        dondu tip_cikar(motor, dugum.sol);
+    }
+
+    eger dugum.tip == AST_MAKRO_TANIMI veya dugum.tip == AST_MAKRO_CAGRISI ise {
+        dondu motor.tip_bilinmiyor;
+    }
+
+    dondu motor.tip_bilinmiyor;
+}
+
+# Yalnizca deger konumunda kaydedilmis tek bir tanimsiz kimligi 0 sabitine cevirir.
+# Pointer, referans, alan, indeks ve fonksiyon adi konumlari kaydedilmez.
+isv typechecker_self_heal_dene(motor: *TipMotoru) -> tamsayi {
+    eger motor == 0 veya motor.self_heal_adayi == 0 ise { dondu 0; }
+    eger motor.tanimsiz_hata_sayisi <= 0 veya motor.tip_uyumsuz_hata_sayisi > 0 veya
+       motor.donus_hata_sayisi > 0 veya motor.tanimsiz_hata_sayisi != motor.hata_sayisi ise {
+        dondu 0;
+    }
+    degisken aday: *AstDugum = motor.self_heal_adayi;
+    eger aday.ilk_jeton == 0 ise { dondu 0; }
+    aday.tip = AST_SAYI;
+    aday.ilk_jeton.tip = TIP_TAMSAYI;
+    aday.ilk_jeton.baslangic = "0".ptr;
+    aday.ilk_jeton.uzunluk = 1;
+    aday.son_jeton = aday.ilk_jeton;
+    ekrana_yaz("[AI] Self-heal: tanimsiz sembol 0 sabitine donusturuldu.\n".ptr);
+    dondu 1;
+}
+
+isv runtime_builtin_ekle(motor: *TipMotoru, isim: *u8, uzunluk: tamsayi, donus: *TipBilgisi) {
+    eger motor == 0 veya isim == 0 veya uzunluk <= 0 veya motor.guncel_kapsam == 0 ise { dondu; }
+    degisken j: *Jeton = compiler_tahsis_et(40);
+    eger j == 0 ise { dondu; }
+    j.tip = TIP_KIMLIK;
+    j.baslangic = isim;
+    j.uzunluk = uzunluk;
+    j.satir = 0;
+    j.sutun = 0;
+    sembol_ekle(motor, j, motor.tip_islev, donus, 0);
+}
+
+isv tip_denetimini_baslat_ve_don(arena: *AstArena, kok: *AstDugum) -> *TipMotoru {
+    eger arena == 0 ise { dondu 0; }
+    eger kok == 0 ise { dondu 0; }
+    g_nominal_liste = 0;
+    g_nominal_sayisi = 0;
+    g_recursive_hatasi = 0;
+    g_recursive_butce = 0;
+    g_tip_donusum_hatasi = 0;
+    g_typechecker_kapasite_hatasi = 0;
+    g_typechecker_kapasite_kodu = 0;
+    g_typechecker_sembol_sayisi = 0;
+    g_typechecker_kapsam_sayisi = 0;
+    g_genel_semboller_adet = 0;
+    g_async_islev_aktif = 0;
+    g_tc_trait_sayisi = 0;
+    g_tc_metod_toplam = 0;
+    g_tc_impl_sayisi = 0;
+
+    # Motoru arena uzerinde olustur
+    eger arena.kullanilan + 192 > arena.kapasite ise {
+        ekrana_yaz("HATA: Tip motoru icin yeterli alan yok!\n".ptr);
+        dondu 0;
+    }
+
+    degisken motor: *TipMotoru = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + 192;
+
+    motor.arena = arena;
+    motor.guncel_kapsam = 0;
+    motor.hata_sayisi = 0;
+    motor.guncel_donus_tipi = 0;
+    motor.tanimsiz_hata_sayisi = 0;
+    motor.tip_uyumsuz_hata_sayisi = 0;
+    motor.donus_hata_sayisi = 0;
+    motor.param_sayisi_hata_sayisi = 0;  # GOREV 2.2
+    motor.self_heal_adayi = 0;
+    motor.self_heal_deger_konteksti = 0;
+
+    motor.tip_tamsayi    = yeni_tip(arena, KAT_TEMEL, TIP_ID_TAMSAYI,    0, 0);
+    motor.tip_gercek     = yeni_tip(arena, KAT_TEMEL, TIP_ID_GERCEK,     0, 0);
+    motor.tip_metin      = yeni_tip(arena, KAT_TEMEL, TIP_ID_METIN,      0, 0);
+    motor.tip_mantik     = yeni_tip(arena, KAT_TEMEL, TIP_ID_MANTIK,     0, 0);
+    motor.tip_u8         = yeni_tip(arena, KAT_TEMEL, TIP_ID_U8,         0, 0);
+    motor.tip_islev      = yeni_tip(arena, KAT_TEMEL, TIP_ID_ISLEV,      1, 0);
+    motor.tip_hic        = yeni_tip(arena, KAT_TEMEL, TIP_ID_HIC,        0, 0);
+    motor.tip_sonuc      = yeni_tip(arena, KAT_YAPI, TIP_ID_SONUC,      0, 0);
+    motor.tip_bilinmiyor = yeni_tip(arena, KAT_TEMEL, TIP_ID_BILINMIYOR, 0, 0);
+
+    tc_builtin_traitleri_kaydet(motor);
+
+    eger motor.tip_bilinmiyor == 0 ise {
+        ekrana_yaz("HATA: Tip arenasi dolu!\n".ptr);
+        dondu 0;
+    }
+
+    motor.guncel_donus_tipi = motor.tip_hic;
+
+    kapsam_olustur(motor, 1024);
+
+    eger motor.guncel_kapsam == 0 ise {
+        ekrana_yaz("HATA: Global kapsam olusturulamadi!\n".ptr);
+        dondu 0;
+    }
+
+    # GOREV 5.2: Built-in makro isimlerini global kapsama onceden kaydet
+    # dogrula, ayikla, panik, boyut — codegen seviyesinde handle edilir
+    # typechecker sadece tanimi varmus gibi kabul etmeli
+    degisken builtin_isimleri: *u8 = compiler_tahsis_et(512);
+    degisken bi_off: tamsayi = 0;
+
+    # "dogrula" (7)
+    builtin_isimleri[bi_off+0]=100;builtin_isimleri[bi_off+1]=111;builtin_isimleri[bi_off+2]=103;
+    builtin_isimleri[bi_off+3]=114;builtin_isimleri[bi_off+4]=117;builtin_isimleri[bi_off+5]=108;
+    builtin_isimleri[bi_off+6]=97;
+    degisken j_dogrula: *Jeton = compiler_tahsis_et(40);
+    j_dogrula.tip = 9; j_dogrula.baslangic = builtin_isimleri + bi_off;
+    j_dogrula.uzunluk = 7; j_dogrula.satir = 0; j_dogrula.sutun = 0;
+    sembol_ekle(motor, j_dogrula, motor.tip_islev, motor.tip_tamsayi, 0);
+    bi_off = bi_off + 8;
+
+    # "ayikla" (6)
+    builtin_isimleri[bi_off+0]=97;builtin_isimleri[bi_off+1]=121;builtin_isimleri[bi_off+2]=105;
+    builtin_isimleri[bi_off+3]=107;builtin_isimleri[bi_off+4]=108;builtin_isimleri[bi_off+5]=97;
+    degisken j_ayikla: *Jeton = compiler_tahsis_et(40);
+    j_ayikla.tip = 9; j_ayikla.baslangic = builtin_isimleri + bi_off;
+    j_ayikla.uzunluk = 6; j_ayikla.satir = 0; j_ayikla.sutun = 0;
+    sembol_ekle(motor, j_ayikla, motor.tip_islev, motor.tip_tamsayi, 0);
+    bi_off = bi_off + 8;
+
+    # "panik" (5)
+    builtin_isimleri[bi_off+0]=112;builtin_isimleri[bi_off+1]=97;builtin_isimleri[bi_off+2]=110;
+    builtin_isimleri[bi_off+3]=105;builtin_isimleri[bi_off+4]=107;
+    degisken j_panik: *Jeton = compiler_tahsis_et(40);
+    j_panik.tip = 9; j_panik.baslangic = builtin_isimleri + bi_off;
+    j_panik.uzunluk = 5; j_panik.satir = 0; j_panik.sutun = 0;
+    sembol_ekle(motor, j_panik, motor.tip_islev, motor.tip_tamsayi, 0);
+    bi_off = bi_off + 8;
+
+    # "boyut" (5)
+    builtin_isimleri[bi_off+0]=98;builtin_isimleri[bi_off+1]=111;builtin_isimleri[bi_off+2]=121;
+    builtin_isimleri[bi_off+3]=117;builtin_isimleri[bi_off+4]=116;
+    degisken j_boyut: *Jeton = compiler_tahsis_et(40);
+    j_boyut.tip = 9; j_boyut.baslangic = builtin_isimleri + bi_off;
+    j_boyut.uzunluk = 5; j_boyut.satir = 0; j_boyut.sutun = 0;
+    sembol_ekle(motor, j_boyut, motor.tip_islev, motor.tip_tamsayi, 0);
+    bi_off = bi_off + 8;
+
+    # Tip isimleri de built-in identifier olarak kaydet:
+    # "tamsayi" (7), "gercek" (6), "metin" (5), "mantik" (6), "u8" (2)
+    # "u16" (3), "u32" (3), "u64" (3)
+    # tamsayi
+    builtin_isimleri[bi_off+0]=116;builtin_isimleri[bi_off+1]=97;builtin_isimleri[bi_off+2]=109;
+    builtin_isimleri[bi_off+3]=115;builtin_isimleri[bi_off+4]=97;builtin_isimleri[bi_off+5]=121;
+    builtin_isimleri[bi_off+6]=105;
+    degisken j_tamsayi: *Jeton = compiler_tahsis_et(40);
+    j_tamsayi.tip = 9; j_tamsayi.baslangic = builtin_isimleri + bi_off;
+    j_tamsayi.uzunluk = 7; j_tamsayi.satir = 0; j_tamsayi.sutun = 0;
+    sembol_ekle(motor, j_tamsayi, motor.tip_tamsayi, motor.tip_hic, 0);
+    bi_off = bi_off + 8;
+
+    # u8
+    builtin_isimleri[bi_off+0]=117;builtin_isimleri[bi_off+1]=56;
+    degisken j_u8: *Jeton = compiler_tahsis_et(40);
+    j_u8.tip = 9; j_u8.baslangic = builtin_isimleri + bi_off;
+    j_u8.uzunluk = 2; j_u8.satir = 0; j_u8.sutun = 0;
+    sembol_ekle(motor, j_u8, motor.tip_u8, motor.tip_hic, 0);
+    bi_off = bi_off + 8;
+
+    # gercek
+    builtin_isimleri[bi_off+0]=103;builtin_isimleri[bi_off+1]=101;builtin_isimleri[bi_off+2]=114;
+    builtin_isimleri[bi_off+3]=99;builtin_isimleri[bi_off+4]=101;builtin_isimleri[bi_off+5]=107;
+    degisken j_gercek: *Jeton = compiler_tahsis_et(40);
+    j_gercek.tip = 9; j_gercek.baslangic = builtin_isimleri + bi_off;
+    j_gercek.uzunluk = 6; j_gercek.satir = 0; j_gercek.sutun = 0;
+    sembol_ekle(motor, j_gercek, motor.tip_gercek, motor.tip_hic, 0);
+    bi_off = bi_off + 8;
+
+    # Derleyici/runtime ABI fonksiyonlari kullanıcı programı prototype
+    # vermese de typechecker tarafından bilinir; codegen bunları platforma
+    # göre inline veya IAT/syscall olarak üretir.
+    degisken ptr_u8: *TipBilgisi = yeni_tip(arena, KAT_TEMEL, TIP_ID_U8, 1, 0);
+    degisken ptr_hic: *TipBilgisi = yeni_tip(arena, KAT_TEMEL, TIP_ID_HIC, 1, 0);
+    runtime_builtin_ekle(motor, "bellek_tahsis_et".ptr, 16, ptr_hic);
+    runtime_builtin_ekle(motor, "os_bellek_tahsis".ptr, 16, ptr_hic);
+    runtime_builtin_ekle(motor, "compiler_tahsis_et".ptr, 19, ptr_hic);
+    runtime_builtin_ekle(motor, "bellek_kopyala".ptr, 14, ptr_u8);
+    runtime_builtin_ekle(motor, "bellek_doldur".ptr, 13, ptr_u8);
+    runtime_builtin_ekle(motor, "bellek_esit_mi".ptr, 14, motor.tip_tamsayi);
+    runtime_builtin_ekle(motor, "dosya_oku".ptr, 9, motor.tip_tamsayi);
+    runtime_builtin_ekle(motor, "diske_bas_ve_kapat".ptr, 18, motor.tip_tamsayi);
+    runtime_builtin_ekle(motor, "ekrana_yaz".ptr, 10, motor.tip_hic);
+    runtime_builtin_ekle(motor, "sayiyi_yazdir".ptr, 13, motor.tip_hic);
+    runtime_builtin_ekle(motor, "dosya_oku_aralik".ptr, 16, motor.tip_tamsayi);
+    runtime_builtin_ekle(motor, "komut_satiri_arg1".ptr, 17, ptr_u8);
+
+    degisken liste_koku: *AstDugum = kok;
+    eger kok != 0 ise {
+        eger kok.sol != 0 ise {
+            liste_koku = kok.sol;
+        }
+    }
+
+    degisken nominal_deklarasyon_sayisi: tamsayi = 0;
+    degisken nominal_iter: *AstDugum = liste_koku;
+    dongu nominal_iter != 0 {
+        eger nominal_iter.tip == AST_YAPI_TANIMI veya nominal_iter.tip == AST_ENUM_TANIMI ise {
+            nominal_deklarasyon_sayisi = nominal_deklarasyon_sayisi + 1;
+            eger nominal_deklarasyon_sayisi > 65536 ise {
+                typechecker_kapasite_reddet(4);
+                dondu motor;
+            }
+        }
+        nominal_iter = nominal_iter.sonraki;
+    }
+
+    ust_tip_adlarini_onceden_kaydet(motor, liste_koku);
+    ust_deklarasyonlari_topla(motor, liste_koku);
+
+    # Tek gecis: tam tip denetimi (forward declaration implicit — tip_cikar recursive)
+    degisken iter2: *AstDugum = liste_koku;
+    dongu iter2 != 0 {
+        g_generic_specialization_aktif = 0;
+        eger iter2.tip == AST_ISLEV ve iter2.ilk_jeton != 0 ise {
+            degisken fn_uz: tamsayi = iter2.ilk_jeton.uzunluk;
+            degisken fn_ptr: *u8 = iter2.ilk_jeton.baslangic;
+            degisken gi: tamsayi = 0;
+            dongu gi < fn_uz - 1 {
+                eger fn_ptr[gi] == 95 ve fn_ptr[gi + 1] == 95 ise {
+                    g_generic_specialization_aktif = 1;
+                    durdur;
+                }
+                gi = gi + 1;
+            }
+        }
+        tip_cikar(motor, iter2);
+        g_generic_specialization_aktif = 0;
+        iter2 = iter2.sonraki;
+    }
+
+    dondu motor;
+}
+
+# Geriye donuk uyumluluk icin eski imzayi koruyor
+isv tip_denetimini_baslat(arena: *AstArena, kok: *AstDugum) {
+    tip_denetimini_baslat_ve_don(arena, kok);
+}
+

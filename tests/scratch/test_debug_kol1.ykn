@@ -1,0 +1,15 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv ana() -> tamsayi {
+    ekrana_yaz("merhaba\n".ptr);
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken ptr_d: tamsayi = d;
+    degisken boy: tamsayi = d.boyut;
+    degisken uz: tamsayi = dizi_uzunluk<tamsayi>(d);
+    
+    # Bakalim hangisi 1439617?
+    eger ptr_d == 1439617 ise { dondu 11; }
+    eger boy == 1439617 ise { dondu 22; }
+    eger uz == 1439617 ise { dondu 33; }
+    dondu uz;
+}

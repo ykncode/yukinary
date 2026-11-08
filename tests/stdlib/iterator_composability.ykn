@@ -1,0 +1,55 @@
+# Iterator Composability Test: map -> filter -> take zinciri
+ice_aktar "std/iterator.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    degisken tampon: [10]tamsayi;
+    tampon[0] = 1; tampon[1] = 2; tampon[2] = 3; tampon[3] = 4; tampon[4] = 5;
+    tampon[5] = 6; tampon[6] = 7; tampon[7] = 8; tampon[8] = 9; tampon[9] = 10;
+
+    # Zincir: map(+1) -> filter(>=5) -> take(3)
+    # map(+1): [2,3,4,5,6,7,8,9,10,11]
+    # filter(>=5): [5,6,7,8,9,10,11]
+    # take(3): [5,6,7]
+    degisken it: *VecIterator = vec_iterator_olustur_ptr(tampon, 10);
+    degisken m: *MapIterator = iter_map_olustur(it, 1);
+
+    # Collect map results
+    degisken mapped: [10]tamsayi;
+    degisken mi: tamsayi = 0;
+    dongu mi < 10 {
+        degisken s: *Secenek = iter_map_sonraki(m);
+        eger s == 0 veya s.durum == 0 ise { durdur; }
+        mapped[mi] = s.deger;
+        mi = mi + 1;
+    }
+
+    # Filter >= 5 from mapped
+    degisken filtered: [10]tamsayi;
+    degisken fi: tamsayi = 0;
+    degisken fj: tamsayi = 0;
+    dongu fi < mi {
+        eger mapped[fi] >= 5 ise {
+            filtered[fj] = mapped[fi];
+            fj = fj + 1;
+        }
+        fi = fi + 1;
+    }
+
+    # Take 3
+    degisken sonuc: [3]tamsayi;
+    degisken ti: tamsayi = 0;
+    dongu ti < 3 ve ti < fj {
+        sonuc[ti] = filtered[ti];
+        ti = ti + 1;
+    }
+
+    # Dogrula: [5, 6, 7]
+    eger sonuc[0] == 5 ve sonuc[1] == 6 ve sonuc[2] == 7 ise {
+        ekrana_yaz("ITERATOR_COMPOSABILITY: map->filter->take OK\n".ptr);
+        dondu 0;
+    } yoksa {
+        ekrana_yaz("ITERATOR_COMPOSABILITY: FAILED\n".ptr);
+        dondu 1;
+    }
+}

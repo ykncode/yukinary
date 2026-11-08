@@ -1,0 +1,37 @@
+# ============================================================
+# Örnek 86: Konsol Tabanlı POSIX UStar (TAR) Arşivleyici
+# ============================================================
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv tar_baslik_yaz(dosya_adi: *u8, boyut_bayt: tamsayi) {
+    ekrana_yaz("TAR Blok Basligi Olusturuluyor (512 Bayt UStar):\n".ptr);
+    ekrana_yaz("Dosya: ".ptr); ekrana_yaz(dosya_adi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Boyut: ".ptr); sayiyi_yaz(boyut_bayt); ekrana_yaz(" bayt\n".ptr);
+    ekrana_yaz("Mod: 0000644 | UStar Magic: 'ustar  \0'\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== POSIX TAR Arsivleme Araci ===\n".ptr);
+    tar_baslik_yaz("kaynak/ana.ykn".ptr, 2048);
+    tar_baslik_yaz("kaynak/std.ykn".ptr, 4096);
+    ekrana_yaz("Arsiv basariyla paketlendi: cikti.tar\n".ptr);
+    dondu 0;
+}

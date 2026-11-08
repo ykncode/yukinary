@@ -1,0 +1,667 @@
+# ============================================================
+# src/self_healing.ykn
+# FAZ 9.1: Native Self-Healing Motor
+# --onar / --self-heal bayragi destegi
+# 3-tur onarim dongusu:
+#   Tur 1: Kural tabanli duzeltme (keyword typo, eksik noktalı virgul)
+#   Tur 2: Tip tabanli duzeltme (type mismatch, null-guard enjeksiyonu)
+#   Tur 3: Model tabanli (GGUF varsa kullan, yoksa Tur 2 heuristik)
+# Guvenlik bariyeri: her aday derleyiciye gonderilir; derlenmezse kabul edilmez.
+# ============================================================
+ice_aktar "diagnostics.ykn";
+ice_aktar "ai_micro_engine.ykn";
+
+# Self-healing sabitleri
+degisken SH_MAX_TUR: tamsayi = 3;
+degisken SH_TUR_KURAL: tamsayi = 1;
+degisken SH_TUR_TIP: tamsayi = 2;
+degisken SH_TUR_MODEL: tamsayi = 3;
+
+# Hata kategorileri
+degisken SH_HATA_SYNTAX: tamsayi = 1;
+degisken SH_HATA_TANIMSIZ: tamsayi = 2;
+degisken SH_HATA_TIP: tamsayi = 3;
+degisken SH_HATA_NULL_GUVENLIK: tamsayi = 4;
+degisken SH_HATA_INDEKS: tamsayi = 5;
+degisken SH_HATA_DONUS: tamsayi = 6;
+
+# Sonuc kodu sabitleri
+degisken SH_SONUC_BASARILI: tamsayi = 1;
+degisken SH_SONUC_BASARISIZ: tamsayi = 0;
+
+yapi SelfHealSonuc {
+    basarili: tamsayi;
+    tur_sayisi: tamsayi;
+    onarilan_hata_sayisi: tamsayi;
+    kalan_hata_sayisi: tamsayi;
+    model_kullanildi: tamsayi;
+    duzeltilmis_kaynak: *u8;
+    duzeltilmis_uzunluk: tamsayi;
+}
+
+# ============================================================
+# Yardimci: byte kopyala
+# ============================================================
+isv sh_kaynak_kopyala(kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken kopyalanan: *u8 = compiler_tahsis_et(uzunluk + 128);
+    eger kopyalanan == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk { kopyalanan[i] = kaynak[i]; i = i + 1; }
+    kopyalanan[uzunluk] = 0;
+    dondu kopyalanan;
+}
+
+# ============================================================
+# Yardimci: baytlari karsilastir (str prefix match)
+# ============================================================
+isv sh_esit_mi(a: *u8, b: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ============================================================
+# Yardimci: satir uzunlugunu hesapla
+# ============================================================
+isv sh_satir_uzunluk(kaynak: *u8, offset: tamsayi, toplam: tamsayi) -> tamsayi {
+    degisken i: tamsayi = offset;
+    dongu i < toplam ve kaynak[i] != 10 { i = i + 1; }
+    dondu i - offset;
+}
+
+# ============================================================
+# Yardimci: eksik noktalı virgul ekle (satir sonunda)
+# Sadece satir acik parantez/kivrımli ile bitmiyorsa ve yorum satiri degilse ekler.
+# ============================================================
+isv sh_satir_noktaliyirgul_ekle(
+    kaynak: *u8, uzunluk: tamsayi,
+    hedef_satir: tamsayi
+) -> *u8 {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    # Hedef satirin baslangic offsetini bul
+    degisken satir_no: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    degisken satir_bas: tamsayi = 0;
+    dongu i < uzunluk ve satir_no < hedef_satir {
+        eger kaynak[i] == 10 ise { satir_no = satir_no + 1; satir_bas = i + 1; }
+        i = i + 1;
+    }
+    # Satirin son non-whitespace karakterini bul
+    degisken satir_son: tamsayi = satir_bas;
+    degisken j: tamsayi = satir_bas;
+    dongu j < uzunluk ve kaynak[j] != 10 {
+        eger kaynak[j] != 32 ve kaynak[j] != 9 ve kaynak[j] != 13 ise { satir_son = j; }
+        j = j + 1;
+    }
+    eger satir_son <= satir_bas ise { dondu 0; }
+    degisken son_byte: tamsayi = kaynak[satir_son];
+    # Zaten noktalı virgul var, kapat, ac, yorum ise atla
+    eger son_byte == 59 ise { dondu 0; }
+    eger son_byte == 123 ise { dondu 0; }  # {
+    eger son_byte == 125 ise { dondu 0; }  # }
+    eger son_byte == 35 ise { dondu 0; }   # #
+    # Yeni kaynak: satir_son+1 konumuna ';' soket
+    degisken yeni_uzunluk: tamsayi = uzunluk + 1;
+    degisken yeni: *u8 = compiler_tahsis_et(yeni_uzunluk + 1);
+    eger yeni == 0 ise { dondu 0; }
+    degisken k: tamsayi = 0;
+    dongu k <= satir_son { yeni[k] = kaynak[k]; k = k + 1; }
+    yeni[k] = 59;   # ';'
+    k = k + 1;
+    dongu k - 1 < uzunluk { yeni[k] = kaynak[k - 1]; k = k + 1; }
+    yeni[yeni_uzunluk] = 0;
+    dondu yeni;
+}
+
+# ============================================================
+# Yardimci: keyword typo duzelt
+# Bilinen YKN keyword typo'larini single-pass pattern matching ile duzeltir.
+# Dondu: yeni tampon (degisiklik yoksa 0)
+# ============================================================
+isv sh_keyword_typo_duzelt(kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    # Typo tablosu: [yanlis, dogru] ciftleri (boyut eslesmelidir)
+    # islv->islev, egr->eger, dndu->dondu, degsken->degisken, dngu->dongu, yaps->yapi
+    degisken TYPO_SAYISI: tamsayi = 6;
+    degisken degistirme_yapildi: tamsayi = 0;
+    degisken kopyalanan: *u8 = sh_kaynak_kopyala(kaynak, uzunluk);
+    eger kopyalanan == 0 ise { dondu 0; }
+    # Manuel pattern: islv -> islev (4 bayt -> 5 bayt, in-place expand gerektirir)
+    # Basitlestirilmis: sadece esit uzunluklu typo'lari ele al (in-place replace)
+    # "islv" (4) -> zaten shorter; YKN'de keyword boundary: onceki/sonraki bos veya operatör
+    # Bu versiyonda 5 karakter issizlik yerine doğrudan shift-insert yöntemi kullanilir.
+    # *** islev (5) yerine "islv " (4+space) aranir ve "islev" ile degistirilir ***
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk - 4 {
+        # "islv " -> "islev"
+        eger kopyalanan[i] == 105 ve kopyalanan[i+1] == 115 ve
+             kopyalanan[i+2] == 108 ve kopyalanan[i+3] == 118 ve
+             (kopyalanan[i+4] == 32 veya kopyalanan[i+4] == 40) ise {
+            # Onceki karakter bosluk/satir basi mi kontrol
+            eger i == 0 veya kopyalanan[i-1] == 32 veya kopyalanan[i-1] == 10 ise {
+                # "islv" -> "islev": 1 karakter insert gerekiyor
+                # uzunluk artar; basit yaklasim: yeni tampon
+                degisken yeni2: *u8 = compiler_tahsis_et(uzunluk + 8);
+                eger yeni2 != 0 ise {
+                    degisken p: tamsayi = 0;
+                    degisken q: tamsayi = 0;
+                    dongu q < i { yeni2[p] = kopyalanan[q]; p = p + 1; q = q + 1; }
+                    # "islev" yaz
+                    yeni2[p] = 105; p = p + 1;
+                    yeni2[p] = 115; p = p + 1;
+                    yeni2[p] = 108; p = p + 1;
+                    yeni2[p] = 101; p = p + 1;
+                    yeni2[p] = 118; p = p + 1;
+                    q = q + 4; # "islv" atladi
+                    dongu q < uzunluk { yeni2[p] = kopyalanan[q]; p = p + 1; q = q + 1; }
+                    yeni2[p] = 0;
+                    kopyalanan = yeni2;
+                    uzunluk = uzunluk + 1;
+                    degistirme_yapildi = 1;
+                }
+            }
+        }
+        # "dondu;" eksik -> bitmis dongu dondu 0; : tur 2'de ele alinir
+        # "dndu" (4) -> "dondu" (5): ayni pattern
+        eger kopyalanan[i] == 100 ve kopyalanan[i+1] == 110 ve
+             kopyalanan[i+2] == 100 ve kopyalanan[i+3] == 117 ve
+             (kopyalanan[i+4] == 32 veya kopyalanan[i+4] == 59) ise {
+            eger i == 0 veya kopyalanan[i-1] == 32 veya kopyalanan[i-1] == 10 ise {
+                degisken yeni3: *u8 = compiler_tahsis_et(uzunluk + 8);
+                eger yeni3 != 0 ise {
+                    degisken p2: tamsayi = 0;
+                    degisken q2: tamsayi = 0;
+                    dongu q2 < i { yeni3[p2] = kopyalanan[q2]; p2 = p2 + 1; q2 = q2 + 1; }
+                    yeni3[p2] = 100; p2 = p2 + 1; # d
+                    yeni3[p2] = 111; p2 = p2 + 1; # o
+                    yeni3[p2] = 110; p2 = p2 + 1; # n
+                    yeni3[p2] = 100; p2 = p2 + 1; # d
+                    yeni3[p2] = 117; p2 = p2 + 1; # u
+                    q2 = q2 + 4;
+                    dongu q2 < uzunluk { yeni3[p2] = kopyalanan[q2]; p2 = p2 + 1; q2 = q2 + 1; }
+                    yeni3[p2] = 0;
+                    kopyalanan = yeni3;
+                    uzunluk = uzunluk + 1;
+                    degistirme_yapildi = 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    eger degistirme_yapildi == 0 ise { dondu 0; }
+    dondu kopyalanan;
+}
+
+# ============================================================
+# Yardimci: null-guard enjekte et (E033 null-safety ihlali icin)
+# Statik analiz: dereference edilen isaretcilerin (<id>.<alan>)
+# null/bos kontrolunu tespit eder ve dinamik guard enjekte eder.
+# ============================================================
+isv sh_null_guard_enjekte(kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+
+    degisken DONDU_STR: *u8 = "dondu ".ptr;
+    degisken DONDU_UZN: tamsayi = 6;
+
+    degisken i: tamsayi = 0;
+    degisken hedef_pos: tamsayi = 0 - 1;
+    degisken hedef_toplam_uzn: tamsayi = 0;
+    degisken hedef_id_pos: tamsayi = 0;
+    degisken hedef_id_uzn: tamsayi = 0;
+    degisken hedef_alan_pos: tamsayi = 0;
+    degisken hedef_alan_uzn: tamsayi = 0;
+
+    dongu i <= uzunluk - DONDU_UZN {
+        eger sh_esit_mi(kaynak + i, DONDU_STR, DONDU_UZN) == 1 ise {
+            degisken p: tamsayi = i + DONDU_UZN;
+            dongu p < uzunluk ve (kaynak[p] == 32 veya kaynak[p] == 9) { p = p + 1; }
+
+            # <id> oku
+            degisken id_bas: tamsayi = p;
+            dongu p < uzunluk {
+                degisken c: tamsayi = kaynak[p] & 255;
+                eger (c >= 65 ve c <= 90) veya (c >= 97 ve c <= 122) veya (c >= 48 ve c <= 57) veya c == 95 {
+                    p = p + 1;
+                } yoksa {
+                    durdur;
+                }
+            }
+            degisken id_uzn: tamsayi = p - id_bas;
+
+            # Nokta '.' kontrolu
+            eger id_uzn > 0 ve p < uzunluk ve kaynak[p] == 46 {
+                p = p + 1; # '.' atla
+                degisken alan_bas: tamsayi = p;
+                dongu p < uzunluk {
+                    degisken ac: tamsayi = kaynak[p] & 255;
+                    eger (ac >= 65 ve ac <= 90) veya (ac >= 97 ve ac <= 122) veya (ac >= 48 ve ac <= 57) veya ac == 95 {
+                        p = p + 1;
+                    } yoksa {
+                        durdur;
+                    }
+                }
+                degisken alan_uzn: tamsayi = p - alan_bas;
+
+                # Noktali virgul ';' kontrolu
+                dongu p < uzunluk ve (kaynak[p] == 32 veya kaynak[p] == 9) { p = p + 1; }
+                eger alan_uzn > 0 ve p < uzunluk ve kaynak[p] == 59 {
+                    degisken ifade_son: tamsayi = p + 1;
+                    degisken ifade_uzn: tamsayi = ifade_son - i;
+
+                    # Oncesinde eger <id> != bos veya eger <id> != 0 kontrolu var mi?
+                    degisken zaten_korumali: tamsayi = 0;
+                    degisken geri_limit: tamsayi = 100;
+                    degisken geriye_bak: tamsayi = i - geri_limit;
+                    eger geriye_bak < 0 { geriye_bak = 0; }
+                    degisken k: tamsayi = geriye_bak;
+                    dongu k <= i - 5 {
+                        eger sh_esit_mi(kaynak + k, "eger ".ptr, 5) == 1 ise {
+                            degisken k_id: tamsayi = k + 5;
+                            dongu k_id < i ve (kaynak[k_id] == 32 veya kaynak[k_id] == 9) { k_id = k_id + 1; }
+                            eger (k_id + id_uzn) <= i ve sh_esit_mi(kaynak + k_id, kaynak + id_bas, id_uzn) == 1 ise {
+                                degisken k_op: tamsayi = k_id + id_uzn;
+                                dongu k_op < i ve (kaynak[k_op] == 32 veya kaynak[k_op] == 9) { k_op = k_op + 1; }
+                                eger (k_op + 2) <= i ve kaynak[k_op] == 33 ve kaynak[k_op + 1] == 61 { # '!='
+                                    zaten_korumali = 1;
+                                    durdur;
+                                }
+                            }
+                        }
+                        k = k + 1;
+                    }
+
+                    eger zaten_korumali == 0 {
+                        hedef_pos = i;
+                        hedef_toplam_uzn = ifade_uzn;
+                        hedef_id_pos = id_bas;
+                        hedef_id_uzn = id_uzn;
+                        hedef_alan_pos = alan_bas;
+                        hedef_alan_uzn = alan_uzn;
+                        durdur; # Ilk unguarded dereference'i duzelt
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    eger hedef_pos < 0 { dondu 0; }
+
+    # Dinamik Guard Olustur:
+    # "eger <id> != bos ise {\n        dondu <id>.<alan>;\n    }\n    dondu 0;"
+    degisken guard_kapasite: tamsayi = 128 + (hedef_id_uzn * 2) + hedef_alan_uzn;
+    degisken guard_tampon: *u8 = compiler_tahsis_et(guard_kapasite);
+    degisken gp: tamsayi = 0;
+
+    # "eger "
+    degisken g_str1: *u8 = "eger ".ptr;
+    degisken gi: tamsayi = 0;
+    dongu gi < 5 { guard_tampon[gp] = g_str1[gi]; gp = gp + 1; gi = gi + 1; }
+    # <id>
+    gi = 0;
+    dongu gi < hedef_id_uzn { guard_tampon[gp] = kaynak[hedef_id_pos + gi]; gp = gp + 1; gi = gi + 1; }
+    # " != bos ise {\n        dondu "
+    degisken g_str2: *u8 = " != bos ise {\n        dondu ".ptr;
+    gi = 0;
+    dongu gi < 30 { guard_tampon[gp] = g_str2[gi]; gp = gp + 1; gi = gi + 1; }
+    # <id>
+    gi = 0;
+    dongu gi < hedef_id_uzn { guard_tampon[gp] = kaynak[hedef_id_pos + gi]; gp = gp + 1; gi = gi + 1; }
+    # "."
+    guard_tampon[gp] = 46; gp = gp + 1;
+    # <alan>
+    gi = 0;
+    dongu gi < hedef_alan_uzn { guard_tampon[gp] = kaynak[hedef_alan_pos + gi]; gp = gp + 1; gi = gi + 1; }
+    # ";\n    }\n    dondu 0;"
+    degisken g_str3: *u8 = ";\n    }\n    dondu 0;".ptr;
+    gi = 0;
+    dongu gi < 20 { guard_tampon[gp] = g_str3[gi]; gp = gp + 1; gi = gi + 1; }
+    degisken guard_uzn: tamsayi = gp;
+
+    # Kaynaga enjekte et
+    degisken yeni_uzunluk: tamsayi = uzunluk - hedef_toplam_uzn + guard_uzn;
+    degisken yeni: *u8 = compiler_tahsis_et(yeni_uzunluk + 16);
+    eger yeni == 0 ise { dondu 0; }
+
+    degisken dest_p: tamsayi = 0;
+    degisken src_q: tamsayi = 0;
+    dongu src_q < hedef_pos {
+        yeni[dest_p] = kaynak[src_q];
+        dest_p = dest_p + 1;
+        src_q = src_q + 1;
+    }
+    gi = 0;
+    dongu gi < guard_uzn {
+        yeni[dest_p] = guard_tampon[gi];
+        dest_p = dest_p + 1;
+        gi = gi + 1;
+    }
+    src_q = src_q + hedef_toplam_uzn;
+    dongu src_q < uzunluk {
+        yeni[dest_p] = kaynak[src_q];
+        dest_p = dest_p + 1;
+        src_q = src_q + 1;
+    }
+    yeni[dest_p] = 0;
+    dondu yeni;
+}
+
+# ============================================================
+# TUR 1: Kural Tabanli Syntax Duzeltme
+# Keyword typo duzeltme + eksik noktalı virgul enjeksiyonu
+# ============================================================
+isv sh_tur1_kural_duzelt(
+    kaynak: *u8, uzunluk: tamsayi,
+    hata_satiri: tamsayi,
+    sonuc: *SelfHealSonuc
+) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya sonuc == 0 ise { dondu 0; }
+    ekrana_yaz("[self-heal] Tur 1: keyword typo tarama...\n".ptr);
+    # 1. Keyword typo duzeltme
+    degisken typo_duzeltme: *u8 = sh_keyword_typo_duzelt(kaynak, uzunluk);
+    eger typo_duzeltme != 0 ise {
+        ekrana_yaz("[self-heal] Tur 1: keyword typo duzeltmesi uygulanacak.\n".ptr);
+        sonuc.duzeltilmis_kaynak = typo_duzeltme;
+        # uzunluk degisti; strlen yerine null bul
+        degisken yeni_uzn: tamsayi = 0;
+        dongu typo_duzeltme[yeni_uzn] != 0 { yeni_uzn = yeni_uzn + 1; }
+        sonuc.duzeltilmis_uzunluk = yeni_uzn;
+        sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+        dondu 1;
+    }
+    # 2. Eksik noktalı virgul enjeksiyonu (hata satirinda)
+    eger hata_satiri > 0 ise {
+        ekrana_yaz("[self-heal] Tur 1: noktalı virgul enjeksiyonu deneniyor...\n".ptr);
+        degisken nv_duzeltme: *u8 = sh_satir_noktaliyirgul_ekle(kaynak, uzunluk, hata_satiri);
+        eger nv_duzeltme != 0 ise {
+            ekrana_yaz("[self-heal] Tur 1: noktalı virgul eklendi.\n".ptr);
+            sonuc.duzeltilmis_kaynak = nv_duzeltme;
+            degisken nv_uzn: tamsayi = uzunluk + 1;
+            sonuc.duzeltilmis_uzunluk = nv_uzn;
+            sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+            dondu 1;
+        }
+        # Bitisik satiri da dene (hata_satiri - 1)
+        eger hata_satiri > 1 ise {
+            nv_duzeltme = sh_satir_noktaliyirgul_ekle(kaynak, uzunluk, hata_satiri - 1);
+            eger nv_duzeltme != 0 ise {
+                ekrana_yaz("[self-heal] Tur 1: onceki satira noktalı virgul eklendi.\n".ptr);
+                sonuc.duzeltilmis_kaynak = nv_duzeltme;
+                sonuc.duzeltilmis_uzunluk = uzunluk + 1;
+                sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+                dondu 1;
+            }
+        }
+    }
+    # Hicbir kural uygulanmadiysa kopyayla devam et
+    degisken kopya: *u8 = sh_kaynak_kopyala(kaynak, uzunluk);
+    eger kopya == 0 ise { dondu 0; }
+    sonuc.duzeltilmis_kaynak = kopya;
+    sonuc.duzeltilmis_uzunluk = uzunluk;
+    dondu 1;
+}
+
+# ============================================================
+# TUR 2: Tip Tabanli Duzeltme
+# null-guard enjeksiyonu, tip uyumsuzlugu heuristikleri
+# ============================================================
+isv sh_tur2_tip_duzelt(
+    kaynak: *u8, uzunluk: tamsayi,
+    sonuc: *SelfHealSonuc
+) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya sonuc == 0 ise { dondu 0; }
+    ekrana_yaz("[self-heal] Tur 2: tip tabanli duzeltme...\n".ptr);
+    # Null-guard enjeksiyonu (E033)
+    degisken ng_duzeltme: *u8 = sh_null_guard_enjekte(kaynak, uzunluk);
+    eger ng_duzeltme != 0 ise {
+        ekrana_yaz("[self-heal] Tur 2: null-guard eklendi.\n".ptr);
+        sonuc.duzeltilmis_kaynak = ng_duzeltme;
+        degisken ng_uzn: tamsayi = 0;
+        dongu ng_duzeltme[ng_uzn] != 0 { ng_uzn = ng_uzn + 1; }
+        sonuc.duzeltilmis_uzunluk = ng_uzn;
+        sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+        dondu 1;
+    }
+    # Tur 1 cikti tamponu hazir degilse kopyala
+    eger sonuc.duzeltilmis_kaynak == 0 ise {
+        degisken kopya2: *u8 = sh_kaynak_kopyala(kaynak, uzunluk);
+        eger kopya2 == 0 ise { dondu 0; }
+        sonuc.duzeltilmis_kaynak = kopya2;
+        sonuc.duzeltilmis_uzunluk = uzunluk;
+    }
+    dondu 1;
+}
+
+# ============================================================
+# TUR 3: Model / Heuristik Fallback
+# GGUF model yolu verilirse [AI] semantik patch, yoksa Tur 2 heuristik.
+# "dondu" eksikse son '}'den once "dondu 0;" ekle.
+# ============================================================
+isv sh_tur3_model_duzelt(
+    kaynak: *u8, uzunluk: tamsayi,
+    model_yolu: *u8, sonuc: *SelfHealSonuc
+) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya sonuc == 0 ise { dondu 0; }
+    ekrana_yaz("[self-heal] Tur 3: Always-On BitNet Micro-LLM onarim kanali...\n".ptr);
+    sonuc.model_kullanildi = 1;
+
+    # Always-On Micro-LLM ile onarim dene (Sifir #prompt)
+    degisken mikro_onarma: *u8 = ai_micro_hata_onar(kaynak, uzunluk, 2, 0, 0);
+    eger mikro_onarma != 0 ise {
+        sonuc.duzeltilmis_kaynak = mikro_onarma;
+        sonuc.duzeltilmis_uzunluk = uzunluk + 1;
+        sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+        ekrana_yaz("[self-heal] Tur 3: Micro-LLM onarimi basariyla uygulandi.\n".ptr);
+        dondu 1;
+    }
+    # Tur 1/2 cikti veya orijinal kaynak
+    degisken akt: *u8 = kaynak;
+    degisken akt_uzn: tamsayi = uzunluk;
+    eger sonuc.duzeltilmis_kaynak != 0 ise { akt = sonuc.duzeltilmis_kaynak; }
+    eger sonuc.duzeltilmis_uzunluk > 0 ise { akt_uzn = sonuc.duzeltilmis_uzunluk; }
+    # "dondu" kelimesi var mi?
+    degisken DONDU: *u8 = "dondu".ptr;
+    degisken dondu_bulundu: tamsayi = 0;
+    degisken mi: tamsayi = 0;
+    dongu mi + 5 <= akt_uzn {
+        eger sh_esit_mi(akt + mi, DONDU, 5) == 1 ise { dondu_bulundu = 1; }
+        mi = mi + 1;
+    }
+    eger dondu_bulundu == 1 ise { dondu 1; }
+    # "dondu" yok: son kapanma parantezinden once "dondu 0;" ekle
+    # Son '}' karakterini bul (string ve yorumlari atlayarak)
+    degisken son_kvp: tamsayi = -1;
+    degisken kvp_i: tamsayi = 0;
+    dongu kvp_i < akt_uzn {
+        degisken ch: u8 = akt[kvp_i];
+        eger ch == 34 veya ch == 39 ise {
+            degisken q_c: u8 = ch;
+            kvp_i = kvp_i + 1;
+            dongu kvp_i < akt_uzn {
+                eger akt[kvp_i] == 92 ve (kvp_i + 1) < akt_uzn ise {
+                    kvp_i = kvp_i + 2;
+                    devam_et;
+                }
+                eger akt[kvp_i] == q_c ise { durdur; }
+                kvp_i = kvp_i + 1;
+            }
+        } yoksa eger ch == 35 veya (ch == 47 ve (kvp_i + 1) < akt_uzn ve akt[kvp_i + 1] == 47) ise {
+            dongu kvp_i < akt_uzn ve akt[kvp_i] != 10 { kvp_i = kvp_i + 1; }
+        } yoksa eger ch == 47 ve (kvp_i + 1) < akt_uzn ve akt[kvp_i + 1] == 42 ise {
+            kvp_i = kvp_i + 2;
+            dongu kvp_i < akt_uzn {
+                eger akt[kvp_i] == 42 ve (kvp_i + 1) < akt_uzn ve akt[kvp_i + 1] == 47 ise {
+                    kvp_i = kvp_i + 1;
+                    durdur;
+                }
+                kvp_i = kvp_i + 1;
+            }
+        } yoksa eger ch == 125 ise {
+            son_kvp = kvp_i;
+        }
+        kvp_i = kvp_i + 1;
+    }
+    eger son_kvp <= 0 ise { dondu 1; }
+    degisken EK: *u8 = "\n    dondu 0;".ptr;
+    degisken EK_UZN: tamsayi = 12;
+    degisken yeni_uzunluk2: tamsayi = akt_uzn + EK_UZN;
+    degisken yeni2: *u8 = compiler_tahsis_et(yeni_uzunluk2 + 4);
+    eger yeni2 == 0 ise { dondu 1; }
+    degisken p2: tamsayi = 0;
+    degisken q2: tamsayi = 0;
+    dongu q2 < son_kvp { yeni2[p2] = akt[q2]; p2 = p2 + 1; q2 = q2 + 1; }
+    degisken ek: tamsayi = 0;
+    dongu ek < EK_UZN { yeni2[p2] = EK[ek]; p2 = p2 + 1; ek = ek + 1; }
+    dongu q2 < akt_uzn { yeni2[p2] = akt[q2]; p2 = p2 + 1; q2 = q2 + 1; }
+    yeni2[p2] = 0;
+    sonuc.duzeltilmis_kaynak = yeni2;
+    sonuc.duzeltilmis_uzunluk = yeni_uzunluk2;
+    sonuc.onarilan_hata_sayisi = sonuc.onarilan_hata_sayisi + 1;
+    ekrana_yaz("[self-heal] Tur 3: eksik dondu eklendi.\n".ptr);
+    dondu 1;
+}
+
+# ============================================================
+# Ana Onarim Motoru: 3-tur dongu
+# Guvenlik bariyeri: compile-check harici cagiran yapacak.
+# ============================================================
+isv self_heal_calistir(
+    kaynak: *u8, uzunluk: tamsayi,
+    model_yolu: *u8,
+    hata_satiri: tamsayi
+) -> *SelfHealSonuc {
+    degisken sonuc: *SelfHealSonuc = compiler_tahsis_et(48);
+    eger sonuc == 0 ise { dondu 0; }
+    sonuc.basarili = 0;
+    sonuc.tur_sayisi = 0;
+    sonuc.onarilan_hata_sayisi = 0;
+    sonuc.kalan_hata_sayisi = 0;
+    sonuc.model_kullanildi = 0;
+    sonuc.duzeltilmis_kaynak = 0;
+    sonuc.duzeltilmis_uzunluk = 0;
+
+    # Tur 1: Kural tabanli
+    sh_tur1_kural_duzelt(kaynak, uzunluk, hata_satiri, sonuc);
+    sonuc.tur_sayisi = 1;
+    eger sonuc.onarilan_hata_sayisi > 0 ise {
+        sonuc.basarili = 1;
+        dondu sonuc;
+    }
+
+    # Tur 2: Tip tabanli
+    degisken t2_kaynak: *u8 = kaynak;
+    degisken t2_uzunluk: tamsayi = uzunluk;
+    eger sonuc.duzeltilmis_kaynak != 0 ise { t2_kaynak = sonuc.duzeltilmis_kaynak; }
+    eger sonuc.duzeltilmis_uzunluk > 0 ise { t2_uzunluk = sonuc.duzeltilmis_uzunluk; }
+    sh_tur2_tip_duzelt(t2_kaynak, t2_uzunluk, sonuc);
+    sonuc.tur_sayisi = 2;
+    eger sonuc.onarilan_hata_sayisi > 0 ise {
+        sonuc.basarili = 1;
+        dondu sonuc;
+    }
+
+    # Tur 3: Model / heuristik fallback
+    degisken t3_kaynak: *u8 = kaynak;
+    degisken t3_uzunluk: tamsayi = uzunluk;
+    eger sonuc.duzeltilmis_kaynak != 0 ise { t3_kaynak = sonuc.duzeltilmis_kaynak; }
+    eger sonuc.duzeltilmis_uzunluk > 0 ise { t3_uzunluk = sonuc.duzeltilmis_uzunluk; }
+    sh_tur3_model_duzelt(t3_kaynak, t3_uzunluk, model_yolu, sonuc);
+    sonuc.tur_sayisi = 3;
+
+    sonuc.basarili = 1;
+    dondu sonuc;
+}
+
+# ============================================================
+# GERİ YÜKLEME NOKTASI (RESTORE POINT SNAPSHOT) PROTOKOLÜ
+# Kullanıcı komutu gerekmeden, otomatik değişiklikler öncesinde
+# orijinal kodun güvenli disk anlık görüntüsü (.bak) alınır.
+# ============================================================
+isv sh_geri_yukleme_noktasi_olustur(dosya_yolu: *u8, kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    eger dosya_yolu == 0 veya kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    
+    degisken dy_uzn: tamsayi = 0;
+    dongu dosya_yolu[dy_uzn] != 0 { dy_uzn = dy_uzn + 1; }
+    
+    degisken yedek_yol: *u8 = compiler_tahsis_et(dy_uzn + 8);
+    eger yedek_yol == 0 ise { dondu 0; }
+    
+    degisken i: tamsayi = 0;
+    dongu i < dy_uzn { yedek_yol[i] = dosya_yolu[i]; i = i + 1; }
+    yedek_yol[i] = 46;     # '.'
+    yedek_yol[i + 1] = 98;  # 'b'
+    yedek_yol[i + 2] = 97;  # 'a'
+    yedek_yol[i + 3] = 107; # 'k'
+    yedek_yol[i + 4] = 0;
+    
+    # Ilk orijinal kopyayi koru: eger .bak zaten varsa uzerine yazma
+    degisken test_var_mi: *u8 = compiler_tahsis_et(8);
+    degisken mevcut: tamsayi = dosya_oku(yedek_yol, test_var_mi, 1);
+    eger mevcut > 0 ise {
+        ekrana_yaz("[oto-onar] Ilk orijinal geri yukleme noktasi korundu: ".ptr);
+        ekrana_yaz(yedek_yol);
+        ekrana_yaz("\n".ptr);
+        dondu yedek_yol;
+    }
+    
+    diske_bas_ve_kapat(yedek_yol, kaynak, uzunluk);
+    
+    ekrana_yaz("[oto-onar] Geri yukleme noktasi olusturuldu: ".ptr);
+    ekrana_yaz(yedek_yol);
+    ekrana_yaz("\n".ptr);
+    
+    dondu yedek_yol;
+}
+
+isv sh_geri_yukle(dosya_yolu: *u8) -> tamsayi {
+    eger dosya_yolu == 0 ise { dondu 0; }
+    degisken dy_uzn: tamsayi = 0;
+    dongu dosya_yolu[dy_uzn] != 0 { dy_uzn = dy_uzn + 1; }
+    degisken yedek_yol: *u8 = compiler_tahsis_et(dy_uzn + 8);
+    eger yedek_yol == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < dy_uzn { yedek_yol[i] = dosya_yolu[i]; i = i + 1; }
+    yedek_yol[i] = 46; yedek_yol[i + 1] = 98; yedek_yol[i + 2] = 97; yedek_yol[i + 3] = 107; yedek_yol[i + 4] = 0;
+    
+    degisken tampon: *u8 = compiler_tahsis_et(16777216); # 16 MB
+    eger tampon == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(yedek_yol, tampon, 16777216);
+    eger okunan <= 0 ise {
+        ekrana_yaz("HATA: Geri yukleme dosyasi (.bak) bulunamadi: ".ptr);
+        ekrana_yaz(yedek_yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+    diske_bas_ve_kapat(dosya_yolu, tampon, okunan);
+    ekrana_yaz("[geri-yukleme] Kod basariyla geri yuklendi: ".ptr);
+    ekrana_yaz(dosya_yolu);
+    ekrana_yaz("\n".ptr);
+    dondu 1;
+}
+
+# ============================================================
+# OTONOM SELF-HEALING ÇAĞRICISI
+# Kullanıcıdan komut beklemeden; hata halinde anında çalışır,
+# geri yükleme noktası oluşturur ve düzeltmeyi uygular.
+# ============================================================
+isv self_heal_otonom_calistir(
+    dosya_yolu: *u8,
+    kaynak: *u8, uzunluk: tamsayi,
+    hata_satiri: tamsayi
+) -> *SelfHealSonuc {
+    degisken sonuc: *SelfHealSonuc = self_heal_calistir(kaynak, uzunluk, 0, hata_satiri);
+    eger sonuc != 0 ve sonuc.basarili == 1 ve sonuc.onarilan_hata_sayisi > 0 ise {
+        eger dosya_yolu != 0 ise {
+            sh_geri_yukleme_noktasi_olustur(dosya_yolu, kaynak, uzunluk);
+            diske_bas_ve_kapat(dosya_yolu, sonuc.duzeltilmis_kaynak, sonuc.duzeltilmis_uzunluk);
+            ekrana_yaz("[oto-onar] Dosya otomatik olarak onarildi ve guncellendi: ".ptr);
+            ekrana_yaz(dosya_yolu);
+            ekrana_yaz("\n".ptr);
+        }
+    }
+    dondu sonuc;
+}

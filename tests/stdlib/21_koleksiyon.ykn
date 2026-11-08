@@ -1,0 +1,105 @@
+ice_aktar "std/koleksiyon.ykn"
+
+# Ekrana yazdirma icin temel fonksiyon
+isv tamsayi_metne_test(n: tamsayi, buf: *u8) {
+    degisken gecici: [20]u8;
+    degisken i: tamsayi = 0;
+    degisken eksi: tamsayi = 0;
+    
+    eger n == 0 ise {
+        buf[0] = 48; # '0'
+        buf[1] = 0;
+        dondu;
+    }
+    
+    eger n < 0 ise {
+        eksi = 1;
+        n = 0 - n;
+    }
+    
+    dongu n > 0 {
+        gecici[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    
+    degisken j: tamsayi = 0;
+    eger eksi == 1 ise {
+        buf[0] = 45; # '-'
+        j = 1;
+    }
+    
+    dongu i > 0 {
+        i = i - 1;
+        buf[j] = gecici[i];
+        j = j + 1;
+    }
+    buf[j] = 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Dinamik dizi (koleksiyon) testi basliyor...\n".ptr);
+    
+    # 1. Dizi olusturma
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    
+    degisken ilk_uzunluk: tamsayi = dizi_uzunluk<tamsayi>(d);
+    eger ilk_uzunluk != 0 ise {
+        ekrana_yaz("HATA: Baslangic uzunlugu 0 degil! Deger: ".ptr);
+        degisken buf: [30]u8;
+        tamsayi_metne_test(ilk_uzunluk, buf);
+        ekrana_yaz(buf);
+        ekrana_yaz("\n".ptr);
+        dondu ilk_uzunluk;
+    }
+    
+    # 2. Diziye eleman ekleme (kapasite artisi tetiklenecek)
+    degisken i: tamsayi = 0;
+    dongu i < 15 {
+        dizi_ekle<tamsayi>(d, i * 10);
+        i = i + 1;
+    }
+    
+    degisken ikinci_uzunluk: tamsayi = dizi_uzunluk<tamsayi>(d);
+    eger ikinci_uzunluk != 15 ise {
+        ekrana_yaz("HATA: Uzunluk 15 olmali!\n".ptr);
+        dondu ikinci_uzunluk;
+    }
+    
+    # 3. Dizi elemanlarini okuma (bounds check dahil)
+    degisken eleman_5: tamsayi = dizi_al<tamsayi>(d, 5);
+    eger eleman_5 != 50 ise {
+        ekrana_yaz("HATA: 5. eleman 50 olmali!\n".ptr);
+        dondu dizi_uzunluk<tamsayi>(d);
+    }
+    
+    # 4. Diziden eleman silme (shift testi)
+    dizi_sil<tamsayi>(d, 5);
+    
+    degisken ucuncu_uzunluk: tamsayi = dizi_uzunluk<tamsayi>(d);
+    eger ucuncu_uzunluk != 14 ise {
+        ekrana_yaz("HATA: Uzunluk 14 olmali! Guncel: ".ptr);
+        degisken ubuf: [20]u8;
+        tamsayi_metne_test(ucuncu_uzunluk, ubuf);
+        ekrana_yaz(ubuf);
+        ekrana_yaz("\n".ptr);
+        dondu ucuncu_uzunluk;
+    }
+    
+    degisken yeni_eleman_5: tamsayi = dizi_al<tamsayi>(d, 5);
+    eger yeni_eleman_5 != 60 ise {
+        ekrana_yaz("HATA: Silme sonrasi 5. eleman 60 olmali!\n".ptr);
+        dondu ucuncu_uzunluk;
+    }
+    
+    # 5. Dizi temizleme
+    dizi_temizle<tamsayi>(d);
+    degisken dorduncu_uzunluk: tamsayi = dizi_uzunluk<tamsayi>(d);
+    eger dorduncu_uzunluk != 0 ise {
+        ekrana_yaz("HATA: Temizleme sonrasi uzunluk 0 olmali!\n".ptr);
+        dondu dorduncu_uzunluk;
+    }
+    
+    ekrana_yaz("Koleksiyon (Dinamik Dizi) testleri BASARILI!\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,49 @@
+# ============================================================
+# Örnek 35: Win32 Arayüzlü Partikül Fiziği ve Çarpışma Simülasyonu
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 5 Partikul Koordinatlari (X, Y) ve Hizlari (Vx, Vy)
+degisken g_px: [5]tamsayi;
+degisken g_py: [5]tamsayi;
+degisken g_vx: [5]tamsayi;
+degisken g_vy: [5]tamsayi;
+degisken g_yercekimi: tamsayi = 2;
+
+isv fizik_adimi() {
+    degisken i: tamsayi = 0;
+    dongu (i < 5) {
+        g_vy[i] = g_vy[i] + g_yercekimi;
+        g_px[i] = g_px[i] + g_vx[i];
+        g_py[i] = g_py[i] + g_vy[i];
+
+        # Taban carpisma kontrolu (Y >= 300 ise ziplat)
+        eger g_py[i] >= 300 ise {
+            g_py[i] = 300;
+            g_vy[i] = 0 - (g_vy[i] * 7 / 10); # Enerji kaybiyla sekme
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Fizik Simulasyonu".ptr, 600, 450);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Simulasyon Alani
+    metin_kutusu_olustur(p_h, 100, 20, 20, 540, 310);
+
+    # Kontroller
+    buton_olustur(p_h, "Simulasyonu Baslat".ptr, 201, 20, 350, 160, 40);
+    buton_olustur(p_h, "Partikul Ekle (+1)".ptr, 202, 190, 350, 160, 40);
+    buton_olustur(p_h, "Yercekimi Degistir".ptr, 203, 360, 350, 160, 40);
+
+    fizik_adimi();
+    ekrana_yaz("Partikul fizik motoru baslatildi (g=2).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

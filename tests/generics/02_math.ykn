@@ -1,0 +1,14 @@
+# FAZ 5 Test 2: Generic toplama fonksiyonu
+isv topla<T>(a: T, b: T) -> T {
+    dondu a + b;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken r: tamsayi = topla<tamsayi>(10, 32);
+    eger r == 42 ise {
+        ekrana_yaz("TEST 02 GENERICS: MATH OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 02 GENERICS: MATH FAILED\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,44 @@
+# ============================================================
+# Örnek 40: Win32 Arayüzlü Mandelbrot Fraktal Görüntüleyici
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv mandelbrot_noktasi(cr_fixed: tamsayi, ci_fixed: tamsayi, maks_iter: tamsayi) -> tamsayi {
+    # 1000 olcekli fixed-point aritmetik
+    degisken zr: tamsayi = 0;
+    degisken zi: tamsayi = 0;
+    degisken iter: tamsayi = 0;
+
+    dongu (iter < maks_iter) {
+        degisken zr2: tamsayi = (zr * zr) / 1000;
+        degisken zi2: tamsayi = (zi * zi) / 1000;
+        eger (zr2 + zi2) > 4000 ise { dondu iter; }
+
+        degisken iki_zr_zi: tamsayi = (2 * zr * zi) / 1000;
+        zr = zr2 - zi2 + cr_fixed;
+        zi = iki_zr_zi + ci_fixed;
+        iter = iter + 1;
+    }
+    dondu maks_iter;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Mandelbrot Fraktali".ptr, 650, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Fraktal Goruntuleme Alani
+    metin_kutusu_olustur(p_h, 100, 20, 20, 600, 380);
+
+    # Kontrol Butonlari (Yaklas, Uzaklas, Renk Temasi)
+    buton_olustur(p_h, "Yaklas (Zoom +)".ptr, 201, 20, 420, 140, 40);
+    buton_olustur(p_h, "Uzaklas (Zoom -)".ptr, 202, 170, 420, 140, 40);
+    buton_olustur(p_h, "Yeniden Hesapla".ptr, 203, 320, 420, 140, 40);
+
+    ekrana_yaz("Mandelbrot fraktal motoru hazir (Fixed-Point x1000).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

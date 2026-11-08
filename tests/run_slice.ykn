@@ -1,0 +1,39 @@
+ice_aktar "..\src\lexer.ykn";
+ice_aktar "..\src\ast.ykn";
+ice_aktar "..\src\parser.ykn";
+ice_aktar "..\src\macros.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken kod_buf: *u8 = bellek_tahsis_et(2097152);
+    degisken n: tamsayi = dosya_oku("tests\\temp_slice.ykn".ptr, kod_buf, 2097152);
+    degisken lx: *LexerState = bellek_tahsis_et(128);
+    lx.kaynak = kod_buf;
+    lx.dosya_boyutu = n;
+    lx.guncel_offset = 0;
+    lx.satir = 1;
+    lx.sutun = 1;
+    lx.jetonlar = bellek_tahsis_et(16777216);
+    lx.jeton_sayisi = 0;
+    lx.jeton_kapasite = 65536;
+    lx.pool = 0;
+    degisken js: tamsayi = tokenize_et(lx);
+    degisken arena: *AstArena = bellek_tahsis_et(128);
+    arena.bellek = bellek_tahsis_et(67108864);
+    arena.kapasite = 67108864;
+    arena.kullanilan = 0;
+    degisken pd: *ParserDurumu = bellek_tahsis_et(128);
+    pd.jetonlar = lx.jetonlar;
+    pd.jeton_sayisi = js;
+    pd.guncel_index = 0;
+    pd.arena = arena;
+    degisken ast: *AstDugum = parser_cozumle(pd);
+    degisken kural_mem: *MakroKural = bellek_tahsis_et(65536);
+    degisken motor: *MakroMotoru = bellek_tahsis_et(128);
+    motor.kurallar = kural_mem;
+    motor.kapasite = 1024;
+    motor.kayitli_sayi = 0;
+    motor.arena = arena;
+    makrolari_genislet(motor, ast);
+    ekrana_yaz("OK\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,10 @@
+# FIX-13 olumlu: ayni pointer icin nested guard daraltmayi korur.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        eger p != bos ise {
+            p[0] = 70;
+        }
+    }
+    dondu 0;
+}

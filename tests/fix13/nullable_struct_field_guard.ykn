@@ -1,0 +1,11 @@
+# FIX-13: nullable struct field guard ile kullanilabilir.
+yapi Kut { veri: ?*u8; }
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken k: Kut;
+    k.veri = bos;
+    eger k.veri != bos ise {
+        k.veri[0] = 1;
+    }
+    dondu 0;
+}

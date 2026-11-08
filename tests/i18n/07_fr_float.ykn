@@ -1,0 +1,12 @@
+# Test Francais: Type flottant
+fonction principal(argc: tamsayi, argv: **u8) -> tamsayi {
+    soit x: flottant = 12.5;
+    soit y: flottant = 2.5;
+    soit z: flottant = x / y;
+    si z == 5.0 alors {
+        ekrana_yaz("FR-FLOAT-PASS\n".ptr);
+    } sinon {
+        ekrana_yaz("FR-FLOAT-FAIL\n".ptr);
+    }
+    retour 0;
+}

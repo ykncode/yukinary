@@ -1,0 +1,10 @@
+# Negatif Test 03: Gecersiz Donus Tipi (tamsayi dondurmesi gerekirken metin dondurme)
+# Beklenen: TC HATA: Donus tipi uyumsuzlugu, derleme DURUR
+
+isv hesapla() -> tamsayi {
+    dondu "hatali metin";
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    dondu hesapla();
+}

@@ -1,0 +1,74 @@
+# ============================================================
+# FAZ 25: Saf Win32/DirectX GUI, Cizim Motoru & Bilesen Testi
+# ============================================================
+
+ice_aktar "std/gui/bilesenler.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # 1. 2D Framebuffer & Cizim Yuzeyi Testi
+    degisken yuzey: CizimYuzeyi;
+    degisken y_res: tamsayi = cizim_yuzeyi_olustur(&yuzey, 320, 240);
+    eger y_res != 0 veya yuzey.arabellek == 0 ise {
+        ekrana_yaz("YUZEY_OLUSTUR_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Arka plani gri (0xFF202020) ile doldur
+    cizim_temizle(&yuzey, 0xFF202020);
+
+    # 3. UI Paneli Olustur ve Ciz (x=20, y=20, w=280, h=200, mavi 0xFF104080)
+    degisken panel: UIBilesen;
+    ui_panel_olustur(&panel, 20, 20, 280, 200, 0xFF104080);
+    degisken p_ciz: tamsayi = ui_bilesen_ciz(&yuzey, &panel);
+    eger p_ciz != 0 ise {
+        ekrana_yaz("PANEL_CIZIM_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 4. UI Buton Olustur (x=50, y=50, w=120, h=40)
+    degisken buton: UIBilesen;
+    ui_buton_olustur(&buton, 50, 50, 120, 40, "Gonder".ptr, 6);
+    
+    # Hit-test Testi:
+    # 4.1 Buton disina tiklama (x=10, y=10) -> false olmali
+    degisken tik_dis: tamsayi = ui_bilesen_tiklama_dene(&buton, 10, 10);
+    eger tik_dis != 0 veya buton.tiklandi_mi != 0 ise {
+        ekrana_yaz("HIT_TEST_DIS_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 4.2 Buton icine tiklama (x=80, y=70) -> true olmali
+    degisken tik_ic: tamsayi = ui_bilesen_tiklama_dene(&buton, 80, 70);
+    eger tik_ic != 1 veya buton.tiklandi_mi != 1 ise {
+        ekrana_yaz("HIT_TEST_IC_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Butonu ciz (aktif/vurgulu renkle)
+    degisken b_ciz: tamsayi = ui_bilesen_ciz(&yuzey, &buton);
+    eger b_ciz != 0 ise {
+        ekrana_yaz("BUTON_CIZIM_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 6. Framebuffer piksel dogrulamasi
+    # Panel ici (x=25, y=25) mavi renk olmali
+    degisken p32: *tamsayi = yuzey.arabellek;
+    degisken panel_piksel_idx: tamsayi = (25 * yuzey.genislik) + 25;
+    degisken piksel_deger: tamsayi = p32[panel_piksel_idx];
+    eger piksel_deger != 0xFF104080 ise {
+        ekrana_yaz("PIKSEL_DOGRULAMA_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # Temizlik
+    cizim_yuzeyi_serbest_birak(&yuzey);
+    eger yuzey.arabellek != 0 ise {
+        ekrana_yaz("YUZEY_TEMIZLIK_HATA\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("NATIVE_GUI_ENGINE_PASS\n".ptr);
+    dondu 0;
+}
+

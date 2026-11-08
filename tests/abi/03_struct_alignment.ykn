@@ -1,0 +1,60 @@
+# tests/abi/03_struct_alignment.ykn
+# Struct Alignment, Padding and Displacement ABI Test
+
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+
+yapi KucukYapi {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+yapi KarmaYapi {
+    flag1: tamsayi;
+    sayi: tamsayi;
+    flag2: tamsayi;
+    nokta: *KucukYapi;
+}
+
+isv ana() -> tamsayi {
+    degisken ptr_karma: *u8 = bellek_tahsis_et(64);
+    degisken ptr_kucuk: *u8 = bellek_tahsis_et(32);
+    eger ptr_karma == 0 veya ptr_kucuk == 0 ise { dondu 1; }
+
+    degisken k: *KarmaYapi = ptr_karma;
+    degisken n: *KucukYapi = ptr_kucuk;
+
+    n.x = 100;
+    n.y = 200;
+
+    k.flag1 = 1;
+    k.sayi = 123456789;
+    k.flag2 = 2;
+    k.nokta = n;
+
+    eger k.flag1 != 1 ise {
+        ekrana_yaz("HATA: flag1 eslesmedi\n".ptr);
+        dondu 1;
+    }
+    eger k.sayi != 123456789 ise {
+        ekrana_yaz("HATA: sayi eslesmedi\n".ptr);
+        dondu 1;
+    }
+    eger k.flag2 != 2 ise {
+        ekrana_yaz("HATA: flag2 eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    degisken n_ref: *KucukYapi = k.nokta;
+    eger n_ref.x != 100 ise {
+        ekrana_yaz("HATA: n_ref.x eslesmedi\n".ptr);
+        dondu 1;
+    }
+    eger n_ref.y != 200 ise {
+        ekrana_yaz("HATA: n_ref.y eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("ABI_STRUCT_ALIGNMENT_PASS\n".ptr);
+    dondu 0;
+}

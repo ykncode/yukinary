@@ -1,0 +1,7 @@
+isv unknown_future(value: Future<MissingPayload>) -> tamsayi {
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

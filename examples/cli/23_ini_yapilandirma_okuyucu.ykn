@@ -1,0 +1,52 @@
+# ============================================================
+# Örnek 23: Konsol Tabanlı INI Yapılandırma Dosyası Okuyucu
+# ============================================================
+
+isv ini_satir_isle(satir: *u8) {
+    degisken i: tamsayi = 0;
+    eger satir[0] == 91 ise { # '[' Baslangici
+        ekrana_yaz(">>> BOLUM: ");
+        dongu (satir[i] != 0 ve satir[i] != 93) { # ']'
+            degisken b: [2]u8; b[0] = satir[i]; b[1] = 0;
+            ekrana_yaz(b);
+            i = i + 1;
+        }
+        ekrana_yaz("]\n".ptr);
+        dondu;
+    }
+
+    degisken esit_pos: tamsayi = 0 - 1;
+    dongu (satir[i] != 0) {
+        eger satir[i] == 61 ise { esit_pos = i; } # '='
+        i = i + 1;
+    }
+
+    eger esit_pos > 0 ise {
+        ekrana_yaz("  Ayar -> ");
+        degisken k: tamsayi = 0;
+        dongu (k < esit_pos) {
+            degisken b: [2]u8; b[0] = satir[k]; b[1] = 0;
+            ekrana_yaz(b);
+            k = k + 1;
+        }
+        ekrana_yaz(" : ");
+        k = esit_pos + 1;
+        dongu (satir[k] != 0 ve satir[k] != 10 ve satir[k] != 13) {
+            degisken b: [2]u8; b[0] = satir[k]; b[1] = 0;
+            ekrana_yaz(b);
+            k = k + 1;
+        }
+        ekrana_yaz("\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== INI Ayiklama Raporu ===\n".ptr);
+    ini_satir_isle("[sunucu]\n".ptr);
+    ini_satir_isle("ip=127.0.0.1\n".ptr);
+    ini_satir_isle("port=8080\n".ptr);
+    ini_satir_isle("[veritabani]\n".ptr);
+    ini_satir_isle("ad=yukinary_db\n".ptr);
+    ini_satir_isle("kullanici=root\n".ptr);
+    dondu 0;
+}

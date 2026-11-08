@@ -1,0 +1,80 @@
+# ============================================================
+# Örnek 16: Konsol Tabanlı Hızlı Sıralama (Quicksort) Algoritması
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_ekrana_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+degisken g_dizi: [10]tamsayi;
+
+isv degistir(i: tamsayi, j: tamsayi) {
+    degisken temp: tamsayi = g_dizi[i];
+    g_dizi[i] = g_dizi[j];
+    g_dizi[j] = temp;
+}
+
+isv bolumle(dusuk: tamsayi, yuksek: tamsayi) -> tamsayi {
+    degisken pivot: tamsayi = g_dizi[yuksek];
+    degisken i: tamsayi = dusuk - 1;
+    degisken j: tamsayi = dusuk;
+
+    dongu (j < yuksek) {
+        eger g_dizi[j] < pivot ise {
+            i = i + 1;
+            degistir(i, j);
+        }
+        j = j + 1;
+    }
+    degistir(i + 1, yuksek);
+    dondu i + 1;
+}
+
+isv hizli_sirala(dusuk: tamsayi, yuksek: tamsayi) {
+    eger dusuk < yuksek ise {
+        degisken pi: tamsayi = bolumle(dusuk, yuksek);
+        hizli_sirala(dusuk, pi - 1);
+        hizli_sirala(pi + 1, yuksek);
+    }
+}
+
+isv dizi_yazdir(n: tamsayi) {
+    degisken i: tamsayi = 0;
+    ekrana_yaz("[ ".ptr);
+    dongu (i < n) {
+        sayiyi_ekrana_yaz(g_dizi[i]);
+        ekrana_yaz(" ".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("]\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    g_dizi[0] = 64; g_dizi[1] = 25; g_dizi[2] = 12; g_dizi[3] = 22; g_dizi[4] = 11;
+    g_dizi[5] = 90; g_dizi[6] = 34; g_dizi[7] = 88; g_dizi[8] = 5;  g_dizi[9] = 71;
+
+    ekrana_yaz("Sirasiz Dizi: ".ptr);
+    dizi_yazdir(10);
+
+    hizli_sirala(0, 9);
+
+    ekrana_yaz("Sirali Dizi:\n".ptr);
+    dizi_yazdir(10);
+    dondu 0;
+}

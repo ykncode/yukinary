@@ -1,0 +1,6 @@
+# Harici Rust library directive codegen'e ulasirsa fail-closed olmali.
+#rs-lib "unsupported.rs";
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

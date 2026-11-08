@@ -1,0 +1,100 @@
+# ============================================================
+# tests/fix9/test_iterator.ykn
+# std/iterator.ykn test suiti:
+#   - aralik_olustur, aralik_var_mi, aralik_sonraki (Secenek)
+#   - vec_iterator_olustur_ptr, vec_iterator_sonraki
+#   - sayarak_iterator_sonraki (index+value)
+# Beklenen cikti: "ITERATOR TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/iterator.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- Aralik iterator: 0..5 ---
+    degisken arl: *Aralik = aralik_olustur(0, 5, 1);
+    eger arl == 0 ise {
+        ekrana_yaz("HATA: aralik_olustur null\n".ptr);
+        dondu 1;
+    }
+    degisken toplam: tamsayi = 0;
+    dongu aralik_var_mi(arl) == 1 {
+        degisken opt: *Secenek = aralik_sonraki(arl);
+        eger secenek_var_mi(opt) == 1 ise {
+            toplam = toplam + secenek_deger_al(opt, 0);
+        }
+    }
+    # 0+1+2+3+4 = 10
+    eger toplam != 10 ise {
+        ekrana_yaz("HATA: aralik toplam 10 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Aralik bitmis sonraki ---
+    degisken opt2: *Secenek = aralik_sonraki(arl);
+    eger secenek_yok_mu(opt2) != 1 ise {
+        ekrana_yaz("HATA: bitmis aralik YOK olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- aralik_0n ---
+    degisken arl2: *Aralik = aralik_0n(3);
+    eger arl2 == 0 ise {
+        ekrana_yaz("HATA: aralik_0n null\n".ptr);
+        dondu 1;
+    }
+    degisken say: tamsayi = 0;
+    dongu aralik_var_mi(arl2) == 1 {
+        aralik_sonraki(arl2);
+        say = say + 1;
+    }
+    eger say != 3 ise {
+        ekrana_yaz("HATA: aralik_0n 3 adim olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- VecIterator ---
+    degisken tampon: [4]tamsayi;
+    tampon[0] = 10; tampon[1] = 20; tampon[2] = 30; tampon[3] = 40;
+    degisken it: *VecIterator = vec_iterator_olustur_ptr(tampon, 4);
+    eger it == 0 ise {
+        ekrana_yaz("HATA: vec_iterator_olustur_ptr null\n".ptr);
+        dondu 1;
+    }
+    degisken toplam2: tamsayi = 0;
+    dongu vec_iterator_var_mi(it) == 1 {
+        degisken opt3: *Secenek = vec_iterator_sonraki(it);
+        eger secenek_var_mi(opt3) == 1 ise {
+            toplam2 = toplam2 + secenek_deger_al(opt3, 0);
+        }
+    }
+    # 10+20+30+40 = 100
+    eger toplam2 != 100 ise {
+        ekrana_yaz("HATA: vec_iterator toplam 100 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- SayarakIterator ---
+    degisken tampon2: [3]tamsayi;
+    tampon2[0] = 5; tampon2[1] = 10; tampon2[2] = 15;
+    degisken sit: *SayarakIterator = sayarak_iterator_olustur_ptr(tampon2, 3);
+    degisken out_idx: tamsayi = 0;
+    degisken out_val: tamsayi = 0;
+    degisken idx_toplam: tamsayi = 0;
+    degisken val_toplam: tamsayi = 0;
+    dongu sayarak_iterator_sonraki(sit, &out_idx, &out_val) == 1 {
+        idx_toplam = idx_toplam + out_idx;
+        val_toplam = val_toplam + out_val;
+    }
+    # idx: 0+1+2 = 3, val: 5+10+15 = 30
+    eger idx_toplam != 3 ise {
+        ekrana_yaz("HATA: sayarak idx_toplam 3 olmali\n".ptr);
+        dondu 1;
+    }
+    eger val_toplam != 30 ise {
+        ekrana_yaz("HATA: sayarak val_toplam 30 olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("ITERATOR TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

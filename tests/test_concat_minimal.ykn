@@ -1,0 +1,24 @@
+isv ekrana_yaz(m: *u8) {}
+
+isv ana() -> tamsayi {
+    # Test 1: basic string concat with + operator
+    degisken a: *u8 = "Merhaba ";
+    degisken b: *u8 = "Dunya!";
+    degisken c: *u8 = a + b;
+    eger c == 0 ise {
+        ekrana_yaz("FAIL: concat returned null\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("OK: concat result: ".ptr);
+    ekrana_yaz(c);
+    ekrana_yaz("\n".ptr);
+    
+    # Test 2: literal concat
+    degisken s: *u8 = "Hello" + " World";
+    ekrana_yaz("OK: literal concat: ".ptr);
+    ekrana_yaz(s);
+    ekrana_yaz("\n".ptr);
+    
+    ekrana_yaz("CONCAT-PASS\n".ptr);
+    dondu 0;
+}

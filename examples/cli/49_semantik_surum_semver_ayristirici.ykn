@@ -1,0 +1,52 @@
+# ============================================================
+# Örnek 97: Konsol Tabanlı SemVer 2.0.0 Sürüm Karşılaştırıcı
+# ============================================================
+
+yapi Surum {
+    major: tamsayi;
+    minor: tamsayi;
+    patch: tamsayi;
+}
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv surum_karsilastir(s1_maj: tamsayi, s1_min: tamsayi, s1_pat: tamsayi,
+                      s2_maj: tamsayi, s2_min: tamsayi, s2_pat: tamsayi) -> tamsayi {
+    eger s1_maj > s2_maj ise { dondu 1; }
+    eger s1_maj < s2_maj ise { dondu 0 - 1; }
+    eger s1_min > s2_min ise { dondu 1; }
+    eger s1_min < s2_min ise { dondu 0 - 1; }
+    eger s1_pat > s2_pat ise { dondu 1; }
+    eger s1_pat < s2_pat ise { dondu 0 - 1; }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== SemVer 2.0.0 Surum Karsilastirma ===\n".ptr);
+    degisken cmp: tamsayi = surum_karsilastir(2, 1, 0, 2, 0, 5);
+
+    ekrana_yaz("v2.1.0 ile v2.0.5 Karsilastirmasi: ".ptr);
+    eger cmp > 0 ise {
+        ekrana_yaz("v2.1.0 DAHA YENI (Upgrade Mevcut)\n".ptr);
+    } yoksa {
+        ekrana_yaz("Guncel ya da eski\n".ptr);
+    }
+    dondu 0;
+}

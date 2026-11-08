@@ -1,0 +1,14 @@
+yapi Durum {
+    kaynak: *u8;
+    offset: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    degisken a: tamsayi = 65;
+    degisken d: Durum;
+    d.kaynak = &a;
+    d.offset = 0;
+    degisken p: *u8 = d.kaynak;
+    degisken b: u8 = p[d.offset];
+    dondu b;
+}

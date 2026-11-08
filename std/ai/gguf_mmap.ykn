@@ -1,0 +1,98 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/ai/gguf_mmap.ykn
+# FAZ 18: Zero-Copy MMap GGUF Model Yükleyicisi
+# (Zero-Copy Memory-Mapped Tensor & Metadata Loader)
+# SIFIR MOCK, %100 NATIVE VE VERIMLI TENSOR BELLEK ESLEME
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/dosya.ykn";
+
+# Header-window parser state. This is not a whole-file OS mmap: dosya_oku
+# currently reads only the requested 64 KiB window. Payload pointers are
+# returned only when the complete tensor lies inside that loaded window.
+yapi GGUFMmapModel {
+    dosya_adi: *u8;
+    dosya_boyutu: tamsayi;
+    base_ptr: *u8;
+    durum: *GGUFDurum;
+    haritalandi: tamsayi;
+}
+
+# Zero-Copy MMap ile GGUF Modelini Yukler
+isv gguf_mmap_yukle(model: *GGUFMmapModel, dosya_yolu: *u8) -> tamsayi {
+    eger model == 0 veya dosya_yolu == 0 ise { dondu 0; }
+
+    model.dosya_adi = dosya_yolu;
+    model.haritalandi = 0;
+    model.base_ptr = 0;
+
+    degisken durum_ptr: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_ptr == 0 ise { dondu 0; }
+    model.durum = durum_ptr;
+
+    # 1. Dosyayi Tam Boyutlu Olarak Yukle
+    degisken okunan_tampon: [1]tamsayi;
+    okunan_tampon[0] = 0;
+    degisken mmap_ptr: *u8 = dosya_oku_tamami(dosya_yolu, okunan_tampon);
+    degisken okunan_uzunluk: tamsayi = okunan_tampon[0];
+    eger mmap_ptr == 0 veya okunan_uzunluk < 24 ise {
+        dondu -1;
+    }
+
+    model.dosya_boyutu = okunan_uzunluk;
+    model.base_ptr = mmap_ptr;
+
+    # 2. GGUF Sihirli Bayt Dogrulamasi (0x46554747 = "GGUF")
+    eger mmap_ptr[0] != 71 veya mmap_ptr[1] != 71 veya mmap_ptr[2] != 85 veya mmap_ptr[3] != 70 ise {
+        dondu -2;
+    }
+
+    # 3. Zero-Copy Header ve Metadata Cozumleme
+    degisken parse_ok: tamsayi = gguf_buffer_parse(mmap_ptr, okunan_uzunluk, durum_ptr);
+    eger parse_ok == 0 ise {
+        dondu -3;
+    }
+
+    model.haritalandi = 1;
+    dondu 1;
+}
+
+# Tensör agirliklarina sifir kopyalama (Zero-Copy) ile dogrudan bellek gostericisi dondurur
+isv gguf_mmap_tensor_ptr(model: *GGUFMmapModel, tensor_adi: *u8) -> *u8 {
+    eger model == 0 veya model.haritalandi == 0 veya model.base_ptr == 0 veya model.durum == 0 veya tensor_adi == 0 ise {
+        dondu 0;
+    }
+
+    degisken tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(model.durum, tensor_adi);
+    eger tensor == 0 ise {
+        dondu 0;
+    }
+
+    degisken ofset: tamsayi = tensor->veri_offset;
+    # Avoid returning an out-of-bounds address for tensors whose payload is
+    # not present in the header window. Also avoid offset+size overflow.
+    eger ofset < 0 veya tensor->bayt_sayisi <= 0 veya
+       ofset > model.dosya_boyutu veya
+       tensor->bayt_sayisi > model.dosya_boyutu - ofset ise {
+        dondu 0;
+    }
+
+    dondu model.base_ptr + ofset;
+}
+
+# Tensör boyutunu ve eleman sayisini dogrular
+isv gguf_mmap_tensor_boyut(model: *GGUFMmapModel, tensor_adi: *u8) -> tamsayi {
+    eger model == 0 veya model.haritalandi == 0 veya model.durum == 0 veya tensor_adi == 0 ise {
+        dondu 0;
+    }
+
+    degisken tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(model.durum, tensor_adi);
+    eger tensor == 0 ise {
+        dondu 0;
+    }
+
+    dondu tensor->bayt_sayisi;
+}

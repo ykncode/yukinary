@@ -1,0 +1,39 @@
+# ============================================================
+# Örnek 75: Win32 Şifre Gücü Ölçer GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv sifre_gucu_puanla(sifre: *u8) -> tamsayi {
+    degisken puan: tamsayi = 0;
+    degisken uzunluk: tamsayi = 0;
+    degisken var_sayi: tamsayi = 0;
+    degisken var_buyuk: tamsayi = 0;
+
+    dongu (sifre[uzunluk] != 0) {
+        degisken c: u8 = sifre[uzunluk];
+        eger c >= 48 ve c <= 57 ise { var_sayi = 1; }
+        eger c >= 65 ve c <= 90 ise { var_buyuk = 1; }
+        uzunluk = uzunluk + 1;
+    }
+
+    eger uzunluk >= 8 ise { puan = puan + 40; }
+    eger var_sayi == 1 ise { puan = puan + 30; }
+    eger var_buyuk == 1 ise { puan = puan + 30; }
+    dondu puan;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Sifre Guvenlik Testi".ptr, 360, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Sifre Giriş Kutusu
+    metin_kutusu_olustur(p_h, 10301, 40, 35, 260, 35);
+
+    # Test Butonu
+    buton_olustur(p_h, "GUCU TEST ET (%100)".ptr, 10310, 40, 95, 260, 45);
+
+    ekrana_yaz("Sifre gucu GUI baslatildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

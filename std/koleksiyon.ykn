@@ -1,0 +1,102 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/koleksiyon.ykn
+# Heap uzerinde dinamik boyutlu dizi (Dynamic Array / Vector)
+#
+# DIZI<T> BELLEK SOZLESMESI (Memory Contract):
+#   - dizi_olustur: basarisiz bellek tahsisinde panik tetikler.
+#   - dizi_ekle: kapasite dolunca 2x buyutme yapar; bellek OOM => panik.
+#   - dizi_al: sinir disi erisim => panik (bounds check aktif).
+#   - dizi_sil: sinir disi indeks => panik (bounds check aktif).
+#   - dizi_temizle: boyutu sifirlar, kapasite korunur (bellek serbest birakilmaz).
+#   - dizi_serbest_birak: tampon + Dizi struct'ini OS'e geri verir.
+#
+# HATA SOZLESMESI (Error Contract):
+#   - Null Dizi pointer'i -> panik (her fonksiyonda).
+#   - Sinir disi erisim -> panik (bounds check).
+#   - OOM (bellek_tahsis_et basarisi) -> panik.
+# ============================================================
+
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/os/common.ykn";
+
+# Dizi<T> sablonu (Generic Struct)
+yapi Dizi<T> {
+    tampon: *T;
+    boyut: tamsayi;
+    kapasite: tamsayi;
+}
+
+# Yeni, bos bir dinamik dizi olusturur (baslangic kapasitesi = 8).
+isv dizi_olustur<T>() -> *Dizi<T> {
+    degisken d: *Dizi<T> = bellek_tahsis_et(24);
+    eger d == 0 ise { panik("dizi_olustur: Bellek tahsisi basarisiz (OOM)!".ptr); }
+    d.boyut = 0;
+    d.kapasite = 8;
+    d.tampon = bellek_tahsis_et(d.kapasite * 8);
+    eger d.tampon == 0 ise { panik("dizi_olustur: Tampon bellek tahsisi basarisiz (OOM)!".ptr); }
+    dondu d;
+}
+
+# Diziye yeni bir eleman ekler. Eger kapasite dolduysa, alani 2 katina cikarir.
+isv dizi_ekle<T>(d: *Dizi<T>, eleman: T) {
+    eger d == 0 ise { panik("dizi_ekle: Dizi bos (null) olamaz!".ptr); }
+    eger d.boyut >= d.kapasite ise {
+        degisken yeni_kapasite: tamsayi = d.kapasite * 2;
+        degisken yeni_ptr: *T = bellek_tahsis_et(yeni_kapasite * 8);
+        eger yeni_ptr == 0 ise { panik("dizi_ekle: Kapasite artirma icin bellek tahsisi basarisiz (OOM)!".ptr); }
+        bellek_kopyala(yeni_ptr, d.tampon, d.boyut * 8);
+        d.tampon = yeni_ptr;
+        d.kapasite = yeni_kapasite;
+    }
+    d.tampon[d.boyut] = eleman;
+    d.boyut = d.boyut + 1;
+}
+
+# Belirtilen indeksteki elemani bounds-checking ile dondurur.
+isv dizi_al<T>(d: *Dizi<T>, indeks: tamsayi) -> T {
+    eger d == 0 ise { panik("dizi_al: Dizi bos (null) olamaz!".ptr); }
+    eger indeks < 0 veya indeks >= d.boyut ise {
+        panik("dizi_al: Indeks sinir disi (Bounds Check basarisiz)!".ptr);
+    }
+    dondu d.tampon[indeks];
+}
+
+# Belirtilen indeksteki elemani diziden siler; sonrasini sola kaydirir.
+isv dizi_sil<T>(d: *Dizi<T>, indeks: tamsayi) {
+    eger d == 0 ise { panik("dizi_sil: Dizi bos (null) olamaz!".ptr); }
+    eger indeks < 0 veya indeks >= d.boyut ise {
+        panik("dizi_sil: Indeks sinir disi (Bounds Check basarisiz)!".ptr);
+    }
+    degisken i: tamsayi = indeks;
+    dongu i < d.boyut - 1 {
+        d.tampon[i] = d.tampon[i + 1];
+        i = i + 1;
+    }
+    d.boyut = d.boyut - 1;
+}
+
+# Dizinin guncel boyutunu (eleman sayisini) dondurur.
+isv dizi_uzunluk<T>(d: *Dizi<T>) -> tamsayi {
+    eger d == 0 ise { dondu 0; }
+    dondu d.boyut;
+}
+
+# Dizinin elemanlarini siler (boyutunu sifirlar, kapasite ayni kalir).
+# NOT: Tampon bellek serbest birakilmaz; dizi_serbest_birak kullan.
+isv dizi_temizle<T>(d: *Dizi<T>) {
+    eger d != 0 ise {
+        d.boyut = 0;
+    }
+}
+
+# Dizi tamponunu ve struct'ini OS'e geri vererek serbest birakir.
+isv dizi_serbest_birak<T>(d: *Dizi<T>) {
+    eger d == 0 ise { dondu; }
+    eger d.tampon != 0 ise {
+        os_bellek_serbest(d.tampon);
+        d.tampon = 0;
+    }
+    d.boyut = 0;
+    d.kapasite = 0;
+    os_bellek_serbest(d);
+}

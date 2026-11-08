@@ -1,0 +1,71 @@
+# ============================================================
+# tests/os/test_baremetal_kernel.ykn
+# FAZ 63: Saf Yukinary Bare-Metal x86_64 Çekirdek Doğrulama Testi
+# Multiboot2, 64-bit Long Mode GDT/IDT, 4-Seviyeli Sayfalama (PML4) ve VGA/COM1
+# ============================================================
+
+ice_aktar "std/os/kernel_real/kmain.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 63: Saf Yukinary Bare-Metal Cekirdek Testi Basliyor...\n".ptr);
+
+    # 1. 4000 baytlik fiziksel VGA video bellegi (80x25 x 2 bayt)
+    degisken vram: *u8 = bellek_tahsis_et(4000);
+
+    # 2. Cekirdegi Multiboot sihirli sayisiyla baslat
+    degisken magic: tamsayi = 732849154; # 0x2BADB002 (Multiboot)
+    degisken cd: *CekirdekDurumu = yukinary_cekirdek_baslat(magic, vram);
+
+    eger cd.multiboot_gecerli != 1 ise {
+        ekrana_yaz("HATA: Multiboot sihirli sayisi gecersiz!\n".ptr);
+        dondu 1;
+    }
+    eger cd.baslatildi != 1 ise {
+        ekrana_yaz("HATA: Cekirdek baslatilamadi!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. 64-bit GDT ve IDT tablolarını doğrula
+    degisken g: *GdtTablosu = cd.gdt;
+    degisken g_girdiler: *tamsayi = g.girdiler;
+    eger g == 0 veya g_girdiler[1] == 0 ise {
+        ekrana_yaz("HATA: 64-bit Kernel Code GDT segmenti kurulamadi!\n".ptr);
+        dondu 3;
+    }
+
+    degisken idt_tab: *IdtTablosu = cd.idt;
+    eger idt_tab == 0 veya idt_tab.kapi_sayisi != 256 ise {
+        ekrana_yaz("HATA: 256 kapili IDT tablosu kurulamadi!\n".ptr);
+        dondu 4;
+    }
+
+    # 4. 4-Seviyeli Sayfalama (PML4) ve CR3 Kontrolü
+    degisken pg: *SayfalamaMotoru = cd.sayfalama;
+    eger pg == 0 veya pg.cr3_degeri == 0 ise {
+        ekrana_yaz("HATA: PML4 Sayfalama motoru veya CR3 kurulamadi!\n".ptr);
+        dondu 5;
+    }
+
+    # 5. COM1 Seri Port Başlatma Kontrolü
+    degisken sp: *SeriPortDurumu = cd.seri;
+    eger sp == 0 veya sp.baslatildi != 1 ise {
+        ekrana_yaz("HATA: COM1 seri port donanimi baslatilamadi!\n".ptr);
+        dondu 6;
+    }
+
+    # 6. VGA VRAM icerigini dogrula (Satir 2, Sutun 10 ofseti = (2 * 80 + 10) * 2 = 340)
+    # Metin: "Yukinary" -> 'Y' (89), 'u' (117), 'k' (107)
+    degisken ofset: tamsayi = 340;
+    eger vram[ofset] != 89 veya vram[ofset + 2] != 117 veya vram[ofset + 4] != 107 ise {
+        ekrana_yaz("HATA: VRAM metin ciktisi 'Yukinary' ile eslesmedi!\n".ptr);
+        dondu 7;
+    }
+    # Renk kodu 10 (Yesil) olmali
+    eger vram[ofset + 1] != 10 ise {
+        ekrana_yaz("HATA: VRAM renk kodu 10 olmali!\n".ptr);
+        dondu 8;
+    }
+
+    ekrana_yaz("BAREMETAL_KERNEL_PASS\n".ptr);
+    dondu 0;
+}

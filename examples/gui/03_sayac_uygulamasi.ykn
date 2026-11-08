@@ -1,0 +1,40 @@
+# ============================================================
+# Örnek 53: Win32 Tıklama Sayacı Uygulaması (Click Counter)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_sayac_degeri: tamsayi = 0;
+
+isv sayac_arttir() {
+    g_sayac_degeri = g_sayac_degeri + 1;
+    ekrana_yaz("Sayac Guncellendi: ".ptr);
+    sayiyi_ekrana_yaz(g_sayac_degeri);
+    ekrana_yaz("\n".ptr);
+}
+
+isv sayac_azalt() {
+    g_sayac_degeri = g_sayac_degeri - 1;
+    ekrana_yaz("Sayac Guncellendi: ".ptr);
+    sayiyi_ekrana_yaz(g_sayac_degeri);
+    ekrana_yaz("\n".ptr);
+}
+
+isv sayac_sifirla() {
+    g_sayac_degeri = 0;
+    ekrana_yaz("Sayac Sifirlandi: 0\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Tiklama Sayaci".ptr, 320, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Butonlar
+    buton_olustur(p_h, "+1 Arttir".ptr, 1001, 30, 40, 110, 45);
+    buton_olustur(p_h, "-1 Azalt".ptr, 1002, 160, 40, 110, 45);
+    buton_olustur(p_h, "Sifirla".ptr, 1003, 95, 110, 110, 45);
+
+    ekrana_yaz("Sayac penceresi acildi. Hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

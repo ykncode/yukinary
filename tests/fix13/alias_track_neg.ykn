@@ -1,0 +1,10 @@
+# FIX-13 NEGATIF: alias uzerinden null atama sonrasi orijinalden erisim — E033 beklenir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        degisken q: ?*u8 = p;
+        q = bos;
+        dondu p[0];
+    }
+    dondu 0;
+}

@@ -1,0 +1,44 @@
+# ============================================================
+# Örnek 34: Win32 Arayüzlü Kripto Varlık Cüzdanı
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_bakiye_ykn: tamsayi = 1250;
+degisken g_bakiye_sats: tamsayi = 450000;
+
+isv transfer_et(hedef: *u8, miktar: tamsayi) -> tamsayi {
+    eger miktar > g_bakiye_ykn ise {
+        ekrana_yaz("Yetersiz bakiye!\n".ptr);
+        dondu 0;
+    }
+    g_bakiye_ykn = g_bakiye_ykn - miktar;
+    ekrana_yaz("Transfer basarili. Kalan bakiye guncellendi.\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Kripto Cuzdan".ptr, 580, 460);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Bakiye ve Adres Kutusu
+    metin_kutusu_olustur(p_h, 101, 30, 20, 510, 90);
+
+    # Transfer Alanlari (Hedef Adres ve Miktar)
+    metin_kutusu_olustur(p_h, 102, 30, 130, 360, 35);
+    metin_kutusu_olustur(p_h, 103, 400, 130, 140, 35);
+
+    # Butonlar
+    buton_olustur(p_h, "Gonder (Transfer)".ptr, 201, 30, 180, 180, 40);
+    buton_olustur(p_h, "Yeni Adres Uret".ptr, 202, 230, 180, 180, 40);
+
+    # Islem Gecmisi (Tx History)
+    metin_kutusu_olustur(p_h, 301, 30, 240, 510, 160);
+
+    ekrana_yaz("Cuzdan hazir. Mevcut YKN Bakiye: 1250\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

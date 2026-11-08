@@ -1,0 +1,536 @@
+# ============================================================
+# src/cache.ykn
+# FAZ 6.2: Incremental Compilation Cache System
+# - Layout: Partitioned cache (.ykn_cache_parse, tc, ir, obj)
+# - Header: Magic 'YKNC', version, stage, fingerprint, payload length & SHA-256
+# - Invalidation: source, imported module, compiler version, target platform, stdlib
+# - Concurrency lock: Exclusive file lock for safe multi-process builds
+# - Corruption recovery: Automatic detection, log warning, purge and fallback
+# - Hit/miss reporting: Detailed stage metrics
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+harici isv ekrana_yaz(mesaj: *u8);
+
+# ============================================================
+# Sabitler & Durum Kodlari
+# ============================================================
+degisken CACHE_MAGIC_0: u8 = 89;  # 'Y'
+degisken CACHE_MAGIC_1: u8 = 75;  # 'K'
+degisken CACHE_MAGIC_2: u8 = 78;  # 'N'
+degisken CACHE_MAGIC_3: u8 = 67;  # 'C'
+degisken CACHE_SURUM: tamsayi = 1;
+
+degisken CACHE_ASAMA_KILIT: tamsayi = 0;
+degisken CACHE_ASAMA_PARSE: tamsayi = 1;
+degisken CACHE_ASAMA_TC:    tamsayi = 2;
+degisken CACHE_ASAMA_IR:    tamsayi = 3;
+degisken CACHE_ASAMA_OBJ:   tamsayi = 4;
+
+degisken CACHE_SONUC_MISS:      tamsayi = 0;
+degisken CACHE_SONUC_HIT:       tamsayi = 1;
+degisken CACHE_SONUC_BOZUK:     tamsayi = 0 - 1;
+degisken CACHE_SONUC_KILIT_HATA: tamsayi = 0 - 2;
+
+# Istatistik Yapisi
+yapi CacheIstatistikleri {
+    parse_hit: tamsayi;
+    parse_miss: tamsayi;
+    tc_hit: tamsayi;
+    tc_miss: tamsayi;
+    ir_hit: tamsayi;
+    ir_miss: tamsayi;
+    obj_hit: tamsayi;
+    obj_miss: tamsayi;
+    toplam_hit: tamsayi;
+    toplam_miss: tamsayi;
+}
+
+degisken g_cache_istatistik: CacheIstatistikleri;
+
+isv cache_istatistik_sifirla() {
+    g_cache_istatistik.parse_hit = 0;
+    g_cache_istatistik.parse_miss = 0;
+    g_cache_istatistik.tc_hit = 0;
+    g_cache_istatistik.tc_miss = 0;
+    g_cache_istatistik.ir_hit = 0;
+    g_cache_istatistik.ir_miss = 0;
+    g_cache_istatistik.obj_hit = 0;
+    g_cache_istatistik.obj_miss = 0;
+    g_cache_istatistik.toplam_hit = 0;
+    g_cache_istatistik.toplam_miss = 0;
+}
+
+isv cache_kaydet_hit(asama: tamsayi) {
+    eger asama == 1 ise { g_cache_istatistik.parse_hit = g_cache_istatistik.parse_hit + 1; }
+    eger asama == 2 ise { g_cache_istatistik.tc_hit = g_cache_istatistik.tc_hit + 1; }
+    eger asama == 3 ise { g_cache_istatistik.ir_hit = g_cache_istatistik.ir_hit + 1; }
+    eger asama == 4 ise { g_cache_istatistik.obj_hit = g_cache_istatistik.obj_hit + 1; }
+    g_cache_istatistik.toplam_hit = g_cache_istatistik.toplam_hit + 1;
+}
+
+isv cache_kaydet_miss(asama: tamsayi) {
+    eger asama == 1 ise { g_cache_istatistik.parse_miss = g_cache_istatistik.parse_miss + 1; }
+    eger asama == 2 ise { g_cache_istatistik.tc_miss = g_cache_istatistik.tc_miss + 1; }
+    eger asama == 3 ise { g_cache_istatistik.ir_miss = g_cache_istatistik.ir_miss + 1; }
+    eger asama == 4 ise { g_cache_istatistik.obj_miss = g_cache_istatistik.obj_miss + 1; }
+    g_cache_istatistik.toplam_miss = g_cache_istatistik.toplam_miss + 1;
+}
+
+# ============================================================
+# Yardimcilar
+# ============================================================
+isv cache_str_len(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv cache_str_esit(a: *u8, b: *u8, len: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv cache_tam_sayi_yaz(buf: *u8, val: tamsayi) -> tamsayi {
+    eger val == 0 ise {
+        buf[0] = 48; # '0'
+        dondu 1;
+    }
+    degisken tmp: [32]u8;
+    degisken t_len: tamsayi = 0;
+    degisken v: tamsayi = val;
+    dongu v > 0 {
+        tmp[t_len] = (v % 10) + 48;
+        v = v / 10;
+        t_len = t_len + 1;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < t_len {
+        buf[i] = tmp[t_len - 1 - i];
+        i = i + 1;
+    }
+    dondu t_len;
+}
+
+isv cache_tam_sayi_oku(buf: *u8, pos: *tamsayi) -> tamsayi {
+    degisken idx: tamsayi = *pos;
+    degisken val: tamsayi = 0;
+    degisken basamak_var: tamsayi = 0;
+    dongu buf[idx] >= 48 ve buf[idx] <= 57 {
+        val = val * 10 + (buf[idx] - 48);
+        idx = idx + 1;
+        basamak_var = 1;
+    }
+    *pos = idx;
+    eger basamak_var == 0 ise { dondu 0 - 1; }
+    dondu val;
+}
+
+# Cache dosya yolu olusturucu
+# ornek: ".ykn_cache_parse_090d...3e.cache"
+isv cache_dosya_yolu_olustur(tampon: *u8, asama: tamsayi, fp_hex: *u8) {
+    degisken on_ek: *u8 = ".ykn_cache_parse_".ptr;
+    eger asama == 2 ise { on_ek = ".ykn_cache_tc_".ptr; }
+    eger asama == 3 ise { on_ek = ".ykn_cache_ir_".ptr; }
+    eger asama == 4 ise { on_ek = ".ykn_cache_obj_".ptr; }
+    eger asama == 0 ise { on_ek = ".ykn_cache_lock.cache".ptr; }
+
+    degisken pos: tamsayi = 0;
+    degisken on_len: tamsayi = cache_str_len(on_ek);
+    degisken i: tamsayi = 0;
+    dongu i < on_len {
+        tampon[pos] = on_ek[i];
+        pos = pos + 1;
+        i = i + 1;
+    }
+
+    eger asama != 0 ise {
+        i = 0;
+        dongu i < 64 {
+            tampon[pos] = fp_hex[i];
+            pos = pos + 1;
+            i = i + 1;
+        }
+        degisken uzanti: *u8 = ".cache".ptr;
+        i = 0;
+        dongu i < 6 {
+            tampon[pos] = uzanti[i];
+            pos = pos + 1;
+            i = i + 1;
+        }
+    }
+    tampon[pos] = 0;
+}
+
+# ============================================================
+# F6.2 Concurrency Lock
+# ============================================================
+isv cache_kilitle(lock_yolu: *u8) -> tamsayi {
+    # Exclusive open: CREATE_ALWAYS with SHARE_NONE (0)
+    # Win32 erisim: GENERIC_READ | GENERIC_WRITE (0xC0000000)
+    degisken erisim: tamsayi = 0xc0000000;
+    degisken paylasim: tamsayi = 0; # Exclusive lock
+    degisken yaratma: tamsayi = 2;  # CREATE_ALWAYS
+    degisken nitelikler: tamsayi = 0x80;
+    degisken h: tamsayi = os_dosya_yarat(lock_yolu, erisim, paylasim, yaratma, nitelikler);
+    eger h == 0xffffffffffffffff veya h == 0 ise {
+        dondu 0;
+    }
+    degisken lock_msg: *u8 = "LOCKED_YKN_INCREMENTAL_BUILD\n".ptr;
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(h, lock_msg, 29, &yazilan);
+    dondu h;
+}
+
+isv cache_kilit_ac(handle: tamsayi) {
+    eger handle > 0 ve handle != 0xffffffffffffffff ise {
+        os_dosya_kapat(handle);
+    }
+}
+
+# ============================================================
+# Cache Dosyasi Silme (FILE_FLAG_DELETE_ON_CLOSE)
+# ============================================================
+isv cache_dosya_sil(dosya_yolu: *u8) {
+    degisken h: tamsayi = os_dosya_yarat(dosya_yolu, 0xc0000000, 7, 3, 0x04000000);
+    eger h > 0 ve h != 0xffffffffffffffff ise {
+        os_dosya_kapat(h);
+    }
+}
+
+# ============================================================
+# Cache Entry Yazma
+# Format:
+# "YKNC:1:<asama>:<fp64>:<payload_len>:<payload_sha64>\n<payload>"
+# ============================================================
+isv cache_yaz(dosya_yolu: *u8, asama: tamsayi, fp_hex: *u8, payload: *u8, payload_uzn: tamsayi) -> tamsayi {
+    # 1. Payload SHA-256 hesapla
+    degisken payload_sha: [68]u8;
+    sha256_hesapla(payload, payload_uzn, payload_sha);
+
+    # 2. Baslik olustur
+    degisken baslik: [256]u8;
+    baslik[0] = CACHE_MAGIC_0;
+    baslik[1] = CACHE_MAGIC_1;
+    baslik[2] = CACHE_MAGIC_2;
+    baslik[3] = CACHE_MAGIC_3;
+    baslik[4] = 58; # ':'
+    baslik[5] = 49; # '1' (surum)
+    baslik[6] = 58; # ':'
+
+    degisken b_pos: tamsayi = 7;
+    b_pos = b_pos + cache_tam_sayi_yaz(baslik + b_pos, asama);
+    baslik[b_pos] = 58; # ':'
+    b_pos = b_pos + 1;
+
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        baslik[b_pos] = fp_hex[i];
+        b_pos = b_pos + 1;
+        i = i + 1;
+    }
+    baslik[b_pos] = 58; # ':'
+    b_pos = b_pos + 1;
+
+    b_pos = b_pos + cache_tam_sayi_yaz(baslik + b_pos, payload_uzn);
+    baslik[b_pos] = 58; # ':'
+    b_pos = b_pos + 1;
+
+    i = 0;
+    dongu i < 64 {
+        baslik[b_pos] = payload_sha[i];
+        b_pos = b_pos + 1;
+        i = i + 1;
+    }
+    baslik[b_pos] = 10; # '\n'
+    b_pos = b_pos + 1;
+
+    # 3. Diske yaz (CREATE_ALWAYS, GENERIC_WRITE)
+    degisken h: tamsayi = os_dosya_yarat(dosya_yolu, 0x40000000, 1, 2, 0x80);
+    eger h == 0xffffffffffffffff veya h == 0 ise {
+        dondu 0;
+    }
+
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(h, baslik, b_pos, &yazilan);
+    eger payload_uzn > 0 ise {
+        os_dosya_yaz(h, payload, payload_uzn, &yazilan);
+    }
+    os_dosya_kapat(h);
+    dondu 1;
+}
+
+# ============================================================
+# Cache Entry Dogrulama & Okuma (Invalidation & Corruption Recovery)
+# Donus degerleri:
+#   CACHE_SONUC_HIT (1)      : Cache gecerli, payload okundu
+#   CACHE_SONUC_MISS (0)     : Dosya yok veya fingerprint eslesmiyor
+#   CACHE_SONUC_BOZUK (-1)   : Baslik/veri bozuk, temizlenmeli
+# ============================================================
+isv cache_oku_ve_dogrula(dosya_yolu: *u8, asama: tamsayi, beklenen_fp: *u8, cikti_tampon: *u8, maks_kapasite: tamsayi, okunan_boyut: *tamsayi) -> tamsayi {
+    # 1. Dosyayi ac (GENERIC_READ, OPEN_EXISTING)
+    degisken h: tamsayi = os_dosya_yarat(dosya_yolu, 0x80000000, 1, 3, 0x80);
+    eger h == 0xffffffffffffffff veya h == 0 ise {
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_MISS;
+    }
+
+    # 2. Dosyanin tamamini gecici tampona oku
+    degisken maks_giris: tamsayi = maks_kapasite + 512;
+    degisken ham_buf: *u8 = os_bellek_tahsis(maks_giris);
+    degisken toplam_okunan: tamsayi = 0;
+    os_dosya_oku(h, ham_buf, maks_giris, &toplam_okunan);
+    os_dosya_kapat(h);
+
+    eger toplam_okunan < 140 ise {
+        # Dosya cok kisa, baslik bile yok -> bozuk
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+
+    # 3. Magic kontrolu: "YKNC"
+    eger ham_buf[0] != CACHE_MAGIC_0 veya ham_buf[1] != CACHE_MAGIC_1 veya
+         ham_buf[2] != CACHE_MAGIC_2 veya ham_buf[3] != CACHE_MAGIC_3 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+
+    # 4. Surum kontrolu: ":1:"
+    eger ham_buf[4] != 58 veya ham_buf[5] != 49 veya ham_buf[6] != 58 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+
+    degisken pos: tamsayi = 7;
+    degisken okunan_asama: tamsayi = cache_tam_sayi_oku(ham_buf, &pos);
+    eger okunan_asama != asama veya ham_buf[pos] != 58 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+    pos = pos + 1; # ':' gec
+
+    # 5. Fingerprint kontrolu (64 hex bayt)
+    degisken fp_eslesiyor: tamsayi = cache_str_esit(ham_buf + pos, beklenen_fp, 64);
+    pos = pos + 64;
+    eger ham_buf[pos] != 58 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+    pos = pos + 1; # ':' gec
+
+    degisken beklenen_uzn: tamsayi = cache_tam_sayi_oku(ham_buf, &pos);
+    eger beklenen_uzn < 0 veya ham_buf[pos] != 58 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+    pos = pos + 1; # ':' gec
+
+    degisken beklenen_payload_sha: *u8 = ham_buf + pos;
+    pos = pos + 64;
+    eger ham_buf[pos] != 10 ise { # '\n' beklenir
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+    pos = pos + 1; # '\n' gec
+
+    # 6. Payload boyut kontrolu
+    degisken kalan_payload: tamsayi = toplam_okunan - pos;
+    eger kalan_payload != beklenen_uzn ise {
+        # Truncated or corrupted payload
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+
+    # Fingerprint farkliysa bu bir MISS (invalidation)
+    eger fp_eslesiyor == 0 ise {
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_MISS;
+    }
+
+    # 7. Payload SHA-256 Dogrulama (Corruption Check)
+    degisken gercek_payload_sha: [68]u8;
+    sha256_hesapla(ham_buf + pos, kalan_payload, gercek_payload_sha);
+    eger cache_str_esit(beklenen_payload_sha, gercek_payload_sha, 64) == 0 ise {
+        # Payload bozulmus
+        os_bellek_serbest(ham_buf);
+        cache_kaydet_miss(asama);
+        dondu CACHE_SONUC_BOZUK;
+    }
+
+    # 8. Basarili HIT: veriyi cikti tamponuna kopyala
+    degisken k: tamsayi = 0;
+    dongu k < kalan_payload {
+        cikti_tampon[k] = ham_buf[pos + k];
+        k = k + 1;
+    }
+    *okunan_boyut = kalan_payload;
+    os_bellek_serbest(ham_buf);
+
+    cache_kaydet_hit(asama);
+    dondu CACHE_SONUC_HIT;
+}
+
+# ============================================================
+# Bozuk Cache Kurtarma (Corruption Recovery)
+# ============================================================
+isv cache_bozuk_temizle_ve_uyar(dosya_yolu: *u8) {
+    ekrana_yaz("[UYARI] Cache bozuk veya tutarsiz, temizleniyor: ".ptr);
+    ekrana_yaz(dosya_yolu);
+    ekrana_yaz("\n".ptr);
+
+    # Bos dosya ile ustune yazip gecersiz kil (CREATE_ALWAYS)
+    degisken h: tamsayi = os_dosya_yarat(dosya_yolu, 0x40000000, 1, 2, 0x80);
+    eger h > 0 ve h != 0xffffffffffffffff ise {
+        os_dosya_kapat(h);
+    }
+}
+
+# ============================================================
+# Raporlama (F6.2 Hit / Miss Metrics)
+# ============================================================
+isv cache_rapor_yazdir() {
+    ekrana_yaz("==============================================\n".ptr);
+    ekrana_yaz("   YUKINARY INCREMENTAL CACHE REPORT (FAZ 6)  \n".ptr);
+    ekrana_yaz("==============================================\n".ptr);
+
+    ekrana_yaz("  Parse Asamasi    : ".ptr);
+    degisken num_buf: [32]u8;
+    degisken nl: tamsayi = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.parse_hit);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" HIT, ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.parse_miss);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" MISS\n".ptr);
+
+    ekrana_yaz("  Typecheck Asamasi: ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.tc_hit);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" HIT, ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.tc_miss);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" MISS\n".ptr);
+
+    ekrana_yaz("  IR Asamasi       : ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.ir_hit);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" HIT, ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.ir_miss);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" MISS\n".ptr);
+
+    ekrana_yaz("  Native Artifact  : ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.obj_hit);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" HIT, ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.obj_miss);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" MISS\n".ptr);
+
+    ekrana_yaz("----------------------------------------------\n".ptr);
+    ekrana_yaz("  Toplam           : ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.toplam_hit);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" HIT / ".ptr);
+    nl = cache_tam_sayi_yaz(num_buf, g_cache_istatistik.toplam_miss);
+    num_buf[nl] = 0; ekrana_yaz(num_buf);
+    ekrana_yaz(" MISS\n".ptr);
+    ekrana_yaz("==============================================\n".ptr);
+}
+
+# ============================================================
+# FAZ 9.5: Convert Cache (sha256 tabanli kaynak onbellegi)
+# ============================================================
+
+# Convert cache dizini: .ykn_cache/convert/
+degisken CONVERT_CACHE_DIR: *u8 = ".ykn_cache/convert/".ptr;
+
+# Convert direktifinin kaynak hash'ini hesapla
+# Tum parametreler (kaynak, hedef, esik, mod) dahil edilir
+isv convert_cache_hash_hesapla(
+    kaynak: *u8, kaynak_uzn: tamsayi,
+    hedef: *u8, hedef_uzn: tamsayi,
+    esik: tamsayi, mod: *u8, mod_uzn: tamsayi,
+    cikis_hex: *u8
+) {
+    eger cikis_hex == 0 ise { dondu; }
+    # Birlesik hash girdi: kaynak + "#" + hedef + "#" + esik + "#" + mod
+    degisken birlesik: [1024]u8;
+    degisken pos: tamsayi = 0;
+
+    # kaynak kopyala
+    degisken ki: tamsayi = 0;
+    dongu ki < kaynak_uzn ve pos < 1020 {
+        eger kaynak != 0 ise { birlesik[pos] = kaynak[ki]; } yoksa { birlesik[pos] = 0; }
+        pos = pos + 1; ki = ki + 1;
+    }
+    birlesik[pos] = 35; pos = pos + 1; # '#'
+
+    # hedef kopyala
+    ki = 0;
+    dongu ki < hedef_uzn ve pos < 1020 {
+        eger hedef != 0 ise { birlesik[pos] = hedef[ki]; } yoksa { birlesik[pos] = 0; }
+        pos = pos + 1; ki = ki + 1;
+    }
+    birlesik[pos] = 35; pos = pos + 1; # '#'
+
+    # esik (sayiyi yaz)
+    degisken esik_buf: [16]u8;
+    degisken ei: tamsayi = 0;
+    degisken etemp: tamsayi = esik;
+    eger etemp == 0 ise { esik_buf[0] = 48; ei = 1; }
+    dongu etemp > 0 { esik_buf[ei] = 48 + (etemp % 10); etemp = etemp / 10; ei = ei + 1; }
+    # Sayiyi ters cevir
+    degisken eli: tamsayi = 0; degisken eri: tamsayi = ei - 1;
+    dongu eli < eri {
+        degisken t: u8 = esik_buf[eli]; esik_buf[eli] = esik_buf[eri]; esik_buf[eri] = t;
+        eli = eli + 1; eri = eri - 1;
+    }
+    ki = 0;
+    dongu ki < ei ve pos < 1020 { birlesik[pos] = esik_buf[ki]; pos = pos + 1; ki = ki + 1; }
+    birlesik[pos] = 35; pos = pos + 1; # '#'
+
+    # mod kopyala
+    ki = 0;
+    dongu ki < mod_uzn ve pos < 1020 {
+        eger mod != 0 ise { birlesik[pos] = mod[ki]; } yoksa { birlesik[pos] = 0; }
+        pos = pos + 1; ki = ki + 1;
+    }
+    birlesik[pos] = 0;
+
+    sha256_hesapla(birlesik, pos, cikis_hex);
+}
+
+# Convert cache yolu olustur: .ykn_cache/convert/<sha256>.ykn
+isv convert_cache_yolu_olustur(sha256_hex: *u8, cikis: *u8, maks: tamsayi) -> tamsayi {
+    eger sha256_hex == 0 veya cikis == 0 veya maks <= 70 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken pi: tamsayi = 0;
+    dongu CONVERT_CACHE_DIR[pi] != 0 ve pos < maks - 68 {
+        cikis[pos] = CONVERT_CACHE_DIR[pi]; pos = pos + 1; pi = pi + 1;
+    }
+    degisken hi: tamsayi = 0;
+    dongu sha256_hex[hi] != 0 ve hi < 64 ve pos < maks - 6 {
+        cikis[pos] = sha256_hex[hi]; pos = pos + 1; hi = hi + 1;
+    }
+    # .ykn eklentisi
+    degisken ext: *u8 = ".ykn".ptr;
+    degisken ei: tamsayi = 0;
+    dongu ext[ei] != 0 ve pos < maks { cikis[pos] = ext[ei]; pos = pos + 1; ei = ei + 1; }
+    cikis[pos] = 0;
+    dondu pos;
+}

@@ -1,0 +1,18 @@
+# Saf YKN native loopback HTTP/1.1 response server.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu 10; }
+    degisken sunucu: tamsayi = sunucu_olustur(18081);
+    eger sunucu < 0 ise { dondu 11; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { ekrana_yaz("SERVER_ACCEPT_FAIL\n".ptr); soket_kapat(sunucu); dondu 12; }
+    ekrana_yaz("SERVER_ACCEPT_OK\n".ptr);
+    degisken cevap: *u8 = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nHELLO".ptr;
+    degisken gonderilen: tamsayi = soket_gonder_tam(istemci, cevap, 62);
+    ekrana_yaz("SERVER_SENT\n".ptr);
+    soket_kapat(istemci);
+    soket_kapat(sunucu);
+    eger gonderilen != 62 ise { dondu 13; }
+    dondu 0;
+}

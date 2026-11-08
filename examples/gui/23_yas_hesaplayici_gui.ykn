@@ -1,0 +1,29 @@
+# ============================================================
+# Örnek 73: Win32 Doğum Yılı ve Yaş Hesaplayıcı GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken BU_YIL: tamsayi = 2026;
+
+isv yas_hesapla(dogum_yili: tamsayi) -> tamsayi {
+    eger dogum_yili > BU_YIL ise { dondu 0; }
+    dondu BU_YIL - dogum_yili;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Yas Hesaplayici".ptr, 340, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Dogum Yili Kutusu
+    metin_kutusu_olustur(p_h, 10201, 40, 35, 240, 35);
+
+    # Hesapla Butonu
+    buton_olustur(p_h, "YASIMI HESAPLA".ptr, 10210, 40, 95, 240, 45);
+
+    ekrana_yaz("Yas hesaplayici GUI hazir.\n".ptr);
+    ekrana_yaz("Ornek (2000 dogumlu): "); sayiyi_ekrana_yaz(yas_hesapla(2000)); ekrana_yaz(" yasinda.\n".ptr);
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

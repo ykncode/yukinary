@@ -1,0 +1,182 @@
+# ============================================================
+# tests/test_faz_d.ykn
+# Faz D: Gerçek Polyglot & Self-Healing Çözümleyicileri Doğrulama Testi
+# 1. Genel Statik Null-Guard Analizi (sh_null_guard_enjekte)
+# 2. C99 AST Tabanlı C -> YKN Transpiler (ai_c_to_ykn_transpile)
+# ============================================================
+
+ice_aktar "src/utils.ykn";
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "src/self_healing.ykn";
+ice_aktar "src/ai_micro_engine.ykn";
+
+isv test_genel_null_guard_analizi() -> tamsayi {
+    ekrana_yaz("--- Test 1: Genel Statik Null-Guard Analizi ---\n".ptr);
+
+    # 1.1. Genel bir işaretçi dereference tespiti (ptr.deger)
+    degisken kod1: *u8 = "isv oku(ptr: *Veri) -> tamsayi {\n    dondu ptr.deger;\n}\n".ptr;
+    degisken uzn1: tamsayi = 0;
+    dongu kod1[uzn1] != 0 { uzn1 = uzn1 + 1; }
+
+    degisken onarilmis1: *u8 = sh_null_guard_enjekte(kod1, uzn1);
+    eger onarilmis1 == 0 ise {
+        ekrana_yaz("HATA: ptr.deger icin null guard enjekte edilemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # "eger ptr != bos ise" olusmus mu kontrol et
+    degisken bulundu_ptr: tamsayi = 0;
+    degisken p_uzn: tamsayi = 0;
+    dongu onarilmis1[p_uzn] != 0 {
+        eger sh_esit_mi(onarilmis1 + p_uzn, "eger ptr != bos ise".ptr, 19) == 1 ise {
+            bulundu_ptr = 1;
+            durdur;
+        }
+        p_uzn = p_uzn + 1;
+    }
+    eger bulundu_ptr == 0 ise {
+        ekrana_yaz("HATA: Genel 'ptr' korumasi uretilmedi!\n".ptr);
+        dondu 2;
+    }
+
+    # 1.2. Klasik 'd.deger' geriye donuk uyumluluk testi
+    degisken kod2: *u8 = "isv kok(d: *Dugum) -> tamsayi {\n    dondu d.deger;\n}\n".ptr;
+    degisken uzn2: tamsayi = 0;
+    dongu kod2[uzn2] != 0 { uzn2 = uzn2 + 1; }
+
+    degisken onarilmis2: *u8 = sh_null_guard_enjekte(kod2, uzn2);
+    eger onarilmis2 == 0 ise {
+        ekrana_yaz("HATA: d.deger icin null guard enjekte edilemedi!\n".ptr);
+        dondu 3;
+    }
+    degisken bulundu_d: tamsayi = 0;
+    degisken d_uzn: tamsayi = 0;
+    dongu onarilmis2[d_uzn] != 0 {
+        eger sh_esit_mi(onarilmis2 + d_uzn, "eger d != bos ise".ptr, 17) == 1 ise {
+            bulundu_d = 1;
+            durdur;
+        }
+        d_uzn = d_uzn + 1;
+    }
+    eger bulundu_d == 0 ise {
+        ekrana_yaz("HATA: Klasik 'd' guard'i uretilemedi!\n".ptr);
+        dondu 4;
+    }
+
+    # 1.3. Zaten korunan kod testi (cifte guard eklenmemeli)
+    degisken kod3: *u8 = "isv f(d: *Dugum) -> tamsayi {\n    eger d != bos ise {\n        dondu d.deger;\n    }\n    dondu 0;\n}\n".ptr;
+    degisken uzn3: tamsayi = 0;
+    dongu kod3[uzn3] != 0 { uzn3 = uzn3 + 1; }
+
+    degisken onarilmis3: *u8 = sh_null_guard_enjekte(kod3, uzn3);
+    eger onarilmis3 != 0 ise {
+        ekrana_yaz("HATA: Zaten korunan koda gereksiz cift guard eklendi!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("[OK] Madde 1: Genel Statik Null-Guard Analizi Başarılı.\n".ptr);
+    dondu 0;
+}
+
+isv test_c_ykn_transpiler() -> tamsayi {
+    ekrana_yaz("--- Test 2: AST Tabanlı C -> YKN Transpiler ---\n".ptr);
+
+    # 2.1. C Fonksiyonu: int topla(int a, int b) { return a + b; }
+    degisken c_kod1: *u8 = "int topla(int a, int b) {\n    return a + b;\n}\n".ptr;
+    degisken c_uzn1: tamsayi = 0;
+    dongu c_kod1[c_uzn1] != 0 { c_uzn1 = c_uzn1 + 1; }
+
+    degisken ykn_cikti1: *u8 = ai_micro_kod_donustur(c_kod1, c_uzn1, AI_LANG_C);
+    eger ykn_cikti1 == 0 ise {
+        ekrana_yaz("HATA: C fonksiyonu donusturulemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # "isv topla(a: tamsayi, b: tamsayi) -> tamsayi" kontrolu
+    degisken fn_eslesme: tamsayi = 0;
+    degisken len1: tamsayi = 0;
+    dongu ykn_cikti1[len1] != 0 {
+        eger sh_esit_mi(ykn_cikti1 + len1, "isv topla(a: tamsayi, b: tamsayi) -> tamsayi".ptr, 44) == 1 ise {
+            fn_eslesme = 1;
+            durdur;
+        }
+        len1 = len1 + 1;
+    }
+    eger fn_eslesme == 0 ise {
+        ekrana_yaz("HATA: C fonksiyon imzasi Yukinary imzasina donusturulemedi!\n".ptr);
+        ekrana_yaz(ykn_cikti1);
+        ekrana_yaz("\n".ptr);
+        dondu 2;
+    }
+
+    # 2.2. C Yerel Değişken Tanımı: int x = 42; -> degisken x: tamsayi = 42;
+    degisken c_kod2: *u8 = "int test() {\n    int x = 42;\n    return x;\n}\n".ptr;
+    degisken c_uzn2: tamsayi = 0;
+    dongu c_kod2[c_uzn2] != 0 { c_uzn2 = c_uzn2 + 1; }
+
+    degisken ykn_cikti2: *u8 = ai_micro_kod_donustur(c_kod2, c_uzn2, AI_LANG_C);
+    eger ykn_cikti2 == 0 ise {
+        ekrana_yaz("HATA: C degiskeni donusturulemedi!\n".ptr);
+        dondu 3;
+    }
+
+    degisken var_eslesme: tamsayi = 0;
+    degisken len2: tamsayi = 0;
+    dongu ykn_cikti2[len2] != 0 {
+        eger sh_esit_mi(ykn_cikti2 + len2, "degisken x: tamsayi = 42;".ptr, 25) == 1 ise {
+            var_eslesme = 1;
+            durdur;
+        }
+        len2 = len2 + 1;
+    }
+    eger var_eslesme == 0 ise {
+        ekrana_yaz("HATA: C 'int x = 42;' bildirim 'degisken x: tamsayi = 42;' seklinde donusmedi!\n".ptr);
+        ekrana_yaz(ykn_cikti2);
+        ekrana_yaz("\n".ptr);
+        dondu 4;
+    }
+
+    # 2.3. C struct: struct Nokta { int x; int y; }; -> yapi Nokta { x: tamsayi; y: tamsayi; }
+    degisken c_kod3: *u8 = "struct Nokta {\n    int x;\n    int y;\n};\n".ptr;
+    degisken c_uzn3: tamsayi = 0;
+    dongu c_kod3[c_uzn3] != 0 { c_uzn3 = c_uzn3 + 1; }
+
+    degisken ykn_cikti3: *u8 = ai_micro_kod_donustur(c_kod3, c_uzn3, AI_LANG_C);
+    eger ykn_cikti3 == 0 ise {
+        ekrana_yaz("HATA: C struct yapisi donusturulemedi!\n".ptr);
+        dondu 5;
+    }
+
+    degisken struct_eslesme: tamsayi = 0;
+    degisken len3: tamsayi = 0;
+    dongu ykn_cikti3[len3] != 0 {
+        eger sh_esit_mi(ykn_cikti3 + len3, "yapi Nokta {".ptr, 12) == 1 ise {
+            struct_eslesme = 1;
+            durdur;
+        }
+        len3 = len3 + 1;
+    }
+    eger struct_eslesme == 0 ise {
+        ekrana_yaz("HATA: 'struct Nokta' bildirim 'yapi Nokta {' seklinde donusmedi!\n".ptr);
+        ekrana_yaz(ykn_cikti3);
+        ekrana_yaz("\n".ptr);
+        dondu 6;
+    }
+
+    ekrana_yaz("[OK] Madde 2: AST Tabanlı C -> YKN Transpiler Başarılı.\n".ptr);
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== YUKINARY FAZ D KUSURSUZ DOGRULAMA TESTI BASLIYOR ===\n".ptr);
+
+    degisken t1: tamsayi = test_genel_null_guard_analizi();
+    eger t1 != 0 ise { dondu t1; }
+
+    degisken t2: tamsayi = test_c_ykn_transpiler();
+    eger t2 != 0 ise { dondu t2; }
+
+    ekrana_yaz("\n>>> TUM FAZ D MADDELERI EKSIKSIZ VE BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}
+

@@ -1,0 +1,3 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    dondu 42;
+}

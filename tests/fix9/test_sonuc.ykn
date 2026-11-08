@@ -1,0 +1,84 @@
+# ============================================================
+# tests/fix9/test_sonuc.ykn
+# std/sonuc.ykn + std/enum.ykn test suiti:
+#   - sonuc_tamam, sonuc_hata, sonuc_basarili_mi, sonuc_deger_al
+#   - secenek_var, secenek_yok, secenek_var_mi, secenek_deger_al
+# Beklenen cikti: "SONUC VE ENUM TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/enum.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- Sonuc: basarili yolu ---
+    degisken s1: *Sonuc = sonuc_tamam(42);
+    eger s1 == 0 ise {
+        ekrana_yaz("HATA: sonuc_tamam null dondu\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_basarili_mi(s1) != 1 ise {
+        ekrana_yaz("HATA: sonuc_basarili_mi (tamam)\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_deger_al(s1, 0) != 42 ise {
+        ekrana_yaz("HATA: sonuc_deger_al (tamam)\n".ptr);
+        dondu 1;
+    }
+
+    # --- Sonuc: hata yolu ---
+    degisken s2: *Sonuc = sonuc_hata(7);
+    eger s2 == 0 ise {
+        ekrana_yaz("HATA: sonuc_hata null dondu\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_hata_mi(s2) != 1 ise {
+        ekrana_yaz("HATA: sonuc_hata_mi\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_deger_al(s2, 99) != 99 ise {
+        ekrana_yaz("HATA: sonuc_deger_al (hata, varsayilan olmali)\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_hata_kodu_al(s2) != 7 ise {
+        ekrana_yaz("HATA: sonuc_hata_kodu_al\n".ptr);
+        dondu 1;
+    }
+
+    # --- null Sonuc guvencesi ---
+    eger sonuc_basarili_mi(0) != 0 ise {
+        ekrana_yaz("HATA: sonuc_basarili_mi(null)\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_deger_al(0, 55) != 55 ise {
+        ekrana_yaz("HATA: sonuc_deger_al(null, varsayilan)\n".ptr);
+        dondu 1;
+    }
+
+    # --- Secenek: VAR yolu ---
+    degisken opt1: *Secenek = secenek_var(123);
+    eger opt1 == 0 ise {
+        ekrana_yaz("HATA: secenek_var null dondu\n".ptr);
+        dondu 1;
+    }
+    eger secenek_var_mi(opt1) != 1 ise {
+        ekrana_yaz("HATA: secenek_var_mi (var)\n".ptr);
+        dondu 1;
+    }
+    eger secenek_deger_al(opt1, 0) != 123 ise {
+        ekrana_yaz("HATA: secenek_deger_al (var)\n".ptr);
+        dondu 1;
+    }
+
+    # --- Secenek: YOK yolu ---
+    degisken opt2: *Secenek = secenek_yok();
+    eger secenek_yok_mu(opt2) != 1 ise {
+        ekrana_yaz("HATA: secenek_yok_mu\n".ptr);
+        dondu 1;
+    }
+    eger secenek_deger_al(opt2, 77) != 77 ise {
+        ekrana_yaz("HATA: secenek_deger_al (yok, varsayilan olmali)\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("SONUC VE ENUM TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

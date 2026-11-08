@@ -1,0 +1,269 @@
+# ============================================================
+# Yukinary (YKN) Hash Tablosu Kutuphanesi (libykn/std/collection/hashmap.ykn)
+# FNV-1a Hash + Linear Probing ile O(1) Key-Value Map
+# ============================================================
+
+yapi HashMap {
+    tablo_anahtar: **u8;
+    tablo_hash: *tamsayi;
+    tablo_deger: *tamsayi;
+    tablo_dolu: *tamsayi;    # 0=bos, 1=dolu, 2=silindi
+    kapasite: tamsayi;
+    uzunluk: tamsayi;
+    durum: tamsayi; # 0=aktif, 2=serbest; struct tekrar kullanilmaz
+}
+
+# FNV-1a 64-bit Hash
+isv fnv1a_hash(s: *u8) -> tamsayi {
+    degisken h: tamsayi = 2166136261;
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        h = h ^ s[i];
+        h = h * 16777619;
+        i = i + 1;
+    }
+    # Pozitif tamsayi tut
+    eger h < 0 {
+        h = 0 - h;
+    }
+    dondu h;
+}
+
+# String karsilastirma
+isv hm_metin_esit(s1: *u8, s2: *u8) -> tamsayi {
+    eger s1 == 0 veya s2 == 0 {
+        eger s1 == 0 ve s2 == 0 { dondu 1; }
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu s1[i] != 0 ve s2[i] != 0 {
+        eger s1[i] != s2[i] { dondu 0; }
+        i = i + 1;
+    }
+    eger s1[i] == 0 ve s2[i] == 0 { dondu 1; }
+    dondu 0;
+}
+
+# Yeni HashMap olustur
+isv hashmap_olustur(kapasite: tamsayi) -> *HashMap {
+    degisken cap: tamsayi = kapasite;
+    eger cap < 16 ise { cap = 16; }
+    
+    degisken hm: *HashMap = bellek_tahsis_et(56);
+    hm.tablo_anahtar = bellek_tahsis_et(cap * 8);
+    hm.tablo_hash    = bellek_tahsis_et(cap * 8);
+    hm.tablo_deger   = bellek_tahsis_et(cap * 8);
+    hm.tablo_dolu    = bellek_tahsis_et(cap * 8);
+    hm.kapasite = cap;
+    hm.uzunluk = 0;
+    hm.durum = 0;
+
+    degisken i: tamsayi = 0;
+    degisken dolu_ptr: *tamsayi = hm.tablo_dolu;
+    dongu i < cap {
+        dolu_ptr[i] = 0;
+        i = i + 1;
+    }
+    dondu hm;
+}
+
+# HashMap Yeniden Boyutlandir ve Rehash Yap (Load Factor > %75)
+isv hashmap_yeniden_boyutlandir(hm: *HashMap, yeni_kapasite: tamsayi) {
+    degisken eski_cap: tamsayi = hm.kapasite;
+    degisken eski_anahtar: **u8 = hm.tablo_anahtar;
+    degisken eski_hash: *tamsayi = hm.tablo_hash;
+    degisken eski_deger: *tamsayi = hm.tablo_deger;
+    degisken eski_dolu: *tamsayi = hm.tablo_dolu;
+
+    degisken yeni_anahtar: **u8 = bellek_tahsis_et(yeni_kapasite * 8);
+    degisken yeni_hash: *tamsayi = bellek_tahsis_et(yeni_kapasite * 8);
+    degisken yeni_deger: *tamsayi = bellek_tahsis_et(yeni_kapasite * 8);
+    degisken yeni_dolu: *tamsayi = bellek_tahsis_et(yeni_kapasite * 8);
+
+    degisken k: tamsayi = 0;
+    dongu k < yeni_kapasite {
+        yeni_dolu[k] = 0;
+        k = k + 1;
+    }
+
+    hm.tablo_anahtar = yeni_anahtar;
+    hm.tablo_hash    = yeni_hash;
+    hm.tablo_deger   = yeni_deger;
+    hm.tablo_dolu    = yeni_dolu;
+    hm.kapasite      = yeni_kapasite;
+    hm.uzunluk       = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < eski_cap {
+        eger eski_dolu[i] == 1 ise {
+            hashmap_ekle(hm, eski_anahtar[i], eski_deger[i]);
+        }
+        i = i + 1;
+    }
+    # Eski bellek alanlarini serbest birak (bellek sizintisini onle)
+    os_bellek_serbest(eski_anahtar);
+    os_bellek_serbest(eski_hash);
+    os_bellek_serbest(eski_deger);
+    os_bellek_serbest(eski_dolu);
+}
+
+# Anahtar-Deger ekle
+isv hashmap_ekle(hm: *HashMap, anahtar: *u8, deger: tamsayi) {
+    eger hm == 0 veya hm.durum != 0 ise { dondu; }
+    # Load factor kontrolu: %75 ve uzeri ise kapasiteyi 2 katina cikar ve rehash yap
+    eger (hm.uzunluk + 1) * 4 >= hm.kapasite * 3 ise {
+        hashmap_yeniden_boyutlandir(hm, hm.kapasite * 2);
+    }
+
+    degisken h: tamsayi = fnv1a_hash(anahtar);
+    degisken maske: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % maske;
+
+    degisken anahtar_ptr: **u8     = hm.tablo_anahtar;
+    degisken hash_ptr: *tamsayi    = hm.tablo_hash;
+    degisken deger_ptr: *tamsayi   = hm.tablo_deger;
+    degisken dolu_ptr: *tamsayi    = hm.tablo_dolu;
+
+    degisken ilk_mezar_tasi: tamsayi = 0 - 1;
+    degisken i: tamsayi = 0;
+    dongu i < hm.kapasite {
+        degisken cur_idx: tamsayi = (idx + i) % maske;
+        
+        # 1. Mevcut anahtar guncellemesi
+        eger dolu_ptr[cur_idx] == 1 ise {
+            eger hash_ptr[cur_idx] == h ve hm_metin_esit(anahtar_ptr[cur_idx], anahtar) == 1 ise {
+                deger_ptr[cur_idx] = deger;
+                dondu;
+            }
+        } yoksa eger dolu_ptr[cur_idx] == 2 ise {
+            # Mezar tasi: ilkini kaydet ama aramaya devam et (anahtar ileride olabilir!)
+            eger ilk_mezar_tasi == (0 - 1) ise {
+                ilk_mezar_tasi = cur_idx;
+            }
+        } yoksa {
+            # 2. Tamamen bos slot (dolu == 0): anahtar kesinlikle tabloda yok
+            degisken hedef_slot: tamsayi = cur_idx;
+            eger ilk_mezar_tasi != (0 - 1) ise {
+                hedef_slot = ilk_mezar_tasi;
+            }
+            anahtar_ptr[hedef_slot] = anahtar;
+            hash_ptr[hedef_slot]    = h;
+            deger_ptr[hedef_slot]   = deger;
+            dolu_ptr[hedef_slot]    = 1;
+            hm.uzunluk = hm.uzunluk + 1;
+            dondu;
+        }
+        i = i + 1;
+    }
+
+    # Tablo tamamen dolasildiysa ve mezar tasi bulunduysa oraya yaz
+    eger ilk_mezar_tasi != (0 - 1) ise {
+        anahtar_ptr[ilk_mezar_tasi] = anahtar;
+        hash_ptr[ilk_mezar_tasi]    = h;
+        deger_ptr[ilk_mezar_tasi]   = deger;
+        dolu_ptr[ilk_mezar_tasi]    = 1;
+        hm.uzunluk = hm.uzunluk + 1;
+    }
+}
+
+# Deger sorgula (Bulunamazsa -1 doner)
+isv hashmap_al(hm: *HashMap, anahtar: *u8) -> tamsayi {
+    eger hm == 0 veya hm.durum != 0 ise { dondu 0 - 1; }
+    degisken h: tamsayi = fnv1a_hash(anahtar);
+    degisken maske: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % maske;
+
+    degisken anahtar_ptr: **u8     = hm.tablo_anahtar;
+    degisken hash_ptr: *tamsayi    = hm.tablo_hash;
+    degisken deger_ptr: *tamsayi   = hm.tablo_deger;
+    degisken dolu_ptr: *tamsayi    = hm.tablo_dolu;
+
+    degisken i: tamsayi = 0;
+    dongu i < hm.kapasite {
+        degisken cur_idx: tamsayi = (idx + i) % maske;
+        
+        eger dolu_ptr[cur_idx] == 0 ise {
+            dondu -1; # Bos slota rastlandi, bulunamadi
+        }
+        eger dolu_ptr[cur_idx] == 1 ise {
+            eger hash_ptr[cur_idx] == h ve hm_metin_esit(anahtar_ptr[cur_idx], anahtar) == 1 ise {
+                dondu deger_ptr[cur_idx];
+            }
+        }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+# HashMap sahiplik sonlandirma. Nesne struct'i yasatilir; ikinci cagri
+# idempotent olur ve serbest bellege erisim yapmaz.
+isv hashmap_yok_et(hm: *HashMap) {
+    eger hm == 0 veya hm.durum != 0 ise { dondu; }
+    # Struct-field expression'i doğrudan native free ABI'sine geçirme.
+    # Önce typed local snapshot al; sonra alanı NULL'la ve snapshot'i bırak.
+    degisken anahtar_bellegi: *hic = hm.tablo_anahtar;
+    degisken hash_bellegi: *hic = hm.tablo_hash;
+    degisken deger_bellegi: *hic = hm.tablo_deger;
+    degisken dolu_bellegi: *hic = hm.tablo_dolu;
+    hm.tablo_anahtar = 0;
+    hm.tablo_hash = 0;
+    hm.tablo_deger = 0;
+    hm.tablo_dolu = 0;
+    hm.kapasite = 0;
+    hm.uzunluk = 0;
+    hm.durum = 2;
+    eger anahtar_bellegi != 0 ise { os_bellek_serbest(anahtar_bellegi); }
+    eger hash_bellegi != 0 ise { os_bellek_serbest(hash_bellegi); }
+    eger deger_bellegi != 0 ise { os_bellek_serbest(deger_bellegi); }
+    eger dolu_bellegi != 0 ise { os_bellek_serbest(dolu_bellegi); }
+}
+
+# HashMap nesnesini ve tum alt tablolarini tamamen serbest birakir
+isv hashmap_serbest_birak(hm: *HashMap) {
+    eger hm == 0 ise { dondu; }
+    hashmap_yok_et(hm);
+    os_bellek_serbest(hm);
+}
+
+# Varlik kontrolu
+isv hashmap_var_mi(hm: *HashMap, anahtar: *u8) -> tamsayi {
+    eger hashmap_al(hm, anahtar) != -1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# Eleman sil (Tombstone ile)
+isv hashmap_sil(hm: *HashMap, anahtar: *u8) -> tamsayi {
+    eger hm == 0 veya hm.durum != 0 ise { dondu 0; }
+    degisken h: tamsayi = fnv1a_hash(anahtar);
+    degisken maske: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % maske;
+
+    degisken anahtar_ptr: **u8     = hm.tablo_anahtar;
+    degisken hash_ptr: *tamsayi    = hm.tablo_hash;
+    degisken dolu_ptr: *tamsayi    = hm.tablo_dolu;
+
+    degisken i: tamsayi = 0;
+    dongu i < hm.kapasite {
+        degisken cur_idx: tamsayi = (idx + i) % maske;
+        
+        eger dolu_ptr[cur_idx] == 0 ise {
+            dondu 0; # Bulunamadi
+        }
+        eger dolu_ptr[cur_idx] == 1 ise {
+            eger hash_ptr[cur_idx] == h ve hm_metin_esit(anahtar_ptr[cur_idx], anahtar) == 1 ise {
+                dolu_ptr[cur_idx] = 2; # Tombstone
+                hm.uzunluk = hm.uzunluk - 1;
+                dondu 1;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Eleman sayisi
+isv hashmap_uzunluk(hm: *HashMap) -> tamsayi {
+    dondu hm.uzunluk;
+}

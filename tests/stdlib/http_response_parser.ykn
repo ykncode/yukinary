@@ -1,0 +1,11 @@
+# HTTP response parser native execution fixture.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken ham: *u8 = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nHELLO".ptr;
+    degisken cevap: Cevap;
+    eger http_cevap_ayristir(ham, 62, &cevap) == 0 ise { dondu 10; }
+    eger cevap.durum_kodu != 200 ise { dondu 11; }
+    eger cevap.gecerli != 1 ise { dondu 12; }
+    dondu 0;
+}

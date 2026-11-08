@@ -1,0 +1,44 @@
+# ============================================================
+# Test: tests/test_faz_asenkron_soket.ykn
+# FAZ 2 Dogrulama: Evrensel Asenkron Soket ve Halka Tampon
+# ============================================================
+
+ice_aktar "std/ag/asenkron_soket.ykn";
+
+isv main() -> tamsayi {
+    degisken s: *AsenkronSoket = asenkron_soket_olustur(42);
+    eger s == 0 ise { dondu 1; }
+
+    degisken msg: *u8 = "YukinaryAsyncNet".ptr;
+    degisken msg_len: tamsayi = 16;
+
+    # 1. Yazma tamponuna asenkron veri gonder
+    degisken gonderilen: tamsayi = asenkron_soket_veri_gonder(s, msg, msg_len);
+    eger gonderilen != 16 ise { dondu 10; }
+
+    # 2. Okuma tamponuna dis agdan veri gelisi simule et
+    asenkron_tampon_yaz(s.okuma_tamponu, msg, msg_len);
+
+    # 3. Asenkron soketten veri oku
+    degisken alinan_tampon: *u8 = bellek_tahsis_et(32);
+    degisken alinan: tamsayi = asenkron_soket_veri_al(s, alinan_tampon, 32);
+    eger alinan != 16 ise { dondu 11; }
+
+    # 4. Veri butunlugu kontrolu
+    degisken esit: tamsayi = bellek_esit_mi(msg, alinan_tampon, 16);
+    eger esit != 1 ise { dondu 12; }
+
+    # 5. Soketi kapat ve durum kontrolu
+    asenkron_soket_kapat(s);
+    eger s.durum != SOKET_DURUM_KAPALI ise { dondu 13; }
+
+    # Kapali sokete gonderme reddedilmeli (-1)
+    degisken ret: tamsayi = asenkron_soket_veri_gonder(s, msg, msg_len);
+    eger ret != (0 - 1) ise { dondu 14; }
+
+    os_bellek_serbest(alinan_tampon);
+    asenkron_soket_serbest_birak(s);
+
+    dondu 0;
+}
+

@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 50: Win32 Arayüzlü Yapay Zeka (LLM) Sohbet Paneli
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_mesaj_sayisi: tamsayi = 0;
+
+isv prompt_gonder(prompt: *u8) -> tamsayi {
+    ekrana_yaz("Kullanici: ".ptr);
+    ekrana_yaz(prompt);
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("Yukinary AI: Anladim! YKN native kodunuz derlenmeye hazir.\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Yapay Zeka Asistani".ptr, 680, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Sohbet Gecmisi (Mesaj Baloncuklari Alani)
+    metin_kutusu_olustur(p_h, 100, 20, 20, 630, 360);
+
+    # Prompt Girdi Kutusu
+    metin_kutusu_olustur(p_h, 101, 20, 400, 490, 40);
+
+    # Gonder Butonu
+    buton_olustur(p_h, "Gonder".ptr, 201, 530, 400, 120, 40);
+
+    prompt_gonder("Yukinary dilinde bir matris carpimi ornegi ver.".ptr);
+
+    ekrana_yaz("Yapay zeka sohbet paneli yuklendi. LLM cikarimi aktif.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

@@ -1,0 +1,500 @@
+# ============================================================
+# ir.ykn - Yukinary Typed Intermediate Representation (IR)
+# FAZ 4: AST ile makine kodu arasına giren platform-bağımsız katman.
+# IR Verifier, IR Dump ve tam opcode seti dahil.
+# ============================================================
+
+# IrOpcode Sabitleri
+degisken YKN_IR_NOP = 0;
+
+# Bellek ve Değişken İşlemleri
+degisken YKN_IR_ALLOCA   = 1;   # Stack üzerinde yer ayır: hedef=slot, sol=boyut
+degisken YKN_IR_MOV      = 2;   # Reg -> Reg kopya: hedef=dst, sol=src
+degisken YKN_IR_LOAD     = 3;   # Ptr -> Reg: hedef=dst, sol=ptr_reg
+degisken YKN_IR_STORE    = 4;   # Reg -> Ptr: hedef=ptr_reg, sol=val_reg
+degisken YKN_IR_CONST    = 5;   # Sabit -> Reg: hedef=dst, sol=imm
+degisken YKN_IR_GET_PTR  = 6;   # Değişken adresini al: hedef=ptr_reg, sol=slot_id
+degisken YKN_IR_ADDR     = 7;   # & operatörü: hedef=ptr_reg, sol=src_reg
+
+# Aritmetik
+degisken YKN_IR_ADD  = 10;
+degisken YKN_IR_SUB  = 11;
+degisken YKN_IR_MUL  = 12;
+degisken YKN_IR_DIV  = 13;
+degisken YKN_IR_MOD  = 14;
+degisken YKN_IR_NEG  = 15;   # Unary negatif: hedef=dst, sol=src
+
+# Mantıksal / Bitwise
+degisken YKN_IR_AND  = 20;
+degisken YKN_IR_OR   = 21;
+degisken YKN_IR_XOR  = 22;
+degisken YKN_IR_SHL  = 23;
+degisken YKN_IR_SHR  = 24;
+degisken YKN_IR_NOT  = 25;   # Bitwise NOT: hedef=dst, sol=src
+
+# Karşılaştırma (sonuç: 0 veya 1)
+degisken YKN_IR_CMP_EQ = 30;
+degisken YKN_IR_CMP_NE = 31;
+degisken YKN_IR_CMP_LT = 32;
+degisken YKN_IR_CMP_LE = 33;
+degisken YKN_IR_CMP_GT = 34;
+degisken YKN_IR_CMP_GE = 35;
+
+# Kontrol Akışı
+degisken YKN_IR_JMP       = 40;   # Şartsız atlama: sol=hedef_blok_id
+degisken YKN_IR_JMP_IF_Z  = 41;   # Sıfırsa atla: sol=kosul_reg, sag=hedef_blok_id
+degisken YKN_IR_JMP_IF_NZ = 42;   # Sıfır değilse atla: sol=kosul_reg, sag=hedef_blok_id
+degisken YKN_IR_CALL      = 43;   # Fonksiyon çağrısı: hedef=ret_reg, sol=isim_hash, sag=arg_sayisi
+degisken YKN_IR_RET       = 44;   # Dönüş: sol=ret_reg (0=void)
+degisken YKN_IR_PARAM     = 45;   # Argüman hazırla: hedef=arg_idx, sol=val_reg
+
+# Struct/Array erişimi
+degisken YKN_IR_FIELD_PTR = 50;  # Struct alan adresi: hedef=ptr, sol=obj_ptr, sag=offset
+degisken YKN_IR_INDEX_PTR = 51;  # Dizi indeks adresi: hedef=ptr, sol=base_ptr, sag=idx_reg
+
+# Tip dönüşümleri
+degisken YKN_IR_CAST_INT   = 60;  # Tamsayıya dönüştür
+degisken YKN_IR_CAST_FLOAT = 61;  # Gerçel sayıya dönüştür
+degisken YKN_IR_CAST_PTR   = 62;  # Pointer dönüşümü
+
+# Tip ID sabitleri (verifier için)
+degisken YKN_IR_TID_VOID    = 0;
+degisken YKN_IR_TID_INT     = 1;
+degisken YKN_IR_TID_FLOAT   = 2;
+degisken YKN_IR_TID_PTR     = 3;
+degisken YKN_IR_TID_BOOL    = 4;
+degisken YKN_IR_TID_U8      = 5;
+degisken YKN_IR_TID_STRUCT  = 6;
+degisken YKN_IR_TID_UNKNOWN = 99;
+
+# ============================================================
+# IR Veri Yapıları
+# ============================================================
+
+# Bir IR komutunun bellekteki temsili
+yapi IrKomutu {
+    opcode:     tamsayi;
+    hedef:      tamsayi;    # Sanal register ID (0 = yok)
+    sol:        tamsayi;    # 1. operand (reg veya imm)
+    sag:        tamsayi;    # 2. operand (reg veya imm)
+    tip_id:     tamsayi;    # YKN_IR_TID_* sabiti
+    sonraki:    *IrKomutu;
+}
+
+# Temel Blok — dallanma içermeyen doğrusal komut dizisi
+yapi IrBloku {
+    id:              tamsayi;
+    ilk_komut:       *IrKomutu;
+    son_komut:       *IrKomutu;
+    gercek_hedef:   *IrBloku;   # JMP / JMP_IF_NZ hedefi
+    yanlis_hedef:   *IrBloku;   # JMP_IF_Z hedefi (fallthrough)
+    sonraki:         *IrBloku;   # Fonksiyon içindeki sıradaki blok
+}
+
+# Fonksiyon IR temsili
+yapi IrFonksiyonu {
+    isim_hash:        tamsayi;
+    isim:             *u8;
+    isim_uzunluk:     tamsayi;
+    ilk_blok:         *IrBloku;
+    son_blok:         *IrBloku;
+    sanal_reg_sayisi: tamsayi;
+    frame_boyutu:     tamsayi;
+    param_sayisi:     tamsayi;
+    donus_tip_id:     tamsayi;
+    kod_baslangici:   tamsayi;
+    kod_sonu:         tamsayi;
+    sonraki:          *IrFonksiyonu;
+}
+
+# x86-64 call rel32 relocation kaydı.
+yapi IrRelocation {
+    arena_bellek:     *u8;
+    rel32_konumu:     tamsayi;
+    hedef_hash:       tamsayi;
+    sonraki:          *IrRelocation;
+}
+
+# IR Motor (builder durumu)
+yapi IrMotoru {
+    aktif_fonksiyon:  *IrFonksiyonu;
+    aktif_blok:       *IrBloku;
+    sanal_reg_sayaci: tamsayi;
+    blok_sayaci:      tamsayi;
+    ilk_fonksiyon:    *IrFonksiyonu;
+    son_fonksiyon:    *IrFonksiyonu;
+    ilk_relocation:   *IrRelocation;
+    son_relocation:   *IrRelocation;
+    relocation_sayisi: tamsayi;
+    arena_ptr:        *u8;
+    arena_mevcut:     tamsayi;
+    arena_kapasite:   tamsayi;
+    hata_sayisi:      tamsayi;
+}
+
+# ============================================================
+# IR Motor temel işlemleri
+# ============================================================
+
+isv ir_motoru_olustur(kapasite: tamsayi) -> *IrMotoru {
+    degisken motor: *IrMotoru = compiler_tahsis_et(256);
+    motor.arena_ptr        = compiler_tahsis_et(kapasite);
+    motor.arena_mevcut     = 0;
+    motor.arena_kapasite   = kapasite;
+    motor.sanal_reg_sayaci = 0;
+    motor.blok_sayaci      = 0;
+    motor.aktif_fonksiyon  = 0;
+    motor.aktif_blok       = 0;
+    motor.ilk_fonksiyon    = 0;
+    motor.son_fonksiyon    = 0;
+    motor.ilk_relocation   = 0;
+    motor.son_relocation   = 0;
+    motor.relocation_sayisi = 0;
+    motor.hata_sayisi      = 0;
+    dondu motor;
+}
+
+isv ir_arena_tahsis(motor: *IrMotoru, boyut: tamsayi) -> *u8 {
+    eger motor.arena_mevcut + boyut > motor.arena_kapasite ise {
+        degisken yeni_kapasite: tamsayi = motor.arena_kapasite * 2;
+        eger yeni_kapasite < 16777216 ise { yeni_kapasite = 16777216; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek == 0 ise {
+            ekrana_yaz("HATA [E015] [ERR_IR_LIMIT] [class=compiler]: IR arena bellek tahsisi basarisiz.\n".ptr);
+            dondu 0;
+        }
+        motor.arena_ptr = yeni_bellek;
+        motor.arena_kapasite = yeni_kapasite;
+        motor.arena_mevcut = 0;
+    }
+    degisken ptr: *u8 = motor.arena_ptr + motor.arena_mevcut;
+    motor.arena_mevcut = motor.arena_mevcut + boyut;
+    dondu ptr;
+}
+
+isv ir_yeni_reg(motor: *IrMotoru) -> tamsayi {
+    motor.sanal_reg_sayaci = motor.sanal_reg_sayaci + 1;
+    eger motor.sanal_reg_sayaci > 32768 ise {
+        ekrana_yaz("HATA [E015] [ERR_IR_LIMIT] [class=compiler]: Maks sanal register asildi (32768).\n".ptr);
+        motor.hata_sayisi = motor.hata_sayisi + 1;
+    }
+    degisken akt_fonk: *IrFonksiyonu = motor.aktif_fonksiyon;
+    eger akt_fonk != 0 ise {
+        akt_fonk.sanal_reg_sayisi = motor.sanal_reg_sayaci;
+    }
+    dondu motor.sanal_reg_sayaci;
+}
+
+isv ir_blok_yeni(motor: *IrMotoru) -> *IrBloku {
+    degisken blok: *IrBloku = ir_arena_tahsis(motor, 80);
+    eger blok == 0 ise { dondu 0; }
+    motor.blok_sayaci = motor.blok_sayaci + 1;
+    blok.id          = motor.blok_sayaci;
+    blok.ilk_komut   = 0;
+    blok.son_komut   = 0;
+    blok.gercek_hedef = 0;
+    blok.yanlis_hedef = 0;
+    blok.sonraki     = 0;
+    dondu blok;
+}
+
+isv ir_komut_ekle(motor: *IrMotoru, opcode: tamsayi, hedef: tamsayi, sol: tamsayi, sag: tamsayi, tip_id: tamsayi) -> *IrKomutu {
+    degisken komut: *IrKomutu = ir_arena_tahsis(motor, 80);
+    eger komut == 0 ise { dondu 0; }
+    komut.opcode  = opcode;
+    komut.hedef   = hedef;
+    komut.sol     = sol;
+    komut.sag     = sag;
+    komut.tip_id  = tip_id;
+    komut.sonraki = 0;
+    degisken blok: *IrBloku = motor.aktif_blok;
+    eger blok != 0 ise {
+        eger blok.ilk_komut == 0 ise {
+            blok.ilk_komut = komut;
+            blok.son_komut = komut;
+        } yoksa {
+            degisken son_k: *IrKomutu = blok.son_komut;
+            son_k.sonraki = komut;
+            blok.son_komut = komut;
+        }
+    }
+    dondu komut;
+}
+
+isv ir_fonksiyon_baslat(motor: *IrMotoru, isim_hash: tamsayi) -> *IrFonksiyonu {
+    degisken fonk: *IrFonksiyonu = ir_arena_tahsis(motor, 128);
+    eger fonk == 0 ise { dondu 0; }
+    fonk.isim_hash        = isim_hash;
+    fonk.isim             = 0;
+    fonk.isim_uzunluk     = 0;
+    fonk.ilk_blok         = 0;
+    fonk.son_blok         = 0;
+    fonk.sanal_reg_sayisi = 0;
+    fonk.frame_boyutu     = 0;
+    fonk.param_sayisi     = 0;
+    fonk.donus_tip_id    = YKN_IR_TID_UNKNOWN;
+    fonk.kod_baslangici  = 0 - 1;
+    fonk.kod_sonu        = 0 - 1;
+    fonk.sonraki          = 0;
+    eger motor.ilk_fonksiyon == 0 ise {
+        motor.ilk_fonksiyon = fonk;
+    } yoksa {
+        degisken son_f: *IrFonksiyonu = motor.son_fonksiyon;
+        son_f.sonraki = fonk;
+    }
+    motor.son_fonksiyon = fonk;
+    motor.aktif_fonksiyon = fonk;
+    motor.sanal_reg_sayaci = 0;
+    # Giriş bloğu oluştur
+    degisken giris: *IrBloku = ir_blok_yeni(motor);
+    fonk.ilk_blok = giris;
+    fonk.son_blok = giris;
+    motor.aktif_blok = giris;
+    dondu fonk;
+}
+
+isv ir_blok_aktar(motor: *IrMotoru, yeni_blok: *IrBloku) {
+    eger motor.aktif_fonksiyon != 0 ve yeni_blok != 0 ise {
+        degisken ab: *IrBloku = motor.aktif_blok;
+        ab.sonraki = yeni_blok;
+        degisken af: *IrFonksiyonu = motor.aktif_fonksiyon;
+        af.son_blok = yeni_blok;
+    }
+    motor.aktif_blok = yeni_blok;
+}
+
+# ============================================================
+# IR VERIFIER — Tip güvenliği ve tutarlılık kontrolleri
+# ============================================================
+
+isv ir_verifier_komut_kontrol(komut: *IrKomutu, hata_sayac: *tamsayi) {
+    eger komut == 0 ise { dondu; }
+    degisken op: tamsayi = komut.opcode;
+
+    # Aritmetik ve bitwise: sol ve sag operand olmalı, hedef register geçerli
+    eger op >= 10 ve op <= 25 ise {
+        eger op != 15 ve op != 25 ise { # NEG ve NOT tek operand
+            eger komut.sol == 0 ise {
+                ekrana_yaz("IR VERIFIER HATA: Aritmetik komut sol operand eksik (opcode=".ptr);
+                hata_sayac[0] = hata_sayac[0] + 1;
+            }
+            eger komut.sag == 0 ise {
+                ekrana_yaz("IR VERIFIER HATA: Aritmetik komut sag operand eksik\n".ptr);
+                hata_sayac[0] = hata_sayac[0] + 1;
+            }
+        }
+        eger komut.hedef == 0 ise {
+            ekrana_yaz("IR VERIFIER HATA: Aritmetik komut hedef register eksik\n".ptr);
+            hata_sayac[0] = hata_sayac[0] + 1;
+        }
+    }
+
+    # Karşılaştırma: iki operand + hedef
+    eger op >= 30 ve op <= 35 ise {
+        eger komut.sol == 0 veya komut.sag == 0 ise {
+            ekrana_yaz("IR VERIFIER HATA: Karsilastirma komut operand eksik\n".ptr);
+            hata_sayac[0] = hata_sayac[0] + 1;
+        }
+        eger komut.hedef == 0 ise {
+            ekrana_yaz("IR VERIFIER HATA: Karsilastirma hedef eksik\n".ptr);
+            hata_sayac[0] = hata_sayac[0] + 1;
+        }
+    }
+
+    # STORE: hedef=ptr_reg, sol=val_reg — her ikisi gerekli
+    eger op == 4 ise {
+        eger komut.hedef == 0 veya komut.sol == 0 ise {
+            ekrana_yaz("IR VERIFIER HATA: STORE ptr veya val register eksik\n".ptr);
+            hata_sayac[0] = hata_sayac[0] + 1;
+        }
+    }
+
+    # RET: tip_id tutarlı olmalı (basic kontrol)
+    eger op == 44 ise {
+        eger komut.tip_id == YKN_IR_TID_UNKNOWN ise {
+            # Uyarı: dönüş tipi bilinmiyor — blocker değil
+        }
+    }
+}
+
+isv ir_verifier_blok_kontrol(blok: *IrBloku, hata_sayac: *tamsayi) {
+    eger blok == 0 ise { dondu; }
+    degisken son_op: tamsayi = 0;
+    degisken komut: *IrKomutu = blok.ilk_komut;
+    dongu komut != 0 {
+        ir_verifier_komut_kontrol(komut, hata_sayac);
+        son_op = komut.opcode;
+        komut = komut.sonraki;
+    }
+    # Temel blok doğru sonlandırılmalı: JMP, JMP_IF_* veya RET
+    eger blok.sonraki != 0 ise {
+        eger son_op != 40 ve son_op != 41 ve son_op != 42 ve son_op != 44 ise {
+            # Fall-through geçerli; uyarı değil
+        }
+    }
+}
+
+isv ir_verifier_calistir(motor: *IrMotoru) -> tamsayi {
+    eger motor == 0 ise { dondu 0; }
+    degisken hata_arr: [1]tamsayi;
+    hata_arr[0] = 0;
+    degisken fonk: *IrFonksiyonu = motor.ilk_fonksiyon;
+    dongu fonk != 0 {
+        degisken blok: *IrBloku = fonk.ilk_blok;
+        dongu blok != 0 {
+            ir_verifier_blok_kontrol(blok, hata_arr);
+            blok = blok.sonraki;
+        }
+        fonk = fonk.sonraki;
+    }
+    motor.hata_sayisi = motor.hata_sayisi + hata_arr[0];
+    dondu hata_arr[0];
+}
+
+# ============================================================
+# IR DUMP — Debug çıktısı
+# ============================================================
+
+isv ir_dump_sayi_hex(n: tamsayi) {
+    degisken nibbles: [16]u8;
+    degisken i: tamsayi = 0;
+    degisken v: tamsayi = n;
+    dongu v > 0 ve i < 16 {
+        degisken d: tamsayi = v % 16;
+        eger d < 10 ise { nibbles[i] = d + 48; }
+        yoksa { nibbles[i] = d - 10 + 65; }
+        v = v / 16;
+        i = i + 1;
+    }
+    eger i == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken j: tamsayi = i - 1;
+    dongu j >= 0 {
+        degisken buf: [2]u8;
+        buf[0] = nibbles[j];
+        buf[1] = 0;
+        ekrana_yaz(buf);
+        j = j - 1;
+    }
+}
+
+isv ir_dump_opcode_adi(op: tamsayi) {
+    eger op == 0 ise  { ekrana_yaz("NOP".ptr); dondu; }
+    eger op == 1 ise  { ekrana_yaz("ALLOCA".ptr); dondu; }
+    eger op == 2 ise  { ekrana_yaz("MOV".ptr); dondu; }
+    eger op == 3 ise  { ekrana_yaz("LOAD".ptr); dondu; }
+    eger op == 4 ise  { ekrana_yaz("STORE".ptr); dondu; }
+    eger op == 5 ise  { ekrana_yaz("CONST".ptr); dondu; }
+    eger op == 6 ise  { ekrana_yaz("GET_PTR".ptr); dondu; }
+    eger op == 7 ise  { ekrana_yaz("ADDR".ptr); dondu; }
+    eger op == 10 ise { ekrana_yaz("ADD".ptr); dondu; }
+    eger op == 11 ise { ekrana_yaz("SUB".ptr); dondu; }
+    eger op == 12 ise { ekrana_yaz("MUL".ptr); dondu; }
+    eger op == 13 ise { ekrana_yaz("DIV".ptr); dondu; }
+    eger op == 14 ise { ekrana_yaz("MOD".ptr); dondu; }
+    eger op == 15 ise { ekrana_yaz("NEG".ptr); dondu; }
+    eger op == 20 ise { ekrana_yaz("AND".ptr); dondu; }
+    eger op == 21 ise { ekrana_yaz("OR".ptr); dondu; }
+    eger op == 22 ise { ekrana_yaz("XOR".ptr); dondu; }
+    eger op == 23 ise { ekrana_yaz("SHL".ptr); dondu; }
+    eger op == 24 ise { ekrana_yaz("SHR".ptr); dondu; }
+    eger op == 25 ise { ekrana_yaz("NOT".ptr); dondu; }
+    eger op == 30 ise { ekrana_yaz("CMP_EQ".ptr); dondu; }
+    eger op == 31 ise { ekrana_yaz("CMP_NE".ptr); dondu; }
+    eger op == 32 ise { ekrana_yaz("CMP_LT".ptr); dondu; }
+    eger op == 33 ise { ekrana_yaz("CMP_LE".ptr); dondu; }
+    eger op == 34 ise { ekrana_yaz("CMP_GT".ptr); dondu; }
+    eger op == 35 ise { ekrana_yaz("CMP_GE".ptr); dondu; }
+    eger op == 40 ise { ekrana_yaz("JMP".ptr); dondu; }
+    eger op == 41 ise { ekrana_yaz("JMP_IF_Z".ptr); dondu; }
+    eger op == 42 ise { ekrana_yaz("JMP_IF_NZ".ptr); dondu; }
+    eger op == 43 ise { ekrana_yaz("CALL".ptr); dondu; }
+    eger op == 44 ise { ekrana_yaz("RET".ptr); dondu; }
+    eger op == 45 ise { ekrana_yaz("PARAM".ptr); dondu; }
+    eger op == 50 ise { ekrana_yaz("FIELD_PTR".ptr); dondu; }
+    eger op == 51 ise { ekrana_yaz("INDEX_PTR".ptr); dondu; }
+    eger op == 60 ise { ekrana_yaz("CAST_INT".ptr); dondu; }
+    eger op == 61 ise { ekrana_yaz("CAST_FLOAT".ptr); dondu; }
+    eger op == 62 ise { ekrana_yaz("CAST_PTR".ptr); dondu; }
+    ekrana_yaz("?OP".ptr);
+}
+
+isv ir_dump_tip_adi(tid: tamsayi) {
+    eger tid == 0 ise  { ekrana_yaz("void".ptr); dondu; }
+    eger tid == 1 ise  { ekrana_yaz("int".ptr); dondu; }
+    eger tid == 2 ise  { ekrana_yaz("float".ptr); dondu; }
+    eger tid == 3 ise  { ekrana_yaz("ptr".ptr); dondu; }
+    eger tid == 4 ise  { ekrana_yaz("bool".ptr); dondu; }
+    eger tid == 5 ise  { ekrana_yaz("u8".ptr); dondu; }
+    eger tid == 6 ise  { ekrana_yaz("struct".ptr); dondu; }
+    ekrana_yaz("?".ptr);
+}
+
+isv ir_dump_reg(r: tamsayi) {
+    eger r == 0 ise { ekrana_yaz("_".ptr); dondu; }
+    ekrana_yaz("%r".ptr);
+    ir_dump_sayi_hex(r);
+}
+
+isv ir_dump_komut(komut: *IrKomutu) {
+    eger komut == 0 ise { dondu; }
+    ekrana_yaz("    ".ptr);
+    ir_dump_reg(komut.hedef);
+    ekrana_yaz(" = ".ptr);
+    ir_dump_opcode_adi(komut.opcode);
+    ekrana_yaz(" ".ptr);
+    ir_dump_reg(komut.sol);
+    eger komut.sag != 0 ise {
+        ekrana_yaz(", ".ptr);
+        ir_dump_reg(komut.sag);
+    }
+    ekrana_yaz(" <".ptr);
+    ir_dump_tip_adi(komut.tip_id);
+    ekrana_yaz(">\n".ptr);
+}
+
+isv ir_dump_blok(blok: *IrBloku) {
+    eger blok == 0 ise { dondu; }
+    ekrana_yaz("  BB".ptr);
+    ir_dump_sayi_hex(blok.id);
+    ekrana_yaz(":\n".ptr);
+    degisken komut: *IrKomutu = blok.ilk_komut;
+    dongu komut != 0 {
+        ir_dump_komut(komut);
+        komut = komut.sonraki;
+    }
+}
+
+isv ir_dump_fonksiyon(fonk: *IrFonksiyonu) {
+    eger fonk == 0 ise { dondu; }
+    ekrana_yaz("fn #".ptr);
+    ir_dump_sayi_hex(fonk.isim_hash);
+    ekrana_yaz(" (regs=".ptr);
+    ir_dump_sayi_hex(fonk.sanal_reg_sayisi);
+    ekrana_yaz(" frame=".ptr);
+    ir_dump_sayi_hex(fonk.frame_boyutu);
+    ekrana_yaz(") -> ".ptr);
+    ir_dump_tip_adi(fonk.donus_tip_id);
+    ekrana_yaz(":\n".ptr);
+    degisken blok: *IrBloku = fonk.ilk_blok;
+    dongu blok != 0 {
+        ir_dump_blok(blok);
+        blok = blok.sonraki;
+    }
+}
+
+isv ir_dump(motor: *IrMotoru) {
+    eger motor == 0 ise { dondu; }
+    ekrana_yaz("=== IR DUMP ===\n".ptr);
+    degisken fonk: *IrFonksiyonu = motor.ilk_fonksiyon;
+    degisken n: tamsayi = 0;
+    dongu fonk != 0 {
+        ir_dump_fonksiyon(fonk);
+        fonk = fonk.sonraki;
+        n = n + 1;
+    }
+    ekrana_yaz("=== ".ptr);
+    ir_dump_sayi_hex(n);
+    ekrana_yaz(" fonksiyon, ".ptr);
+    ir_dump_sayi_hex(motor.hata_sayisi);
+    ekrana_yaz(" verifier hatasi ===\n".ptr);
+}

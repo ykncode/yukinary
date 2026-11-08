@@ -1,0 +1,15 @@
+enum Durum {
+    Basarili,
+    Beklemede,
+    Hatali
+}
+
+isv ana() -> tamsayi {
+    degisken d: Durum = Durum.Basarili;
+    esles d {
+        Durum.Basarili ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}

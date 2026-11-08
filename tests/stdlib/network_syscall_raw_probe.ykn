@@ -1,0 +1,14 @@
+# Ham ABI probe: her aşama farklı exit kodu verir.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger yukinary_sys_net_init() != 0 ise { dondu 10; }
+    degisken s: tamsayi = yukinary_sys_socket_create(2, 1, 0);
+    eger s < 0 ise { dondu 11; }
+    eger yukinary_sys_socket_set_reuseaddr(s) != 0 ise { dondu 12; }
+    eger yukinary_sys_socket_bind(s, 0, 0) != 0 ise { dondu 13; }
+    eger yukinary_sys_socket_listen(s, 4) != 0 ise { dondu 14; }
+    degisken kapandi: tamsayi = soket_kapat(s);
+    eger kapandi != 0 ise { dondu 15; }
+    dondu 0;
+}

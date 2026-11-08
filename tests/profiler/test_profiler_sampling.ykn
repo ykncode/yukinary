@@ -1,0 +1,55 @@
+# ============================================================
+# FAZ 27: Profiler & Debugging Entegrasyon Testi
+# ============================================================
+
+ice_aktar "std/profiler/profiler.ykn";
+
+degisken ID_AGIR: tamsayi = 1;
+degisken ID_HAFIF: tamsayi = 2;
+
+isv agir_hesaplama(iter_sayisi: tamsayi) -> tamsayi {
+    profil_baslat_id(ID_AGIR, "agir_hesaplama\0".ptr);
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < iter_sayisi {
+        toplam = toplam + (i * 3);
+        i = i + 1;
+    }
+    profil_bitir_id(ID_AGIR);
+    dondu toplam;
+}
+
+isv hafif_hesaplama(deger: tamsayi) -> tamsayi {
+    profil_baslat_id(ID_HAFIF, "hafif_hesaplama\0".ptr);
+    degisken res: tamsayi = deger * 2;
+    profil_bitir_id(ID_HAFIF);
+    dondu res;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken a: tamsayi = agir_hesaplama(50000);
+    degisken b: tamsayi = agir_hesaplama(20000);
+    
+    degisken c1: tamsayi = hafif_hesaplama(10);
+    degisken c2: tamsayi = hafif_hesaplama(20);
+    degisken c3: tamsayi = hafif_hesaplama(30);
+
+    # Profil kayitlarini dogrula
+    degisken k_agir: *ProfilKaydi = profil_kaydi_bul_id(ID_AGIR, 0);
+    degisken k_hafif: *ProfilKaydi = profil_kaydi_bul_id(ID_HAFIF, 0);
+
+    eger k_agir == 0 veya k_agir.cagri_sayisi != 2 ise {
+        ekrana_yaz("PROFIL_AGIR_CAGRI_HATA\n".ptr);
+        dondu 1;
+    }
+
+    eger k_hafif == 0 veya k_hafif.cagri_sayisi != 3 ise {
+        ekrana_yaz("PROFIL_HAFIF_CAGRI_HATA\n".ptr);
+        dondu 1;
+    }
+
+    profil_raporu_yazdir();
+
+    ekrana_yaz("PROFILER_SAMPLING_PASS\n".ptr);
+    dondu 0;
+}

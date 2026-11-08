@@ -1,0 +1,40 @@
+# ============================================================
+# Örnek 21: Konsol Tabanlı İkinci Dereceden Polinom Kök Bulucu
+# ============================================================
+ice_aktar "std/matematik.ykn";
+
+# ax^2 + bx + c = 0
+# Delta = b^2 - 4ac
+isv kokleri_bul(a: tamsayi, b: tamsayi, c: tamsayi) {
+    ekrana_yaz("Denklem: ");
+    sayiyi_ekrana_yaz(a); ekrana_yaz("x^2 + ");
+    sayiyi_ekrana_yaz(b); ekrana_yaz("x + ");
+    sayiyi_ekrana_yaz(c); ekrana_yaz(" = 0\n".ptr);
+
+    degisken delta: tamsayi = (b * b) - (4 * a * c);
+    ekrana_yaz("Delta (b^2 - 4ac) = ");
+    sayiyi_ekrana_yaz(delta);
+    ekrana_yaz("\n".ptr);
+
+    eger delta < 0 ise {
+        ekrana_yaz("Reel kok yoktur (Kokler karmasiktir).\n".ptr);
+    } yoksa eger delta == 0 ise {
+        degisken kok: tamsayi = (0 - b) / (2 * a);
+        ekrana_yaz("Cakısik tek kok vardir: x1 = x2 = ");
+        sayiyi_ekrana_yaz(kok);
+        ekrana_yaz("\n".ptr);
+    } yoksa {
+        degisken kok_delta: tamsayi = karekok(delta);
+        degisken x1: tamsayi = ((0 - b) + kok_delta) / (2 * a);
+        degisken x2: tamsayi = ((0 - b) - kok_delta) / (2 * a);
+        ekrana_yaz("Iki farkli reel kok vardir:\n".ptr);
+        ekrana_yaz("x1 = "); sayiyi_ekrana_yaz(x1); ekrana_yaz("\n".ptr);
+        ekrana_yaz("x2 = "); sayiyi_ekrana_yaz(x2); ekrana_yaz("\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    # x^2 - 5x + 6 = 0 -> Kokler: 2 ve 3
+    kokleri_bul(1, 0 - 5, 6);
+    dondu 0;
+}

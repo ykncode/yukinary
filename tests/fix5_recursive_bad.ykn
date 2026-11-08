@@ -1,0 +1,9 @@
+yapi A {
+    b: B;
+}
+yapi B {
+    a: A;
+}
+isv ana() -> tamsayi {
+    dondu 0;
+}

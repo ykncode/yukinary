@@ -1,0 +1,27 @@
+# YKN Q16.16 scalar AI reference kernel acceptance.
+ice_aktar "../../std/ai/ops.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken A: [4]tamsayi;
+    degisken B: [4]tamsayi;
+    degisken C: [4]tamsayi;
+    A[0] = 65536; A[1] = 131072;
+    A[2] = 196608; A[3] = 262144;
+    B[0] = 327680; B[1] = 393216;
+    B[2] = 458752; B[3] = 524288;
+    eger ai_matmul(A.ptr, B.ptr, C.ptr, 2, 2, 2) == 0 ise { dondu 1; }
+    # 1*5+2*7=19, 1*6+2*8=22, 3*5+4*7=43, 3*6+4*8=50.
+    eger C[0] != 1245184 veya C[1] != 1441792 veya
+       C[2] != 2818048 veya C[3] != 3276800 ise { dondu 2; }
+
+    eger ai_silu(C.ptr, 4) == 0 ise { dondu 3; }
+    eger ai_rmsnorm(C.ptr, A.ptr, 4) == 0 ise { dondu 4; }
+
+    degisken logits: [2]tamsayi;
+    logits[0] = 0;
+    logits[1] = 0;
+    eger ai_softmax(logits.ptr, 1, 2) == 0 veya
+       logits[0] < 32760 veya logits[0] > 32776 veya
+       logits[1] < 32760 veya logits[1] > 32776 ise { dondu 5; }
+    dondu 0;
+}

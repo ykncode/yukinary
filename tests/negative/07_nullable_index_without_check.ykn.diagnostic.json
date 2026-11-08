@@ -1,0 +1,8 @@
+{
+  "schema": "yukinary.diagnostic-oracle.v1",
+  "exit_code": 1,
+  "diagnostic_code": "ERR_NULLABLE_ACCESS_WITHOUT_CHECK",
+  "error_class": "codegen",
+  "message_pattern": "FIX13 HATA: Nullable pointer erisimi kontrolsuz",
+  "error_count": 1
+}

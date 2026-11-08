@@ -1,0 +1,62 @@
+# FAZ 7 - std/bellek.ykn tek test
+# Calisma dizini: d:\YukiLLM\yukinary_vanilla
+
+degisken test_bellek: [192]u8;
+degisken test_bellek_kullanilan: tamsayi = 0;
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 {
+    eger boyut <= 0 veya test_bellek_kullanilan + boyut > 192 ise { dondu 0; }
+    degisken sonuc: *u8 = test_bellek + test_bellek_kullanilan;
+    test_bellek_kullanilan = test_bellek_kullanilan + boyut;
+    dondu sonuc;
+}
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    if sayi == 0 ise { buf[0]=48; buf[1]=0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    if n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i]=(n%10)+48; n=n/10; i=i+1; }
+    if neg == 1 ise { buf[i]=45; i=i+1; }
+    degisken j: tamsayi = 0;
+    dongu j < i/2 {
+        degisken t: u8 = buf[j]; buf[j]=buf[i-1-j]; buf[i-1-j]=t;
+        j=j+1;
+    }
+    buf[i]=0;
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../std/bellek.ykn";
+
+isv ana() -> tamsayi {
+    degisken a: *u8 = bellek_tahsis_et(64);
+    degisken b: *u8 = bellek_tahsis_et(64);
+    degisken c: *u8 = bellek_tahsis_et(64);
+
+    a[0]=89; a[1]=75; a[2]=78; a[3]=0;       # "YKN"
+    bellek_kopyala(b, a, 4);
+    ekrana_yaz(b);                               # YKN
+    ekrana_yaz(" esit=".ptr);
+    sayiyi_yazdir(bellek_esit_mi(a, b, 4));      # 1
+    ekrana_yaz(" doldur=".ptr);
+    bellek_doldur(c, 65, 3);                     # "AAA"
+    c[3]=0;
+    ekrana_yaz(c);
+    ekrana_yaz(" cmp=".ptr);
+    a[0]=97; a[1]=98; a[2]=99; a[3]=0;          # abc
+    b[0]=97; b[1]=98; b[2]=100; b[3]=0;         # abd
+    sayiyi_yazdir(bellek_karsilastir(a, b, 3));  # -1
+    ekrana_yaz(" ara=".ptr);
+    a[0]=72; a[1]=101; a[2]=108; a[3]=108; a[4]=111; a[5]=0;  # "Hello"
+    degisken fe: *u8 = bellek_ara(a, 108, 6);
+    if fe != 0 ise {
+        degisken fark: tamsayi = fe - a;
+        sayiyi_yazdir(fark);                     # 2 (ilk 'l' H e l l -> 2. index)
+    }
+    ekrana_yaz("\nstd-bellek-PASS\n".ptr);
+    dondu 0;
+}

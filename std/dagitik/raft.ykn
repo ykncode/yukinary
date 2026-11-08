@@ -1,0 +1,220 @@
+# ============================================================
+# std/dagitik/raft.ykn
+# FAZ 45 & FAZ 65: Saf Yukinary Raft Konsensus Durum Makinesi
+# SIFIR MOCK, Gercek Lider Secimi, Term Yonetimi, Log Cogaltma,
+# Log Budama (Truncation), Snapshotting ve Ag Bolunmesi (Partition) Yonetimi
+# ============================================================
+
+degisken RAFT_ROL_TAKIPCI: tamsayi = 0;
+degisken RAFT_ROL_ADAY:    tamsayi = 1;
+degisken RAFT_ROL_LIDER:   tamsayi = 2;
+
+yapi RaftSnapshot {
+    son_indis:    tamsayi;
+    son_donem:    tamsayi;
+    veri_boyutu:  tamsayi;
+    durum_verisi: *tamsayi;
+}
+
+yapi RaftDugum {
+    id:               tamsayi;
+    lider_id:         tamsayi;
+    guncel_donem:     tamsayi;
+    oy_verilen_aday:  tamsayi; # -1: kimseye oy verilmedi
+    rol:              tamsayi; # RAFT_ROL_*
+    log_kapasitesi:   tamsayi;
+    log_sayisi:       tamsayi;
+    log_donemler:     *tamsayi; # Her kaydin donemi
+    log_komutlar:     *tamsayi; # Her kaydin komutu
+    log_degerler:     *tamsayi; # Her kaydin degeri
+    commit_indis:     tamsayi;
+    son_uygulanan:    tamsayi;
+    kalp_atisi_ms:    tamsayi;
+    secim_asimi_ms:   tamsayi;
+}
+
+isv raft_dugum_olustur(dugum_id: tamsayi, kap: tamsayi) -> *RaftDugum {
+    degisken d: *RaftDugum = bellek_tahsis_et(112);
+    d.id = dugum_id;
+    d.lider_id = 0 - 1;
+    d.guncel_donem = 0;
+    d.oy_verilen_aday = 0 - 1;
+    d.rol = RAFT_ROL_TAKIPCI;
+    d.log_kapasitesi = kap;
+    d.log_sayisi = 0;
+    d.log_donemler = bellek_tahsis_et(kap * 8);
+    d.log_komutlar = bellek_tahsis_et(kap * 8);
+    d.log_degerler = bellek_tahsis_et(kap * 8);
+    d.commit_indis = 0;
+    d.son_uygulanan = 0;
+    d.kalp_atisi_ms = 0;
+    d.secim_asimi_ms = 150 + (dugum_id * 50); # Rastgelelestirilmis election timeout
+    dondu d;
+}
+
+# Dugum daha yuksek bir donem gordugunde derhal Takipci rolune doner (Step Down)
+isv raft_adim_geri_cekil(d: *RaftDugum, yeni_donem: tamsayi) {
+    d.guncel_donem = yeni_donem;
+    d.rol = RAFT_ROL_TAKIPCI;
+    d.oy_verilen_aday = 0 - 1;
+    d.lider_id = 0 - 1;
+}
+
+# Bir dugum adayliga yukselir ve yeni donem baslatir
+isv raft_aday_ol(d: *RaftDugum) {
+    d.rol = RAFT_ROL_ADAY;
+    d.guncel_donem = d.guncel_donem + 1;
+    d.oy_verilen_aday = d.id; # Kendine oy verir
+    d.lider_id = 0 - 1;
+}
+
+# RequestVote RPC islemi (Dugume oy talebi gelir)
+isv raft_oy_iste(hedef: *RaftDugum, aday_id: tamsayi, aday_donem: tamsayi, son_log_indis: tamsayi, son_log_donem: tamsayi) -> tamsayi {
+    # 1. Adayin donemi hedef dugumden kucukse ret
+    eger aday_donem < hedef.guncel_donem ise {
+        dondu 0;
+    }
+
+    # 2. Adayin donemi daha buyukse, hedef dugum takipciye duser ve donemi gunceller
+    eger aday_donem > hedef.guncel_donem ise {
+        raft_adim_geri_cekil(hedef, aday_donem);
+    }
+
+    # 3. Henuz oy verilmediyse veya bu adaya verildiyse ve adayin logu guncelse oy ver
+    eger hedef.oy_verilen_aday == (0 - 1) veya hedef.oy_verilen_aday == aday_id ise {
+        degisken yerel_son_indis: tamsayi = hedef.log_sayisi;
+        degisken yerel_son_donem: tamsayi = 0;
+        eger yerel_son_indis > 0 ise {
+            degisken ld: *tamsayi = hedef.log_donemler;
+            yerel_son_donem = ld[yerel_son_indis - 1];
+        }
+
+        # Log guncelligi kontrolu (Raft Section 5.4.1: son_log_donem karsilastirmasi)
+        degisken log_guncel: tamsayi = 0;
+        eger son_log_donem > yerel_son_donem ise {
+            log_guncel = 1;
+        } yoksa {
+            eger son_log_donem == yerel_son_donem ve son_log_indis >= yerel_son_indis ise {
+                log_guncel = 1;
+            }
+        }
+
+        eger log_guncel == 1 ise {
+            hedef.oy_verilen_aday = aday_id;
+            dondu 1; # OY VERILDI
+        }
+    }
+
+    dondu 0; # REDDEDILDI
+}
+
+# Lider tarafindan yerel log defterine yeni girdi eklenmesi
+isv raft_lider_log_ekle(lider: *RaftDugum, komut: tamsayi, deger: tamsayi) -> tamsayi {
+    eger lider.rol != RAFT_ROL_LIDER ise {
+        dondu 0 - 1; # Yalnizca lider log ekleyebilir
+    }
+    degisken n: tamsayi = lider.log_sayisi;
+    eger n >= lider.log_kapasitesi ise {
+        dondu 0 - 2; # Kapasite dolu
+    }
+    degisken d: *tamsayi = lider.log_donemler;
+    degisken k: *tamsayi = lider.log_komutlar;
+    degisken v: *tamsayi = lider.log_degerler;
+    d[n] = lider.guncel_donem;
+    k[n] = komut;
+    v[n] = deger;
+    lider.log_sayisi = n + 1;
+    dondu n + 1; # Yeni log indeksi (1-tabanli)
+}
+
+# AppendEntries RPC islemi (Liderden Takipciye log kopyalama veya Heartbeat)
+isv raft_log_kabul_et(takipci: *RaftDugum, lider_id: tamsayi, lider_donem: tamsayi, onceki_indis: tamsayi, onceki_donem: tamsayi, komut: tamsayi, deger: tamsayi, lider_commit: tamsayi) -> tamsayi {
+    # 1. Donem kontrolu
+    eger lider_donem < takipci.guncel_donem ise {
+        dondu 0; # Eski lider, reddet
+    }
+
+    # 2. Donem esit veya buyukse lideri tani ve takipci kal
+    eger lider_donem > takipci.guncel_donem ise {
+        raft_adim_geri_cekil(takipci, lider_donem);
+    } yoksa {
+        takipci.rol = RAFT_ROL_TAKIPCI;
+    }
+    takipci.lider_id = lider_id;
+    takipci.kalp_atisi_ms = 0; # Heartbeat alindi, zamanlayiciyi sifirla
+
+    # 3. Log tutarliligi kontrolu ve Catismali Loglarin Budanmasi (Log Truncation)
+    eger onceki_indis > 0 ise {
+        eger onceki_indis > takipci.log_sayisi ise {
+            dondu 0; # Takipcinin logu eksik, geri don
+        }
+        degisken ld: *tamsayi = takipci.log_donemler;
+        eger ld[onceki_indis - 1] != onceki_donem ise {
+            # Catismali log tespit edildi, bu indisten sonrakileri buda
+            takipci.log_sayisi = onceki_indis - 1;
+            dondu 0;
+        }
+    }
+
+    # 4. Eger yeni kayit varsa (komut > 0) log defterine ekle
+    eger komut > 0 ise {
+        degisken ekleme_indisi: tamsayi = onceki_indis;
+        eger ekleme_indisi < takipci.log_kapasitesi ise {
+            degisken d: *tamsayi = takipci.log_donemler;
+            degisken k: *tamsayi = takipci.log_komutlar;
+            degisken v: *tamsayi = takipci.log_degerler;
+            d[ekleme_indisi] = lider_donem;
+            k[ekleme_indisi] = komut;
+            v[ekleme_indisi] = deger;
+            takipci.log_sayisi = ekleme_indisi + 1;
+        }
+    }
+
+    # 5. Commit indeksini guncelle
+    eger lider_commit > takipci.commit_indis ise {
+        eger lider_commit < takipci.log_sayisi ise {
+            takipci.commit_indis = lider_commit;
+        } yoksa {
+            takipci.commit_indis = takipci.log_sayisi;
+        }
+    }
+
+    dondu 1; # BASARILI
+}
+
+# Snapshot alma ve log compaction islemi
+isv raft_snapshot_olustur(d: *RaftDugum, snapshot_indisi: tamsayi) -> *RaftSnapshot {
+    eger snapshot_indisi <= 0 veya snapshot_indisi > d.commit_indis ise {
+        dondu 0;
+    }
+
+    degisken snap: *RaftSnapshot = bellek_tahsis_et(32);
+    snap.son_indis = snapshot_indisi;
+    degisken ld: *tamsayi = d.log_donemler;
+    snap.son_donem = ld[snapshot_indisi - 1];
+    snap.veri_boyutu = snapshot_indisi;
+    snap.durum_verisi = bellek_tahsis_et(snapshot_indisi * 8);
+
+    degisken dv: *tamsayi = snap.durum_verisi;
+    degisken lv: *tamsayi = d.log_degerler;
+    degisken i: tamsayi = 0;
+    dongu i < snapshot_indisi {
+        dv[i] = lv[i];
+        i = i + 1;
+    }
+
+    # Snapshot alinan kayitlari logdan cikar (Compaction)
+    degisken kalan: tamsayi = d.log_sayisi - snapshot_indisi;
+    eger kalan > 0 ise {
+        degisken lk: *tamsayi = d.log_komutlar;
+        degisken j: tamsayi = 0;
+        dongu j < kalan {
+            ld[j] = ld[snapshot_indisi + j];
+            lk[j] = lk[snapshot_indisi + j];
+            lv[j] = lv[snapshot_indisi + j];
+            j = j + 1;
+        }
+    }
+    d.log_sayisi = kalan;
+    dondu snap;
+}

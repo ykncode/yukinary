@@ -1,0 +1,142 @@
+# ============================================================
+# Yukinary (YKN) Dinamik Dizi Kutuphanesi (libykn/std/collection/vec.ykn)
+# Dynamic Array (Vector) Yapisi ve Islemleri
+# ============================================================
+
+yapi Vec {
+    veri: *u8;
+    uzunluk: tamsayi;
+    kapasite: tamsayi;
+    eleman_boyutu: tamsayi;
+    durum: tamsayi; # 0=aktif, 2=serbest; nesne tekrar kullanilmaz
+}
+
+# Yeni bir Vec olustur
+isv vec_olustur(eleman_boyutu: tamsayi) -> *Vec {
+    degisken v: *Vec = bellek_tahsis_et(40);
+    degisken baslangic_kapasite: tamsayi = 8;
+    v.veri = bellek_tahsis_et(baslangic_kapasite * eleman_boyutu);
+    v.uzunluk = 0;
+    v.kapasite = baslangic_kapasite;
+    v.eleman_boyutu = eleman_boyutu;
+    v.durum = 0;
+    dondu v;
+}
+
+# Tamsayi vektoru olustur (sizeof(tamsayi) = 8 bayt)
+isv vec_tamsayi_olustur() -> *Vec {
+    dondu vec_olustur(8);
+}
+
+# Eleman ekle (amortized 2x buyume)
+isv vec_push_tamsayi(v: *Vec, val: tamsayi) {
+    eger v == 0 veya v.durum != 0 ise { dondu; }
+    eger v.uzunluk >= v.kapasite ise {
+        degisken yeni_kapasite: tamsayi = v.kapasite * 2;
+        degisken yeni_alan: *u8 = bellek_tahsis_et(yeni_kapasite * 8);
+        # Mevcut elemanlari kopyala
+        degisken eski_ptr: *tamsayi = v.veri;
+        degisken yeni_ptr: *tamsayi = yeni_alan;
+        degisken i: tamsayi = 0;
+        dongu i < v.uzunluk {
+            yeni_ptr[i] = eski_ptr[i];
+            i = i + 1;
+        }
+        os_bellek_serbest(eski_ptr);
+        v.veri = yeni_alan;
+        v.kapasite = yeni_kapasite;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    ptr[v.uzunluk] = val;
+    v.uzunluk = v.uzunluk + 1;
+}
+
+# Verilen baytlari vektore ekle (Jenerik bayt kopyalama)
+isv vec_push_baytlar(v: *Vec, kaynak: *u8) {
+    eger v == 0 veya v.durum != 0 veya kaynak == 0 ise { dondu; }
+    eger v.uzunluk >= v.kapasite ise {
+        degisken yeni_kapasite: tamsayi = v.kapasite * 2;
+        degisken yeni_alan: *u8 = bellek_tahsis_et(yeni_kapasite * v.eleman_boyutu);
+        degisken k: tamsayi = 0;
+        degisken k_max: tamsayi = v.uzunluk * v.eleman_boyutu;
+        degisken eski_b: *u8 = v.veri;
+        dongu k < k_max {
+            yeni_alan[k] = eski_b[k];
+            k = k + 1;
+        }
+        os_bellek_serbest(v.veri);
+        v.veri = yeni_alan;
+        v.kapasite = yeni_kapasite;
+    }
+    degisken hedef_ptr: *u8 = v.veri + (v.uzunluk * v.eleman_boyutu);
+    degisken b: tamsayi = 0;
+    dongu b < v.eleman_boyutu {
+        hedef_ptr[b] = kaynak[b];
+        b = b + 1;
+    }
+    v.uzunluk = v.uzunluk + 1;
+}
+
+# Indeksteki elemanin gostericisini dondur
+isv vec_get_ptr(v: *Vec, index: tamsayi) -> *u8 {
+    eger v == 0 veya v.durum != 0 ise { dondu 0; }
+    eger index < 0 veya index >= v.uzunluk ise { dondu 0; }
+    dondu v.veri + (index * v.eleman_boyutu);
+}
+
+# Geriye donuk tamsayi API adi.
+isv vec_ekle(v: *Vec, val: tamsayi) {
+    eger v == 0 veya v.durum != 0 ise { dondu; }
+    vec_push_tamsayi(v, val);
+}
+
+# Vec sahiplik sonlandirma. Struct bilerek yasatilir; tekrar yok etme UAF
+# veya double-free yerine idempotent, guvenli bir durum gecisi yapar.
+isv vec_yok_et(v: *Vec) {
+    eger v == 0 veya v.durum != 0 ise { dondu; }
+    eger v.veri != 0 ise { os_bellek_serbest(v.veri); v.veri = 0; }
+    v.uzunluk = 0;
+    v.kapasite = 0;
+    v.durum = 2;
+}
+
+# Vec nesnesini ve ic tamponunu tamamen serbest birakir
+isv vec_serbest_birak(v: *Vec) {
+    eger v == 0 ise { dondu; }
+    vec_yok_et(v);
+    os_bellek_serbest(v);
+}
+
+# Indeksteki elemani dondur (O(1))
+isv vec_get_tamsayi(v: *Vec, index: tamsayi) -> tamsayi {
+    eger v == 0 veya v.durum != 0 ise { dondu 0; }
+    eger index < 0 veya index >= v.uzunluk ise {
+        dondu 0;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    dondu ptr[index];
+}
+
+# Indeksteki elemani guncelle
+isv vec_set_tamsayi(v: *Vec, index: tamsayi, val: tamsayi) {
+    eger index < 0 veya index >= v.uzunluk ise {
+        dondu;
+    }
+    degisken ptr: *tamsayi = v.veri;
+    ptr[index] = val;
+}
+
+# Son elemani cikar ve dondur
+isv vec_pop_tamsayi(v: *Vec) -> tamsayi {
+    eger v.uzunluk <= 0 ise {
+        dondu 0;
+    }
+    v.uzunluk = v.uzunluk - 1;
+    degisken ptr: *tamsayi = v.veri;
+    dondu ptr[v.uzunluk];
+}
+
+# Eleman sayisi
+isv vec_uzunluk(v: *Vec) -> tamsayi {
+    dondu v.uzunluk;
+}

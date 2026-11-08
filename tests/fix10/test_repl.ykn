@@ -1,0 +1,84 @@
+# ============================================================
+# tests/fix10/test_repl.ykn
+# src/repl.ykn komut siniflandirma ve session semantigi testi
+#
+# REPL OTURUM SEMANTIGI SOZLESMESI (FIX 10):
+#   - Her satir, onceki oturumun durumuna etki etmez (stateless derleme).
+#   - '.q' / '.e' -> REPL_CIKIS
+#   - '.l' -> REPL_YUKLE
+#   - '.t' -> REPL_TIP
+#   - '.X' (bilinmeyen) -> REPL_HATA
+#   - Bos / sadece bosluk satir -> REPL_NORMAL (atlanir)
+#   - Normal satir -> REPL_NORMAL
+#
+# YAN ETKI NOTU: REPL her adimi yeniden derledigi icin
+#   IO, global state ve tahsis yan etkileri tekrar uretilir.
+#   Caller, yan etkileri rededen safeguard saglamalidirler.
+#   Bu test bu sozlesmeyi dokumante eder.
+#
+# Beklenen cikti: "REPL TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "src/repl.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- Normal satir ---
+    eger repl_komut_turu("degisken x = 5;".ptr) != REPL_NORMAL ise {
+        ekrana_yaz("HATA: Normal satir REPL_NORMAL olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Cikis komutlari ---
+    eger repl_komut_turu(".q".ptr) != REPL_CIKIS ise {
+        ekrana_yaz("HATA: '.q' REPL_CIKIS olmali\n".ptr);
+        dondu 1;
+    }
+    eger repl_komut_turu(".e".ptr) != REPL_CIKIS ise {
+        ekrana_yaz("HATA: '.e' REPL_CIKIS olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Yukle komutu ---
+    eger repl_komut_turu(".l dosya.ykn".ptr) != REPL_YUKLE ise {
+        ekrana_yaz("HATA: '.l dosya.ykn' REPL_YUKLE olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Tip sorgusu ---
+    eger repl_komut_turu(".t x".ptr) != REPL_TIP ise {
+        ekrana_yaz("HATA: '.t x' REPL_TIP olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Bilinmeyen komut ---
+    eger repl_komut_turu(".z bilinmeyen".ptr) != REPL_HATA ise {
+        ekrana_yaz("HATA: '.z' REPL_HATA olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Null girdi ---
+    eger repl_komut_turu(0) != REPL_HATA ise {
+        ekrana_yaz("HATA: null girdi REPL_HATA olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Bos satir ---
+    eger repl_satir_bos_mu("   ".ptr) != 1 ise {
+        ekrana_yaz("HATA: Sadece bosluk satir bos olmali\n".ptr);
+        dondu 1;
+    }
+    eger repl_satir_bos_mu("".ptr) != 1 ise {
+        ekrana_yaz("HATA: Bos string bos olmali\n".ptr);
+        dondu 1;
+    }
+    eger repl_satir_bos_mu("x".ptr) != 0 ise {
+        ekrana_yaz("HATA: 'x' bos olmamali\n".ptr);
+        dondu 1;
+    }
+
+    # --- Yan etki notu: her yeniden derleme yan etkileri tekrar calistirir ---
+    # (Bu test stateless davranisi dokumante eder, runtime yan etki uretmez)
+
+    ekrana_yaz("REPL TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

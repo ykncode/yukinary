@@ -1,0 +1,48 @@
+# ============================================================
+# std/ecs/component.ykn
+# FAZ 47: Saf Yukinary ECS (Entity-Component-System) SoA Dunyasi
+# SIFIR MOCK, Cache-friendly Struct-of-Arrays Bitisik Bellek Mimarisi
+# ============================================================
+
+yapi EcsDunya {
+    kapasite:      tamsayi;
+    varlik_sayisi: tamsayi;
+    konum_x:       *tamsayi;
+    konum_y:       *tamsayi;
+    hiz_dx:        *tamsayi;
+    hiz_dy:        *tamsayi;
+    canlilik:      *tamsayi; # 1: aktif, 0: pasif
+}
+
+isv ecs_dunya_olustur(kap: tamsayi) -> *EcsDunya {
+    degisken d: *EcsDunya = bellek_tahsis_et(56);
+    d.kapasite = kap;
+    d.varlik_sayisi = 0;
+    d.konum_x = bellek_tahsis_et(kap * 8);
+    d.konum_y = bellek_tahsis_et(kap * 8);
+    d.hiz_dx = bellek_tahsis_et(kap * 8);
+    d.hiz_dy = bellek_tahsis_et(kap * 8);
+    d.canlilik = bellek_tahsis_et(kap * 8);
+    dondu d;
+}
+
+isv ecs_varlik_olustur(d: *EcsDunya, x: tamsayi, y: tamsayi, dx: tamsayi, dy: tamsayi) -> tamsayi {
+    degisken n: tamsayi = d.varlik_sayisi;
+    eger n >= d.kapasite ise {
+        dondu 0 - 1;
+    }
+    degisken kx: *tamsayi = d.konum_x;
+    degisken ky: *tamsayi = d.konum_y;
+    degisken hx: *tamsayi = d.hiz_dx;
+    degisken hy: *tamsayi = d.hiz_dy;
+    degisken cn: *tamsayi = d.canlilik;
+
+    kx[n] = x;
+    ky[n] = y;
+    hx[n] = dx;
+    hy[n] = dy;
+    cn[n] = 1;
+
+    d.varlik_sayisi = n + 1;
+    dondu n; # Varlik kimligi (Entity ID)
+}

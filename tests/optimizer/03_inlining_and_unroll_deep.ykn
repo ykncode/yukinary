@@ -1,0 +1,117 @@
+# ============================================================
+# tests/optimizer/03_inlining_and_unroll_deep.ykn
+# Kapsamli Function Inlining ve Loop Unrolling Dogrulama Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(s: tamsayi) {}
+
+# 0-parametre inlining
+isv sabit_deger() -> tamsayi {
+    dondu 99;
+}
+
+# 1-parametre inlining
+isv kup_al(x: tamsayi) -> tamsayi {
+    dondu x * x * x;
+}
+
+# 2-parametre inlining
+isv carp_iki(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a * b;
+}
+
+# 3-parametre inlining (daha once desteklenmiyordu)
+isv topla_uc(a: tamsayi, b: tamsayi, c: tamsayi) -> tamsayi {
+    dondu a + b + c;
+}
+
+# 4-parametre inlining (daha once desteklenmiyordu)
+isv dortlu_islem(a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi) -> tamsayi {
+    dondu (a + b) * (c - d);
+}
+
+# Ic ice inlining (2 pass optimizer tarafindan cozulur)
+isv bileske_islem(n: tamsayi) -> tamsayi {
+    dondu carp_iki(n, 2) + sabit_deger();
+}
+
+isv ana() -> tamsayi {
+    # --------------------------------------------------------
+    # 1. Cok Parametreli Function Inlining Testleri
+    # --------------------------------------------------------
+    degisken v0: tamsayi = sabit_deger();          # 99
+    degisken v1: tamsayi = kup_al(3);             # 27
+    degisken v2: tamsayi = carp_iki(6, 7);        # 42
+    degisken v3: tamsayi = topla_uc(10, 20, 30);  # 60
+    degisken v4: tamsayi = dortlu_islem(5, 5, 10, 6); # (5+5)*(10-6) = 10 * 4 = 40
+    degisken v5: tamsayi = bileske_islem(10);     # 10*2 + 99 = 119
+
+    eger v0 != 99 {
+        ekrana_yaz("FAIL: 0-parametre inlining hatali\n".ptr);
+        dondu 1;
+    }
+    eger v1 != 27 {
+        ekrana_yaz("FAIL: 1-parametre inlining hatali\n".ptr);
+        dondu 2;
+    }
+    eger v2 != 42 {
+        ekrana_yaz("FAIL: 2-parametre inlining hatali\n".ptr);
+        dondu 3;
+    }
+    eger v3 != 60 {
+        ekrana_yaz("FAIL: 3-parametre inlining hatali\n".ptr);
+        dondu 4;
+    }
+    eger v4 != 40 {
+        ekrana_yaz("FAIL: 4-parametre inlining hatali\n".ptr);
+        dondu 5;
+    }
+    eger v5 != 119 {
+        ekrana_yaz("FAIL: bileske nested inlining hatali\n".ptr);
+        dondu 6;
+    }
+
+    # --------------------------------------------------------
+    # 2. Complete Loop Unrolling (Tam Dongu Acma) Testleri
+    # --------------------------------------------------------
+    # Test A: Step = 1, i < 4 (4 iterasyon)
+    degisken acc1: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 4 {
+        acc1 = acc1 + 10;
+        i = i + 1;
+    }
+    eger acc1 != 40 veya i != 4 {
+        ekrana_yaz("FAIL: loop unroll step=1 hatali\n".ptr);
+        dondu 7;
+    }
+
+    # Test B: Step = 2, j < 8 (8/2 = 4 iterasyon)
+    degisken acc2: tamsayi = 100;
+    degisken j: tamsayi = 0;
+    dongu j < 8 {
+        acc2 = acc2 + 5;
+        j = j + 2;
+    }
+    eger acc2 != 120 veya j != 8 {
+        ekrana_yaz("FAIL: loop unroll step=2 hatali\n".ptr);
+        dondu 8;
+    }
+
+    # Test C: Step = 1, k <= 3 (3+1 = 4 iterasyon)
+    degisken acc3: tamsayi = 0;
+    degisken k: tamsayi = 0;
+    dongu k <= 3 {
+        acc3 = acc3 + k;
+        k = k + 1;
+    }
+    # k = 0,1,2,3 -> toplam = 0+1+2+3 = 6, k = 4
+    eger acc3 != 6 veya k != 4 {
+        ekrana_yaz("FAIL: loop unroll <= operatoru hatali\n".ptr);
+        dondu 9;
+    }
+
+    ekrana_yaz("INLINING-AND-UNROLLING-DEEP-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,89 @@
+# ============================================================
+# tests/veritabani/test_hnsw_vector.ykn
+# FAZ 57: HNSW Cok Katmanli Graf ve k-NN Benzerlik Arama Testi
+# Gercek Katmanli Graf (HNSW), Greedy Layer Skip ve Vektor Mesafesi Dogrulamasi
+# ============================================================
+
+ice_aktar "std/veritabani/hnsw.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 57: HNSW Cok Katmanli Vektor Grafi Testi Basliyor...\n".ptr);
+
+    # 4-Boyutlu embedding uzayi
+    degisken graf: *HnswGraf = hnsw_olustur(4);
+
+    # Kume 1: [100, 5, 0, 0] civari vektorler
+    degisken v1: *tamsayi = bellek_tahsis_et(32);
+    v1[0] = 100; v1[1] = 0; v1[2] = 0; v1[3] = 0;
+    hnsw_ekle(graf, 101, v1);
+
+    degisken v1_b: *tamsayi = bellek_tahsis_et(32);
+    v1_b[0] = 95; v1_b[1] = 5; v1_b[2] = 0; v1_b[3] = 0;
+    hnsw_ekle(graf, 102, v1_b);
+
+    # Kume 2: [0, 100, 0, 0] civari vektorler
+    degisken v2: *tamsayi = bellek_tahsis_et(32);
+    v2[0] = 0; v2[1] = 100; v2[2] = 0; v2[3] = 0;
+    hnsw_ekle(graf, 201, v2);
+
+    degisken v2_b: *tamsayi = bellek_tahsis_et(32);
+    v2_b[0] = 0; v2_b[1] = 90; v2_b[2] = 10; v2_b[3] = 0;
+    hnsw_ekle(graf, 202, v2_b);
+
+    # Kume 3: [0, 0, 100, 0] civari vektorler
+    degisken v3: *tamsayi = bellek_tahsis_et(32);
+    v3[0] = 0; v3[1] = 0; v3[2] = 100; v3[3] = 0;
+    hnsw_ekle(graf, 301, v3);
+
+    # Kume 4: [0, 0, 0, 100] civari vektorler
+    degisken v4: *tamsayi = bellek_tahsis_et(32);
+    v4[0] = 0; v4[1] = 0; v4[2] = 0; v4[3] = 100;
+    hnsw_ekle(graf, 401, v4);
+
+    # 1. Graf Yapisal Dogrulamasi (Hiyerarsi ve Kenar Baglantilari)
+    eger graf.dugum_sayisi != 6 ise {
+        ekrana_yaz("HATA: Graf dugum sayisi 6 olmali!\n".ptr);
+        dondu 1;
+    }
+
+    # Dugumlerin komsu kenarlarinin kuruldugunu teyit et
+    degisken d1: *HnswDugum = graf.dugumler[0];
+    eger d1.komsu_sayisi[0] == 0 ise {
+        ekrana_yaz("HATA: Dugum 0'a hicbir kenar baglanmamis (O(N) mock kalintisi)!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. Hiyerarsik k-NN Arama Testleri
+    # Sorgu 1: [98, 2, 0, 0] -> Kume 1'e (101 veya 102) en yakin olmali!
+    degisken q1: *tamsayi = bellek_tahsis_et(32);
+    q1[0] = 98; q1[1] = 2; q1[2] = 0; q1[3] = 0;
+
+    degisken en_yakin_1: tamsayi = hnsw_en_yakin_bul(graf, q1);
+    eger en_yakin_1 != 101 ve en_yakin_1 != 102 ise {
+        ekrana_yaz("HATA: q1 icin en yakin vektor kume 1 disinda bulundu!\n".ptr);
+        dondu 3;
+    }
+
+    # Sorgu 2: [0, 95, 5, 0] -> Kume 2'ye (201 veya 202) en yakin olmali!
+    degisken q2: *tamsayi = bellek_tahsis_et(32);
+    q2[0] = 0; q2[1] = 95; q2[2] = 5; q2[3] = 0;
+
+    degisken en_yakin_2: tamsayi = hnsw_en_yakin_bul(graf, q2);
+    eger en_yakin_2 != 201 ve en_yakin_2 != 202 ise {
+        ekrana_yaz("HATA: q2 icin en yakin vektor kume 2 disinda bulundu!\n".ptr);
+        dondu 4;
+    }
+
+    # Sorgu 3: [0, 0, 0, 90] -> Dogrudan 401'e en yakin olmali!
+    degisken q3: *tamsayi = bellek_tahsis_et(32);
+    q3[0] = 0; q3[1] = 0; q3[2] = 0; q3[3] = 90;
+
+    degisken en_yakin_3: tamsayi = hnsw_en_yakin_bul(graf, q3);
+    eger en_yakin_3 != 401 ise {
+        ekrana_yaz("HATA: q3 icin en yakin vektor 401 olmali!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("HNSW_VECTOR_DB_PASS\n".ptr);
+    dondu 0;
+}

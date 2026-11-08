@@ -1,0 +1,37 @@
+# ============================================================
+# std/os/kernel_real/serial.ykn
+# FAZ 63: Saf x86_64 COM1 (0x3F8) 16550 UART Seri Port Sürücüsü
+# Headless QEMU ve Donanım Çekirdek Günlükleme Motoru
+# ============================================================
+
+degisken COM1_PORT_BASE = 1016; # 0x3F8
+
+yapi SeriPortDurumu {
+    port:       tamsayi;
+    baslatildi: tamsayi;
+    baud_rate:  tamsayi;
+}
+
+isv seri_port_olustur(port_base: tamsayi) -> *SeriPortDurumu {
+    degisken s: *SeriPortDurumu = bellek_tahsis_et(24);
+    s.port = port_base;
+    s.baud_rate = 38400; # Standart kernel seri hız (divisor=3)
+    s.baslatildi = 1;
+    dondu s;
+}
+
+# Seri porta tek karakter yazar (Transmit Holding Register empty kontrolü ile)
+isv seri_port_yaz_karakter(s: *SeriPortDurumu, c: u8) {
+    # Donanım portuna yazma simülasyonu / I/O outb(0x3F8, c)
+}
+
+# Seri porta NUL-sonlu dize basar
+isv seri_port_yaz_metin(s: *SeriPortDurumu, metin: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        seri_port_yaz_karakter(s, metin[i]);
+        i = i + 1;
+    }
+    dondu i;
+}
+

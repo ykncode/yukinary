@@ -1,0 +1,53 @@
+# FAZ 7 - Floating point operations & casts
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0]=48; buf[1]=0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    eger n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i]=(n%10)+48; n=n/10; i=i+1; }
+    eger neg == 1 ise { buf[i]=45; i=i+1; }
+    degisken j: tamsayi = 0;
+    dongu j < i/2 {
+        degisken t: u8 = buf[j]; buf[j]=buf[i-1-j]; buf[i-1-j]=t;
+        j=j+1;
+    }
+    buf[i]=0;
+    ekrana_yaz(buf);
+}
+
+isv ana() -> tamsayi {
+    degisken a: kesirli = 3.5;
+    degisken b: kesirli = 2.0;
+    degisken c: kesirli = a + b; # 5.5
+    degisken d: kesirli = a * b; # 7.0
+    degisken e: kesirli = a - b; # 1.5
+    degisken f: kesirli = a / b; # 1.75
+    
+    # Cast to int to print integer parts
+    sayiyi_yazdir(tamsayi(c)); ekrana_yaz(" ".ptr); # 5
+    sayiyi_yazdir(tamsayi(d)); ekrana_yaz(" ".ptr); # 7
+    sayiyi_yazdir(tamsayi(e)); ekrana_yaz(" ".ptr); # 1
+    sayiyi_yazdir(tamsayi(f)); ekrana_yaz(" ".ptr); # 1
+    
+    # Test float comparisons
+    eger a > b ise {
+        sayiyi_yazdir(1); ekrana_yaz(" ".ptr);
+    }
+    eger b < a ise {
+        sayiyi_yazdir(2); ekrana_yaz(" ".ptr);
+    }
+    eger c == 5.5 ise {
+        sayiyi_yazdir(3); ekrana_yaz(" ".ptr);
+    }
+    
+    # Cast int to float
+    degisken x: tamsayi = 10;
+    degisken y: kesirli = kesirli(x) + 0.5; # 10.5
+    sayiyi_yazdir(tamsayi(y));
+    
+    ekrana_yaz("\nkesirli-PASS\n".ptr);
+    dondu 0;
+}

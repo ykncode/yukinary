@@ -1,0 +1,36 @@
+# ============================================================
+# Yukinary Test - tests/test_final_faz4_cli_harness.ykn
+# FAZ 4 DOGRULAMA: Endustriyel Test Harness ve Raporlama Motoru
+# ============================================================
+
+ice_aktar "tools/test_runner.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+isv main() -> tamsayi {
+    degisken tk: *TestKosuSonucu = test_kosucu_olustur(16);
+    eger tk == 0 ise { dondu 1; }
+    
+    # Test sonuclarini kaydet
+    test_kaydi_ekle(tk, "test_aritmetik", TEST_DURUM_BASARILI, 12);
+    test_kaydi_ekle(tk, "test_bellek", TEST_DURUM_BASARILI, 8);
+    test_kaydi_ekle(tk, "test_kripto", TEST_DURUM_BASARILI, 24);
+    test_kaydi_ekle(tk, "test_sql", TEST_DURUM_BASARILI, 31);
+    test_kaydi_ekle(tk, "test_work_stealing", TEST_DURUM_BASARILI, 15);
+    
+    # Kontroller
+    eger tk.toplam != 5 ise { dondu 2; }
+    eger tk.basarili != 5 ise { dondu 3; }
+    eger tk.basarisiz != 0 ise { dondu 4; }
+    
+    # TAP Raporlama testi
+    degisken basarisiz_adet: tamsayi = test_raporu_tap_yazdir(tk);
+    eger basarisiz_adet != 0 ise { dondu 5; }
+    
+    # Temizlik
+    test_kosucu_serbest_birak(tk);
+    
+    # Basarili!
+    dondu 0;
+}
+

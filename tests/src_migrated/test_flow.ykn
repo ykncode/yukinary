@@ -1,0 +1,9 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken toplam = 0;
+    degisken i = 10;
+    dongu i {
+        toplam = toplam + i;
+        i = i - 1;
+    }
+    dondu toplam;
+}

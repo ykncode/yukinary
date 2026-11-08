@@ -1,0 +1,31 @@
+# ============================================================
+# Örnek 22: Konsol Tabanlı Morse Kodu Çevirici
+# ============================================================
+
+isv harf_to_mors(c: u8) -> *u8 {
+    eger c == 65 veya c == 97 ise { dondu ".- ".ptr; }     # A
+    eger c == 66 veya c == 98 ise { dondu "-... ".ptr; }   # B
+    eger c == 67 veya c == 99 ise { dondu "-.-. ".ptr; }   # C
+    eger c == 68 veya c == 100 ise { dondu "-.. ".ptr; }   # D
+    eger c == 69 veya c == 101 ise { dondu ". ".ptr; }     # E
+    eger c == 83 veya c == 115 ise { dondu "... ".ptr; }   # S
+    eger c == 79 veya c == 111 ise { dondu "--- ".ptr; }   # O
+    eger c == 32 ise { dondu "/ ".ptr; }                   # Bosluk
+    dondu "? ".ptr;
+}
+
+isv metin_to_mors(metin: *u8) {
+    degisken i: tamsayi = 0;
+    dongu (metin[i] != 0) {
+        ekrana_yaz(harf_to_mors(metin[i]));
+        i = i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken mesaj: *u8 = "SOS".ptr;
+    ekrana_yaz("Metin : "); ekrana_yaz(mesaj); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Mors  : "); metin_to_mors(mesaj);
+    dondu 0;
+}

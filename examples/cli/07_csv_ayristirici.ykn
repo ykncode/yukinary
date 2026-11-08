@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 7: Konsol Tabanlı CSV Tablo Ayrıştırıcı (CSV Parser)
+# ============================================================
+
+isv csv_satir_ayristir(satir: *u8) {
+    degisken i: tamsayi = 0;
+    degisken sutun_no: tamsayi = 1;
+
+    ekrana_yaz("[Sutun 1]: ".ptr);
+    dongu (satir[i] != 0) {
+        eger satir[i] == 44 ise { # ',' karakteri
+            ekrana_yaz("\n[Sutun ".ptr);
+            sutun_no = sutun_no + 1;
+            sayiyi_ekrana_yaz(sutun_no);
+            ekrana_yaz("]: ".ptr);
+        } yoksa eger satir[i] == 10 veya satir[i] == 13 ise {
+            # Yeni satir sonu
+        } yoksa {
+            degisken harf_tampon: [2]u8;
+            harf_tampon[0] = satir[i];
+            harf_tampon[1] = 0;
+            ekrana_yaz(harf_tampon);
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("\n-------------------------\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== CSV Tablo Goruntuleyici ===\n".ptr);
+    
+    degisken csv_satir1: *u8 = "101,Ahmet Yilmaz,Muhendislik,85000\n".ptr;
+    degisken csv_satir2: *u8 = "102,Zeynep Kaya,Tasarim,92000\n".ptr;
+    degisken csv_satir3: *u8 = "103,Burak Demir,Yonetim,110000\n".ptr;
+
+    csv_satir_ayristir(csv_satir1);
+    csv_satir_ayristir(csv_satir2);
+    csv_satir_ayristir(csv_satir3);
+
+    dondu 0;
+}

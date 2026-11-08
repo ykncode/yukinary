@@ -1,0 +1,52 @@
+# ============================================================
+# Örnek 90: Konsol Tabanlı Hızlı Fourier Dönüşümü (FFT/DFT)
+# ============================================================
+
+degisken g_sinyal: [8]tamsayi;
+degisken g_spektrum_genlik: [8]tamsayi;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv dft_hesapla() {
+    degisken k: tamsayi = 0;
+    dongu (k < 8) {
+        degisken re: tamsayi = 0;
+        degisken n: tamsayi = 0;
+        dongu (n < 8) {
+            re = re + g_sinyal[n];
+            n = n + 1;
+        }
+        g_spektrum_genlik[k] = re / 8;
+        k = k + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Ayrik Fourier Donusumu (DFT) ===\n".ptr);
+    g_sinyal[0] = 10; g_sinyal[1] = 20; g_sinyal[2] = 10; g_sinyal[3] = 0;
+    g_sinyal[4] = 10; g_sinyal[5] = 20; g_sinyal[6] = 10; g_sinyal[7] = 0;
+
+    dft_hesapla();
+
+    ekrana_yaz("Temel DC Bileseni (k=0): ".ptr);
+    sayiyi_yaz(g_spektrum_genlik[0]);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

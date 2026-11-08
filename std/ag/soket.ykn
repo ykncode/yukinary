@@ -1,0 +1,248 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - TCP/UDP Soketler
+# ============================================================
+
+# Runtime ABI: Windows Winsock ve POSIX socket aynı imzaları kullanır.
+harici isv yukinary_sys_net_init() -> tamsayi;
+harici isv yukinary_sys_socket_create(aile: tamsayi, tip: tamsayi, protokol: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_bind(sock: tamsayi, adres: tamsayi, port: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_listen(sock: tamsayi, backlog: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_accept(sock: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_close(sock: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_send(sock: tamsayi, tampon: *u8, uzunluk: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_recv(sock: tamsayi, tampon: *u8, uzunluk: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_connect(sock: tamsayi, adres: tamsayi, port: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_set_timeout(sock: tamsayi, millis: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_set_reuseaddr(sock: tamsayi) -> tamsayi;
+harici isv yukinary_sys_socket_set_nonblocking(sock: tamsayi) -> tamsayi;
+isv yukinary_sys_epoll_create() -> tamsayi { dondu 0 - 1; }
+isv yukinary_sys_epoll_ctl(epfd: tamsayi, op: tamsayi, fd: tamsayi, event_ptr: *u8) -> tamsayi { dondu 0 - 1; }
+isv yukinary_sys_epoll_wait(epfd: tamsayi, events_ptr: *u8, maxevents: tamsayi, timeout_ms: tamsayi) -> tamsayi { dondu 0 - 1; }
+
+# DNS, generated YKN kodunda UDP wire protokolü ile çözülür. Host C/C++
+# resolver ABI'si kullanılmaz; bu bildirim kasıtlı olarak yoktur.
+
+yapi Soket {
+    id: tamsayi;
+}
+
+isv soket_baslat() -> tamsayi {
+    dondu yukinary_sys_net_init();
+}
+
+isv sunucu_olustur(port: tamsayi) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu -1; }
+    degisken s: tamsayi = yukinary_sys_socket_create(2, 1, 0);
+    eger s < 0 ise { dondu -1; }
+    eger yukinary_sys_socket_set_reuseaddr(s) != 0 ise {
+        yukinary_sys_socket_close(s);
+        dondu -1;
+    }
+    eger yukinary_sys_socket_bind(s, 0, port) != 0 ise {
+        yukinary_sys_socket_close(s);
+        dondu -1;
+    }
+    eger yukinary_sys_socket_listen(s, 10) != 0 ise {
+        yukinary_sys_socket_close(s);
+        dondu -1;
+    }
+    dondu s;
+}
+
+isv sunucu_kabul(soket_id: tamsayi) -> tamsayi {
+    dondu yukinary_sys_socket_accept(soket_id);
+}
+
+isv istemci_olustur(adres: tamsayi, port: tamsayi, zaman_asimi_ms: tamsayi) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu -1; }
+    degisken s: tamsayi = yukinary_sys_socket_create(2, 1, 0);
+    eger s < 0 ise { dondu -1; }
+    eger zaman_asimi_ms >= 0 ve yukinary_sys_socket_set_timeout(s, zaman_asimi_ms) != 0 ise {
+        yukinary_sys_socket_close(s);
+        dondu -1;
+    }
+    eger yukinary_sys_socket_connect(s, adres, port) != 0 ise {
+        yukinary_sys_socket_close(s);
+        dondu -1;
+    }
+    dondu s;
+}
+
+isv ipv4_adres(a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi) -> tamsayi {
+    eger a < 0 veya a > 255 veya b < 0 veya b > 255 veya c < 0 veya c > 255 veya d < 0 veya d > 255 ise { dondu -1; }
+    dondu a + (b << 8) + (c << 16) + (d << 24);
+}
+
+# DNS wire-format yardımcıları. `baslangic`, `uzunluk` ve tüm pointer
+# atlamaları paket sınırlarıyla kontrol edilir; malformed cevapta -1 döner.
+isv dns_adi_atla(veri: *u8, uzunluk: tamsayi, baslangic: tamsayi) -> tamsayi {
+    eger veri == 0 veya uzunluk < 0 veya baslangic < 0 veya baslangic >= uzunluk ise { dondu -1; }
+    degisken p: tamsayi = baslangic;
+    degisken adim: tamsayi = 0;
+    dongu p < uzunluk ve adim < 128 {
+        degisken etiket: tamsayi = veri[p];
+        eger etiket == 0 ise { dondu p + 1; }
+        # 0xC0..0xFF compression pointer: owner name iki byte'tır.
+        eger etiket >= 192 ise {
+            eger p + 1 >= uzunluk ise { dondu -1; }
+            dondu p + 2;
+        }
+        eger etiket > 63 veya p + 1 + etiket > uzunluk ise { dondu -1; }
+        p = p + 1 + etiket;
+        adim = adim + 1;
+    }
+    dondu -1;
+}
+
+isv dns_host_uzunlugu(host: *u8) -> tamsayi {
+    eger host == 0 ise { dondu -1; }
+    degisken n: tamsayi = 0;
+    dongu n < 254 ve host[n] != 0 { n = n + 1; }
+    eger n == 0 veya n >= 254 ise { dondu -1; }
+    dondu n;
+}
+
+# Bağlı UDP soketi üzerinden A kaydı çözer. dns_adres, network wire sırasındaki
+# IPv4 adresini YKN socket API'sinin beklediği little-endian tamsayı biçiminde
+# alır (ipv4_adres(1,1,1,1) gibi).
+isv dns_coz_sunucu(host: *u8, dns_adres: tamsayi, dns_port: tamsayi, adres_tamponu: *u8) -> tamsayi {
+    eger host == 0 veya adres_tamponu == 0 veya dns_adres < 0 veya
+       dns_port < 1 veya dns_port > 65535 ise { dondu -1; }
+    eger soket_baslat() != 0 ise { dondu -1; }
+    degisken host_uzn: tamsayi = dns_host_uzunlugu(host);
+    eger host_uzn < 1 veya host_uzn > 253 ise { dondu -1; }
+
+    degisken paket: [512]u8;
+    degisken i: tamsayi = 0;
+    dongu i < 512 { paket[i] = 0; i = i + 1; }
+    # Sabit transaction ID deterministic test ve cevap eşleştirmesi içindir.
+    paket[0] = 0x42; paket[1] = 0x17;
+    paket[2] = 0x01; paket[3] = 0x00; # RD=1
+    paket[4] = 0x00; paket[5] = 0x01; # QDCOUNT=1
+
+    degisken yaz: tamsayi = 12;
+    degisken etiket_bas: tamsayi = yaz;
+    yaz = yaz + 1;
+    degisken etiket_uzn: tamsayi = 0;
+    degisken gecersiz: tamsayi = 0;
+    i = 0;
+    dongu i <= host_uzn {
+        eger i == host_uzn ise {
+            eger etiket_uzn == 0 ise { gecersiz = 1; }
+            yoksa {
+                paket[etiket_bas] = etiket_uzn;
+                eger yaz >= 510 ise { gecersiz = 1; }
+                yoksa { paket[yaz] = 0; yaz = yaz + 1; }
+            }
+        }
+        yoksa eger host[i] == 46 ise {
+            eger etiket_uzn == 0 veya etiket_uzn > 63 ise { gecersiz = 1; }
+            yoksa {
+                paket[etiket_bas] = etiket_uzn;
+                etiket_bas = yaz;
+                yaz = yaz + 1;
+                etiket_uzn = 0;
+            }
+        }
+        yoksa {
+            eger host[i] == 0 veya host[i] < 33 veya host[i] > 126 ise { gecersiz = 1; }
+            eger yaz >= 510 veya etiket_uzn >= 63 ise { gecersiz = 1; }
+            yoksa { paket[yaz] = host[i]; yaz = yaz + 1; etiket_uzn = etiket_uzn + 1; }
+        }
+        i = i + 1;
+    }
+    eger gecersiz == 1 veya yaz + 4 > 512 ise { dondu -1; }
+    paket[yaz] = 0; paket[yaz + 1] = 1; # QTYPE=A
+    paket[yaz + 2] = 0; paket[yaz + 3] = 1; # QCLASS=IN
+    degisken sorgu_uzn: tamsayi = yaz + 4;
+
+    # AF_INET/SOCK_DGRAM/IPPROTO_UDP = 2/2/17.
+    degisken sok: tamsayi = yukinary_sys_socket_create(2, 2, 17);
+    eger sok < 0 ise { dondu -1; }
+    eger yukinary_sys_socket_set_timeout(sok, 1500) != 0 ise {
+        yukinary_sys_socket_close(sok); dondu -1;
+    }
+    eger yukinary_sys_socket_connect(sok, dns_adres, dns_port) != 0 ise {
+        yukinary_sys_socket_close(sok); dondu -1;
+    }
+    eger soket_gonder_tam(sok, paket, sorgu_uzn) != sorgu_uzn ise {
+        yukinary_sys_socket_close(sok); dondu -1;
+    }
+    degisken cevap_uzn: tamsayi = soket_al(sok, paket, 512);
+    yukinary_sys_socket_close(sok);
+    eger cevap_uzn < 12 veya cevap_uzn > 512 ise { dondu -1; }
+    eger paket[0] != 0x42 veya paket[1] != 0x17 veya paket[2] < 128 veya
+       paket[3] % 16 != 0 veya paket[4] != 0 veya paket[5] != 1 ise { dondu -1; }
+
+    degisken soru_sonu: tamsayi = dns_adi_atla(paket, cevap_uzn, 12);
+    eger soru_sonu < 0 veya soru_sonu + 4 > cevap_uzn ise { dondu -1; }
+    degisken cevap_sayisi: tamsayi = paket[6] * 256 + paket[7];
+    degisken p: tamsayi = soru_sonu + 4;
+    degisken cevap_i: tamsayi = 0;
+    degisken bulundu: tamsayi = 0;
+    dongu cevap_i < cevap_sayisi ve bulundu == 0 {
+        degisken rr_sonu: tamsayi = dns_adi_atla(paket, cevap_uzn, p);
+        eger rr_sonu < 0 veya rr_sonu + 10 > cevap_uzn ise { dondu -1; }
+        degisken rr_tip: tamsayi = paket[rr_sonu] * 256 + paket[rr_sonu + 1];
+        degisken rr_sinif: tamsayi = paket[rr_sonu + 2] * 256 + paket[rr_sonu + 3];
+        degisken rr_uzn: tamsayi = paket[rr_sonu + 8] * 256 + paket[rr_sonu + 9];
+        degisken rr_veri: tamsayi = rr_sonu + 10;
+        eger rr_veri + rr_uzn > cevap_uzn ise { dondu -1; }
+        eger rr_tip == 1 ve rr_sinif == 1 ve rr_uzn == 4 ise {
+            adres_tamponu[0] = paket[rr_veri];
+            adres_tamponu[1] = paket[rr_veri + 1];
+            adres_tamponu[2] = paket[rr_veri + 2];
+            adres_tamponu[3] = paket[rr_veri + 3];
+            bulundu = 1;
+        }
+        p = rr_veri + rr_uzn;
+        cevap_i = cevap_i + 1;
+    }
+    eger bulundu == 1 ise { dondu 0; }
+    dondu -1;
+}
+
+# Varsayılan resolver gerçek internet DNS sunucusudur; deterministic/unit test
+# için dns_coz_sunucu ile yerel kontrollü resolver adresi geçirilebilir.
+isv dns_coz(host: *u8, adres_tamponu: *u8) -> tamsayi {
+    dondu dns_coz_sunucu(host, ipv4_adres(1, 1, 1, 1), 53, adres_tamponu);
+}
+
+isv dns_adres_tamsayi(adres_tamponu: *u8) -> tamsayi {
+    eger adres_tamponu == 0 ise { dondu -1; }
+    dondu adres_tamponu[0] + (adres_tamponu[1] << 8) +
+         (adres_tamponu[2] << 16) + (adres_tamponu[3] << 24);
+}
+
+isv soket_zaman_asimi(soket_id: tamsayi, millis: tamsayi) -> tamsayi {
+    dondu yukinary_sys_socket_set_timeout(soket_id, millis);
+}
+
+isv soket_engelsiz(soket_id: tamsayi) -> tamsayi {
+    dondu yukinary_sys_socket_set_nonblocking(soket_id);
+}
+
+isv soket_gonder(soket_id: tamsayi, tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger tampon == 0 veya uzunluk < 0 ise { dondu -1; }
+    dondu yukinary_sys_socket_send(soket_id, tampon, uzunluk);
+}
+
+isv soket_gonder_tam(soket_id: tamsayi, tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger tampon == 0 veya uzunluk < 0 ise { dondu -1; }
+    degisken toplam: tamsayi = 0;
+    dongu toplam < uzunluk {
+        degisken n: tamsayi = yukinary_sys_socket_send(soket_id, tampon + toplam, uzunluk - toplam);
+        eger n <= 0 ise { dondu -1; }
+        toplam = toplam + n;
+    }
+    dondu toplam;
+}
+
+isv soket_al(soket_id: tamsayi, tampon: *u8, maks: tamsayi) -> tamsayi {
+    eger tampon == 0 veya maks <= 0 ise { dondu -1; }
+    dondu yukinary_sys_socket_recv(soket_id, tampon, maks);
+}
+
+isv soket_kapat(soket_id: tamsayi) -> tamsayi {
+    dondu yukinary_sys_socket_close(soket_id);
+}

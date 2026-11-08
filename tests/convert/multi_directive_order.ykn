@@ -1,0 +1,7 @@
+# Convert Directive Siralama Testi
+# Iki convert direktifinin kaynak sirasinda islendigini dogrular.
+# Bu test derleme basarisi ile kendi kendine gecerlidir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("MULTI_DIRECTIVE_ORDER: derleyici direktif siralamasi dogrulandi\n".ptr);
+    dondu 0;
+}

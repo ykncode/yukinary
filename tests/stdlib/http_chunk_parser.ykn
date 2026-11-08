@@ -1,0 +1,16 @@
+# Saf YKN chunked parser unit acceptance; no host parser/runtime kullanmaz.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken veri: [512]u8;
+    degisken kaynak: *u8 = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nHELLO\r\n6\r\n WORLD\r\n0\r\n\r\n".ptr;
+    degisken uzunluk: tamsayi = 0;
+    dongu kaynak[uzunluk] != 0 { veri[uzunluk] = kaynak[uzunluk]; uzunluk = uzunluk + 1; }
+    degisken cevap: Cevap;
+    eger http_cevap_ayristir(veri, uzunluk, &cevap) != 1 ise { dondu 100; }
+    eger cevap.parca_kodlamali != 1 ise { dondu 101; }
+    eger http_parca_coz(veri, uzunluk, &cevap) != 0 ise { dondu 102; }
+    eger cevap.govde_uzunlugu != 11 veya veri[cevap.govde_baslangici] != 72 veya
+       veri[cevap.govde_baslangici + 5] != 32 veya veri[cevap.govde_baslangici + 10] != 68 ise { dondu 103; }
+    dondu 0;
+}

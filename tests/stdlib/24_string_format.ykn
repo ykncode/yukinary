@@ -1,0 +1,37 @@
+# GOREV 8.5 - {0}/{1} string formatlama testi
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/metin.ykn";
+
+isv ana() -> tamsayi {
+    degisken sonuc: *u8 = bicimlendir(
+        "x={0}, y={1}".ptr,
+        bicim_tamsayi(42),
+        bicim_gercek(3.14)
+    );
+    eger metin_karsilastir(sonuc, "x=42, y=3.14".ptr) != 0 ise {
+        ekrana_yaz("FAIL: tamsayi ve gercek formatlanamadi\n".ptr);
+        dondu 1;
+    }
+
+    degisken turler: *u8 = bicimlendir(
+        "ad={0}, aktif={1}".ptr,
+        bicim_metin("YKN".ptr),
+        bicim_mantik(1)
+    );
+    eger metin_karsilastir(turler, "ad=YKN, aktif=dogru".ptr) != 0 ise {
+        ekrana_yaz("FAIL: metin veya mantik formatlanamadi\n".ptr);
+        dondu 1;
+    }
+
+    degisken byte_deger: u8 = 7;
+    degisken byte_metin: *u8 = bicimlendir("u8={0}".ptr, bicim_u8(byte_deger), bicim_metin("".ptr));
+    eger metin_karsilastir(byte_metin, "u8=7".ptr) != 0 ise {
+        ekrana_yaz("FAIL: u8 formatlanamadi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz_bicim("STRING-FORMAT-PASS\n".ptr, bicim_metin("".ptr), bicim_metin("".ptr));
+    dondu 0;
+}

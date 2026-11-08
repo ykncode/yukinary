@@ -1,0 +1,36 @@
+# ============================================================
+# Örnek 71: Win32 Alışveriş Sepeti ve Toplam Fiyat Hesaplayıcı GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_toplam_tutar: tamsayi = 0;
+
+isv urun_ekle(fiyat: tamsayi, ad: *u8) {
+    g_toplam_tutar = g_toplam_tutar + fiyat;
+    ekrana_yaz("Sepete Eklendi: "); ekrana_yaz(ad);
+    ekrana_yaz(" (+"); sayiyi_ekrana_yaz(fiyat); ekrana_yaz(" TL)\n".ptr);
+    ekrana_yaz("Guncel Toplam: "); sayiyi_ekrana_yaz(g_toplam_tutar); ekrana_yaz(" TL\n".ptr);
+}
+
+isv sepet_sifirla() {
+    g_toplam_tutar = 0;
+    ekrana_yaz("Sepet Bosaltildi! Toplam: 0 TL\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Hizli Sepet GUI".ptr, 380, 320);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Urun Butonlari
+    buton_olustur(p_h, "Kitap Ekle (150 TL)".ptr, 10001, 40, 30, 280, 40);
+    buton_olustur(p_h, "Kulaklik Ekle (450 TL)".ptr, 10002, 40, 80, 280, 40);
+    buton_olustur(p_h, "Klavye Ekle (900 TL)".ptr, 10003, 40, 130, 280, 40);
+
+    # Temizle Butonu
+    buton_olustur(p_h, "Sepeti Bosalt".ptr, 10004, 40, 190, 280, 40);
+
+    ekrana_yaz("Alisveris sepeti uygulamasi baslatildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

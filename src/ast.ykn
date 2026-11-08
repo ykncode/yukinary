@@ -1,0 +1,324 @@
+# ============================================================
+# Yukinary AST - Birlestirme Veri Yapilari
+# ============================================================
+# Tum pipeline (parser, typechecker, codegen) bu tek yapiyi kullanir.
+# AstDugum pointer tabanli, arena allocator ile yonetilir.
+
+# AST Dugum Tipleri
+degisken AST_BOS             = 0;
+degisken AST_SAYI            = 1;
+degisken AST_GERCEK_SAYI     = 2;
+degisken AST_METIN           = 3;
+degisken AST_KIMLIK          = 4;
+degisken AST_IKILI_OP        = 5;
+degisken AST_ATAMA           = 6;
+degisken AST_DEGISKEN_TANIMI = 7;
+degisken AST_EGER            = 8;
+degisken AST_DONGU           = 9;
+degisken AST_ISLEV           = 10;
+degisken AST_ISLEV_CAGRISI   = 11;
+degisken AST_DONDUR          = 12;
+degisken AST_BLOK            = 13;
+degisken AST_DURDUR          = 14;
+degisken AST_DEVAM_ET        = 15;
+degisken AST_YAPI_TANIMI     = 16;
+degisken AST_ALAN_ERISIMI    = 17;
+degisken AST_INDEKS_ERISIMI  = 18;
+degisken AST_UNARY           = 19;
+degisken AST_REFERANS        = 20;
+degisken AST_ICE_AKTAR       = 21;
+degisken AST_MAKRO_TANIMI    = 22;
+degisken AST_MAKRO_CAGRISI   = 23;
+degisken AST_GENERIC_TANIM   = 24;
+degisken AST_TRAIT_TANIM     = 25;
+degisken AST_MANTIK          = 26;
+degisken AST_DIREKTIF_PROMPT = 27;  # #prompt / #ai "..."
+degisken AST_DIREKTIF_AI     = 28;  # #yapay_zeka "..."
+degisken AST_DIREKTIF_C_LIB  = 29;  # #c-lib "..."
+degisken AST_DIREKTIF_CPP_LIB = 30; # #cpp-lib "..."
+degisken AST_DIREKTIF_PY_LIB = 31;  # #py-lib "..."
+degisken AST_DIREKTIF_RS_LIB = 32;  # #rs-lib "..."
+degisken AST_SORU_ISLEMI      = 33;  # ? error propagation
+degisken AST_SONUC_TANIM      = 34;  # sonuc<T> type definition
+degisken AST_MODUL            = 35;  # modul tanimi
+degisken AST_ENUM_TANIMI      = 36;  # enum / sayim tanimi
+degisken AST_TIP_ALIAS        = 37;  # tip Sayi = tamsayi
+degisken AST_DIREKTIF_CONVERT = 38;  # #C-convert, #PY-convert, etc.
+degisken AST_FSTRING         = 39;  # f"..." f-string interpolasyonu
+# Trait uygulamasi, AST_MANTIK ile cakismamasi icin ayri bir compile-time dugumudur.
+degisken AST_TRAIT_UYGULAMA  = 40;
+# Async syntax nodes. Lowering/codegen must handle these before release closure.
+degisken AST_ASYNC_ISLEV     = 41;
+degisken AST_AWAIT            = 42;
+degisken AST_INLINE_ASM       = 43;  # asm { "..." } inline assembly
+degisken AST_DIREKTIF_CONFIG  = 44;  # #config / #yapilandir / #ayar
+degisken AST_DONUSUM          = 45;  # expr as Tip / expr olarak Tip
+degisken AST_COMPTIME         = 46;  # comptime { ... } derleme zamani yurutme
+degisken AST_PARANTEZ_IFADE   = 47;  # (expr, ...) parantezli / demet ifade
+
+# ============================================================
+# Enum / Cebirsel Veri Tipi Varyant Tablosu
+# ============================================================
+degisken g_enum_var_sayisi: tamsayi = 0;
+degisken g_enum_var_tam_isim: [4096]*u8;
+degisken g_enum_var_tam_uzn: [4096]tamsayi;
+degisken g_enum_var_kisa_isim: [4096]*u8;
+degisken g_enum_var_kisa_uzn: [4096]tamsayi;
+degisken g_enum_var_disc: [4096]tamsayi;
+degisken g_enum_var_payload: [4096]tamsayi;
+degisken g_enum_var_payload_tip: [4096]*u8;
+degisken g_enum_var_payload_tip_uzn: [4096]tamsayi;
+
+isv enum_varyant_ekle(tam_isim: *u8, tam_uzn: tamsayi, kisa_isim: *u8, kisa_uzn: tamsayi, disc: tamsayi, payload: tamsayi, payload_tip: *u8, payload_tip_uzn: tamsayi) {
+    eger g_enum_var_sayisi >= 4096 ise { dondu; }
+    degisken idx: tamsayi = g_enum_var_sayisi;
+    g_enum_var_tam_isim[idx] = tam_isim;
+    g_enum_var_tam_uzn[idx] = tam_uzn;
+    g_enum_var_kisa_isim[idx] = kisa_isim;
+    g_enum_var_kisa_uzn[idx] = kisa_uzn;
+    g_enum_var_disc[idx] = disc;
+    g_enum_var_payload[idx] = payload;
+    g_enum_var_payload_tip[idx] = payload_tip;
+    g_enum_var_payload_tip_uzn[idx] = payload_tip_uzn;
+    g_enum_var_sayisi = g_enum_var_sayisi + 1;
+}
+
+isv enum_varyant_bul_tam(isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_enum_var_sayisi {
+        eger g_enum_var_tam_uzn[i] == uzn ise {
+            eger bellek_esit_mi(g_enum_var_tam_isim[i], isim, uzn) == 1 ise {
+                dondu i;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+isv enum_varyant_bul_kisa(isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_enum_var_sayisi {
+        eger g_enum_var_kisa_uzn[i] == uzn ise {
+            eger bellek_esit_mi(g_enum_var_kisa_isim[i], isim, uzn) == 1 ise {
+                dondu i;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0 - 1;
+}
+
+# Named enum tiplerinin codegen ABI'si heap tagged-union pointer'idir.
+# Tam varyant adlari Enum__Varyant biçiminde tutulduğundan enum owner'i
+# ayrı bir tablo ayırmadan güvenli biçimde tespit edilir.
+isv enum_turu_mi(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < g_enum_var_sayisi {
+        eger g_enum_var_tam_uzn[i] > uzn + 2 ise {
+            eger bellek_esit_mi(g_enum_var_tam_isim[i], isim, uzn) == 1 ve
+                bellek_esit_mi(g_enum_var_tam_isim[i] + uzn, "__".ptr, 2) == 1 ise { dondu 1; }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv enum_varyant_has_any_payload(ev: tamsayi) -> tamsayi {
+    eger ev < 0 veya ev >= g_enum_var_sayisi ise { dondu 0; }
+    degisken ad: *u8 = g_enum_var_tam_isim[ev];
+    degisken uzn: tamsayi = g_enum_var_tam_uzn[ev];
+    degisken prefix_len: tamsayi = 0;
+    dongu prefix_len + 1 < uzn {
+        eger ad[prefix_len] == 95 ve ad[prefix_len + 1] == 95 ise { durdur; }
+        prefix_len = prefix_len + 1;
+    }
+    eger prefix_len >= uzn ise { dondu g_enum_var_payload[ev]; }
+    degisken i: tamsayi = 0;
+    dongu i < g_enum_var_sayisi {
+        eger g_enum_var_tam_uzn[i] > prefix_len + 2 ise {
+            degisken cur_ad: *u8 = g_enum_var_tam_isim[i];
+            eger cur_ad[prefix_len] == 95 ve cur_ad[prefix_len + 1] == 95 ise {
+                eger bellek_esit_mi(cur_ad, ad, prefix_len) == 1 ise {
+                    eger g_enum_var_payload[i] != 0 ise { dondu 1; }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv disc_str_uzunluk(disc: tamsayi) -> tamsayi {
+    eger disc < 10 ise { dondu 1; }
+    degisken v: tamsayi = disc;
+    degisken uzn: tamsayi = 0;
+    dongu v > 0 {
+        v = v / 10;
+        uzn = uzn + 1;
+    }
+    dondu uzn;
+}
+
+isv disc_to_str(disc: tamsayi) -> *u8 {
+    eger disc == 0 ise { dondu "0".ptr; }
+    eger disc == 1 ise { dondu "1".ptr; }
+    eger disc == 2 ise { dondu "2".ptr; }
+    eger disc == 3 ise { dondu "3".ptr; }
+    eger disc == 4 ise { dondu "4".ptr; }
+    eger disc == 5 ise { dondu "5".ptr; }
+    eger disc == 6 ise { dondu "6".ptr; }
+    eger disc == 7 ise { dondu "7".ptr; }
+    eger disc == 8 ise { dondu "8".ptr; }
+    eger disc == 9 ise { dondu "9".ptr; }
+    eger disc < 0 ise { dondu "0".ptr; }
+    degisken uzn: tamsayi = disc_str_uzunluk(disc);
+    degisken buf: *u8 = compiler_tahsis_et(uzn + 1);
+    eger buf == 0 ise { dondu "0".ptr; }
+    buf[uzn] = 0;
+    degisken v: tamsayi = disc;
+    degisken idx: tamsayi = uzn - 1;
+    dongu idx >= 0 {
+        buf[idx] = 48 + (v % 10);
+        v = v / 10;
+        idx = idx - 1;
+    }
+    dondu buf;
+}
+
+# AST arena limit asimi compiler'a geri bildirilir; sessiz NULL uretilmez.
+degisken g_ast_arena_hata_sayisi: tamsayi = 0;
+degisken g_param_arena_hata_sayisi: tamsayi = 0;
+# Buyume sirasinda eski arena bloklari zincirlenerek saklanir (bellek sizintisi onlenir).
+degisken g_ast_arena_eski_bloklar: [1024]*u8;
+degisken g_ast_arena_eski_blok_sayisi: tamsayi = 0;
+
+# Birlestirme AST Dugumu
+yapi AstDugum {
+    tip: tamsayi;
+    ilk_jeton: *Jeton;
+    son_jeton: *Jeton;
+    sol: *AstDugum;
+    sag: *AstDugum;
+    sonraki: *AstDugum;
+    govde: *AstDugum;
+    yoksa_govde: *AstDugum;
+    parametreler: *AstDugum;
+    tip_adi: *u8;
+    tip_adi_uzunluk: tamsayi;
+    cozumlenmis_tip: tamsayi;
+    dizi_boyutu: tamsayi;
+    gorunurluk: tamsayi;
+    nullable: tamsayi;
+    # Type annotation generic arguments are metadata, never expression children.
+    tip_arglari: *AstDugum;
+    tip_arg_sayisi: tamsayi;
+}
+
+yapi ParamDugum {
+    isim_jeton: *Jeton;
+    tip_adi: *u8;
+    tip_adi_uzunluk: tamsayi;
+    sonraki: *ParamDugum;
+    cozumlenmis_tip: tamsayi;
+    nullable: tamsayi;
+}
+
+yapi AstArena {
+    bellek: *u8;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+}
+
+isv arena_dugum_yarat(arena: *AstArena, tip: tamsayi, jeton: *Jeton) -> *AstDugum {
+    eger arena == 0 ise {
+        panik("HATA: AST Arenasi gecersiz (NULL)!".ptr);
+    }
+    degisken dugum_boyutu: tamsayi = 136;  # 17 pointer/metadata slots
+    eger arena.kullanilan + dugum_boyutu > arena.kapasite ise {
+        degisken yeni_kapasite: tamsayi = arena.kapasite * 2;
+        eger yeni_kapasite < 1048576 ise { yeni_kapasite = 1048576; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek == 0 ise {
+            g_ast_arena_hata_sayisi = g_ast_arena_hata_sayisi + 1;
+            panik("HATA [E014] [ERR_AST_LIMIT] [class=compiler]: AST bellek tahsisi basarisiz (OOM)".ptr);
+        }
+        eger arena.bellek != 0 ve g_ast_arena_eski_blok_sayisi < 1024 ise {
+            g_ast_arena_eski_bloklar[g_ast_arena_eski_blok_sayisi] = arena.bellek;
+            g_ast_arena_eski_blok_sayisi = g_ast_arena_eski_blok_sayisi + 1;
+        }
+        arena.bellek = yeni_bellek;
+        arena.kapasite = yeni_kapasite;
+        arena.kullanilan = 0;
+    }
+    degisken ptr: *AstDugum = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + dugum_boyutu;
+    ptr.tip = tip;
+    ptr.ilk_jeton = jeton;
+    ptr.son_jeton = jeton;
+
+    ptr.sol = 0;
+    ptr.sag = 0;
+    ptr.sonraki = 0;
+    ptr.govde = 0;
+    ptr.yoksa_govde = 0;
+    ptr.parametreler = 0;
+    ptr.tip_adi = 0;
+    ptr.tip_adi_uzunluk = 0;
+    ptr.cozumlenmis_tip = 0;
+    ptr.dizi_boyutu = 0;
+    ptr.gorunurluk = 0;
+    ptr.nullable = 0;
+    ptr.tip_arglari = 0;
+    ptr.tip_arg_sayisi = 0;
+    dondu ptr;
+}
+
+isv arena_param_yarat(arena: *AstArena, isim: *Jeton) -> *ParamDugum {
+    eger arena == 0 ise {
+        panik("HATA: Param Arenasi gecersiz (NULL)!".ptr);
+    }
+    degisken boyut: tamsayi = 48;
+    eger arena.kullanilan + boyut > arena.kapasite ise {
+        degisken yeni_kapasite: tamsayi = arena.kapasite * 2;
+        eger yeni_kapasite < 262144 ise { yeni_kapasite = 262144; }
+        degisken yeni_bellek: *u8 = compiler_tahsis_et(yeni_kapasite);
+        eger yeni_bellek == 0 ise {
+            g_param_arena_hata_sayisi = g_param_arena_hata_sayisi + 1;
+            panik("HATA [E014] [ERR_AST_LIMIT] [class=compiler]: Parametre AST bellek tahsisi basarisiz (OOM)".ptr);
+        }
+        eger arena.bellek != 0 ve g_ast_arena_eski_blok_sayisi < 1024 ise {
+            g_ast_arena_eski_bloklar[g_ast_arena_eski_blok_sayisi] = arena.bellek;
+            g_ast_arena_eski_blok_sayisi = g_ast_arena_eski_blok_sayisi + 1;
+        }
+        arena.bellek = yeni_bellek;
+        arena.kapasite = yeni_kapasite;
+        arena.kullanilan = 0;
+    }
+    degisken ptr: *ParamDugum = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + boyut;
+    ptr.isim_jeton = isim;
+    ptr.tip_adi = 0;
+    ptr.tip_adi_uzunluk = 0;
+    ptr.sonraki = 0;
+    ptr.cozumlenmis_tip = 0;
+    ptr.nullable = 0;
+    dondu ptr;
+}
+
+# ============================================================
+# FAZ 9.2: KonvertDirektifi Yapisi (AST_DIREKTIF_CONVERT)
+# ============================================================
+yapi KonvertDirektifi {
+    dil: *u8;        # "C", "PY", "JS", "CS", "RB"
+    dil_uzn: tamsayi;
+    kaynak: *u8;     # kaynak="..."
+    kaynak_uzn: tamsayi;
+    hedef: *u8;      # hedef="..."
+    hedef_uzn: tamsayi;
+    esik: tamsayi;   # esik=0.8 olarak 80 (x100 int)
+    mod: *u8;        # mod="..."
+    mod_uzn: tamsayi;
+    sonraki: *KonvertDirektifi;
+}

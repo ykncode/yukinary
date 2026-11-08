@@ -1,0 +1,116 @@
+# ============================================================
+# tests/veritabani/test_acid_wal.ykn
+# FAZ 56: B+Tree ve WAL ACID Veritabani Motoru Dogrulama Testi
+# Dinamik Dugum Bolme (Node Split), Cift Yonlu Aralik Taramasi ve ARIES Cokme Kurtarma
+# ============================================================
+
+ice_aktar "std/veritabani/b_tree.ykn";
+ice_aktar "std/veritabani/wal.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 56: B+Tree ve WAL ACID Veritabani Testi Basliyor...\n".ptr);
+
+    # ============================================================
+    # 1. B+TREE DİNAMİK DÜĞÜM BÖLME VE DERİNLİK TESTİ
+    # ============================================================
+    degisken agac: *BTreeAgac = btree_agac_olustur();
+
+    # 25 adet sirali ve daginik anahtar ekle (BTREE_DERECE=8 oldugundan birden fazla bolunme zorunludur)
+    degisken i: tamsayi = 1;
+    dongu i <= 25 {
+        degisken k: tamsayi = i * 10; # 10, 20, 30 ... 250
+        degisken v: tamsayi = i * 1000;
+        btree_agaca_ekle(agac, k, v);
+        i = i + 1;
+    }
+
+    # Ağaç yüksekliğinin 1'den büyük olduğunu (kökün bölündüğünü) teyit et
+    eger agac.yukseklik <= 1 ise {
+        ekrana_yaz("HATA: 25 eleman sonrasi B+Tree koku bolunmedi, yukseklik artmadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Tum 25 anahtarin agactan dogru degerlerle dondugunu teyit et
+    i = 1;
+    dongu i <= 25 {
+        degisken k: tamsayi = i * 10;
+        degisken beklenen_v: tamsayi = i * 1000;
+        degisken gercek_v: tamsayi = btree_dugumde_ara(agac.kok, k);
+        eger gercek_v != beklenen_v ise {
+            ekrana_yaz("HATA: B+Tree bolunmus agacta anahtar bulunamadi veya yanlis!\n".ptr);
+            dondu 2;
+        }
+        i = i + 1;
+    }
+
+    # Olmayan anahtar aramasi
+    degisken yok: tamsayi = btree_dugumde_ara(agac.kok, 9999);
+    eger yok != (0 - 1) ise {
+        ekrana_yaz("HATA: Olmayan anahtar bulundu!\n".ptr);
+        dondu 3;
+    }
+
+    # ============================================================
+    # 2. B+TREE ÇİFT YÖNLÜ YAPRAK ARALIK TARAMASI (RANGE SCAN)
+    # ============================================================
+    # 50 ile 150 arasindaki tum kayitlari topla (50, 60, ..., 150 -> 11 adet)
+    degisken sonuc_tamponu: *tamsayi = bellek_tahsis_et(64 * 8);
+    degisken bulunan_adet: tamsayi = btree_aralik_tara(agac, 50, 150, sonuc_tamponu, 64);
+    eger bulunan_adet != 11 ise {
+        ekrana_yaz("HATA: B+Tree aralik tarama adedi hatali (beklenen 11)!\n".ptr);
+        dondu 4;
+    }
+
+    # Ilk ve son degerleri dogrula
+    eger sonuc_tamponu[0] != 5000 veya sonuc_tamponu[10] != 15000 ise {
+        ekrana_yaz("HATA: Aralik tarama degerleri sirali degil!\n".ptr);
+        dondu 5;
+    }
+
+    # ============================================================
+    # 3. WAL ACID TRANSACTION VE ROLLBACK TESTI
+    # ============================================================
+    degisken wal: *WalYoneticisi = wal_yoneticisi_olustur();
+
+    # Tx 1: Commit edilecek islem
+    degisken k1: *WalKaydi = wal_kayit_ekle(wal, WAL_ISLEM_EKLE, 101, 0, 5555);
+    degisken k2: *WalKaydi = wal_kayit_ekle(wal, WAL_ISLEM_EKLE, 102, 0, 6666);
+
+    eger k1.onaylandi != 0 veya k2.onaylandi != 0 ise {
+        ekrana_yaz("HATA: Commit oncesi kayit onayli gozukuyor!\n".ptr);
+        dondu 6;
+    }
+    wal_commit(wal);
+
+    eger k1.onaylandi != 1 veya k2.onaylandi != 1 ise {
+        ekrana_yaz("HATA: Commit sonrasi onay bayragi 1 olmali!\n".ptr);
+        dondu 7;
+    }
+
+    # Tx 2: Rollback (Abort) edilecek islem
+    degisken tx2_id: tamsayi = wal.guncel_tx_id;
+    degisken k3: *WalKaydi = wal_kayit_ekle(wal, WAL_ISLEM_GUNCELLE, 101, 5555, 9999);
+    wal_tx_geri_al(wal, tx2_id);
+
+    eger k3.onaylandi != (0 - 1) ise {
+        ekrana_yaz("HATA: Geri alinan islem -1 (ABORT) olmali!\n".ptr);
+        dondu 8;
+    }
+
+    # ============================================================
+    # 4. WAL ÇÖKME KURTARMA (CRASH RECOVERY) ANALİZİ
+    # ============================================================
+    # Askida kalmis Tx 3 ekle (commit veya abort cagrilmadi, sistem coktu)
+    wal.guncel_tx_id = wal.guncel_tx_id + 1;
+    wal_kayit_ekle(wal, WAL_ISLEM_EKLE, 103, 0, 7777);
+
+    # Cokme kurtarma analizini calistir: Tx1 onaylanmali, Tx3 askida kaldigi icin otomatik UNDO edilmeli
+    degisken kurtarilan: tamsayi = wal_cokme_kurtarma_analizi(wal);
+    eger kurtarilan != 2 ise { # k1 ve k2 commit edilmisti
+        ekrana_yaz("HATA: Cokme kurtarma onayli transaction sayisi hatali!\n".ptr);
+        dondu 9;
+    }
+
+    ekrana_yaz("ACID_WAL_BTREE_PASS\n".ptr);
+    dondu 0;
+}

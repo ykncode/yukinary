@@ -1,0 +1,118 @@
+# ============================================================
+# src/yknllm_audit.ykn
+# Saf YKN append-only binary gateway audit kaydi.
+#
+# JSONL veya Python kullanmaz. Intent/kod hash'leri bu YKN SHA-256
+# implementasyonu ile hesaplanir; kayit Win32 append handle'ina tek
+# bounded write olarak yazilir. Linux/macOS native file adapter'lari
+# hazir olana kadar bu dosya Windows bootstrap hedefinde acikca sinirlidir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+degisken YKNLLM_AUDIT_MAGIC: tamsayi = 0x594B4E41; # YKNA
+degisken YKNLLM_AUDIT_VERSION: tamsayi = 1;
+degisken YKNLLM_AUDIT_MAX_FIELD: tamsayi = 1048576;
+degisken YKNLLM_AUDIT_MAX_RECORD: tamsayi = 8388608;
+
+# Codegen tarafinda hedefe ozel syscall/IAT append primitive'i.
+# Stage-0 fallback'i basari saymaz; native codegen bu sembolu gercekler.
+isv yknllm_audit_native_append(dosya_yolu: *u8, buffer: *u8, boyut: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=compiler-native-codegen-intrinsic
+
+yapi YKNLLMAuditInput {
+    correlation_id: *u8;
+    intent: *u8;
+    ykn_code: *u8;
+    model_version: *u8;
+    selected_model: *u8;
+    diagnostics: *u8;
+    compiler_exit: tamsayi;
+    accepted: tamsayi;
+}
+
+isv yknllm_audit_uzunluk(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv yknllm_audit_hex_mi(hash: *u8) -> tamsayi {
+    eger hash == 0 veya yknllm_audit_uzunluk(hash) != 64 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        degisken c: tamsayi = hash[i];
+        eger (c < 48 veya c > 57) ve (c < 97 veya c > 102) ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv yknllm_audit_u64_yaz(buf: *u8, kapasite: tamsayi,
+                         pos: *tamsayi, deger: tamsayi) -> tamsayi {
+    eger buf == 0 veya pos == 0 veya *pos < 0 veya *pos + 8 > kapasite ise { dondu 0; }
+    degisken v: tamsayi = deger;
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        buf[*pos + i] = v & 255;
+        v = v >> 8;
+        i = i + 1;
+    }
+    *pos = *pos + 8;
+    dondu 1;
+}
+
+isv yknllm_audit_metin_yaz(buf: *u8, kapasite: tamsayi,
+                           pos: *tamsayi, metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken uzunluk: tamsayi = yknllm_audit_uzunluk(metin);
+    eger uzunluk < 0 veya uzunluk > YKNLLM_AUDIT_MAX_FIELD veya
+       yknllm_audit_u64_yaz(buf, kapasite, pos, uzunluk) == 0 veya
+       *pos + uzunluk > kapasite ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk { buf[*pos + i] = metin[i]; i = i + 1; }
+    *pos = *pos + uzunluk;
+    dondu 1;
+}
+
+# Tek append kaydi: header + typed field lengths + SHA-256 hashes.
+isv yknllm_audit_append(dosya_yolu: *u8, girdi: *YKNLLMAuditInput) -> tamsayi {
+    eger dosya_yolu == 0 veya yknllm_audit_uzunluk(dosya_yolu) <= 0 veya
+       girdi == 0 veya girdi->correlation_id == 0 veya
+       girdi->intent == 0 veya girdi->ykn_code == 0 veya
+       girdi->model_version == 0 veya girdi->selected_model == 0 veya
+       girdi->diagnostics == 0 veya (girdi->accepted != 0 ve girdi->accepted != 1) ise {
+        dondu 0;
+    }
+    degisken intent_uzn: tamsayi = yknllm_audit_uzunluk(girdi->intent);
+    degisken code_uzn: tamsayi = yknllm_audit_uzunluk(girdi->ykn_code);
+    eger intent_uzn > YKNLLM_AUDIT_MAX_FIELD veya code_uzn > YKNLLM_AUDIT_MAX_FIELD ise { dondu 0; }
+
+    degisken intent_hash: [65]u8;
+    degisken code_hash: [65]u8;
+    sha256_hesapla(girdi->intent, intent_uzn, &intent_hash);
+    sha256_hesapla(girdi->ykn_code, code_uzn, &code_hash);
+    eger yknllm_audit_hex_mi(&intent_hash) == 0 veya yknllm_audit_hex_mi(&code_hash) == 0 ise { dondu 0; }
+
+    degisken kayit: *u8 = os_bellek_tahsis(YKNLLM_AUDIT_MAX_RECORD);
+    eger kayit == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken kayit_ok: tamsayi = 1;
+    eger yknllm_audit_u64_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, YKNLLM_AUDIT_MAGIC) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_u64_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, YKNLLM_AUDIT_VERSION) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->correlation_id) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, &intent_hash) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, &code_hash) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->model_version) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->selected_model) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_u64_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->compiler_exit) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_u64_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->accepted) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 1 ve yknllm_audit_metin_yaz(kayit, YKNLLM_AUDIT_MAX_RECORD, &pos, girdi->diagnostics) == 0 ise { kayit_ok = 0; }
+    eger kayit_ok == 0 ise { os_bellek_serbest(kayit); dondu 0; }
+
+    degisken yazilan: tamsayi = yknllm_audit_native_append(dosya_yolu, kayit, pos);
+    os_bellek_serbest(kayit);
+    eger yazilan != pos ise { dondu 0; }
+    dondu yazilan;
+}

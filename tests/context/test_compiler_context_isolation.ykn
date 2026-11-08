@@ -1,0 +1,91 @@
+# ============================================================
+# test_compiler_context_isolation.ykn
+# CompilerContext mimarisi birim testi:
+# 1. Baglam tahsisi ve baslatma
+# 2. Alt baglamlarin (Target, Diag, Compilation, Optimizer) izolasyonu
+# 3. Snapshot ve kopya islemleri
+# 4. Baglam sifirlama (reset) islemleri
+# ============================================================
+
+ice_aktar "../../src/context.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("=== Test CompilerContext Izolasyonu ===\n".ptr);
+
+    # 1. Iki ayri compiler context olustur
+    degisken ctx1: *CompilerContext = compiler_context_olustur();
+    degisken ctx2: *CompilerContext = compiler_context_olustur();
+
+    eger ctx1 == 0 veya ctx2 == 0 ise {
+        ekrana_yaz("[FAIL] Context tahsisi basarisiz!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[OK] Baglamlar basariyla tahsis edildi.\n".ptr);
+
+    # 2. ctx1 ve ctx2 alt baglamlarini typed pointer ile bagimsiz yapilandir
+    degisken t1: *TargetContext = ctx1.target;
+    degisken o1: *OptimizerContext = ctx1.optimizer;
+    degisken d1: *DiagnosticContext = ctx1.diag;
+
+    degisken t2: *TargetContext = ctx2.target;
+    degisken o2: *OptimizerContext = ctx2.optimizer;
+    degisken d2: *DiagnosticContext = ctx2.diag;
+
+    t1.platform = 1; # Linux ELF64
+    t1.verbose = 1;
+    o1.inlining_aktif = 1;
+    o1.maks_inline_dugum = 50;
+    d1.hata_sayisi = 3;
+
+    t2.platform = 0; # Windows PE32+
+    t2.verbose = 0;
+    o2.inlining_aktif = 0;
+    o2.maks_inline_dugum = 10;
+    d2.hata_sayisi = 0;
+
+    # 3. Izolasyon kontrolu
+    eger t1.platform == t2.platform ise {
+        ekrana_yaz("[FAIL] Target platform izolasyonu basarisiz!\n".ptr);
+        dondu 1;
+    }
+    eger o1.maks_inline_dugum == o2.maks_inline_dugum ise {
+        ekrana_yaz("[FAIL] Optimizer parametre izolasyonu basarisiz!\n".ptr);
+        dondu 1;
+    }
+    eger d1.hata_sayisi == d2.hata_sayisi ise {
+        ekrana_yaz("[FAIL] Diagnostic hata sayisi izolasyonu basarisiz!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[OK] Izolasyon dogrulandi: ctx1 ve ctx2 birbirini etkilemiyor.\n".ptr);
+
+    # 4. Snapshot alma ve klonlama
+    degisken ctx_snap: *CompilerContext = compiler_context_snapshot_al(ctx1);
+    eger ctx_snap == 0 ise {
+        ekrana_yaz("[FAIL] Snapshot alma basarisiz!\n".ptr);
+        dondu 1;
+    }
+    degisken t_snap: *TargetContext = ctx_snap.target;
+    degisken o_snap: *OptimizerContext = ctx_snap.optimizer;
+
+    eger t_snap.platform != 1 veya o_snap.maks_inline_dugum != 50 ise {
+        ekrana_yaz("[FAIL] Snapshot degerleri kopyalanmadi!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[OK] Snapshot basariyla alindi.\n".ptr);
+
+    # 5. Sifirlama (Reset) kontrolu
+    compiler_context_sifirla(ctx1);
+    eger d1.hata_sayisi != 0 ise {
+        ekrana_yaz("[FAIL] Reset sonrasi hata sayisi sifirlanmadi!\n".ptr);
+        dondu 1;
+    }
+    # Snapshot degismemeli
+    eger t_snap.platform != 1 ise {
+        ekrana_yaz("[FAIL] Reset snapshot'i etkiledi!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[OK] Sifirlama ve snapshot bagimsizligi dogrulandi.\n".ptr);
+
+    ekrana_yaz("COMPILER_CONTEXT_ISOLATION_PASS\n".ptr);
+    dondu 0;
+}

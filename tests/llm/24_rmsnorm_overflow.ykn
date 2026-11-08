@@ -1,0 +1,29 @@
+# RMSNorm overflow regression: large Q16 embedding values must stay bounded.
+ice_aktar "../../std/ai/attention.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken girdi: [4]tamsayi;
+    degisken agirlik: [4]tamsayi;
+    degisken cikti: [4]tamsayi;
+    girdi[0] = 200000000000000;
+    girdi[1] = 100000000000000;
+    girdi[2] = 0 - 100000000000000;
+    girdi[3] = 0 - 200000000000000;
+    agirlik[0] = 65536;
+    agirlik[1] = 65536;
+    agirlik[2] = 65536;
+    agirlik[3] = 65536;
+    eger bitnet_rmsnorm_q16(girdi, agirlik, cikti, 4, 0) == 0 ise {
+        ekrana_yaz("RMSNORM-OVERFLOW-FAIL\n".ptr);
+        dondu 1;
+    }
+    # RMSNorm sonucu yaklaşık +/-1.26 Q16 olmalı; signed-64 taşması
+    # olursa değerler bu güvenli aralığın dışına çıkar.
+    eger cikti[0] < 70000 veya cikti[0] > 90000 veya
+       cikti[3] > 0 - 70000 veya cikti[3] < 0 - 90000 ise {
+        ekrana_yaz("RMSNORM-OVERFLOW-FAIL\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("RMSNORM-OVERFLOW-PASS\n".ptr);
+    dondu 0;
+}

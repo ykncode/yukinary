@@ -1,0 +1,27 @@
+isv ekrana_yaz(m: *u8) {}
+ice_aktar "../../std/metin.ykn";
+
+modul matematik {
+    isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+        dondu a + b;
+    }
+}
+
+modul fizik {
+    isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+        dondu a + b + 100;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken m1: tamsayi = matematik::topla(5, 10);
+    degisken m2: tamsayi = fizik::topla(5, 10);
+    
+    # 15 + 115 = 130
+    eger m1 + m2 == 130 ise {
+        ekrana_yaz("25_MODULES_PASS\n".ptr);
+    } yoksa {
+        ekrana_yaz("25_MODULES_FAIL\n".ptr);
+    }
+    dondu 0;
+}

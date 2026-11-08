@@ -1,0 +1,153 @@
+# ============================================================
+# 10_pipeline_and_features.ykn
+# ANSI, Dynamic Borrow/Move ve HIR->MIR->IR Pipeline Testi
+# ============================================================
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+ice_aktar "../../src/mir.ykn";
+ice_aktar "../../src/ir.ykn";
+ice_aktar "../../src/ir_lower.ykn";
+
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+isv test_ansi() -> tamsayi {
+    diagnostics_renkleri_baslat(1);
+    eger ANSI_KIRMIZI == 0 veya ANSI_SIFIRLA == 0 ise {
+        ekrana_yaz("FAIL: ANSI renkleri bos!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST_ANSI_PASS\n".ptr);
+    dondu 0;
+}
+
+isv test_dinamik_borrow_move() -> tamsayi {
+    move_borrow_tablolarini_sifirla();
+    
+    # 50 adet degisken tasi (onceki 16/32 limitlerini cok asan dinamik kapasite)
+    degisken i: tamsayi = 0;
+    dongu i < 50 {
+        degisken buf: *u8 = compiler_tahsis_et(16);
+        buf[0] = 118; # 'v'
+        buf[1] = 97;  # 'a'
+        buf[2] = 114; # 'r'
+        buf[3] = 48 + (i % 10);
+        degisken uzn: tamsayi = 4;
+        
+        degisken_tasi(buf, uzn);
+        eger degisken_tasindi_mi(buf, uzn) != 1 ise {
+            ekrana_yaz("FAIL: Tasinan degisken bulunamadi!\n".ptr);
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    eger g_moved_sayisi != 50 ise {
+        ekrana_yaz("FAIL: g_moved_sayisi 50 degil!\n".ptr);
+        dondu 1;
+    }
+
+    # 50 adet degisken odunc al (immutable)
+    i = 0;
+    dongu i < 50 {
+        degisken buf: *u8 = compiler_tahsis_et(16);
+        buf[0] = 98;  # 'b'
+        buf[1] = 111; # 'o'
+        buf[2] = 114; # 'r'
+        buf[3] = 48 + (i % 10);
+        degisken uzn: tamsayi = 4;
+        
+        degisken ok: tamsayi = degisken_odunc_al(buf, uzn, 0);
+        eger ok != 1 ise {
+            ekrana_yaz("FAIL: degisken_odunc_al basarisiz!\n".ptr);
+            dondu 1;
+        }
+        eger degisken_odunc_alindi_mi(buf, uzn, 1) != 1 ise {
+            ekrana_yaz("FAIL: Odunc alinan degisken cakismasi bulunamadi!\n".ptr);
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    eger g_borrow_sayisi != 50 ise {
+        ekrana_yaz("FAIL: g_borrow_sayisi 50 degil!\n".ptr);
+        dondu 1;
+    }
+
+    move_borrow_tablolarini_sifirla();
+    eger g_moved_sayisi != 0 veya g_borrow_sayisi != 0 ise {
+        ekrana_yaz("FAIL: Sifirlama basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST_BORROW_MOVE_PASS\n".ptr);
+    dondu 0;
+}
+
+isv test_hir_mir_ir_pipeline() -> tamsayi {
+    degisken hir: *HirMotoru = hir_motoru_olustur(65536);
+    degisken mir: *MirMotoru = mir_motoru_olustur(65536);
+    degisken ir: *IrMotoru = ir_motoru_olustur(1048576);
+
+    # HIR Islev olustur
+    degisken h_islev: *HirDugum = hir_dugum_olustur(hir, HIR_ISLEV, 0);
+    h_islev.deger = 1001; # fonk hash
+    
+    # Govde: blok
+    degisken blok: *HirDugum = hir_dugum_olustur(hir, HIR_BLOK, 0);
+    h_islev.govde = blok;
+
+    # Atama: y = 20
+    degisken var_y: *HirDugum = hir_dugum_olustur(hir, HIR_KIMLIK, 0);
+    var_y.deger = 202;
+    degisken num_20: *HirDugum = hir_dugum_olustur(hir, HIR_SAYI, 0);
+    num_20.deger = 20;
+    degisken ata: *HirDugum = hir_dugum_olustur(hir, HIR_ATAMA, 0);
+    ata.sol = var_y;
+    ata.sag = num_20;
+    blok.sol = ata;
+
+    # Donus: dondu y
+    degisken ret: *HirDugum = hir_dugum_olustur(hir, HIR_DONDUR, 0);
+    ret.sol = var_y;
+    ata.sonraki = ret;
+
+    # HIR -> MIR
+    hir_to_mir_islev(mir, h_islev);
+    eger mir.ilk_islev == 0 ise {
+        ekrana_yaz("FAIL: MIR islevi olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # MIR -> IR
+    mir_to_ir(ir, mir);
+    eger ir.hata_sayisi != 0 veya ir.ilk_fonksiyon == 0 ise {
+        ekrana_yaz("FAIL: MIR to IR basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    degisken v: tamsayi = ir_verifier_calistir(ir);
+    eger v != 0 ise {
+        ekrana_yaz("FAIL: IR Verifier basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("TEST_PIPELINE_PASS\n".ptr);
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken r1: tamsayi = test_ansi();
+    eger r1 != 0 ise { dondu r1; }
+
+    degisken r2: tamsayi = test_dinamik_borrow_move();
+    eger r2 != 0 ise { dondu r2; }
+
+    degisken r3: tamsayi = test_hir_mir_ir_pipeline();
+    eger r3 != 0 ise { dondu r3; }
+
+    ekrana_yaz("TUM_TESTLER_BASARILI\n".ptr);
+    dondu 0;
+}

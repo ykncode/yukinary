@@ -1,0 +1,44 @@
+# Microsoft I2_S type 36: 4 packed ternary values per byte + 32-byte scale trailer.
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/bitnet_backend.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger gguf_ggml_bayt_sayisi(GGML_TYPE_IQ2_S, 2, 2560, 2560, 0, 0) != 1638432 {
+        dondu 1;
+    }
+    eger gguf_ggml_bayt_sayisi(GGML_TYPE_IQ2_S_GGML, 2, 2560, 2560, 0, 0) != 2099200 {
+        dondu 2;
+    }
+
+    degisken raw: [64]u8;
+    degisken weights: [128]u8;
+    degisken activation: [128]tamsayi;
+    degisken output: [1]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 64 { raw[i] = 0; i = i + 1; }
+    i = 0;
+    dongu i < 128 { activation[i] = 0; i = i + 1; }
+
+    # Each group occupies a separate 2-bit lane in the same packed byte.
+    raw[0] = 36; # 00, 10, 01, 00 -> -1, +1, 0, -1
+    eger bitnet_i2s_kodunu_oku(raw, 0) != 2 veya
+       bitnet_i2s_kodunu_oku(raw, 32) != 1 veya
+       bitnet_i2s_kodunu_oku(raw, 64) != 0 veya
+       bitnet_i2s_kodunu_oku(raw, 96) != 2 {
+        dondu 3;
+    }
+
+    # f32 scale=1.0 lives at n/4, after the packed data.
+    raw[32] = 0; raw[33] = 0; raw[34] = 128; raw[35] = 63;
+    eger bitnet_i2s_scale_q16(raw, 32) != 65536 { dondu 4; }
+    raw[0] = 0; # weight[0] = -1
+    activation[0] = 65536;
+    eger bitnet_i2s_paketli_matris_carp(raw, activation, output, 1, 128, 1) != 1 veya
+       output[0] != 0 - 65536 {
+        dondu 5;
+    }
+    dondu 0;
+}

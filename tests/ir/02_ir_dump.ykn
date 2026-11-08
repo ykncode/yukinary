@@ -1,0 +1,51 @@
+# ============================================================
+# IR Dump Testi
+# IR dump çıktısının üretildiğini doğrular
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/ir.ykn";
+
+isv ana() -> tamsayi {
+    degisken motor: *IrMotoru = ir_motoru_olustur(1048576);
+    eger motor == 0 ise { ekrana_yaz("FAIL\n".ptr); dondu 1; }
+
+    # İki fonksiyon: toplama ve çarpma
+    degisken f1: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 111);
+    degisken ra: tamsayi = ir_yeni_reg(motor);
+    degisken rb: tamsayi = ir_yeni_reg(motor);
+    degisken rc: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CONST, ra, 10, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_CONST, rb, 20, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_ADD,   rc, ra, rb, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_RET,   0,  rc, 0,  YKN_IR_TID_INT);
+    f1.donus_tip_id = YKN_IR_TID_INT;
+
+    degisken f2: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 222);
+    degisken rx: tamsayi = ir_yeni_reg(motor);
+    degisken ry: tamsayi = ir_yeni_reg(motor);
+    degisken rz: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CONST, rx, 5, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_CONST, ry, 6, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_MUL,   rz, rx, ry, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_RET,   0,  rz, 0,  YKN_IR_TID_INT);
+    f2.donus_tip_id = YKN_IR_TID_INT;
+
+    # Verifier
+    degisken hata: tamsayi = ir_verifier_calistir(motor);
+    eger hata != 0 ise {
+        ekrana_yaz("FAIL: Verifier hatasi\n".ptr);
+        dondu 1;
+    }
+
+    # motor'da 2 fonksiyon olmalı
+    eger motor.ilk_fonksiyon == 0 ise {
+        ekrana_yaz("FAIL: Fonksiyon listesi bos\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("IR_DUMP_PASS\n".ptr);
+    dondu 0;
+}

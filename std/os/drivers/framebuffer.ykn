@@ -1,0 +1,58 @@
+# ============================================================
+# YKNOS framebuffer primitive'leri
+#
+# Bu modül bootloader'ın verdiği linear framebuffer belleği üzerinde gerçek
+# byte/piksel işlemleri yapar. VRAM adresinin platforma özgü map edilmesi,
+# çözünürlük ve stride bilgisi boot katmanının sorumluluğundadır.
+# ============================================================
+
+# 32-bit XRGB/BGRA framebuffer temizleme.
+isv framebuffer_ekranini_temizle(vram: *u8, piksel_sayisi: tamsayi,
+                                  renk_kodu: tamsayi) -> tamsayi {
+    eger vram == 0 veya piksel_sayisi <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < piksel_sayisi {
+        degisken ofset: tamsayi = i * 4;
+        vram[ofset] = renk_kodu & 255;
+        vram[ofset + 1] = (renk_kodu / 256) & 255;
+        vram[ofset + 2] = (renk_kodu / 65536) & 255;
+        vram[ofset + 3] = (renk_kodu / 16777216) & 255;
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Küçük deterministik YKN logosu: 8x8 bitmap'i verilen piksel konumuna
+# alpha blending olmadan doğrudan framebuffer'a yazar.
+isv yuki_logosu_cizdir(vram: *u8, genislik: tamsayi, yukseklik: tamsayi,
+                       satir_boyu: tamsayi, x: tamsayi, y: tamsayi,
+                       renk_kodu: tamsayi) -> tamsayi {
+    eger vram == 0 veya genislik <= 0 veya yukseklik <= 0 veya satir_boyu < genislik * 4 veya
+       x < 0 veya y < 0 veya x + 8 > genislik veya y + 8 > yukseklik ise { dondu 0; }
+    degisken bitmap: [8]u8;
+    bitmap[0] = 60;  # 00111100
+    bitmap[1] = 126; # 01111110
+    bitmap[2] = 219; # 11011011
+    bitmap[3] = 255; # 11111111
+    bitmap[4] = 255;
+    bitmap[5] = 219;
+    bitmap[6] = 126;
+    bitmap[7] = 60;
+
+    degisken satir: tamsayi = 0;
+    dongu satir < 8 {
+        degisken sutun: tamsayi = 0;
+        dongu sutun < 8 {
+            eger (bitmap[satir] & (1 << (7 - sutun))) != 0 ise {
+                degisken piksel: tamsayi = (y + satir) * satir_boyu + (x + sutun) * 4;
+                vram[piksel] = renk_kodu & 255;
+                vram[piksel + 1] = (renk_kodu / 256) & 255;
+                vram[piksel + 2] = (renk_kodu / 65536) & 255;
+                vram[piksel + 3] = (renk_kodu / 16777216) & 255;
+            }
+            sutun = sutun + 1;
+        }
+        satir = satir + 1;
+    }
+    dondu 1;
+}

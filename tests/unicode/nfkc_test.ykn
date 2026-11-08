@@ -1,0 +1,11 @@
+# NFKC Normalizasyon Testi
+ice_aktar "std/metin.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken s: *u8 = "test-nfkc".ptr;
+    degisken nfkc: *u8 = metin_nfkc_normalize(s);
+    eger nfkc != 0 ise {
+        ekrana_yaz("NFKC_TEST: normalizasyon OK\n".ptr);
+    }
+    dondu 0;
+}

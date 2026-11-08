@@ -1,0 +1,28 @@
+# ============================================================
+# Örnek 55: Win32 Kullanıcı Giriş Formu (Login Window)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv giris_yap() {
+    ekrana_yaz("Giris denetimi yapiliyor...\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Guvenli Giris".ptr, 360, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Kullanici Adi Alani
+    metin_kutusu_olustur(p_h, 3001, 40, 40, 260, 32);
+
+    # Sifre Alani
+    metin_kutusu_olustur(p_h, 3002, 40, 90, 260, 32);
+
+    # Butonlar
+    buton_olustur(p_h, "Giris Yap".ptr, 3010, 40, 150, 120, 40);
+    buton_olustur(p_h, "Iptal".ptr, 3011, 180, 150, 120, 40);
+
+    ekrana_yaz("Giris penceresi hazirlandi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

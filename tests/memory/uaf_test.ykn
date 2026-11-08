@@ -1,0 +1,18 @@
+# Memory Safety Test: use-after-free (UAF)
+# Bu test bellek_serbest_birak() sonrasi bellek erisimini simule eder.
+# Beklenen davranis: deterministik abort/panic (exit != 0)
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken ptr: *u8 = bellek_tahsis_et(64);
+    eger ptr == 0 ise {
+        ekrana_yaz("BELLEK TAHSIS HATASI\n".ptr);
+        dondu 1;
+    }
+    ptr[0] = 42;
+    ekrana_yaz("UAF_TEST: tahsis OK\n".ptr);
+    bellek_serbest_birak(ptr);
+    ekrana_yaz("UAF_TEST: serbest birakma OK\n".ptr);
+    # Serbest birakilan belleği okuma — tanimlanmamis davranis / abort beklenir
+    degisken deger: u8 = ptr[0];
+    ekrana_yaz("UAF_TEST: ULASILMAMALI\n".ptr);
+    dondu deger;
+}

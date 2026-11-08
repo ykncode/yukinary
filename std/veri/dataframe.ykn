@@ -1,0 +1,270 @@
+# ============================================================
+# std/veri/dataframe.ykn
+# FAZ 46 & FAZ 66: Saf Yukinary Sutun Tabanli (Columnar) DataFrame & CSV Motoru
+# SIFIR MOCK, Cok Tipli Sutunlar (Int, Float/Fixed-Point, Bool, String),
+# Satir Filtreleme (Masking), GroupBy Gruplama ve Ozetleme (Aggregation)
+# ============================================================
+
+degisken SUTUN_TIP_TAMSAYI:  tamsayi = 1;
+degisken SUTUN_TIP_METIN:    tamsayi = 2;
+degisken SUTUN_TIP_KESIRLI:  tamsayi = 3; # Sabit noktali (x1000 olcekli)
+degisken SUTUN_TIP_MANTIKSAL: tamsayi = 4;
+
+yapi Sutun {
+    ad:            *u8;
+    tip:           tamsayi;
+    eleman_sayisi: tamsayi;
+    kapasite:      tamsayi;
+    veriler:       *tamsayi;
+}
+
+yapi DataFrame {
+    sutun_sayisi: tamsayi;
+    kapasite:     tamsayi;
+    satir_sayisi: tamsayi;
+    sutunlar:     *tamsayi; # *Sutun işaretçi dizisi
+}
+
+yapi DfGrupSonuc {
+    grup_sayisi:     tamsayi;
+    grup_anahtarlar: *tamsayi;
+    grup_toplamlar:  *tamsayi;
+    grup_adetler:    *tamsayi;
+}
+
+isv sutun_olustur(ad: *u8, tip: tamsayi, kap: tamsayi) -> *Sutun {
+    degisken s: *Sutun = bellek_tahsis_et(40);
+    s.ad = ad;
+    s.tip = tip;
+    s.eleman_sayisi = 0;
+    s.kapasite = kap;
+    s.veriler = bellek_tahsis_et(kap * 8);
+    dondu s;
+}
+
+isv sutun_deger_ekle(s: *Sutun, deger: tamsayi) -> tamsayi {
+    degisken n: tamsayi = s.eleman_sayisi;
+    eger n >= s.kapasite ise {
+        dondu 0;
+    }
+    degisken v: *tamsayi = s.veriler;
+    v[n] = deger;
+    s.eleman_sayisi = n + 1;
+    dondu 1;
+}
+
+isv df_olustur(sutun_kapasitesi: tamsayi) -> *DataFrame {
+    degisken df: *DataFrame = bellek_tahsis_et(32);
+    df.sutun_sayisi = 0;
+    df.kapasite = sutun_kapasitesi;
+    df.satir_sayisi = 0;
+    df.sutunlar = bellek_tahsis_et(sutun_kapasitesi * 8);
+    dondu df;
+}
+
+isv df_sutun_ekle(df: *DataFrame, ad: *u8, tip: tamsayi, satir_kap: tamsayi) -> *Sutun {
+    degisken n: tamsayi = df.sutun_sayisi;
+    eger n >= df.kapasite ise {
+        dondu 0;
+    }
+    degisken s: *Sutun = sutun_olustur(ad, tip, satir_kap);
+    degisken arr: *tamsayi = df.sutunlar;
+    arr[n] = s;
+    df.sutun_sayisi = n + 1;
+    dondu s;
+}
+
+isv df_sutun_topla(df: *DataFrame, sutun_indeks: tamsayi) -> tamsayi {
+    eger sutun_indeks < 0 veya sutun_indeks >= df.sutun_sayisi ise {
+        dondu 0;
+    }
+    degisken arr: *tamsayi = df.sutunlar;
+    degisken s: *Sutun = arr[sutun_indeks];
+    degisken n: tamsayi = s.eleman_sayisi;
+    degisken v: *tamsayi = s.veriler;
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        toplam = toplam + v[i];
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+isv df_sutun_ortalama(df: *DataFrame, sutun_indeks: tamsayi) -> tamsayi {
+    eger sutun_indeks < 0 veya sutun_indeks >= df.sutun_sayisi ise {
+        dondu 0;
+    }
+    degisken arr: *tamsayi = df.sutunlar;
+    degisken s: *Sutun = arr[sutun_indeks];
+    degisken n: tamsayi = s.eleman_sayisi;
+    eger n <= 0 ise {
+        dondu 0;
+    }
+    degisken toplam: tamsayi = df_sutun_topla(df, sutun_indeks);
+    dondu toplam / n;
+}
+
+# FAZ 66: Satir Filtreleme (Maskeleme) Motoru
+# op: 1 (==), 2 (>), 3 (<), 4 (>=)
+isv df_satirlari_filtrele(df: *DataFrame, sutun_idx: tamsayi, op: tamsayi, esik: tamsayi) -> *DataFrame {
+    eger sutun_idx < 0 veya sutun_idx >= df.sutun_sayisi ise {
+        dondu 0;
+    }
+    degisken sc: tamsayi = df.sutun_sayisi;
+    degisken filtre_df: *DataFrame = df_olustur(sc);
+    degisken d_arr: *tamsayi = df.sutunlar;
+
+    # Sütunları kopyala
+    degisken s_idx: tamsayi = 0;
+    dongu s_idx < sc {
+        degisken kaynak_s: *Sutun = d_arr[s_idx];
+        df_sutun_ekle(filtre_df, kaynak_s.ad, kaynak_s.tip, kaynak_s.eleman_sayisi + 4);
+        s_idx = s_idx + 1;
+    }
+
+    degisken filtrelenen_s: *Sutun = d_arr[sutun_idx];
+    degisken n_satir: tamsayi = filtrelenen_s.eleman_sayisi;
+    degisken v_hedef: *tamsayi = filtrelenen_s.veriler;
+    degisken f_arr: *tamsayi = filtre_df.sutunlar;
+
+    degisken row: tamsayi = 0;
+    dongu row < n_satir {
+        degisken val: tamsayi = v_hedef[row];
+        degisken kabul: tamsayi = 0;
+        eger op == 1 ve val == esik ise { kabul = 1; }
+        eger op == 2 ve val > esik ise  { kabul = 1; }
+        eger op == 3 ve val < esik ise  { kabul = 1; }
+        eger op == 4 ve val >= esik ise { kabul = 1; }
+
+        eger kabul == 1 ise {
+            degisken c: tamsayi = 0;
+            dongu c < sc {
+                degisken ks: *Sutun = d_arr[c];
+                degisken hs: *Sutun = f_arr[c];
+                degisken kv: *tamsayi = ks.veriler;
+                sutun_deger_ekle(hs, kv[row]);
+                c = c + 1;
+            }
+        }
+        row = row + 1;
+    }
+
+    degisken ilk_s: *Sutun = f_arr[0];
+    filtre_df.satir_sayisi = ilk_s.eleman_sayisi;
+    dondu filtre_df;
+}
+
+# FAZ 66: GroupBy ve Toplam (Aggregation) Motoru
+isv df_grupla_ve_topla(df: *DataFrame, grup_sutun_idx: tamsayi, deger_sutun_idx: tamsayi) -> *DfGrupSonuc {
+    degisken sonuc: *DfGrupSonuc = bellek_tahsis_et(32);
+    sonuc.grup_sayisi = 0;
+    sonuc.grup_anahtarlar = bellek_tahsis_et(128 * 8);
+    sonuc.grup_toplamlar = bellek_tahsis_et(128 * 8);
+    sonuc.grup_adetler = bellek_tahsis_et(128 * 8);
+
+    eger grup_sutun_idx < 0 veya grup_sutun_idx >= df.sutun_sayisi veya deger_sutun_idx < 0 veya deger_sutun_idx >= df.sutun_sayisi ise {
+        dondu sonuc;
+    }
+
+    degisken arr: *tamsayi = df.sutunlar;
+    degisken s_grup: *Sutun = arr[grup_sutun_idx];
+    degisken s_deger: *Sutun = arr[deger_sutun_idx];
+    degisken n: tamsayi = s_grup.eleman_sayisi;
+
+    degisken v_grup: *tamsayi = s_grup.veriler;
+    degisken v_deger: *tamsayi = s_deger.veriler;
+
+    degisken g_keys: *tamsayi = sonuc.grup_anahtarlar;
+    degisken g_sums: *tamsayi = sonuc.grup_toplamlar;
+    degisken g_cnts: *tamsayi = sonuc.grup_adetler;
+
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken key: tamsayi = v_grup[i];
+        degisken val: tamsayi = v_deger[i];
+        
+        # Grubu ara
+        degisken bulundu: tamsayi = 0;
+        degisken g: tamsayi = 0;
+        dongu g < sonuc.grup_sayisi {
+            eger g_keys[g] == key ise {
+                g_sums[g] = g_sums[g] + val;
+                g_cnts[g] = g_cnts[g] + 1;
+                bulundu = 1;
+            }
+            g = g + 1;
+        }
+
+        # Yeni grup
+        eger bulundu == 0 ise {
+            degisken gn: tamsayi = sonuc.grup_sayisi;
+            g_keys[gn] = key;
+            g_sums[gn] = val;
+            g_cnts[gn] = 1;
+            sonuc.grup_sayisi = gn + 1;
+        }
+
+        i = i + 1;
+    }
+
+    dondu sonuc;
+}
+
+# Zero-Copy CSV parser: Virgül ve yeni satır ayrımıyla tamsayı sütunları doldurur
+isv csv_ayristir_tampon(tampon: *u8, uzunluk: tamsayi, sutun_sayisi: tamsayi, satir_kap: tamsayi) -> *DataFrame {
+    degisken df: *DataFrame = df_olustur(sutun_sayisi);
+    degisken s_idx: tamsayi = 0;
+    dongu s_idx < sutun_sayisi {
+        df_sutun_ekle(df, "col".ptr, SUTUN_TIP_TAMSAYI, satir_kap);
+        s_idx = s_idx + 1;
+    }
+
+    degisken arr: *tamsayi = df.sutunlar;
+    degisken i: tamsayi = 0;
+    degisken aktif_sutun: tamsayi = 0;
+    degisken sayi: tamsayi = 0;
+    degisken sayi_var: tamsayi = 0;
+
+    dongu i < uzunluk {
+        degisken c: u8 = tampon[i];
+        eger c >= 48 ve c <= 57 ise { # '0' - '9'
+            sayi = sayi * 10 + (c - 48);
+            sayi_var = 1;
+        } yoksa {
+            eger c == 44 ise { # ','
+                eger sayi_var == 1 ise {
+                    degisken s1: *Sutun = arr[aktif_sutun];
+                    sutun_deger_ekle(s1, sayi);
+                    sayi = 0;
+                    sayi_var = 0;
+                    aktif_sutun = aktif_sutun + 1;
+                    eger aktif_sutun >= sutun_sayisi ise {
+                        aktif_sutun = 0;
+                    }
+                }
+            } yoksa {
+                eger c == 10 veya c == 13 ise { # '\n' veya '\r'
+                    eger sayi_var == 1 ise {
+                        degisken s2: *Sutun = arr[aktif_sutun];
+                        sutun_deger_ekle(s2, sayi);
+                        sayi = 0;
+                        sayi_var = 0;
+                        aktif_sutun = 0;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    # Son kalan sayı varsa ekle
+    eger sayi_var == 1 ise {
+        degisken s3: *Sutun = arr[aktif_sutun];
+        sutun_deger_ekle(s3, sayi);
+    }
+
+    degisken ilk_sutun: *Sutun = arr[0];
+    df.satir_sayisi = ilk_sutun.eleman_sayisi;
+    dondu df;
+}

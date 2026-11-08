@@ -1,0 +1,47 @@
+# Faz 2 Görev 2.1 Doğrulama Testi (Pozitif)
+# Sıkı Tip Uyumluluğu, 'as' / 'olarak' tip dönüşümü ve AST_UNARY
+
+isv test_fn_donus() -> *u8 {
+    dondu 0; # Null literal return directly allowed
+}
+
+isv test_fn_donus_bos() -> *u8 {
+    dondu bos; # Null literal 'bos' return directly allowed
+}
+
+isv main() -> tamsayi {
+    # 1. Null literal atama (0 ve bos)
+    degisken p_null1: *u8 = 0;
+    degisken p_null2: *u8 = bos;
+    p_null1 = 0;
+    p_null2 = bos;
+
+    # 2. 'as' ve 'olarak' ile tamsayi <-> pointer donusumu
+    degisken adres: tamsayi = 4096;
+    degisken p_cevrilmis: *u8 = adres as *u8;
+    degisken geri_tamsayi: tamsayi = p_cevrilmis olarak tamsayi;
+
+    # 3. Sayisal donusumler ('as' float <-> int)
+    degisken tam: tamsayi = 42;
+    degisken flt: gercek = tam as gercek;
+    degisken tam_tekrar: tamsayi = flt as tamsayi;
+
+    # 4. AST_UNARY kurallari
+    degisken sayi: tamsayi = 100;
+    degisken eksi_sayi: tamsayi = -sayi;
+    degisken bitwise_ters: tamsayi = ~sayi;
+    degisken bayrak: mantik = dogru;
+    degisken degil_bayrak: mantik = !bayrak;
+
+    # 5. Pointer dereference
+    degisken deger: tamsayi = 777;
+    degisken deger_ptr: *tamsayi = &deger;
+    degisken cozulmus: tamsayi = *deger_ptr;
+
+    eger cozulmus == 777 ve geri_tamsayi == 4096 ve tam_tekrar == 42 ise {
+        ekrana_yaz("FAZ 2.1 GOREV DOGRULANDI: Basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}
+

@@ -1,0 +1,8 @@
+modul mat {
+    isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+        dondu b;
+    }
+}
+isv ana() -> tamsayi {
+    dondu mat::topla(10, 20);
+}

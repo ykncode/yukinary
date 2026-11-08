@@ -1,0 +1,12 @@
+yapi A {
+    b: B;
+}
+yapi B {
+    c: C;
+}
+yapi C {
+    a: A;
+}
+isv ana() -> tamsayi {
+    dondu 0;
+}

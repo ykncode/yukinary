@@ -1,0 +1,114 @@
+# ============================================================
+# tests/dagitik/test_raft_consensus.ykn
+# FAZ 45 & FAZ 65: Raft Konsensus & Dagitik RPC Dogrulama Testi
+# Term Yonetimi, Step-down, Log Truncation, Snapshotting ve RPC Checksum
+# ============================================================
+
+ice_aktar "std/dagitik/raft.ykn";
+ice_aktar "std/bulut/rpc.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 45 & FAZ 65: Raft Konsensus & Dagitik RPC Testi Basliyor...\n".ptr);
+
+    # 1. Uc dugumlu kume olustur
+    degisken d1: *RaftDugum = raft_dugum_olustur(1, 16);
+    degisken d2: *RaftDugum = raft_dugum_olustur(2, 16);
+    degisken d3: *RaftDugum = raft_dugum_olustur(3, 16);
+
+    # 2. Dugum 1 aday oluyor (Donem 1)
+    raft_aday_ol(d1);
+    eger d1.rol != RAFT_ROL_ADAY veya d1.guncel_donem != 1 ise {
+        ekrana_yaz("HATA: Dugum 1 aday olamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Dugum 1, Dugum 2 ve 3'ten oy istiyor
+    degisken oy2: tamsayi = raft_oy_iste(d2, d1.id, d1.guncel_donem, 0, 0);
+    degisken oy3: tamsayi = raft_oy_iste(d3, d1.id, d1.guncel_donem, 0, 0);
+
+    degisken toplam_oy: tamsayi = 1 + oy2 + oy3; # Kendisi + aldiklari
+    eger toplam_oy < 2 ise {
+        ekrana_yaz("HATA: Dugum 1 cogunluk oyu alamadi!\n".ptr);
+        dondu 2;
+    }
+
+    # Dugum 1 Lider secildi
+    d1.rol = RAFT_ROL_LIDER;
+    d1.lider_id = d1.id;
+
+    # 3. Lider veri logu ekliyor (komut: 10, deger: 4200)
+    degisken log_indis: tamsayi = raft_lider_log_ekle(d1, 10, 4200);
+    eger log_indis != 1 ise {
+        ekrana_yaz("HATA: Lider log ekleyemedi!\n".ptr);
+        dondu 3;
+    }
+
+    # 4. Lider logu Takipcilere (Dugum 2 ve 3) cogaltiyor (AppendEntries RPC)
+    degisken r2: tamsayi = raft_log_kabul_et(d2, d1.id, d1.guncel_donem, 0, 0, 10, 4200, 1);
+    degisken r3: tamsayi = raft_log_kabul_et(d3, d1.id, d1.guncel_donem, 0, 0, 10, 4200, 1);
+
+    eger r2 != 1 veya r3 != 1 ise {
+        ekrana_yaz("HATA: Takipciler logu kabul edemedi!\n".ptr);
+        dondu 4;
+    }
+    eger d2.log_sayisi != 1 veya d3.log_sayisi != 1 ise {
+        ekrana_yaz("HATA: Takipci log sayisi hatali!\n".ptr);
+        dondu 5;
+    }
+
+    # 5. RPC Ikili Paket Serilestirme Dogrulamasi
+    degisken p1: *RpcPaket = rpc_paket_olustur(1, 2, 2, 3);
+    degisken p1_veri: *tamsayi = p1.veri;
+    p1_veri[0] = 100;
+    p1_veri[1] = 200;
+    p1_veri[2] = 300;
+
+    degisken rpc_tampon: *tamsayi = bellek_tahsis_et(64);
+    degisken bayt_boyut: tamsayi = rpc_serilestir(p1, rpc_tampon);
+    eger bayt_boyut != 64 ise {
+        ekrana_yaz("HATA: RPC serilestirme boyutu hatali!\n".ptr);
+        dondu 6;
+    }
+
+    degisken p2: *RpcPaket = rpc_ayristir(rpc_tampon);
+    eger p2 == 0 veya p2.magic != RPC_MAGIC ise {
+        ekrana_yaz("HATA: RPC paketi ayristirilamadi!\n".ptr);
+        dondu 7;
+    }
+    degisken p2_veri: *tamsayi = p2.veri;
+    eger p2_veri[0] != 100 veya p2_veri[1] != 200 veya p2_veri[2] != 300 ise {
+        ekrana_yaz("HATA: RPC cozumlenen veri eslesmedi!\n".ptr);
+        dondu 8;
+    }
+
+    # 6. FAZ 65: RPC Checksum Dogrulamasi
+    degisken dogrulandi: tamsayi = rpc_paket_dogrula(p2);
+    eger dogrulandi != 1 ise {
+        ekrana_yaz("HATA: RPC paket checksum dogrulanamadi!\n".ptr);
+        dondu 9;
+    }
+
+    # 7. FAZ 65: Lider Step-Down ve Term Catismasi Testi
+    # Dugum 3 yeni donemle (Term 2) aday olup Dugum 1'e oy istegi yolluyor
+    raft_aday_ol(d3);
+    raft_oy_iste(d1, d3.id, d3.guncel_donem, 1, 1);
+    eger d1.rol != RAFT_ROL_TAKIPCI veya d1.guncel_donem != 2 ise {
+        ekrana_yaz("HATA: Eski lider yeni donemde takipciye donusmedi!\n".ptr);
+        dondu 10;
+    }
+
+    # 8. FAZ 65: Log Compaction / Snapshotting Testi
+    d2.commit_indis = 1;
+    degisken snap: *RaftSnapshot = raft_snapshot_olustur(d2, 1);
+    eger snap == 0 veya snap.son_indis != 1 veya snap.son_donem != 1 ise {
+        ekrana_yaz("HATA: Raft snapshot basarisiz!\n".ptr);
+        dondu 11;
+    }
+    eger d2.log_sayisi != 0 ise {
+        ekrana_yaz("HATA: Snapshot sonrasi log defteri budanamadi!\n".ptr);
+        dondu 12;
+    }
+
+    ekrana_yaz("RAFT_CONSENSUS_RPC_PASS\n".ptr);
+    dondu 0;
+}

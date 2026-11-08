@@ -1,0 +1,76 @@
+# ============================================================
+# Yukinary std/ai/gguf_reader.ykn
+# Stateless, sınır kontrollü little-endian okuyucular.
+# Cursor state'i struct yerine acik offset/hata pointer'larindadir.
+# ============================================================
+
+isv gguf_okuma_sinirli_mi(buffer: *u8, uzunluk: tamsayi, ofset: tamsayi, adet: tamsayi) -> tamsayi {
+    eger buffer == 0 veya uzunluk < 0 veya ofset < 0 veya adet < 0 ise { dondu 0; }
+    eger ofset > uzunluk veya adet > uzunluk - ofset ise { dondu 0; }
+    dondu 1;
+}
+
+isv gguf_u8_oku(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, hata: *tamsayi) -> tamsayi {
+    eger ofset == 0 veya hata == 0 veya hata[0] != 0 ise { dondu 0; }
+    eger gguf_okuma_sinirli_mi(buffer, uzunluk, ofset[0], 1) == 0 ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    degisken sonuc: tamsayi = buffer[ofset[0]];
+    eger sonuc < 0 ise { sonuc = sonuc + 256; }
+    ofset[0] = ofset[0] + 1;
+    dondu sonuc;
+}
+
+isv gguf_u32_oku(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, hata: *tamsayi) -> tamsayi {
+    degisken b0: tamsayi = gguf_u8_oku(buffer, uzunluk, ofset, hata);
+    degisken b1: tamsayi = gguf_u8_oku(buffer, uzunluk, ofset, hata);
+    degisken b2: tamsayi = gguf_u8_oku(buffer, uzunluk, ofset, hata);
+    degisken b3: tamsayi = gguf_u8_oku(buffer, uzunluk, ofset, hata);
+    dondu b0 + b1 * 256 + b2 * 65536 + b3 * 16777216;
+}
+
+isv gguf_u64_oku(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, hata: *tamsayi) -> tamsayi {
+    degisken lo: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+    degisken hi: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+    dondu lo + hi * 4294967296;
+}
+
+isv gguf_atla(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, adet: tamsayi, hata: *tamsayi) -> tamsayi {
+    eger hata == 0 veya hata[0] != 0 ise { dondu 0; }
+    eger gguf_okuma_sinirli_mi(buffer, uzunluk, ofset[0], adet) == 0 ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    ofset[0] = ofset[0] + adet;
+    dondu 1;
+}
+
+isv gguf_string_kopyala_at(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, hata: *tamsayi) -> *u8 {
+    degisken metin_uzunlugu: tamsayi = gguf_u64_oku(buffer, uzunluk, ofset, hata);
+    eger hata[0] != 0 veya metin_uzunlugu < 0 ise { dondu 0; }
+    eger gguf_okuma_sinirli_mi(buffer, uzunluk, ofset[0], metin_uzunlugu) == 0 ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    degisken sonuc: *u8 = bellek_tahsis_et(metin_uzunlugu + 1);
+    eger sonuc == 0 ise { hata[0] = 1; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < metin_uzunlugu {
+        sonuc[i] = buffer[ofset[0] + i];
+        i = i + 1;
+    }
+    sonuc[metin_uzunlugu] = 0;
+    ofset[0] = ofset[0] + metin_uzunlugu;
+    dondu sonuc;
+}
+
+isv gguf_hizala_atla(buffer: *u8, uzunluk: tamsayi, ofset: *tamsayi, hizalama: tamsayi, hata: *tamsayi) -> tamsayi {
+    eger hizalama <= 0 veya ofset == 0 veya hata == 0 ise { dondu 0; }
+    degisken kalan: tamsayi = ofset[0] % hizalama;
+    eger kalan != 0 ise {
+        degisken atlanacak: tamsayi = hizalama - kalan;
+        dondu gguf_atla(buffer, uzunluk, ofset, atlanacak, hata);
+    }
+    dondu 1;
+}

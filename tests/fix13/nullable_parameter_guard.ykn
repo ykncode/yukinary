@@ -1,0 +1,12 @@
+# FIX-13: nullable fonksiyon parametresi guard icinde kullanilabilir.
+isv byte_oku(p: ?*u8) -> tamsayi {
+    eger p != bos ise {
+        dondu p[0];
+    }
+    dondu 0;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    dondu byte_oku(p);
+}

@@ -1,0 +1,215 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi: std/opt/ssa_ir.ykn
+# FAZ 2: Static Single Assignment (SSA) Ara Temsil ve Optimizasyon Motoru
+#
+# SSA Kurallari:
+# 1. Her degisken yalnizca bir kez tanimlanir (Single Assignment).
+# 2. Kontrol akisi birlestiginde Phi fonksiyonlari kullanilir.
+# 3. Sabit katlama (Constant Folding) ve olu kod temizleme (DCE)
+#    SSA formunda O(N) zamanda deterministik calisir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# SSA Islem Opcodelari
+degisken SSA_OP_SABIT  = 1; # vX = Sabit Deger
+degisken SSA_OP_TOPLA  = 2; # vX = vY + vZ
+degisken SSA_OP_CIKAR  = 3; # vX = vY - vZ
+degisken SSA_OP_CARP   = 4; # vX = vY * vZ
+degisken SSA_OP_PHI    = 5; # vX = Phi(vY, vZ)
+degisken SSA_OP_DONDU  = 6; # dondu vX
+
+# Tekil SSA Talimati (6 word = 48 bayt)
+yapi SsaTalimat {
+    op:          tamsayi; # offset 0
+    hedef_var:   tamsayi; # offset 8
+    sol_var:     tamsayi; # offset 16
+    sag_var:     tamsayi; # offset 24
+    sabit_deger: tamsayi; # offset 32
+    canli_mi:    tamsayi; # offset 40
+}
+
+# SSA Temel Blok (Basic Block)
+yapi SsaBlok {
+    blok_id:         tamsayi;
+    talimat_sayisi:  tamsayi;
+    kapasite:        tamsayi;
+    talimatlar:      *u8;
+}
+
+# SSA Fonksiyon / CFG Temsili
+yapi SsaFonksiyon {
+    blok_sayisi:     tamsayi;
+    degisken_sayaci: tamsayi;
+    ana_blok:        *SsaBlok;
+}
+
+# Yeni SSA Fonksiyonu olustur
+isv ssa_fonksiyon_olustur() -> *SsaFonksiyon {
+    degisken f: *SsaFonksiyon = bellek_tahsis_et(24);
+    eger f == 0 ise { dondu 0; }
+    f.blok_sayisi = 1;
+    f.degisken_sayaci = 0;
+    
+    degisken b: *SsaBlok = bellek_tahsis_et(32);
+    b.blok_id = 0;
+    b.talimat_sayisi = 0;
+    b.kapasite = 64;
+    b.talimatlar = bellek_tahsis_et(64 * 48); # Her talimat 48 bayt
+    
+    f.ana_blok = b;
+    dondu f;
+}
+
+# SSA bloguna sabit atama ekle: vX = sabit
+isv ssa_emit_sabit(f: *SsaFonksiyon, deger: tamsayi) -> tamsayi {
+    eger f == 0 veya f.ana_blok == 0 ise { dondu 0 - 1; }
+    degisken b: *SsaBlok = f.ana_blok;
+    degisken idx: tamsayi = b.talimat_sayisi;
+    eger idx >= b.kapasite ise { dondu 0 - 1; }
+    
+    degisken v_id: tamsayi = f.degisken_sayaci;
+    f.degisken_sayaci = f.degisken_sayaci + 1;
+    
+    degisken t_ptr: *SsaTalimat = b.talimatlar + (idx * 48);
+    t_ptr.op = SSA_OP_SABIT;
+    t_ptr.hedef_var = v_id;
+    t_ptr.sol_var = 0;
+    t_ptr.sag_var = 0;
+    t_ptr.sabit_deger = deger;
+    t_ptr.canli_mi = 1;
+    
+    b.talimat_sayisi = idx + 1;
+    dondu v_id;
+}
+
+# SSA bloguna ikili aritmetik ekle: vX = vY op vZ
+isv ssa_emit_ikili(f: *SsaFonksiyon, op: tamsayi, sol_v: tamsayi, sag_v: tamsayi) -> tamsayi {
+    eger f == 0 veya f.ana_blok == 0 ise { dondu 0 - 1; }
+    degisken b: *SsaBlok = f.ana_blok;
+    degisken idx: tamsayi = b.talimat_sayisi;
+    eger idx >= b.kapasite ise { dondu 0 - 1; }
+    
+    degisken v_id: tamsayi = f.degisken_sayaci;
+    f.degisken_sayaci = f.degisken_sayaci + 1;
+    
+    degisken t_ptr: *SsaTalimat = b.talimatlar + (idx * 48);
+    t_ptr.op = op;
+    t_ptr.hedef_var = v_id;
+    t_ptr.sol_var = sol_v;
+    t_ptr.sag_var = sag_v;
+    t_ptr.sabit_deger = 0;
+    t_ptr.canli_mi = 1;
+    
+    b.talimat_sayisi = idx + 1;
+    dondu v_id;
+}
+
+# SSA Uzerinde Deterministik Sabit Katlama Optimizasyonu (Constant Folding)
+isv ssa_optimize_sabit_katla(f: *SsaFonksiyon) -> tamsayi {
+    eger f == 0 veya f.ana_blok == 0 ise { dondu 0; }
+    degisken b: *SsaBlok = f.ana_blok;
+    
+    # Degiskenlerin sabit deger tablosu (lookup table)
+    degisken sabit_tbl: *tamsayi = bellek_tahsis_et(f.degisken_sayaci * 8);
+    degisken sabit_mi: *tamsayi  = bellek_tahsis_et(f.degisken_sayaci * 8);
+    
+    degisken katlanan_sayi: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    
+    dongu i < b.talimat_sayisi {
+        degisken t: *SsaTalimat = b.talimatlar + (i * 48);
+        eger t.op == SSA_OP_SABIT ise {
+            sabit_tbl[t.hedef_var] = t.sabit_deger;
+            sabit_mi[t.hedef_var]  = 1;
+        } yoksa eger t.op == SSA_OP_TOPLA veya t.op == SSA_OP_CIKAR veya t.op == SSA_OP_CARP ise {
+            eger sabit_mi[t.sol_var] == 1 ve sabit_mi[t.sag_var] == 1 ise {
+                degisken sol_v: tamsayi = sabit_tbl[t.sol_var];
+                degisken sag_v: tamsayi = sabit_tbl[t.sag_var];
+                degisken sonuc: tamsayi = 0;
+                
+                eger t.op == SSA_OP_TOPLA ise { sonuc = sol_v + sag_v; }
+                yoksa eger t.op == SSA_OP_CIKAR ise { sonuc = sol_v - sag_v; }
+                yoksa eger t.op == SSA_OP_CARP ise { sonuc = sol_v * sag_v; }
+                
+                # Talimati dogrudan sabite donustur
+                t.op = SSA_OP_SABIT;
+                t.sabit_deger = sonuc;
+                sabit_tbl[t.hedef_var] = sonuc;
+                sabit_mi[t.hedef_var]  = 1;
+                katlanan_sayi = katlanan_sayi + 1;
+            }
+        }
+        i = i + 1;
+    }
+    
+    os_bellek_serbest(sabit_tbl as *u8);
+    os_bellek_serbest(sabit_mi as *u8);
+    dondu katlanan_sayi;
+}
+
+# ============================================================
+# FAZ 3: Fonksiyonlar Arasi SSA Inlining (Cross-Module Inlining)
+# Hedef fonksiyonun temel blok talimatlarini ana fonksiyona
+# kopyalar, parametre degiskenini arg_v ile esler ve yeni SSA
+# degisken kimlikleri uretir.
+# ============================================================
+isv ssa_inline_cagri(ana_f: *SsaFonksiyon, inline_f: *SsaFonksiyon, arg_v: tamsayi) -> tamsayi {
+    eger ana_f == 0 veya inline_f == 0 veya inline_f.ana_blok == 0 ise { dondu 0 - 1; }
+    degisken in_b: *SsaBlok = inline_f.ana_blok;
+    
+    # Degisken esleme tablosu (v_map)
+    degisken v_map: *tamsayi = bellek_tahsis_et((inline_f.degisken_sayaci + 1) * 8);
+    degisken i: tamsayi = 0;
+    dongu i <= inline_f.degisken_sayaci {
+        v_map[i] = 0 - 1;
+        i = i + 1;
+    }
+    
+    # Parametre (v0) -> arg_v olarak esle
+    v_map[0] = arg_v;
+    degisken son_hedef: tamsayi = arg_v;
+    
+    i = 0;
+    dongu i < in_b.talimat_sayisi {
+        degisken t: *SsaTalimat = in_b.talimatlar + (i * 48);
+        
+        # Operandlari esle
+        degisken sol: tamsayi = t.sol_var;
+        eger sol >= 0 ve sol <= inline_f.degisken_sayaci ve v_map[sol] != (0 - 1) ise {
+            sol = v_map[sol];
+        }
+        
+        degisken sag: tamsayi = t.sag_var;
+        eger sag >= 0 ve sag <= inline_f.degisken_sayaci ve v_map[sag] != (0 - 1) ise {
+            sag = v_map[sag];
+        }
+        
+        degisken yeni_v: tamsayi = 0;
+        eger t.op == SSA_OP_SABIT ise {
+            yeni_v = ssa_emit_sabit(ana_f, t.sabit_deger);
+        } yoksa {
+            yeni_v = ssa_emit_ikili(ana_f, t.op, sol, sag);
+        }
+        
+        v_map[t.hedef_var] = yeni_v;
+        son_hedef = yeni_v;
+        i = i + 1;
+    }
+    
+    os_bellek_serbest(v_map as *u8);
+    dondu son_hedef;
+}
+
+# SSA fonksiyonunu bellekten temizler
+isv ssa_fonksiyon_serbest_birak(f: *SsaFonksiyon) {
+    eger f == 0 ise { dondu; }
+    eger f.ana_blok != 0 ise {
+        eger f.ana_blok.talimatlar != 0 ise {
+            os_bellek_serbest(f.ana_blok.talimatlar as *u8);
+        }
+        os_bellek_serbest(f.ana_blok as *u8);
+    }
+    os_bellek_serbest(f as *u8);
+}

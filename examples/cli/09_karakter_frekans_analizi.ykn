@@ -1,0 +1,50 @@
+# ============================================================
+# Örnek 9: Konsol Tabanlı Karakter Frekans Analizi
+# ============================================================
+
+degisken g_frekanslar: [256]tamsayi;
+
+isv frekans_temizle() {
+    degisken i: tamsayi = 0;
+    dongu (i < 256) {
+        g_frekanslar[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv metin_analiz_et(metin: *u8) {
+    frekans_temizle();
+    degisken i: tamsayi = 0;
+    dongu (metin[i] != 0) {
+        degisken b: tamsayi = metin[i];
+        g_frekanslar[b] = g_frekanslar[b] + 1;
+        i = i + 1;
+    }
+}
+
+isv sonuclari_yazdir() {
+    ekrana_yaz("=== Karakter Frekans Raporu ===\n".ptr);
+    degisken i: tamsayi = 32; # Okunabilir ASCII baslangici
+    dongu (i < 127) {
+        eger g_frekanslar[i] > 0 ise {
+            degisken tek_harf: [2]u8;
+            tek_harf[0] = i;
+            tek_harf[1] = 0;
+            ekrana_yaz("'".ptr);
+            ekrana_yaz(tek_harf);
+            ekrana_yaz("': ".ptr);
+            sayiyi_ekrana_yaz(g_frekanslar[i]);
+            ekrana_yaz(" adet\n".ptr);
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("===============================\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken ornek: *u8 = "yukinary programlama dili ile harika projeler".ptr;
+    ekrana_yaz("Analiz Edilen Metin: ".ptr); ekrana_yaz(ornek); ekrana_yaz("\n\n".ptr);
+    metin_analiz_et(ornek);
+    sonuclari_yazdir();
+    dondu 0;
+}

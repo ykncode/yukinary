@@ -1,0 +1,118 @@
+# ============================================================
+# tests/veri/test_dataframe_csv.ykn
+# FAZ 46 & FAZ 66: Sutun Tabanli DataFrame, Zero-Copy CSV, Filtreleme ve GroupBy
+# ============================================================
+
+ice_aktar "std/veri/dataframe.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 46 & FAZ 66: Columnar DataFrame & Zero-Copy CSV Testi Basliyor...\n".ptr);
+
+    # 1. Manuel DataFrame Olusturma ve Vektorize Toplam
+    degisken df: *DataFrame = df_olustur(4);
+    degisken s_fiyat: *Sutun = df_sutun_ekle(df, "fiyat".ptr, SUTUN_TIP_TAMSAYI, 10);
+    degisken s_adet: *Sutun  = df_sutun_ekle(df, "adet".ptr, SUTUN_TIP_TAMSAYI, 10);
+
+    sutun_deger_ekle(s_fiyat, 100);
+    sutun_deger_ekle(s_fiyat, 200);
+    sutun_deger_ekle(s_fiyat, 300);
+
+    sutun_deger_ekle(s_adet, 5);
+    sutun_deger_ekle(s_adet, 10);
+    sutun_deger_ekle(s_adet, 15);
+
+    degisken top_fiyat: tamsayi = df_sutun_topla(df, 0);
+    eger top_fiyat != 600 ise {
+        ekrana_yaz("HATA: Fiyat toplami 600 olmali!\n".ptr);
+        dondu 1;
+    }
+
+    degisken ort_adet: tamsayi = df_sutun_ortalama(df, 1);
+    eger ort_adet != 10 ise {
+        ekrana_yaz("HATA: Adet ortalamasi 10 olmali!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. Zero-Copy CSV Ayrıştırma
+    # CSV icerigi: "10,20\n30,40\n50,60\n" -> 18 karakter
+    degisken csv_tampon: *u8 = bellek_tahsis_et(32);
+    csv_tampon[0]  = 49; # '1'
+    csv_tampon[1]  = 48; # '0'
+    csv_tampon[2]  = 44; # ','
+    csv_tampon[3]  = 50; # '2'
+    csv_tampon[4]  = 48; # '0'
+    csv_tampon[5]  = 10; # '\n'
+
+    csv_tampon[6]  = 51; # '3'
+    csv_tampon[7]  = 48; # '0'
+    csv_tampon[8]  = 44; # ','
+    csv_tampon[9]  = 52; # '4'
+    csv_tampon[10] = 48; # '0'
+    csv_tampon[11] = 10; # '\n'
+
+    csv_tampon[12] = 53; # '5'
+    csv_tampon[13] = 48; # '0'
+    csv_tampon[14] = 44; # ','
+    csv_tampon[15] = 54; # '6'
+    csv_tampon[16] = 48; # '0'
+    csv_tampon[17] = 10; # '\n'
+    csv_tampon[18] = 0;
+
+    degisken df_csv: *DataFrame = csv_ayristir_tampon(csv_tampon, 18, 2, 8);
+    eger df_csv.sutun_sayisi != 2 veya df_csv.satir_sayisi != 3 ise {
+        ekrana_yaz("HATA: CSV satir veya sutun sayisi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # Sütun 0: 10 + 30 + 50 = 90
+    degisken c0_toplam: tamsayi = df_sutun_topla(df_csv, 0);
+    eger c0_toplam != 90 ise {
+        ekrana_yaz("HATA: CSV Sutun 0 toplami 90 olmali!\n".ptr);
+        dondu 4;
+    }
+
+    # Sütun 1: 20 + 40 + 60 = 120
+    degisken c1_toplam: tamsayi = df_sutun_topla(df_csv, 1);
+    eger c1_toplam != 120 ise {
+        ekrana_yaz("HATA: CSV Sutun 1 toplami 120 olmali!\n".ptr);
+        dondu 5;
+    }
+
+    # 3. FAZ 66: Satir Filtreleme (Maskeleme) Testi
+    # Fiyat > 150 olan satırları filtrele (200 ve 300 kalmali)
+    degisken filtre_df: *DataFrame = df_satirlari_filtrele(df, 0, 2, 150);
+    eger filtre_df.satir_sayisi != 2 ise {
+        ekrana_yaz("HATA: Filtrelenen DataFrame satir sayisi 2 olmali!\n".ptr);
+        dondu 6;
+    }
+    degisken filtre_toplam: tamsayi = df_sutun_topla(filtre_df, 0);
+    eger filtre_toplam != 500 ise { # 200 + 300 = 500
+        ekrana_yaz("HATA: Filtrelenen fiyat toplami 500 olmali!\n".ptr);
+        dondu 7;
+    }
+
+    # 4. FAZ 66: GroupBy ve Ozetleme (Aggregation) Testi
+    degisken df_g: *DataFrame = df_olustur(2);
+    degisken s_kat: *Sutun = df_sutun_ekle(df_g, "kategori".ptr, SUTUN_TIP_TAMSAYI, 6);
+    degisken s_val: *Sutun = df_sutun_ekle(df_g, "deger".ptr, SUTUN_TIP_TAMSAYI, 6);
+
+    # Kategori 1: 10, 20 -> toplam 30
+    sutun_deger_ekle(s_kat, 1); sutun_deger_ekle(s_val, 10);
+    sutun_deger_ekle(s_kat, 1); sutun_deger_ekle(s_val, 20);
+    # Kategori 2: 50 -> toplam 50
+    sutun_deger_ekle(s_kat, 2); sutun_deger_ekle(s_val, 50);
+
+    degisken grup_res: *DfGrupSonuc = df_grupla_ve_topla(df_g, 0, 1);
+    eger grup_res.grup_sayisi != 2 ise {
+        ekrana_yaz("HATA: Grup sayisi 2 olmali!\n".ptr);
+        dondu 8;
+    }
+    degisken gt: *tamsayi = grup_res.grup_toplamlar;
+    eger gt[0] != 30 veya gt[1] != 50 ise {
+        ekrana_yaz("HATA: Grup toplam sonuclari eslesmedi!\n".ptr);
+        dondu 9;
+    }
+
+    ekrana_yaz("COLUMNAR_DATAFRAME_CSV_PASS\n".ptr);
+    dondu 0;
+}

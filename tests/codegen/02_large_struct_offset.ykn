@@ -1,0 +1,69 @@
+# ============================================================
+# Büyük Struct Offset ve 32-bit Displacement Testi
+# F4.3: 128 bayttan büyük struct alanlarına erişim ve atama
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+
+yapi BuyukYapı {
+    f00: tamsayi;
+    f01: tamsayi;
+    f02: tamsayi;
+    f03: tamsayi;
+    f04: tamsayi;
+    f05: tamsayi;
+    f06: tamsayi;
+    f07: tamsayi;
+    f08: tamsayi;
+    f09: tamsayi;
+    f10: tamsayi;
+    f11: tamsayi;
+    f12: tamsayi;
+    f13: tamsayi;
+    f14: tamsayi;
+    f15: tamsayi; # offset 120 (8-bit disp sınırında)
+    f16: tamsayi; # offset 128 (32-bit disp gerekir)
+    f17: tamsayi; # offset 136
+    f18: tamsayi; # offset 144
+    f19: tamsayi; # offset 152
+}
+
+isv ana() -> tamsayi {
+    degisken s: *BuyukYapı = bellek_tahsis_et(256);
+    eger s == 0 ise {
+        ekrana_yaz("FAIL: alloc\n".ptr);
+        dondu 1;
+    }
+
+    # Alanlara değer yaz (küçük offset ve >127 offset)
+    s.f00 = 100;
+    s.f08 = 200;
+    s.f15 = 300;
+    s.f16 = 400; # offset 128
+    s.f19 = 500; # offset 152
+
+    # Alanları geri oku ve doğrula
+    eger s.f00 != 100 ise {
+        ekrana_yaz("FAIL: f00 (off 0)\n".ptr);
+        dondu 1;
+    }
+    eger s.f08 != 200 ise {
+        ekrana_yaz("FAIL: f08 (off 64)\n".ptr);
+        dondu 1;
+    }
+    eger s.f15 != 300 ise {
+        ekrana_yaz("FAIL: f15 (off 120)\n".ptr);
+        dondu 1;
+    }
+    eger s.f16 != 400 ise {
+        ekrana_yaz("FAIL: f16 (off 128, disp32)\n".ptr);
+        dondu 1;
+    }
+    eger s.f19 != 500 ise {
+        ekrana_yaz("FAIL: f19 (off 152, disp32)\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("LARGE_STRUCT_OFFSET_PASS\n".ptr);
+    dondu 0;
+}

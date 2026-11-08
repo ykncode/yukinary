@@ -1,0 +1,35 @@
+# ============================================================
+# Örnek 83: Win32 Taş-Kağıt-Makas Oyunu GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 1: Tas, 2: Kagit, 3: Makas
+isv gui_tur_oyna(oyuncu: tamsayi) {
+    degisken pc: tamsayi = 2; # Simule edilen PC hamlesi: Kagit
+    ekrana_yaz("Oyuncu hamlesi alindi: ");
+    sayiyi_ekrana_yaz(oyuncu);
+    ekrana_yaz(" | Bilgisayar: Kagit\n".ptr);
+
+    eger oyuncu == pc ise {
+        ekrana_yaz("Sonuc: BERABERE!\n".ptr);
+    } yoksa eger oyuncu == 3 ise { # Makas, Kagidi keser
+        ekrana_yaz("Sonuc: OYUNCU KAZANDI!\n".ptr);
+    } yoksa {
+        ekrana_yaz("Sonuc: BILGISAYAR KAZANDI!\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Tas Kagit Makas".ptr, 380, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # 3 Buton
+    buton_olustur(p_h, "TAS".ptr,   9301, 30, 70, 95, 60);
+    buton_olustur(p_h, "KAGIT".ptr, 9302, 135, 70, 95, 60);
+    buton_olustur(p_h, "MAKAS".ptr, 9303, 240, 70, 95, 60);
+
+    ekrana_yaz("Tas Kagit Makas GUI arayuzu hazirlandi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

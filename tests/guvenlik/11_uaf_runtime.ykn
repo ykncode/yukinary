@@ -1,0 +1,35 @@
+# ============================================================
+# tests/guvenlik/11_uaf_runtime.ykn
+# Faz 3.2 & 14 - Use-After-Free (UAF) Runtime Tespiti Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Tahsis yap
+    degisken t: *GuvenliTahsis = guvenli_tahsis_et(128);
+    eger t == 0 ise {
+        ekrana_yaz("FAIL: tahsis\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Aktifken UAF olmamali
+    eger guvenli_uaf_kontrol(t) != 1 ise {
+        ekrana_yaz("FAIL: aktifken UAF olmamali\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Serbest birak
+    guvenli_serbest_birak(t);
+
+    # 4. Serbest birakilmis nesneye erisim UAF olmali
+    eger guvenli_uaf_kontrol(t) != 0 ise {
+        ekrana_yaz("FAIL: serbest birakildiktan sonra UAF tespit edilmeli\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-UAF-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,33 @@
+# ============================================================
+# Örnek 55: Win32 RGB Renk Paleti ve Renk Kodu Seçici GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_r: tamsayi = 128;
+degisken g_g: tamsayi = 128;
+degisken g_b: tamsayi = 128;
+
+isv rgb_yazdir() {
+    ekrana_yaz("Guncel Renk (RGB): [ ");
+    sayiyi_ekrana_yaz(g_r); ekrana_yaz(", ");
+    sayiyi_ekrana_yaz(g_g); ekrana_yaz(", ");
+    sayiyi_ekrana_yaz(g_b); ekrana_yaz(" ]\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN RGB Renk Paleti".ptr, 380, 280);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Kirmizi, Yesil, Mavi Kontrol Butonlari
+    buton_olustur(p_h, "KIRMIZI +30".ptr, 10401, 40, 30, 280, 40);
+    buton_olustur(p_h, "YESIL   +30".ptr, 10402, 40, 85, 280, 40);
+    buton_olustur(p_h, "MAVI    +30".ptr, 10403, 40, 140, 280, 40);
+    buton_olustur(p_h, "Rengi Sifirla".ptr, 10404, 40, 195, 280, 35);
+
+    ekrana_yaz("RGB Renk Paleti baslatildi.\n".ptr);
+    rgb_yazdir();
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

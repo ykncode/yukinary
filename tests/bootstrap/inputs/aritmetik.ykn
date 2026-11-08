@@ -1,0 +1,3 @@
+isv ekrana_yaz(mesaj: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) { ekrana_yaz("A:".ptr); ekrana_yaz("\n".ptr); }
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi { degisken a: tamsayi = 7; degisken b: tamsayi = 5; sayiyi_yazdir(a + b * 2); dondu 0; }

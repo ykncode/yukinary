@@ -1,0 +1,13 @@
+# Guvenlik Testi: Yerel yigit (stack) degiskeninin adresinin dondurulmesi (Dangling Pointer)
+# E046 (ERR_DANGLING_POINTER) beklenir.
+isv tehlikeli_fonksiyon() -> *tamsayi {
+    degisken yerel_deger: tamsayi = 42;
+    # Stack adresini dondurmek derleme hatasidir!
+    dondu &yerel_deger;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: *tamsayi = tehlikeli_fonksiyon();
+    dondu 0;
+}
+

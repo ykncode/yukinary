@@ -1,0 +1,145 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi: std/kripto/chacha20_poly1305.ykn
+# FAZ 3: Saf Freestanding ChaCha20 Akis Sifreleyicisi (RFC 8439)
+#
+# SIFIR MOCK, SIFIR DLL, SIFIR LIBC.
+# 256-bit anahtar, 96-bit nonce, 32-bit sayac ile tam RFC 8439 uyumlu.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# 32-bit sola dairesel dondurme (Rotate Left)
+isv rotl32(v: tamsayi, c: tamsayi) -> tamsayi {
+    degisken mask: tamsayi = 4294967295; # 0xFFFFFFFF
+    degisken x: tamsayi = v & mask;
+    degisken sola: tamsayi = (x << c) & mask;
+    degisken saga: tamsayi = (x >> (32 - c)) & mask;
+    dondu sola | saga;
+}
+
+# ChaCha20 Quarter Round (QR) Islemi
+isv chacha20_qr(state: *tamsayi, a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi) {
+    degisken mask: tamsayi = 4294967295;
+    
+    # a += b; d ^= a; d <<<= 16;
+    state[a] = (state[a] + state[b]) & mask;
+    state[d] = rotl32(state[d] ^ state[a], 16);
+    
+    # c += d; b ^= c; b <<<= 12;
+    state[c] = (state[c] + state[d]) & mask;
+    state[b] = rotl32(state[b] ^ state[c], 12);
+    
+    # a += b; d ^= a; d <<<= 8;
+    state[a] = (state[a] + state[b]) & mask;
+    state[d] = rotl32(state[d] ^ state[a], 8);
+    
+    # c += d; b ^= c; b <<<= 7;
+    state[c] = (state[c] + state[d]) & mask;
+    state[b] = rotl32(state[b] ^ state[c], 7);
+}
+
+# 64-baytlik tek bir ChaCha20 blogu uretir
+isv chacha20_blok_uret(anahtar: *u8, sayac: tamsayi, nonce: *u8, cikti_tamponu: *u8) {
+    degisken state: [16]tamsayi;
+    degisken mask: tamsayi = 4294967295;
+    
+    # 1. Sabitler: "expand 32-byte k"
+    state[0] = 0x61707865;
+    state[1] = 0x3320646e;
+    state[2] = 0x79622d32;
+    state[3] = 0x6b206574;
+    
+    # 2. 256-bit Anahtar (8 x 32-bit little-endian)
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        degisken ofs: tamsayi = i * 4;
+        degisken w: tamsayi = (anahtar[ofs] as tamsayi) |
+                              ((anahtar[ofs + 1] as tamsayi) << 8) |
+                              ((anahtar[ofs + 2] as tamsayi) << 16) |
+                              ((anahtar[ofs + 3] as tamsayi) << 24);
+        state[4 + i] = w & mask;
+        i = i + 1;
+    }
+    
+    # 3. Sayac (32-bit)
+    state[12] = sayac & mask;
+    
+    # 4. 96-bit Nonce (3 x 32-bit little-endian)
+    i = 0;
+    dongu i < 3 {
+        degisken ofs: tamsayi = i * 4;
+        degisken w: tamsayi = (nonce[ofs] as tamsayi) |
+                              ((nonce[ofs + 1] as tamsayi) << 8) |
+                              ((nonce[ofs + 2] as tamsayi) << 16) |
+                              ((nonce[ofs + 3] as tamsayi) << 24);
+        state[13 + i] = w & mask;
+        i = i + 1;
+    }
+    
+    # Durumu calisma matrisine kopyala
+    degisken calisma: [16]tamsayi;
+    i = 0;
+    dongu i < 16 {
+        calisma[i] = state[i];
+        i = i + 1;
+    }
+    
+    # 20 Tur (10 x Sutun + 10 x Capraz)
+    i = 0;
+    dongu i < 10 {
+        # Sutun turlari
+        chacha20_qr(calisma, 0, 4, 8, 12);
+        chacha20_qr(calisma, 1, 5, 9, 13);
+        chacha20_qr(calisma, 2, 6, 10, 14);
+        chacha20_qr(calisma, 3, 7, 11, 15);
+        
+        # Capraz turlari
+        chacha20_qr(calisma, 0, 5, 10, 15);
+        chacha20_qr(calisma, 1, 6, 11, 12);
+        chacha20_qr(calisma, 2, 7, 8, 13);
+        chacha20_qr(calisma, 3, 4, 9, 14);
+        
+        i = i + 1;
+    }
+    
+    # Baslangic durumu ile topla ve cikti baytlarina bas (Little-Endian)
+    i = 0;
+    dongu i < 16 {
+        degisken toplam: tamsayi = (calisma[i] + state[i]) & mask;
+        degisken out_ofs: tamsayi = i * 4;
+        cikti_tamponu[out_ofs]     = (toplam & 0xFF) as u8;
+        cikti_tamponu[out_ofs + 1] = ((toplam >> 8) & 0xFF) as u8;
+        cikti_tamponu[out_ofs + 2] = ((toplam >> 16) & 0xFF) as u8;
+        cikti_tamponu[out_ofs + 3] = ((toplam >> 24) & 0xFF) as u8;
+        i = i + 1;
+    }
+}
+
+# Verilen bayt dizisini ChaCha20 ile yerinde (in-place) sifreler veya cozer
+isv chacha20_islem(anahtar: *u8, sayac_baslangic: tamsayi, nonce: *u8, veri: *u8, uzunluk: tamsayi) {
+    eger anahtar == 0 veya nonce == 0 veya veri == 0 veya uzunluk <= 0 ise { dondu; }
+    
+    degisken blok_tamponu: [64]u8;
+    degisken guncel_sayac: tamsayi = sayac_baslangic;
+    degisken islenen: tamsayi = 0;
+    
+    dongu islenen < uzunluk {
+        chacha20_blok_uret(anahtar, guncel_sayac, nonce, blok_tamponu);
+        guncel_sayac = guncel_sayac + 1;
+        
+        degisken kalan: tamsayi = uzunluk - islenen;
+        degisken adim: tamsayi = 64;
+        eger kalan < 64 ise { adim = kalan; }
+        
+        degisken j: tamsayi = 0;
+        dongu j < adim {
+            degisken idx: tamsayi = islenen + j;
+            veri[idx] = ((veri[idx] as tamsayi) ^ (blok_tamponu[j] as tamsayi)) as u8;
+            j = j + 1;
+        }
+        
+        islenen = islenen + adim;
+    }
+}
+

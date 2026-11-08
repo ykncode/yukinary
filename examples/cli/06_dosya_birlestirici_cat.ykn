@@ -1,0 +1,33 @@
+# ============================================================
+# Örnek 6: Konsol Tabanlı Dosya Birleştirici (cat / merge aracı)
+# ============================================================
+ice_aktar "std/dosya.ykn";
+
+isv dosyayi_ekrana_bas(yol: *u8) -> tamsayi {
+    eger dosya_var_mi(yol) == 0 ise {
+        ekrana_yaz("Hata: Dosya bulunamadi -> ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+
+    degisken okunan: [1]tamsayi;
+    degisken icerik: *u8 = dosya_oku_tamami(yol, okunan);
+    eger icerik == 0 ise {
+        ekrana_yaz("Hata: Dosya okunamadi -> ".ptr);
+        ekrana_yaz(yol);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz(icerik);
+    bellek_serbest_birak(icerik);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("--- YKN Dosya Birlestirici Baslatildi ---\n".ptr);
+    dosyayi_ekrana_bas("yukinary.toml".ptr);
+    ekrana_yaz("\n--- Birlestirme Tamamlandi ---\n".ptr);
+    dondu 0;
+}

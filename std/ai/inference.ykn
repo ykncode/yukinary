@@ -1,0 +1,150 @@
+# ============================================================
+# YKN std/ai/inference.ykn
+# Ortak forward-pass planı: loader -> kernel -> KV -> logits -> sampler.
+# ============================================================
+
+yapi LLMForwardPlan {
+    backend: tamsayi;
+    quant_tipi: tamsayi;
+    adapter: *LLMArchitectureAdapter;
+    agirlik: *u8;
+    agirlik_bayti: tamsayi;
+    aktivasyon: *tamsayi;
+    M: tamsayi;
+    K: tamsayi;
+    N: tamsayi;
+    logits: *tamsayi;
+    logits_boyutu: tamsayi;
+    expert_ara_cikti: *tamsayi;
+    router_logits: *tamsayi;
+    expert_agirlik: *u8;
+    expert_stride: tamsayi;
+    expert_sayisi: tamsayi;
+    top_k: tamsayi;
+    kv_anahtar: *tamsayi;
+    kv_deger: *tamsayi;
+    kv_sorgu: *tamsayi;
+    kv_cikti: *tamsayi;
+    kv_kafa_sayisi: tamsayi;
+    kv_kafa_boyutu: tamsayi;
+    kv_kapasitesi: tamsayi;
+    token_konumu: tamsayi;
+    token_anahtar: *tamsayi;
+    token_deger: *tamsayi;
+}
+
+degisken LLM_FORWARD_HATASI = 0;
+
+isv llm_forward_plan_sifirla(plan: *LLMForwardPlan) {
+    eger plan == 0 ise { dondu; }
+    plan->backend = 0;
+    plan->quant_tipi = 0;
+    plan->adapter = 0;
+    plan->agirlik = 0;
+    plan->agirlik_bayti = 0;
+    plan->aktivasyon = 0;
+    plan->M = 0;
+    plan->K = 0;
+    plan->N = 0;
+    plan->logits = 0;
+    plan->logits_boyutu = 0;
+    plan->expert_ara_cikti = 0;
+    plan->router_logits = 0;
+    plan->expert_agirlik = 0;
+    plan->expert_stride = 0;
+    plan->expert_sayisi = 0;
+    plan->top_k = 0;
+    plan->kv_anahtar = 0;
+    plan->kv_deger = 0;
+    plan->kv_sorgu = 0;
+    plan->kv_cikti = 0;
+    plan->kv_kafa_sayisi = 0;
+    plan->kv_kafa_boyutu = 0;
+    plan->kv_kapasitesi = 0;
+    plan->token_konumu = 0;
+    plan->token_anahtar = 0;
+    plan->token_deger = 0;
+}
+
+isv llm_forward_plan_dogrula(plan: *LLMForwardPlan) -> tamsayi {
+    LLM_FORWARD_HATASI = 0;
+    eger plan == 0 veya plan->agirlik == 0 veya plan->aktivasyon == 0 veya
+       plan->logits == 0 veya plan->M <= 0 veya plan->K <= 0 veya
+       plan->N <= 0 veya plan->logits_boyutu < plan->N veya plan->agirlik_bayti <= 0 ise {
+        LLM_FORWARD_HATASI = 1;
+        dondu 0;
+    }
+    eger plan->backend == LLM_BACKEND_BITNET_NATIVE ise {
+        eger plan->agirlik_bayti < (plan->K * plan->N + 3) / 4 ise { LLM_FORWARD_HATASI = 7; dondu 0; }
+        eger plan->quant_tipi != LLM_QUANT_IQ2_S ve
+           plan->quant_tipi != LLM_QUANT_IQ2_S_LEGACY ise { LLM_FORWARD_HATASI = 2; dondu 0; }
+    }
+    yoksa eger plan->backend == LLM_BACKEND_ARCH_ADAPTER ise {
+        eger plan->adapter == 0 ise { LLM_FORWARD_HATASI = 3; dondu 0; }
+        eger plan->quant_tipi == LLM_QUANT_F16 ve
+           plan->agirlik_bayti < plan->K * plan->N * 2 ise { LLM_FORWARD_HATASI = 3; dondu 0; }
+        eger plan->quant_tipi == LLM_QUANT_F32 ve
+           plan->agirlik_bayti < plan->K * plan->N * 4 ise { LLM_FORWARD_HATASI = 3; dondu 0; }
+        eger plan->quant_tipi != LLM_QUANT_F16 ve plan->quant_tipi != LLM_QUANT_F32 ise { LLM_FORWARD_HATASI = 3; dondu 0; }
+    }
+    yoksa eger plan->backend == LLM_BACKEND_BITNET_MOE_NATIVE ise {
+        eger plan->expert_agirlik == 0 veya plan->expert_ara_cikti == 0 veya
+           plan->router_logits == 0 veya plan->expert_sayisi <= 0 veya
+           plan->expert_sayisi > 64 veya
+           plan->top_k <= 0 veya plan->top_k > plan->expert_sayisi veya
+           plan->expert_stride <= 0 ise { LLM_FORWARD_HATASI = 4; dondu 0; }
+    }
+    yoksa { LLM_FORWARD_HATASI = 5; dondu 0; }
+    dondu 1;
+}
+
+# Tek forward adımı. Çıktı logits buffer'ına yazılır ve argmax token ID'si
+# döner. KV alanları verilmişse aynı adımda cache write + attention yapılır.
+isv llm_forward_plan_calistir(plan: *LLMForwardPlan) -> tamsayi {
+    eger llm_forward_plan_dogrula(plan) == 0 ise { dondu 0 - 1; }
+    degisken basari: tamsayi = 0;
+    eger plan->backend == LLM_BACKEND_BITNET_NATIVE ise {
+        basari = bitnet_i2s_paketli_matris_carp(
+            plan->agirlik, plan->aktivasyon, plan->logits,
+            plan->M, plan->K, plan->N);
+    }
+    yoksa eger plan->backend == LLM_BACKEND_BITNET_MOE_NATIVE ise {
+        basari = bitnet_moe_paketli_ileri(
+            plan->expert_agirlik, plan->expert_stride, plan->router_logits,
+            plan->aktivasyon, plan->expert_ara_cikti,
+            plan->logits, plan->expert_sayisi, plan->top_k,
+            plan->K, plan->N);
+    }
+    yoksa {
+        basari = llm_architecture_adapter_ileri(
+            plan->adapter, plan->quant_tipi, plan->agirlik,
+            plan->agirlik_bayti, plan->aktivasyon, plan->logits,
+            plan->M, plan->K, plan->N);
+    }
+    eger basari == 0 veya BITNET_KERNEL_HATASI != 0 ise { LLM_FORWARD_HATASI = 6; dondu 0 - 1; }
+
+    eger plan->kv_anahtar != 0 ve plan->kv_deger != 0 ve
+       plan->token_anahtar != 0 ve plan->token_deger != 0 ve
+       plan->kv_sorgu != 0 ve plan->kv_cikti != 0 ise {
+        eger bitnet_kv_cache_yaz(plan->kv_anahtar, plan->kv_deger,
+            plan->kv_kafa_sayisi, plan->kv_kafa_boyutu, plan->kv_kapasitesi,
+            plan->token_konumu, 0, plan->token_anahtar, plan->token_deger) == 0 ise {
+            LLM_FORWARD_HATASI = 7; dondu 0 - 1;
+        }
+        # Eski 9-parametreli attention çağrısı yerine paketli ABI kullanılır.
+        degisken attention_paketi: BitNetAttentionPaketi;
+        attention_paketi.sorgu = plan->kv_sorgu;
+        attention_paketi.anahtar_cache = plan->kv_anahtar;
+        attention_paketi.deger_cache = plan->kv_deger;
+        attention_paketi.kafa_sayisi = plan->kv_kafa_sayisi;
+        attention_paketi.kafa_boyutu = plan->kv_kafa_boyutu;
+        attention_paketi.kapasite = plan->kv_kapasitesi;
+        attention_paketi.son_token = plan->token_konumu;
+        attention_paketi.kafa = 0;
+        attention_paketi.cikti = plan->kv_cikti;
+        eger bitnet_kv_dikkat_q16_paketli(&attention_paketi) == 0 ise {
+            LLM_FORWARD_HATASI = 8; dondu 0 - 1;
+        }
+    }
+    dondu bitnet_argmax(plan->logits, plan->logits_boyutu);
+}

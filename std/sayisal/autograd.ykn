@@ -1,0 +1,83 @@
+# ============================================================
+# std/sayisal/autograd.ykn
+# FAZ 34: Saf Yukinary Ters Mod Otomatik Turev (Reverse-Mode Autograd)
+# ============================================================
+
+ice_aktar "std/sayisal/tensor.ykn";
+
+# Lineer MatMul: C = A x B  (A: M x K, B: K x N -> C: M x N)
+isv autograd_matmul(A: *Tensor, B: *Tensor) -> *Tensor {
+    degisken M: tamsayi = A.b0;
+    degisken K: tamsayi = A.b1;
+    degisken N: tamsayi = B.b1;
+
+    degisken grad_istiyor: tamsayi = 0;
+    eger A.grad_istiyor == 1 veya B.grad_istiyor == 1 ise {
+        grad_istiyor = 1;
+    }
+
+    degisken C: *Tensor = tensor_olustur_2d(M, N, grad_istiyor);
+
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                toplam = toplam + (tensor_al_2d(A, i, k) * tensor_al_2d(B, k, j));
+                k = k + 1;
+            }
+            tensor_koy_2d(C, i, j, toplam);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu C;
+}
+
+# Geriye yayilim: dL/dA = dL/dC x B^T,  dL/dB = A^T x dL/dC
+isv autograd_matmul_geriye(A: *Tensor, B: *Tensor, C: *Tensor) {
+    degisken M: tamsayi = A.b0;
+    degisken K: tamsayi = A.b1;
+    degisken N: tamsayi = B.b1;
+
+    # 1. dL/dA hesapla (M x K)
+    eger A.grad_istiyor == 1 ise {
+        degisken i: tamsayi = 0;
+        dongu i < M {
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken d_a: tamsayi = 0;
+                degisken j: tamsayi = 0;
+                dongu j < N {
+                    d_a = d_a + (tensor_grad_al_2d(C, i, j) * tensor_al_2d(B, k, j));
+                    j = j + 1;
+                }
+                tensor_grad_koy_2d(A, i, k, d_a);
+                k = k + 1;
+            }
+            i = i + 1;
+        }
+    }
+
+    # 2. dL/dB hesapla (K x N)
+    eger B.grad_istiyor == 1 ise {
+        degisken k: tamsayi = 0;
+        dongu k < K {
+            degisken j: tamsayi = 0;
+            dongu j < N {
+                degisken d_b: tamsayi = 0;
+                degisken i: tamsayi = 0;
+                dongu i < M {
+                    d_b = d_b + (tensor_al_2d(A, i, k) * tensor_grad_al_2d(C, i, j));
+                    i = i + 1;
+                }
+                tensor_grad_koy_2d(B, k, j, d_b);
+                j = j + 1;
+            }
+            k = k + 1;
+        }
+    }
+}
+

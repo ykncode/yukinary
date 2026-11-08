@@ -1,0 +1,12 @@
+# FIX-13: nullable return degeri guard ile kullanilabilir.
+isv belki() -> ?*u8 {
+    dondu bos;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = belki();
+    eger p != bos ise {
+        dondu p[0];
+    }
+    dondu 0;
+}

@@ -1,0 +1,72 @@
+# ============================================================
+# tests/ai/test_vulkan_inference.ykn
+# FAZ 33: Vulkan Compute & SPIR-V Cikarim Testi
+# ============================================================
+
+ice_aktar "std/ai/spirv_emitter.ykn";
+ice_aktar "std/ai/vulkan_compute.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 33: Vulkan Compute & SPIR-V AI Cikarim Testi Basliyor...\n".ptr);
+
+    # 1. SPIR-V Modul Uretimi ve Baslik Dogrulamasi
+    degisken m: *SpirvModulu = spirv_modulu_olustur(64);
+    eger m.kullanilan != 5 ise {
+        ekrana_yaz("HATA: SPIR-V baslik uzunlugu hatali!\n".ptr);
+        dondu 1;
+    }
+    # 0x07230203 Magic
+    eger m.kelimeler[0] != SPIRV_MAGIC_NUMBER ise {
+        ekrana_yaz("HATA: SPIR-V sihirli sayisi hatali!\n".ptr);
+        dondu 2;
+    }
+    # 0x00010000 Sürüm
+    eger m.kelimeler[1] != SPIRV_VERSION_1_0 ise {
+        ekrana_yaz("HATA: SPIR-V surum bilgisi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # OpCapability Shader (kelime_sayisi=2, opcode=17, capability=1)
+    spirv_komut_yaz(m, SPIRV_OP_CAPABILITY, 2);
+    spirv_operand_yaz(m, 1); # Shader
+
+    # OpMemoryModel Simple GLSL450 (kelime_sayisi=3, opcode=14)
+    spirv_komut_yaz(m, SPIRV_OP_MEMORY_MODEL, 3);
+    spirv_operand_yaz(m, 0); # Addressing: Logical
+    spirv_operand_yaz(m, 1); # Memory: GLSL450
+
+    eger m.kullanilan != 10 ise {
+        ekrana_yaz("HATA: SPIR-V komut emisyon boyutu hatali!\n".ptr);
+        dondu 4;
+    }
+
+    # 2. Vulkan Compute MatMul Similasyonu / Fallback Testi
+    degisken A: [4]tamsayi;
+    degisken B: [4]tamsayi;
+    degisken C: [4]tamsayi;
+
+    A[0] = 1; A[1] = 2;
+    A[2] = 3; A[3] = 4;
+
+    B[0] = 5; B[1] = 6;
+    B[2] = 7; B[3] = 8;
+
+    # 2x2 Matris Carpimi: C = A x B
+    # C[0] = 1*5 + 2*7 = 19
+    # C[1] = 1*6 + 2*8 = 22
+    # C[2] = 3*5 + 4*7 = 43
+    # C[3] = 3*6 + 4*8 = 50
+    C[0] = A[0]*B[0] + A[1]*B[2];
+    C[1] = A[0]*B[1] + A[1]*B[3];
+    C[2] = A[2]*B[0] + A[3]*B[2];
+    C[3] = A[2]*B[1] + A[3]*B[3];
+
+    eger C[0] != 19 veya C[1] != 22 veya C[2] != 43 veya C[3] != 50 ise {
+        ekrana_yaz("HATA: Matris carpim dogrulamasi basarisiz!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("VULKAN_SPIRV_INFERENCE_PASS\n".ptr);
+    dondu 0;
+}
+

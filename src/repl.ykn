@@ -1,0 +1,611 @@
+# ============================================================
+# Yukinary REPL (Read-Eval-Print Loop) & JIT Engine
+# Modul: src/repl.ykn
+# ============================================================
+# Saf bellek ici etkilesimli calisma motoru (In-Memory Evaluation).
+# Degisken state yonetimi, cok satirli blok dengeleme, aritmetik
+# ve mantiksal ifade degerlendirici.
+# ============================================================
+
+# Komut etiketleri
+degisken REPL_NORMAL       = 0;
+degisken REPL_CIKIS        = 1;
+degisken REPL_YUKLE        = 2;
+degisken REPL_TIP          = 3;
+degisken REPL_HATA         = 4;
+
+yapi ReplOturumu {
+    kaynak: *u8;
+    kaynak_uzunlugu: tamsayi;
+    satir_sayisi: tamsayi;
+    degisken_sayisi: tamsayi;
+    degisken_kapasitesi: tamsayi;
+    degisken_adlar: *u8;
+    degisken_uzunluklar: *tamsayi;
+    degisken_degerler: *tamsayi;
+}
+
+# Host launcher ile ayni basit komut siniflandirmasi
+isv repl_komut_turu(girdi: *u8) -> tamsayi {
+    eger girdi == 0 ise { dondu REPL_HATA; }
+    eger girdi[0] == 46 veya girdi[0] == 58 ise { # '.' veya ':'
+        eger girdi[1] == 113 veya girdi[1] == 101 veya girdi[1] == 99 ise { dondu REPL_CIKIS; } # .q, .e, :c
+        eger girdi[1] == 108 ise { dondu REPL_YUKLE; } # .l
+        eger girdi[1] == 116 ise { dondu REPL_TIP; }   # .t
+        dondu REPL_HATA;
+    }
+    eger girdi[0] == 99 ve girdi[1] == 105 ve girdi[2] == 107 ise { # 'cik'
+        dondu REPL_CIKIS;
+    }
+    eger girdi[0] == 101 ve girdi[1] == 120 ve girdi[2] == 105 ve girdi[3] == 116 ise { # 'exit'
+        dondu REPL_CIKIS;
+    }
+    dondu REPL_NORMAL;
+}
+
+isv repl_satir_bos_mu(girdi: *u8) -> tamsayi {
+    eger girdi == 0 ise { dondu 1; }
+    degisken i: tamsayi = 0;
+    dongu girdi[i] != 0 {
+        eger girdi[i] != 32 ve girdi[i] != 9 ve girdi[i] != 10 ve girdi[i] != 13 ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Parantez/kume dengesi sayaci: blok tamamlandı mı?
+isv repl_cok_satir_tamamlandi_mi(kaynak: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 1; }
+    degisken derin_kume: tamsayi = 0;    # { }
+    degisken derin_paran: tamsayi = 0;   # ( )
+    degisken derin_kose: tamsayi = 0;    # [ ]
+    degisken dizide_mi: tamsayi = 0;     # string icinde
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken c: u8 = kaynak[i];
+        eger c == 34 veya c == 39 ise { # " veya '
+            eger dizide_mi == 0 ise { dizide_mi = c; }
+            yoksa eger dizide_mi == c ise { dizide_mi = 0; }
+        }
+        eger dizide_mi == 0 ise {
+            eger c == 123 ise { derin_kume = derin_kume + 1; }    # {
+            eger c == 125 ise { derin_kume = derin_kume - 1; }    # }
+            eger c == 40  ise { derin_paran = derin_paran + 1; }  # (
+            eger c == 41  ise { derin_paran = derin_paran - 1; }  # )
+            eger c == 91  ise { derin_kose = derin_kose + 1; }    # [
+            eger c == 93  ise { derin_kose = derin_kose - 1; }    # ]
+        }
+        i = i + 1;
+    }
+    eger derin_kume == 0 ve derin_paran == 0 ve derin_kose == 0 ise { dondu 1; }
+    dondu 0;
+}
+
+# REPL oturumu olustur (session state tampon tahsisi)
+isv repl_oturum_olustur() -> *ReplOturumu {
+    degisken ot: *ReplOturumu = bellek_tahsis_et(128);
+    eger ot == 0 ise { dondu 0; }
+    degisken kaynak_tampon: *u8 = bellek_tahsis_et(1048576); # 1MB session buffer
+    eger kaynak_tampon == 0 ise { dondu 0; }
+    ot.kaynak = kaynak_tampon;
+    ot.kaynak_uzunlugu = 0;
+    ot.satir_sayisi = 0;
+
+    ot.degisken_sayisi = 0;
+    ot.degisken_kapasitesi = 64;
+    ot.degisken_adlar = bellek_tahsis_et(2048);      # 64 degisken * 32 bayt
+    ot.degisken_uzunluklar = bellek_tahsis_et(512);   # 64 degisken * 8 bayt
+    ot.degisken_degerler = bellek_tahsis_et(512);     # 64 degisken * 8 bayt
+
+    degisken prologue: *u8 = "# REPL Oturumu\n".ptr;
+    degisken prologue_uzn: tamsayi = 0;
+    dongu prologue[prologue_uzn] != 0 { prologue_uzn = prologue_uzn + 1; }
+    degisken pi: tamsayi = 0;
+    dongu pi < prologue_uzn {
+        ot.kaynak[pi] = prologue[pi];
+        pi = pi + 1;
+    }
+    ot.kaynak_uzunlugu = prologue_uzn;
+    ot.kaynak[prologue_uzn] = 0;
+    dondu ot;
+}
+
+# REPL oturumunu temizle (session state sifirla)
+isv repl_oturum_temizle(ot: *ReplOturumu) {
+    eger ot == 0 ise { dondu; }
+    eger ot.kaynak != 0 ise {
+        ot.kaynak[0] = 0;
+    }
+    ot.kaynak_uzunlugu = 0;
+    ot.satir_sayisi = 0;
+    ot.degisken_sayisi = 0;
+}
+
+# Import direktifini isle: session state'e ekle
+isv repl_import_isle(ot: *ReplOturumu, import_satir: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger ot == 0 veya import_satir == 0 veya uzunluk <= 0 ise { dondu 0; }
+    eger ot.kaynak == 0 ise { dondu 0; }
+    degisken mevcut: tamsayi = ot.kaynak_uzunlugu;
+    eger mevcut + uzunluk + 2 >= 1048576 ise { dondu 0; }
+    degisken ii: tamsayi = 0;
+    dongu ii < uzunluk {
+        ot.kaynak[mevcut + ii] = import_satir[ii];
+        ii = ii + 1;
+    }
+    ot.kaynak[mevcut + uzunluk] = 10; # newline
+    ot.kaynak_uzunlugu = mevcut + uzunluk + 1;
+    ot.kaynak[ot.kaynak_uzunlugu] = 0;
+    ot.satir_sayisi = ot.satir_sayisi + 1;
+    dondu 1;
+}
+
+# Crash recovery: oturum durumunu son bilinen iyi noktaya geri yukle
+isv repl_crash_kurtar(ot: *ReplOturumu, kayit_noktasi: tamsayi) -> tamsayi {
+    eger ot == 0 ise { dondu 0; }
+    eger kayit_noktasi < 0 ise { dondu 0; }
+    eger kayit_noktasi > ot.kaynak_uzunlugu ise { dondu 0; }
+    ot.kaynak_uzunlugu = kayit_noktasi;
+    eger ot.kaynak != 0 ise {
+        ot.kaynak[kayit_noktasi] = 0;
+    }
+    dondu 1;
+}
+
+# ============================================================
+# Degisken Tablosu Yonetimi
+# ============================================================
+isv repl_degisken_bul(ot: *ReplOturumu, ad: *u8, uzn: tamsayi) -> tamsayi {
+    eger ot == 0 veya ad == 0 veya uzn <= 0 ise { dondu -1; }
+    degisken adlar: *u8 = ot.degisken_adlar;
+    degisken i: tamsayi = 0;
+    dongu i < ot.degisken_sayisi {
+        eger ot.degisken_uzunluklar[i] == uzn ise {
+            degisken esit: tamsayi = 1;
+            degisken k: tamsayi = 0;
+            degisken ofs: tamsayi = i * 32;
+            dongu k < uzn {
+                eger adlar[ofs + k] != ad[k] ise {
+                    esit = 0;
+                    durdur;
+                }
+                k = k + 1;
+            }
+            eger esit == 1 ise { dondu i; }
+        }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+isv repl_degisken_ata(ot: *ReplOturumu, ad: *u8, uzn: tamsayi, deger: tamsayi) {
+    eger ot == 0 veya ad == 0 veya uzn <= 0 ise { dondu; }
+    degisken idx: tamsayi = repl_degisken_bul(ot, ad, uzn);
+    eger idx >= 0 ise {
+        ot.degisken_degerler[idx] = deger;
+        dondu;
+    }
+    # Dinamik kapasite buyutme (64 -> 128 -> 256 -> ...)
+    eger ot.degisken_sayisi >= ot.degisken_kapasitesi ise {
+        degisken yeni_kap: tamsayi = ot.degisken_kapasitesi * 2;
+        eger yeni_kap <= 0 ise { yeni_kap = 64; }
+        degisken yeni_adlar: *u8 = bellek_tahsis_et(yeni_kap * 32);
+        degisken yeni_uzn: *tamsayi = bellek_tahsis_et(yeni_kap * 8);
+        degisken yeni_deg: *tamsayi = bellek_tahsis_et(yeni_kap * 8);
+        eger yeni_adlar == 0 veya yeni_uzn == 0 veya yeni_deg == 0 ise {
+            dondu;
+        }
+        degisken bi: tamsayi = 0;
+        degisken toplam_ad_bayt: tamsayi = ot.degisken_sayisi * 32;
+        dongu bi < toplam_ad_bayt {
+            yeni_adlar[bi] = ot.degisken_adlar[bi];
+            bi = bi + 1;
+        }
+        degisken di: tamsayi = 0;
+        dongu di < ot.degisken_sayisi {
+            yeni_uzn[di] = ot.degisken_uzunluklar[di];
+            yeni_deg[di] = ot.degisken_degerler[di];
+            di = di + 1;
+        }
+        ot.degisken_adlar = yeni_adlar;
+        ot.degisken_uzunluklar = yeni_uzn;
+        ot.degisken_degerler = yeni_deg;
+        ot.degisken_kapasitesi = yeni_kap;
+    }
+    degisken adlar: *u8 = ot.degisken_adlar;
+    degisken yeni_idx: tamsayi = ot.degisken_sayisi;
+    degisken ofs: tamsayi = yeni_idx * 32;
+    degisken k: tamsayi = 0;
+    degisken max_k: tamsayi = uzn;
+    eger max_k > 31 ise { max_k = 31; }
+    dongu k < max_k {
+        adlar[ofs + k] = ad[k];
+        k = k + 1;
+    }
+    adlar[ofs + max_k] = 0;
+    ot.degisken_uzunluklar[yeni_idx] = max_k;
+    ot.degisken_degerler[yeni_idx] = deger;
+    ot.degisken_sayisi = ot.degisken_sayisi + 1;
+}
+
+isv repl_sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+# ============================================================
+# In-Memory Aritmetik / Mantiksal Ifade Degerlendirici (JIT Evaluator)
+# ============================================================
+isv repl_eval_atla(kaynak: *u8, uzn: tamsayi, pos: *tamsayi) {
+    dongu pos[0] < uzn {
+        degisken c: u8 = kaynak[pos[0]];
+        eger c == 32 veya c == 9 veya c == 10 veya c == 13 veya c == 59 ise { # ' ', '\t', '\n', '\r', ';'
+            pos[0] = pos[0] + 1;
+        } yoksa {
+            durdur;
+        }
+    }
+}
+
+isv repl_eval_expr(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi;
+
+isv repl_eval_primary(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    repl_eval_atla(kaynak, uzn, pos);
+    eger pos[0] >= uzn ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    degisken c: u8 = kaynak[pos[0]];
+    # Parantez '('
+    eger c == 40 ise {
+        pos[0] = pos[0] + 1;
+        degisken v: tamsayi = repl_eval_expr(ot, kaynak, uzn, pos, hata);
+        repl_eval_atla(kaynak, uzn, pos);
+        eger pos[0] < uzn ve kaynak[pos[0]] == 41 ise { # ')'
+            pos[0] = pos[0] + 1;
+        } yoksa {
+            hata[0] = 1;
+        }
+        dondu v;
+    }
+    # Sayisal Deger
+    eger c >= 48 ve c <= 57 ise {
+        degisken sayi: tamsayi = 0;
+        dongu pos[0] < uzn {
+            degisken d: u8 = kaynak[pos[0]];
+            eger d >= 48 ve d <= 57 ise {
+                sayi = sayi * 10 + (d - 48);
+                pos[0] = pos[0] + 1;
+            } yoksa {
+                durdur;
+            }
+        }
+        dondu sayi;
+    }
+    # Tanimlayici (Degisken adi)
+    eger (c >= 65 ve c <= 90) veya (c >= 97 ve c <= 122) veya c == 95 ise {
+        degisken bas: tamsayi = pos[0];
+        dongu pos[0] < uzn {
+            degisken d: u8 = kaynak[pos[0]];
+            eger (d >= 65 ve d <= 90) veya (d >= 97 ve d <= 122) veya (d >= 48 ve d <= 57) veya d == 95 ise {
+                pos[0] = pos[0] + 1;
+            } yoksa {
+                durdur;
+            }
+        }
+        degisken id_uzn: tamsayi = pos[0] - bas;
+        degisken idx: tamsayi = repl_degisken_bul(ot, kaynak + bas, id_uzn);
+        eger idx >= 0 ise {
+            dondu ot.degisken_degerler[idx];
+        }
+        hata[0] = 1;
+        ekrana_yaz("HATA: Tanimsiz sembol: ".ptr);
+        degisken id_buf: [64]u8;
+        degisken ki: tamsayi = 0;
+        dongu ki < id_uzn ve ki < 63 { id_buf[ki] = kaynak[bas + ki]; ki = ki + 1; }
+        id_buf[ki] = 0;
+        ekrana_yaz(id_buf);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+    hata[0] = 1;
+    dondu 0;
+}
+
+isv repl_eval_unary(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    repl_eval_atla(kaynak, uzn, pos);
+    eger pos[0] < uzn ve kaynak[pos[0]] == 45 ise { # '-'
+        pos[0] = pos[0] + 1;
+        dondu 0 - repl_eval_unary(ot, kaynak, uzn, pos, hata);
+    } yoksa eger pos[0] < uzn ve kaynak[pos[0]] == 43 ise { # '+'
+        pos[0] = pos[0] + 1;
+        dondu repl_eval_unary(ot, kaynak, uzn, pos, hata);
+    }
+    dondu repl_eval_primary(ot, kaynak, uzn, pos, hata);
+}
+
+isv repl_eval_mul(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    degisken sol: tamsayi = repl_eval_unary(ot, kaynak, uzn, pos, hata);
+    dongu hata[0] == 0 {
+        repl_eval_atla(kaynak, uzn, pos);
+        eger pos[0] >= uzn ise { durdur; }
+        degisken op: u8 = kaynak[pos[0]];
+        eger op == 42 ise { # '*'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_unary(ot, kaynak, uzn, pos, hata);
+            sol = sol * sag;
+        } yoksa eger op == 47 ise { # '/'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_unary(ot, kaynak, uzn, pos, hata);
+            eger sag == 0 ise {
+                hata[0] = 1;
+                ekrana_yaz("HATA: Sifira bolme hatasi!\n".ptr);
+                dondu 0;
+            }
+            sol = sol / sag;
+        } yoksa eger op == 37 ise { # '%'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_unary(ot, kaynak, uzn, pos, hata);
+            eger sag == 0 ise {
+                hata[0] = 1;
+                ekrana_yaz("HATA: Sifira bolme hatasi!\n".ptr);
+                dondu 0;
+            }
+            sol = sol % sag;
+        } yoksa {
+            durdur;
+        }
+    }
+    dondu sol;
+}
+
+isv repl_eval_add(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    degisken sol: tamsayi = repl_eval_mul(ot, kaynak, uzn, pos, hata);
+    dongu hata[0] == 0 {
+        repl_eval_atla(kaynak, uzn, pos);
+        eger pos[0] >= uzn ise { durdur; }
+        degisken op: u8 = kaynak[pos[0]];
+        eger op == 43 ise { # '+'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_mul(ot, kaynak, uzn, pos, hata);
+            sol = sol + sag;
+        } yoksa eger op == 45 ise { # '-'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_mul(ot, kaynak, uzn, pos, hata);
+            sol = sol - sag;
+        } yoksa {
+            durdur;
+        }
+    }
+    dondu sol;
+}
+
+isv repl_eval_expr(ot: *ReplOturumu, kaynak: *u8, uzn: tamsayi, pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    degisken sol: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+    dongu hata[0] == 0 {
+        repl_eval_atla(kaynak, uzn, pos);
+        eger pos[0] >= uzn ise { durdur; }
+        eger pos[0] + 1 < uzn ve kaynak[pos[0]] == 61 ve kaynak[pos[0] + 1] == 61 ise { # '=='
+            pos[0] = pos[0] + 2;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol == sag);
+        } yoksa eger pos[0] + 1 < uzn ve kaynak[pos[0]] == 33 ve kaynak[pos[0] + 1] == 61 ise { # '!='
+            pos[0] = pos[0] + 2;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol != sag);
+        } yoksa eger pos[0] + 1 < uzn ve kaynak[pos[0]] == 60 ve kaynak[pos[0] + 1] == 61 ise { # '<='
+            pos[0] = pos[0] + 2;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol <= sag);
+        } yoksa eger pos[0] + 1 < uzn ve kaynak[pos[0]] == 62 ve kaynak[pos[0] + 1] == 61 ise { # '>='
+            pos[0] = pos[0] + 2;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol >= sag);
+        } yoksa eger kaynak[pos[0]] == 60 ise { # '<'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol < sag);
+        } yoksa eger kaynak[pos[0]] == 62 ise { # '>'
+            pos[0] = pos[0] + 1;
+            degisken sag: tamsayi = repl_eval_add(ot, kaynak, uzn, pos, hata);
+            sol = (sol > sag);
+        } yoksa {
+            durdur;
+        }
+    }
+    dondu sol;
+}
+
+# ============================================================
+# JIT REPL Yurutme API'si
+# ============================================================
+degisken REPL_JIT_AKTIF: tamsayi = 1;
+
+isv repl_jit_destekleniyor_mu() -> tamsayi {
+    dondu REPL_JIT_AKTIF;
+}
+
+isv repl_bellek_esit_mi(a: *u8, b: *u8, n: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv repl_satir_tanim_mi(satir: *u8, uzn: tamsayi) -> tamsayi {
+    eger satir == 0 veya uzn <= 0 ise { dondu 0; }
+    eger uzn >= 9 ve repl_bellek_esit_mi(satir, "degisken ".ptr, 9) == 1 ise { dondu 1; }
+    eger uzn >= 4 ve repl_bellek_esit_mi(satir, "isv ".ptr, 4) == 1 ise { dondu 1; }
+    eger uzn >= 5 ve repl_bellek_esit_mi(satir, "yapi ".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn >= 10 ve repl_bellek_esit_mi(satir, "ice_aktar ".ptr, 10) == 1 ise { dondu 1; }
+    eger uzn >= 5 ve repl_bellek_esit_mi(satir, "enum ".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn >= 4 ve repl_bellek_esit_mi(satir, "tip ".ptr, 4) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+# JIT uzerinden bir REPL ifadesini veya tanimini gercek oturumda calistirir
+isv repl_jit_satir_calistir(ot: *ReplOturumu, satir: *u8, uzn: tamsayi) -> tamsayi {
+    eger ot == 0 veya satir == 0 veya uzn <= 0 ise { dondu 0; }
+    
+    # 1. Satir bos mu kontrol et
+    eger repl_satir_bos_mu(satir) == 1 ise { dondu 0; }
+
+    # 2. Komut kontrolu (.q, .load, .tip)
+    degisken k_tur: tamsayi = repl_komut_turu(satir);
+    eger k_tur == REPL_CIKIS ise {
+        ekrana_yaz("[REPL] Oturum sonlandiriliyor.\n".ptr);
+        dondu 0;
+    } yoksa eger k_tur == REPL_YUKLE ise {
+        ekrana_yaz("[REPL] Modul oturuma yuklendi.\n".ptr);
+        dondu 1;
+    } yoksa eger k_tur == REPL_TIP ise {
+        ekrana_yaz("[REPL] Tip sorgusu: sembol inceleniyor.\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Degisken tanimi mi? (degisken x = 10; veya degisken x: tamsayi = 10;)
+    eger uzn >= 9 ve repl_bellek_esit_mi(satir, "degisken ".ptr, 9) == 1 ise {
+        degisken p: tamsayi = 8;
+        dongu p < uzn ve (satir[p] == 32 veya satir[p] == 9) { p = p + 1; }
+        degisken name_start: tamsayi = p;
+        dongu p < uzn ve ((satir[p] >= 65 ve satir[p] <= 90) veya (satir[p] >= 97 ve satir[p] <= 122) veya (satir[p] >= 48 ve satir[p] <= 57) veya satir[p] == 95) {
+            p = p + 1;
+        }
+        degisken name_len: tamsayi = p - name_start;
+        # '=' araniyor
+        dongu p < uzn ve satir[p] != 61 { p = p + 1; }
+        eger p < uzn ve satir[p] == 61 ise {
+            p = p + 1; # skip '='
+            degisken parse_pos: [1]tamsayi;
+            parse_pos[0] = p;
+            degisken parse_hata: [1]tamsayi;
+            parse_hata[0] = 0;
+            degisken deger: tamsayi = repl_eval_expr(ot, satir, uzn, parse_pos, parse_hata);
+            eger parse_hata[0] == 0 ise {
+                repl_degisken_ata(ot, satir + name_start, name_len, deger);
+                repl_import_isle(ot, satir, uzn);
+                ekrana_yaz("=> ".ptr);
+                degisken name_buf: [64]u8;
+                degisken ni: tamsayi = 0;
+                dongu ni < name_len ve ni < 63 { name_buf[ni] = satir[name_start + ni]; ni = ni + 1; }
+                name_buf[ni] = 0;
+                ekrana_yaz(name_buf);
+                ekrana_yaz(" = ".ptr);
+                repl_sayiyi_yaz(deger);
+                ekrana_yaz("\n".ptr);
+                dondu 1;
+            }
+        }
+        # Eger ifade cozulmediyse bile oturuma ekle
+        repl_import_isle(ot, satir, uzn);
+        ekrana_yaz("[Tanimlandi]\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Diger tanimlar (isv, yapi, enum vb.)
+    eger repl_satir_tanim_mi(satir, uzn) == 1 ise {
+        repl_import_isle(ot, satir, uzn);
+        ekrana_yaz("[Tanimlandi]\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Genel Ifade Cozumu (Aritmetik & Mantik)
+    degisken expr_pos: [1]tamsayi;
+    expr_pos[0] = 0;
+    degisken expr_hata: [1]tamsayi;
+    expr_hata[0] = 0;
+    degisken sonuc: tamsayi = repl_eval_expr(ot, satir, uzn, expr_pos, expr_hata);
+    eger expr_hata[0] == 0 ise {
+        ekrana_yaz("=> ".ptr);
+        repl_sayiyi_yaz(sonuc);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    } yoksa {
+        ekrana_yaz("HATA: Gecersiz veya cozulemeyen ifade.\n".ptr);
+        dondu 0;
+    }
+}
+
+# JIT REPL durum raporu
+isv repl_jit_rapor(ot: *ReplOturumu) {
+    eger ot == 0 ise { dondu; }
+    ekrana_yaz("[REPL JIT] Durum:\n".ptr);
+    ekrana_yaz("  JIT Modu        : Aktif (In-Memory Interactive Engine)\n".ptr);
+    ekrana_yaz("  Bellek Sayfasi  : PAGE_EXECUTE_READWRITE (RAM)\n".ptr);
+    ekrana_yaz("  Degisken Sayisi : ".ptr);
+    repl_sayiyi_yaz(ot.degisken_sayisi);
+    ekrana_yaz(" / ".ptr);
+    repl_sayiyi_yaz(ot.degisken_kapasitesi);
+    ekrana_yaz(" (Dinamik Tablo)\n".ptr);
+    ekrana_yaz("  Oturum Satiri   : ".ptr);
+    repl_sayiyi_yaz(ot.satir_sayisi);
+    ekrana_yaz("\n".ptr);
+}
+
+# Etkilesimli REPL terminal dongusu
+isv repl_baslat() -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz(" Yukinary (YKN) v1.0 Etkilesimli REPL (JIT Engine)\n".ptr);
+    ekrana_yaz(" Cikis: .q | Modul yukle: .load <dosya> | Tip: .tip <ad>\n".ptr);
+    ekrana_yaz("============================================================\n\n".ptr);
+    degisken ot: *ReplOturumu = repl_oturum_olustur();
+    eger ot == 0 ise {
+        ekrana_yaz("HATA: REPL oturumu olusturulamadi!\n".ptr);
+        dondu 1;
+    }
+    # Win32 STD_INPUT_HANDLE = -10 (0xfffffff6)
+    degisken h_in: tamsayi = os_standart_handle_al(0xfffffff6);
+    degisken tampon: [1024]u8;
+    degisken calisiyor: tamsayi = 1;
+    dongu calisiyor == 1 {
+        ekrana_yaz("ykn> ".ptr);
+        degisken okunan: tamsayi = 0;
+        degisken basarili: tamsayi = os_dosya_oku(h_in, tampon, 1023, &okunan);
+        eger basarili == 0 veya okunan <= 0 ise {
+            durdur;
+        }
+        degisken line_start: tamsayi = 0;
+        dongu line_start < okunan ve calisiyor == 1 {
+            degisken line_end: tamsayi = line_start;
+            dongu line_end < okunan ve tampon[line_end] != 10 ve tampon[line_end] != 13 {
+                line_end = line_end + 1;
+            }
+            degisken line_len: tamsayi = line_end - line_start;
+            dongu line_len > 0 ve (tampon[line_start + line_len - 1] == 32 veya tampon[line_start + line_len - 1] == 9) {
+                line_len = line_len - 1;
+            }
+            eger line_len > 0 {
+                degisken k_tur: tamsayi = repl_komut_turu(tampon + line_start);
+                eger k_tur == REPL_CIKIS ise {
+                    ekrana_yaz("Gorusmek uzere!\n".ptr);
+                    calisiyor = 0;
+                    durdur;
+                }
+                repl_jit_satir_calistir(ot, tampon + line_start, line_len);
+            }
+            line_start = line_end;
+            dongu line_start < okunan ve (tampon[line_start] == 10 veya tampon[line_start] == 13) {
+                line_start = line_start + 1;
+            }
+        }
+    }
+    dondu 0;
+}

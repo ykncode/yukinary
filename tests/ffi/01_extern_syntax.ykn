@@ -1,0 +1,7 @@
+# Faz 9: #c-lib Direktif ve FFI Sözdizimi Testi
+#c-lib "kernel32";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("FFI SYNTAX OK\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,509 @@
+# ============================================================
+# Yukinary (YKN) Guvenlik Analiz Motoru (src/safety.ykn)
+# GOREV 4.1: Pointer Lifetime Tracking
+#
+# Not: Codegen yapi alanlari 32 alana kadar tam desteklidir
+# (tests/codegen/02_large_struct_offset.ykn ile dogrulandi).
+# - GuvenlikMotoru: 6 alan
+# - Pointer hash tablolari: LinkedList + bellek_tahsis_et ile
+# ============================================================
+
+# GuvenlikMotoru struct — maksimum 6 guvenilir alan
+yapi GuvenlikMotoru {
+    aktif_mi: tamsayi;
+    guvenli_derinlik: tamsayi;
+    null_kontrollu: tamsayi;
+    sinir_kontrollu: tamsayi;
+    hata_sayisi: tamsayi;
+    uyari_sayisi: tamsayi;
+}
+
+# Hash tablosu dugumu — linked list
+yapi HashDugum {
+    deger: tamsayi;
+    sonraki: *HashDugum;
+}
+
+# Tek motora ait global hash listesi
+# (app'de genellikle tek motor kullanilir)
+degisken g_kayitli_bas: *HashDugum = 0;
+degisken g_kayitli_adet: tamsayi = 0;
+degisken g_serbest_bas: *HashDugum = 0;
+degisken g_serbest_adet: tamsayi = 0;
+
+isv compiler_tahsis_et(boyut: tamsayi) -> *u8 {
+    dondu bellek_tahsis_et(boyut);
+}
+
+isv bellek_esit_mi(p1: *u8, p2: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        eger p1[i] != p2[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+
+# PointerKayit: geriye donuk uyumluluk
+yapi PointerKayit {
+    ptr_hash: tamsayi;
+    isim_ptr: *u8;
+    isim_uzn: tamsayi;
+    kaynak_turu: tamsayi;
+    guvenli_mi: tamsayi;
+    kacan_mi: tamsayi;
+    sonraki: *PointerKayit;
+}
+
+# ============================================================
+# DJB2 hash
+# ============================================================
+isv safety_djb2(isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken h: tamsayi = 5381;
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        h = (h * 33) + isim[i];
+        i = i + 1;
+    }
+    dondu h;
+}
+
+# ============================================================
+# Motor olusturma
+# ============================================================
+isv guvenlik_motoru_olustur() -> *GuvenlikMotoru {
+    degisken m: *GuvenlikMotoru = compiler_tahsis_et(64);
+    m.aktif_mi = 0;
+    m.guvenli_derinlik = 0;
+    m.null_kontrollu = 0;
+    m.sinir_kontrollu = 0;
+    m.hata_sayisi = 0;
+    m.uyari_sayisi = 0;
+    # Global hash listelerini temizle
+    g_kayitli_bas = 0;
+    g_kayitli_adet = 0;
+    g_serbest_bas = 0;
+    g_serbest_adet = 0;
+    dondu m;
+}
+
+isv guvenlik_modunu_ayarla(m: *GuvenlikMotoru, aktif: tamsayi) {
+    eger m == 0 ise { dondu; }
+    eger aktif == 1 ise {
+        m.guvenli_derinlik = m.guvenli_derinlik + 1;
+        m.aktif_mi = 1;
+    } yoksa {
+        eger m.guvenli_derinlik > 0 ise {
+            m.guvenli_derinlik = m.guvenli_derinlik - 1;
+        }
+        eger m.guvenli_derinlik == 0 ise {
+            m.aktif_mi = 0;
+        }
+    }
+}
+
+# ============================================================
+# Hash listesi yardimcilari
+# ============================================================
+isv hash_listede_mi(bas: *HashDugum, h: tamsayi) -> tamsayi {
+    degisken iter: *HashDugum = bas;
+    dongu iter != 0 {
+        eger iter.deger == h ise { dondu 1; }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+isv hash_listeden_sil(bas_ptr: **HashDugum, adet_ptr: *tamsayi, h: tamsayi) {
+    degisken onceki: *HashDugum = 0;
+    degisken iter: *HashDugum = *bas_ptr;
+    dongu iter != 0 {
+        eger iter.deger == h ise {
+            eger onceki == 0 ise {
+                *bas_ptr = iter.sonraki;
+            } yoksa {
+                onceki.sonraki = iter.sonraki;
+            }
+            *adet_ptr = *adet_ptr - 1;
+            dondu;
+        }
+        onceki = iter;
+        iter = iter.sonraki;
+    }
+}
+
+isv hash_listeye_ekle(bas_ptr: **HashDugum, adet_ptr: *tamsayi, h: tamsayi) {
+    eger hash_listede_mi(*bas_ptr, h) == 1 ise { dondu; }
+    degisken dugum: *HashDugum = compiler_tahsis_et(24);
+    dugum.deger = h;
+    dugum.sonraki = *bas_ptr;
+    *bas_ptr = dugum;
+    *adet_ptr = *adet_ptr + 1;
+}
+
+# ============================================================
+# GOREV 4.1: Pointer Kayit / Serbest / Gecerlilik
+# ============================================================
+
+isv pointer_kaydet(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi, kaynak: tamsayi) {
+    eger isim == 0 veya uzn <= 0 ise { dondu; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    # Serbest listesinden cikar (yeniden gecerli)
+    hash_listeden_sil(&g_serbest_bas, &g_serbest_adet, h);
+    # Kayitli listeye ekle
+    hash_listeye_ekle(&g_kayitli_bas, &g_kayitli_adet, h);
+}
+
+isv pointer_serbest_birak(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi) {
+    eger isim == 0 veya uzn <= 0 ise { dondu; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    hash_listeden_sil(&g_kayitli_bas, &g_kayitli_adet, h);
+    hash_listeye_ekle(&g_serbest_bas, &g_serbest_adet, h);
+}
+
+isv pointer_gecerli_mi(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 1; }
+    eger pointer_serbest_mi(m, isim, uzn) == 1 ise { dondu 0; }
+    dondu 1;
+}
+
+isv pointer_serbest_mi(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 0; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    dondu hash_listede_mi(g_serbest_bas, h);
+}
+
+isv gm_kayitli_adet(m: *GuvenlikMotoru) -> tamsayi {
+    dondu g_kayitli_adet;
+}
+
+isv gm_serbest_adet(m: *GuvenlikMotoru) -> tamsayi {
+    dondu g_serbest_adet;
+}
+
+# ============================================================
+# GOREV 4.2: Use-After-Free Temel Analizi
+# ============================================================
+
+# Tum kayitli pointer'lari serbest birak — arena reset simulasyonu
+# Arena tabanlı modelde bireysel free yok; tüm arena sıfırlanınca
+# o arena'dan gelen tüm pointer'lar geçersiz olur.
+isv pointer_grubu_serbest_birak(m: *GuvenlikMotoru) {
+    # Kayitli listenin tamamını serbest listeye taşı
+    degisken iter: *HashDugum = g_kayitli_bas;
+    dongu iter != 0 {
+        degisken siradaki: *HashDugum = iter.sonraki;
+        # Serbest listesine ekle (zaten listede olabilir, kontrol et)
+        eger hash_listede_mi(g_serbest_bas, iter.deger) == 0 ise {
+            degisken yeni: *HashDugum = compiler_tahsis_et(24);
+            yeni.deger = iter.deger;
+            yeni.sonraki = g_serbest_bas;
+            g_serbest_bas = yeni;
+            g_serbest_adet = g_serbest_adet + 1;
+        }
+        iter = siradaki;
+    }
+    # Kayitli listeyi temizle
+    g_kayitli_bas = 0;
+    g_kayitli_adet = 0;
+}
+
+# Dogrudan UAF kontrolu: verilen pointer serbest listede ise hata
+# Donus: 1 = UAF tespit edildi, 0 = temiz
+isv uaf_kontrol(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger m == 0 veya isim == 0 veya uzn <= 0 ise { dondu 0; }
+    eger pointer_serbest_mi(m, isim, uzn) == 1 ise {
+        m.hata_sayisi = m.hata_sayisi + 1;
+        ekrana_yaz("[UAF] Serbest birakilmis pointer'a erisim tespit edildi!\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# UAF hata ozeti — hata_sayisi > 0 ise yazar
+isv guvenlik_uaf_raporu(m: *GuvenlikMotoru) {
+    eger m == 0 ise { dondu; }
+    eger m.hata_sayisi == 0 ise {
+        ekrana_yaz("[Guvenlik] UAF: Hata tespit edilmedi.\n".ptr);
+        dondu;
+    }
+    ekrana_yaz("[Guvenlik] UAF HATA: Toplam ".ptr);
+    sayiyi_yazdir(m.hata_sayisi);
+    ekrana_yaz(" use-after-free erisimi.\n".ptr);
+}
+
+# ============================================================
+# AST dugum denetimi
+# ============================================================
+isv guvenlik_dugumu_denetle(m: *GuvenlikMotoru, dugum: *AstDugum) {
+    eger m == 0 veya dugum == 0 ise { dondu; }
+
+    # AST_DEGISKEN_TANIMI (7): ptr = compiler_tahsis_et(N)
+    eger dugum.tip == 7 ise {
+        eger dugum.sag != 0 ve dugum.sag.tip == 11 ise {
+            eger dugum.sag.sol != 0 ve dugum.sag.sol.ilk_jeton != 0 ise {
+                degisken fn_uzn: tamsayi = dugum.sag.sol.ilk_jeton.uzunluk;
+                degisken fn_ptr: *u8 = dugum.sag.sol.ilk_jeton.baslangic;
+                eger fn_uzn == 16 ve bellek_esit_mi(fn_ptr, "bellek_tahsis_et".ptr, 16) == 1 ise {
+                    eger dugum.ilk_jeton != 0 ise {
+                        pointer_kaydet(m, dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk, 1);
+                    }
+                }
+            }
+        }
+    }
+
+    # AST_ATAMA (6): ptr = 0 → serbest birak; veya yeniden deger ataninca affine aktiflestir
+    eger dugum.tip == 6 ise {
+        eger dugum.sag != 0 ise { guvenlik_dugumu_denetle(m, dugum.sag); }
+        eger dugum.sag != 0 ve dugum.sag.tip == 1 ise {
+            eger dugum.sag.ilk_jeton != 0 ve dugum.sag.ilk_jeton.uzunluk == 1 ise {
+                eger dugum.sag.ilk_jeton.baslangic[0] == 48 ise {
+                    eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+                        pointer_serbest_birak(m, dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                    }
+                } yoksa {
+                    eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+                        affine_yeniden_aktiflestir(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                    }
+                }
+            }
+        } yoksa {
+            eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+                affine_yeniden_aktiflestir(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+            }
+        }
+        eger dugum.sol != 0 ve dugum.sol.tip != 4 ise {
+            guvenlik_dugumu_denetle(m, dugum.sol);
+        }
+        dondu;
+    }
+
+    # AST_KIMLIK (4): serbest pointer kullanimi → UAF hatasi
+    eger dugum.tip == 4 ise {
+        eger dugum.ilk_jeton != 0 ise {
+            eger pointer_serbest_mi(m, dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk) == 1 ise {
+                m.hata_sayisi = m.hata_sayisi + 1;
+                ekrana_yaz("[UAF] Serbest birakilmis pointer kullanimi: '".ptr);
+                # isim uzunlugunu kontrol ederek yaz
+                degisken uaf_uzn: tamsayi = dugum.ilk_jeton.uzunluk;
+                eger uaf_uzn > 32 ise { uaf_uzn = 32; }
+                degisken uaf_i: tamsayi = 0;
+                degisken uaf_buf: [48]u8;
+                dongu uaf_i < uaf_uzn {
+                    uaf_buf[uaf_i] = dugum.ilk_jeton.baslangic[uaf_i];
+                    uaf_i = uaf_i + 1;
+                }
+                uaf_buf[uaf_i] = 39; # "'"
+                uaf_i = uaf_i + 1;
+                uaf_buf[uaf_i] = 10; # '\n'
+                uaf_i = uaf_i + 1;
+                uaf_buf[uaf_i] = 0;
+                ekrana_yaz(uaf_buf);
+            }
+        }
+    }
+
+    # AST_UNARY (19): *ptr → null kontrol zorunlulugu
+    eger dugum.tip == 19 ise {
+        eger m.aktif_mi == 1 ve m.null_kontrollu == 0 ise {
+            m.hata_sayisi = m.hata_sayisi + 1;
+        }
+    }
+
+    # AST_INDEKS_ERISIMI (18): dizi[i] → sinir kontrol zorunlulugu
+    eger dugum.tip == 18 ise {
+        eger m.aktif_mi == 1 ve m.sinir_kontrollu == 0 ise {
+            m.hata_sayisi = m.hata_sayisi + 1;
+        }
+    }
+
+    eger dugum.sol != 0 ise { guvenlik_dugumu_denetle(m, dugum.sol); }
+    eger dugum.sag != 0 ise { guvenlik_dugumu_denetle(m, dugum.sag); }
+    eger dugum.govde != 0 ise { guvenlik_dugumu_denetle(m, dugum.govde); }
+    eger dugum.yoksa_govde != 0 ise { guvenlik_dugumu_denetle(m, dugum.yoksa_govde); }
+}
+
+isv guvenlik_analizi_yap(m: *GuvenlikMotoru, ast_kok: *AstDugum) -> tamsayi {
+    eger m == 0 veya ast_kok == 0 ise { dondu 0; }
+    degisken cur: *AstDugum = ast_kok;
+    dongu cur != 0 {
+        guvenlik_dugumu_denetle(m, cur);
+        cur = cur.sonraki;
+    }
+    dondu m.hata_sayisi;
+}
+
+# ============================================================
+# Lifetime ozet raporu
+# ============================================================
+isv guvenlik_lifetime_raporu(m: *GuvenlikMotoru) {
+    eger m == 0 ise { dondu; }
+    eger g_kayitli_adet == 0 ve g_serbest_adet == 0 ise { dondu; }
+    ekrana_yaz("[Guvenlik] Pointer lifetime ozeti:\n".ptr);
+    ekrana_yaz("  Aktif pointer: ".ptr); sayiyi_yazdir(g_kayitli_adet); ekrana_yaz("\n".ptr);
+    eger m.uyari_sayisi > 0 ise {
+        ekrana_yaz("  UYARI: Guvenli blok disi pointer donus: ".ptr);
+        sayiyi_yazdir(m.uyari_sayisi); ekrana_yaz("\n".ptr);
+    }
+    eger g_serbest_adet > 0 ise {
+        ekrana_yaz("  Serbest birakilmis: ".ptr); sayiyi_yazdir(g_serbest_adet); ekrana_yaz("\n".ptr);
+    }
+}
+
+# ============================================================
+# GOREV 4.3: Affine Tip Sahiplik Semantigi (Move Tracking)
+# ============================================================
+# Bir pointer baska degiskene ataninca kaynak "tuketildi" isaretlenir.
+# Tuketilmis degiskene erisim double-use (affine ihlali) olarak raporlanir.
+# Uygulama: *u8 turunden degiskenler icin; g_tukenmis_bas linked list.
+
+degisken g_tukenmis_bas: *HashDugum = 0;
+degisken g_tukenmis_adet: tamsayi = 0;
+
+# Bir degisken "move" edildi (baska degiskene atandi) — kaynak tuketildi
+isv affine_move_kaydet(isim: *u8, uzn: tamsayi) {
+    eger isim == 0 veya uzn <= 0 ise { dondu; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    hash_listeye_ekle(&g_tukenmis_bas, &g_tukenmis_adet, h);
+}
+
+# Degisken tuketilmis mi? 1=evet (affine ihlali), 0=temiz
+isv affine_tukenmis_mi(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 0; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    dondu hash_listede_mi(g_tukenmis_bas, h);
+}
+
+# Affine kontrol: tuketilmis degiskene erisim = double-use hatasi
+# Donus: 1=ihlal tespit edildi, 0=temiz
+isv affine_kontrol(m: *GuvenlikMotoru, isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger m == 0 veya isim == 0 veya uzn <= 0 ise { dondu 0; }
+    eger affine_tukenmis_mi(isim, uzn) == 1 ise {
+        m.hata_sayisi = m.hata_sayisi + 1;
+        ekrana_yaz("[AFFINE] Double-use ihlali: '".ptr);
+        degisken af_uzn: tamsayi = uzn;
+        eger af_uzn > 32 ise { af_uzn = 32; }
+        degisken af_i: tamsayi = 0;
+        degisken af_buf: [40]u8;
+        dongu af_i < af_uzn {
+            af_buf[af_i] = isim[af_i];
+            af_i = af_i + 1;
+        }
+        af_buf[af_i] = 39; af_i = af_i + 1; # "'"
+        af_buf[af_i] = 10; af_i = af_i + 1; # '\n'
+        af_buf[af_i] = 0;
+        ekrana_yaz(af_buf);
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# Tuketilmis degiskeni yeniden gecerli isle (yeni atama yapilinca)
+isv affine_yeniden_aktiflestir(isim: *u8, uzn: tamsayi) {
+    eger isim == 0 veya uzn <= 0 ise { dondu; }
+    degisken h: tamsayi = safety_djb2(isim, uzn);
+    hash_listeden_sil(&g_tukenmis_bas, &g_tukenmis_adet, h);
+}
+
+# Affine ozet raporu
+isv guvenlik_affine_raporu(m: *GuvenlikMotoru) {
+    eger m == 0 ise { dondu; }
+    eger g_tukenmis_adet == 0 ise {
+        ekrana_yaz("[Guvenlik] Affine: Ihlal tespit edilmedi.\n".ptr);
+        dondu;
+    }
+    ekrana_yaz("[Guvenlik] Affine: Tuketilmis degisken sayisi = ".ptr);
+    sayiyi_yazdir(g_tukenmis_adet);
+    ekrana_yaz("\n".ptr);
+}
+
+# ============================================================
+# GOREV 4.4: #guvenli Direktifi Gercek Blok Kapsam Analizi
+# ============================================================
+# AST taramasinda AST_DIREKTIF_GUVENLI dugumu bulununca motor
+# guvenlik modunu acip kapatiyor; is biten blok sonrasinda sifirlaniyor.
+# Lexer/parser'da #guvenli token ID:
+#   - AST_DIREKTIF_PROMPT (27) ve  benzeri token'lar gibi,
+#     yapi AST_GUVENLI_BLOK olarak tag'lenir veya
+#     kodgen'de ozel dugum olarak ele alinir.
+# Mevcut yapi: guvenlik_modunu_ayarla zaten derinlik sayaci icerir.
+# Bu fonksiyon AST'deki blok girisi/cikisini otomatik izler.
+
+# #guvenli blok analizi: ast kok'ten tarayarak guvenli blok girisi/cikislarini
+# otomatik olarak guvenlik_modunu_ayarla ile bildirir.
+isv guvenli_blok_analizi_yap(m: *GuvenlikMotoru, ast_kok: *AstDugum) {
+    eger m == 0 veya ast_kok == 0 ise { dondu; }
+    degisken cur: *AstDugum = ast_kok;
+    dongu cur != 0 {
+        guvenli_dugum_tara(m, cur);
+        cur = cur.sonraki;
+    }
+}
+
+# Tek dugum icin guvenli blok taramasi (ozyineli)
+isv guvenli_dugum_tara(m: *GuvenlikMotoru, dugum: *AstDugum) {
+    eger m == 0 veya dugum == 0 ise { dondu; }
+
+    # AST_DIREKTIF_PROMPT = 27 gibi; #guvenli direktifi icin kontrol
+    # Lexer'da #guvenli TIP_HASH_GUVENLI veya global sabit olarak
+    # kaydedilmistir. AST dugum tipi bulmak icin ilk_jeton kontrolu.
+    eger dugum.tip == 27 veya dugum.tip == 28 ise {
+        eger dugum.ilk_jeton != 0 ise {
+            degisken uzn: tamsayi = dugum.ilk_jeton.uzunluk;
+            degisken ptr: *u8 = dugum.ilk_jeton.baslangic;
+            eger uzn == 7 ve bellek_esit_mi(ptr, "guvenli".ptr, 7) == 1 ise {
+                # #guvenli blok girisi
+                guvenlik_modunu_ayarla(m, 1);
+            }
+        }
+    }
+
+    # Blok govdesi varsa icine gir
+    eger dugum.govde != 0 ise {
+        guvenli_dugum_tara(m, dugum.govde);
+    }
+
+    # #guvenli blok cikisi (blok govdesi islendi)
+    eger dugum.tip == 27 veya dugum.tip == 28 ise {
+        eger dugum.ilk_jeton != 0 ise {
+            degisken uzn2: tamsayi = dugum.ilk_jeton.uzunluk;
+            degisken ptr2: *u8 = dugum.ilk_jeton.baslangic;
+            eger uzn2 == 7 ve bellek_esit_mi(ptr2, "guvenli".ptr, 7) == 1 ise {
+                guvenlik_modunu_ayarla(m, 0);
+            }
+        }
+    }
+
+    eger dugum.sol != 0 ise { guvenli_dugum_tara(m, dugum.sol); }
+    eger dugum.sag != 0 ise { guvenli_dugum_tara(m, dugum.sag); }
+    eger dugum.yoksa_govde != 0 ise { guvenli_dugum_tara(m, dugum.yoksa_govde); }
+}
+
+# #modul_guvenli: tum modul icin guvenli modu ac
+isv modul_guvenli_baslat(m: *GuvenlikMotoru) {
+    eger m == 0 ise { dondu; }
+    guvenlik_modunu_ayarla(m, 1);
+    ekrana_yaz("[Guvenlik] Modul #guvenli modu aktif.\n".ptr);
+}
+
+isv modul_guvenli_bitir(m: *GuvenlikMotoru) {
+    eger m == 0 ise { dondu; }
+    guvenlik_modunu_ayarla(m, 0);
+    ekrana_yaz("[Guvenlik] Modul #guvenli modu kapandi.\n".ptr);
+}
+
+# Genisletilmis guvenlik_analizi_yap: lifetime + UAF + affine + guvenli blok
+isv guvenlik_tam_analizi_yap(m: *GuvenlikMotoru, ast_kok: *AstDugum) -> tamsayi {
+    eger m == 0 veya ast_kok == 0 ise { dondu 0; }
+    # Once #guvenli blok kapsamlarini tara
+    guvenli_blok_analizi_yap(m, ast_kok);
+    # Sonra dugum bazli analiz
+    degisken cur: *AstDugum = ast_kok;
+    dongu cur != 0 {
+        guvenlik_dugumu_denetle(m, cur);
+        cur = cur.sonraki;
+    }
+    dondu m.hata_sayisi;
+}

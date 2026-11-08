@@ -1,0 +1,48 @@
+# ============================================================
+# Örnek 33: Win32 Arayüzlü Labirent Çözücü ve A* Rota Gösterimi
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 6x6 Labirent Hucreleri (0: Bos, 1: Duvar, 2: Rota)
+degisken g_labirent: [36]tamsayi;
+
+isv labirenti_hazirla() {
+    degisken i: tamsayi = 0;
+    dongu (i < 36) { g_labirent[i] = 0; i = i + 1; }
+    # Bazi duvarlar
+    g_labirent[7] = 1;  g_labirent[8] = 1;
+    g_labirent[14] = 1; g_labirent[20] = 1;
+    g_labirent[26] = 1; g_labirent[27] = 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Labirent Cozucu (A*)".ptr, 550, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    labirenti_hazirla();
+
+    # 6x6 Hucre Izgarasi
+    degisken r: tamsayi = 0;
+    dongu (r < 6) {
+        degisken c: tamsayi = 0;
+        dongu (c < 6) {
+            degisken x: tamsayi = 40 + (c * 60);
+            degisken y: tamsayi = 30 + (r * 60);
+            degisken id: tamsayi = 500 + (r * 6 + c);
+            buton_olustur(p_h, " ".ptr, id, x, y, 55, 55);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    buton_olustur(p_h, "Rotayi Coz (A*)".ptr, 1001, 40, 410, 160, 45);
+    buton_olustur(p_h, "Haritayi Sifirla".ptr, 1002, 220, 410, 160, 45);
+
+    ekrana_yaz("Labirent yuklendi. Baslangic: (0,0), Hedef: (5,5)\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

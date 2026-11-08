@@ -1,0 +1,11 @@
+yapi SolTip {
+    deger: tamsayi;
+}
+yapi SagTip {
+    deger: tamsayi;
+}
+isv ana() -> tamsayi {
+    degisken sol: SolTip;
+    degisken sag: SagTip = sol;
+    dondu 0;
+}

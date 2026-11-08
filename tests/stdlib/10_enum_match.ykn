@@ -1,0 +1,97 @@
+# ============================================================
+# tests/stdlib/10_enum_match.ykn
+# Enum, Secenek (Option) ve Sonuc (Result) Eslesme Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+degisken test_enum_bellek: [256]u8;
+degisken test_enum_kullanilan: tamsayi = 0;
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 {
+    eger boyut <= 0 veya test_enum_kullanilan + boyut > 256 ise { dondu 0; }
+    degisken sonuc: *u8 = test_enum_bellek + test_enum_kullanilan;
+    test_enum_kullanilan = test_enum_kullanilan + boyut;
+    dondu sonuc;
+}
+
+ice_aktar "../../std/enum.ykn";
+
+# ------------------------------------------------------------
+# Basit Enum ve Eslesme Fonksiyonu
+# ------------------------------------------------------------
+degisken RENK_KIRMIZI = 0;
+degisken RENK_YESIL   = 1;
+degisken RENK_MAVI    = 2;
+
+isv renk_adi(renk: tamsayi) -> *u8 {
+    eger renk == RENK_KIRMIZI ise {
+        dondu "Kirmizi".ptr;
+    } yoksa eger renk == RENK_YESIL ise {
+        dondu "Yesil".ptr;
+    } yoksa eger renk == RENK_MAVI ise {
+        dondu "Mavi".ptr;
+    } yoksa {
+        dondu "Bilinmeyen".ptr;
+    }
+}
+
+# ------------------------------------------------------------
+# Bolme islemi - Sonuc dondurur
+# ------------------------------------------------------------
+isv guvenli_bol(a: tamsayi, b: tamsayi) -> *u8 {
+    eger b == 0 ise {
+        dondu sonuc_hata("Sifira bolme hatasi".ptr);
+    }
+    dondu sonuc_tamam(a / b);
+}
+
+isv ana() -> tamsayi {
+    # 1. Enum ve Eslesme kontrolu
+    degisken r: tamsayi = RENK_YESIL;
+    degisken ad: *u8 = renk_adi(r);
+    eger ad[0] != 89 ise { # 'Y' harfi (ASCII 89)
+        ekrana_yaz("FAIL: renk adi eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Secenek (Option) kontrolu
+    degisken o1 = secenek_var(42);
+    degisken o2 = secenek_yok();
+
+    eger secenek_var_mi(o1) != 1 ise {
+        ekrana_yaz("FAIL: o1 var olmali\n".ptr);
+        dondu 1;
+    }
+    eger secenek_var_mi(o2) != 0 ise {
+        ekrana_yaz("FAIL: o2 yok olmali\n".ptr);
+        dondu 1;
+    }
+    eger secenek_deger_al(o1, 0) != 42 ise {
+        ekrana_yaz("FAIL: o1 degeri 42 olmali\n".ptr);
+        dondu 1;
+    }
+    eger secenek_deger_al(o2, 99) != 99 ise {
+        ekrana_yaz("FAIL: o2 varsayilan 99 donmeli\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Sonuc (Result) kontrolu
+    degisken s_ok = guvenli_bol(100, 4);
+    degisken s_err = guvenli_bol(100, 0);
+
+    eger sonuc_tamam_mi(s_ok) != 1 ise {
+        ekrana_yaz("FAIL: s_ok basarili olmali\n".ptr);
+        dondu 1;
+    }
+    eger sonuc_deger_al(s_ok, 0) != 25 ise {
+        ekrana_yaz("FAIL: 100/4 = 25 olmali\n".ptr);
+        dondu 1;
+    }
+
+    eger sonuc_hata_mi(s_err) != 1 ise {
+        ekrana_yaz("FAIL: s_err hatali olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("ENUM-MATCH-PASS\n".ptr);
+    dondu 0;
+}

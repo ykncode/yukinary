@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 83: Konsol Tabanlı Düzenli İfade (Regex) ve NFA/DFA Motoru
+# ============================================================
+
+isv regex_esles(pat: *u8, metin: *u8) -> tamsayi {
+    degisken pi: tamsayi = 0;
+    degisken mi: tamsayi = 0;
+
+    dongu (pat[pi] != 0 ve metin[mi] != 0) {
+        eger pat[pi] == 46 ise {
+            # Nokta (.) her karakterle eslesir
+            pi = pi + 1;
+            mi = mi + 1;
+        } yoksa eger pat[pi] == metin[mi] ise {
+            pi = pi + 1;
+            mi = mi + 1;
+        } yoksa {
+            dondu 0;
+        }
+    }
+    eger pat[pi] == 0 ve metin[mi] == 0 ise { dondu 1; }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Regex NFA / DFA Motoru ===\n".ptr);
+    degisken pat: *u8 = "y.k.n".ptr;
+    degisken txt: *u8 = "yakin".ptr;
+
+    degisken eslesti: tamsayi = regex_esles(pat, txt);
+    ekrana_yaz("Kural: y.k.n | Metin: yakin | Sonuc: ".ptr);
+    eger eslesti == 1 ise {
+        ekrana_yaz("ESLESTI (Match)\n".ptr);
+    } yoksa {
+        ekrana_yaz("ESLESMEDI\n".ptr);
+    }
+    dondu 0;
+}

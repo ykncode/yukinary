@@ -1,0 +1,52 @@
+# ============================================================
+# Örnek 48: Win32 Arayüzlü QR Kod ve Matris Barkod Üretici
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 8x8 Mini QR Matrisi
+degisken g_qr_matris: [64]tamsayi;
+
+isv qr_deseni_olustur(metin: *u8) {
+    degisken i: tamsayi = 0;
+    dongu (i < 64) {
+        g_qr_matris[i] = (i * 7 + 13) % 2; # Ornek desen
+        i = i + 1;
+    }
+    # Kose bulucu desenler
+    g_qr_matris[0] = 1; g_qr_matris[1] = 1;
+    g_qr_matris[8] = 1; g_qr_matris[9] = 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN QR Kod Uretici".ptr, 580, 480);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Metin Giris Kutusu
+    metin_kutusu_olustur(p_h, 101, 30, 20, 360, 35);
+    buton_olustur(p_h, "QR Uret".ptr, 201, 410, 20, 130, 35);
+
+    # 8x8 QR Piksel Izgarasi
+    qr_deseni_olustur("https://yukinary.org".ptr);
+    degisken r: tamsayi = 0;
+    dongu (r < 8) {
+        degisken c: tamsayi = 0;
+        dongu (c < 8) {
+            degisken x: tamsayi = 110 + (c * 38);
+            degisken y: tamsayi = 80 + (r * 38);
+            degisken id: tamsayi = 1000 + (r * 8 + c);
+            buton_olustur(p_h, "#".ptr, id, x, y, 36, 36);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    buton_olustur(p_h, "PNG Olarak Kaydet".ptr, 301, 30, 400, 510, 35);
+
+    ekrana_yaz("QR Kod olusturucu hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

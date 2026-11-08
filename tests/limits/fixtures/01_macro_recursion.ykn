@@ -1,0 +1,6 @@
+makro sonsuz(x) { sonsuz(x) }
+
+isv ana() -> tamsayi {
+    degisken r: tamsayi = sonsuz(1);
+    dondu r;
+}

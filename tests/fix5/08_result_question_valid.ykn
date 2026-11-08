@@ -1,0 +1,9 @@
+ice_aktar "std/sonuc.ykn";
+
+isv sayi_ver() -> sonuc<tamsayi> {
+    dondu sonuc_tamam(42);
+}
+isv ana() -> tamsayi {
+    degisken x: tamsayi = sayi_ver()?;
+    dondu x;
+}

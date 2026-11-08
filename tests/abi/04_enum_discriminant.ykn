@@ -1,0 +1,17 @@
+# ABI Test: Enum discriminant layout
+# Enum varyantlarinin discriminant degerlerini dogrular
+enum Renk { Kirmizi; Yesil; Mavi; }
+enum Durum { Aktif; Pasif; Bekleme; }
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Discriminant degerler sira ile 0, 1, 2 olmali
+    degisken k: tamsayi = Renk::Kirmizi;
+    degisken y: tamsayi = Renk::Yesil;
+    degisken m: tamsayi = Renk::Mavi;
+    eger k == 0 ve y == 1 ve m == 2 ise {
+        ekrana_yaz("ABI_ENUM_DISCRIMINANT_PASS\n".ptr);
+        dondu 0;
+    }
+    ekrana_yaz("ABI_ENUM_DISCRIMINANT_FAIL\n".ptr);
+    dondu 1;
+}

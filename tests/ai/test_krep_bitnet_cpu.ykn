@@ -1,0 +1,271 @@
+# ============================================================
+# tests/ai/test_krep_bitnet_cpu.ykn
+# BitNet-b1.58-2B-4T modelinden saf CPU (AVX2/SIMD) kullanarak krep tarifi alir.
+# Tamamen CPU uzerinde 80 token greedy cikarim.
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("=== BitNet-b1.58-2B-4T Saf CPU Krep Tarifi Uretimi ===\n".ptr);
+
+    degisken model_yolu: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    degisken durum_ptr: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_ptr == 0 { ekrana_yaz("HATA: Bellek tahsis edilemedi\n".ptr); dondu 1; }
+    eger gguf_yukle(model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("HATA: GGUF yuklenemedi\n".ptr); dondu 2;
+    }
+
+    degisken token_offsets: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken token_lengths: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken merge_offsets: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken merge_lengths: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken token_count: tamsayi = 0;
+    degisken merge_count: tamsayi = 0;
+    eger bitnet_tokenizer_metadata_yukle(durum_ptr, token_offsets, token_lengths, 128256,
+           merge_offsets, merge_lengths, 280147, &token_count, &merge_count) == 0 {
+        ekrana_yaz("HATA: Tokenizer metadata okunamadi\n".ptr); dondu 3;
+    }
+
+    degisken spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&spec);
+    spec.model_adi = durum_ptr->mimari_adi;
+    spec.mimari = LLM_MIMARI_BITNET;
+    spec.quant_tipi = durum_ptr->quant_tipi;
+    spec.vocab_boyutu = durum_ptr->vocab_boyutu;
+    spec.gizli_boyut = durum_ptr->gizli_boyut;
+    spec.katman_sayisi = durum_ptr->katman_sayisi;
+    spec.context_boyutu = durum_ptr->context_boyutu;
+    spec.kafa_sayisi = durum_ptr->kafa_sayisi;
+    spec.kv_kafa_sayisi = durum_ptr->kv_kafa_sayisi;
+    spec.kafa_boyutu = durum_ptr->kafa_boyutu;
+    spec.ffn_boyutu = durum_ptr->ffn_boyutu;
+    spec.rope_boyutu = durum_ptr->rope_boyutu;
+    spec.rope_freq_base_q16 = durum_ptr->rope_freq_base_q16;
+    spec.norm_eps_q16 = durum_ptr->norm_eps_q16;
+    spec.bos_token_id = durum_ptr->bos_token_id;
+    spec.eos_token_id = durum_ptr->eos_token_id;
+
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("HATA: Model loader baslatilamadi\n".ptr); dondu 4;
+    }
+    ekrana_yaz("[CPU RAM CACHE] Model RAM'e yukleniyor (1.15 GB)...\n".ptr);
+    degisken t_ram0: tamsayi = ykn_llm_clock_ns();
+    eger llm_model_loader_ram_yukle(&loader, 1187801280) == 0 {
+        ekrana_yaz("HATA: Model RAM'e yuklenemedi!\n".ptr); dondu 41;
+    }
+    degisken t_ram1: tamsayi = ykn_llm_clock_ns();
+    ekrana_yaz("[CPU RAM CACHE] Basarili! Yukleme suresi: ".ptr);
+    sayi_yaz((t_ram1 - t_ram0) / 1000000);
+    ekrana_yaz(" ms\n".ptr);
+
+    degisken adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(spec.mimari, &adapter) == 0 {
+        ekrana_yaz("HATA: Architecture adapter baslatilamadi\n".ptr); dondu 5;
+    }
+
+    degisken cache_capacity: tamsayi = 160;
+    degisken hidden_bytes: tamsayi = spec.gizli_boyut * 8;
+    degisken kv_width: tamsayi = spec.kv_kafa_sayisi * spec.kafa_boyutu;
+    degisken kv_bytes: tamsayi = cache_capacity * spec.katman_sayisi * kv_width * 8;
+    degisken max_weight_bytes: tamsayi = 8388608;
+    degisken logits_bytes: tamsayi = spec.vocab_boyutu * 8;
+
+    degisken hidden: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q: *tamsayi = bellek_tahsis_et(hidden_bytes + kv_width * 16);
+    degisken key: *tamsayi = q + hidden_bytes;
+    degisken value: *tamsayi = key + kv_width * 8;
+    degisken attention: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &loader;
+    paket.adapter = &adapter;
+    paket.spec = &spec;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn;
+    paket.logits = logits;
+    paket.logits_kapasitesi = spec.vocab_boyutu;
+    paket.logits_aktif = 1;
+    paket.agirlik_buffer = weights;
+    paket.agirlik_kapasitesi = max_weight_bytes;
+    paket.kv_anahtar = key_cache;
+    paket.kv_deger = value_cache;
+    paket.kafa_sayisi = spec.kafa_sayisi;
+    paket.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = spec.kafa_boyutu;
+    paket.kv_kapasitesi = cache_capacity;
+    paket.token_konumu = 0;
+    paket.ffn_boyutu = spec.ffn_boyutu;
+
+    degisken icra: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra, &paket) == 0 {
+        ekrana_yaz("HATA: Transformer durumu kurulamadi\n".ptr); dondu 6;
+    }
+
+    # Prompt hazirlama
+    degisken prompt_ids: [64]tamsayi;
+    degisken prompt_text: *u8 = "Human: Tell me a short crepe recipe.\n\nBITNETAssistant: ".ptr;
+    degisken prompt_length: tamsayi = 0;
+    dongu prompt_text[prompt_length] != 0 { prompt_length = prompt_length + 1; }
+    degisken prompt_count: tamsayi = bitnet_bpe_ascii_kodla(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        merge_offsets, merge_lengths, merge_count, prompt_text, prompt_length,
+        prompt_ids, 64);
+
+    degisken full_prompt: [66]tamsayi;
+    full_prompt[0] = spec.bos_token_id;
+    degisken prompt_copy: tamsayi = 0;
+    dongu prompt_copy < prompt_count {
+        full_prompt[prompt_copy + 1] = prompt_ids[prompt_copy];
+        prompt_copy = prompt_copy + 1;
+    }
+    full_prompt[prompt_count + 1] = spec.eos_token_id;
+
+    # Saf CPU ve SIMD Backend
+    eger ykn_llm_simd_backend() > 0 {
+        g_llm_native_simd_aktif = 1;
+        ekrana_yaz("[SIMD] Native AVX2/SIMD CPU backend aktif edildi.\n".ptr);
+    } yoksa {
+        ekrana_yaz("[CPU] Standart CPU skaler backend aktif.\n".ptr);
+    }
+
+    # 80 Token uretimi (Saf CPU Krep Tarifi)
+    degisken generated_tokens: [96]tamsayi;
+    degisken generation_request: LLMGreedyGenerationRequest;
+    generation_request.icra = &icra;
+    generation_request.durum = durum_ptr;
+    generation_request.prompt_tokenleri = full_prompt;
+    generation_request.prompt_adedi = prompt_count + 2;
+    generation_request.uretilen_tokenler = generated_tokens;
+    generation_request.uretilen_kapasitesi = 96;
+    generation_request.max_yeni_token = 80;
+
+    LLM_REPETITION_PENALTY_Q16 = 75366; # 1.15x Balanced Repetition Penalty
+    TRANSFORMER_TIME_FFN_NS = 0;
+    TRANSFORMER_TIME_ATTN_NS = 0;
+    TRANSFORMER_TIME_QKV_NS = 0;
+    TRANSFORMER_TIME_OPROJ_NS = 0;
+    G_PROF_HEAD_NS = 0;
+    TRANSFORMER_TIME_NORM_NS = 0;
+    TRANSFORMER_TIME_ROPE_NS = 0;
+    G_PROF_EMBD_NS = 0;
+    degisken t_gen_start: tamsayi = ykn_llm_clock_ns();
+    degisken generated_count: tamsayi = llm_transformer_greedy_generate(&generation_request);
+    degisken t_gen_end: tamsayi = ykn_llm_clock_ns();
+
+    eger generated_count <= 0 {
+        ekrana_yaz("HATA: Token uretim hatasi kod=".ptr);
+        sayi_yaz(generated_count);
+        ekrana_yaz("\n".ptr);
+        dondu 8;
+    }
+
+    ekrana_yaz("[INFERENCE] Tamamlandi! Uretilen token sayisi: ".ptr);
+    sayi_yaz(generated_count);
+    ekrana_yaz(" | Saf CPU Uretim Suresi: ".ptr);
+    sayi_yaz((t_gen_end - t_gen_start) / 1000000);
+    degisken total_ms: tamsayi = (t_gen_end - t_gen_start) / 1000000;
+    eger total_ms <= 0 { total_ms = 1; }
+    degisken tok_sec_x10: tamsayi = (generated_count * 10000) / total_ms;
+    degisken tok_int: tamsayi = tok_sec_x10 / 10;
+    degisken tok_frac: tamsayi = tok_sec_x10 % 10;
+    ekrana_yaz(" ms | HIZ: ".ptr);
+    sayi_yaz(tok_int);
+    ekrana_yaz(".".ptr);
+    sayi_yaz(tok_frac);
+    ekrana_yaz(" token/saniye (tok/s)\n\n--- BITNET CPU KREP TARIFI CIKTISI ---\n".ptr);
+
+    degisken generated_text: [8192]u8;
+    degisken generated_text_len: tamsayi = 0;
+    degisken token_i: tamsayi = 0;
+    dongu token_i < generated_count {
+        degisken piece_raw: [256]u8;
+        degisken piece_raw_len: tamsayi = bitnet_token_kopyala(
+            durum_ptr->buffer, token_offsets, token_lengths, token_count,
+            generated_tokens[token_i], piece_raw, 256);
+        degisken piece_decoded: [256]u8;
+        degisken piece_len: tamsayi = bitnet_gpt2_byte_decode(
+            piece_raw, piece_raw_len, piece_decoded, 256);
+        eger piece_raw_len > 0 ve piece_len >= 0 ve generated_text_len + piece_len < 8192 {
+            degisken piece_i: tamsayi = 0;
+            dongu piece_i < piece_len {
+                generated_text[generated_text_len] = piece_decoded[piece_i];
+                generated_text_len = generated_text_len + 1;
+                piece_i = piece_i + 1;
+            }
+        }
+        token_i = token_i + 1;
+    }
+    generated_text[generated_text_len] = 0;
+    ekrana_yaz(generated_text.ptr);
+    ekrana_yaz("\n--- CIKTI SONU ---\n\n".ptr);
+
+    ekrana_yaz("[CPU DETAYLI SURE DAGILIMI]\n".ptr);
+    ekrana_yaz("  -> 30 Katman FFN Bloklari (Gate/Up/Down): ".ptr); sayi_yaz(TRANSFORMER_TIME_FFN_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> 30 Katman Q/K/V Projeksiyonlari:       ".ptr); sayi_yaz(TRANSFORMER_TIME_QKV_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> 30 Katman O_Proj (Cikis Projeksiyonu): ".ptr); sayi_yaz(TRANSFORMER_TIME_OPROJ_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> 30 Katman Dikkat Cekirdegi (Scores/KV):".ptr); sayi_yaz(TRANSFORMER_TIME_ATTN_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> LMHead (FP16 Cikis MatVec):            ".ptr); sayi_yaz(G_PROF_HEAD_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> RMSNorm / LayerNorm:                   ".ptr); sayi_yaz(TRANSFORMER_TIME_NORM_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> RoPE Rotary Embedding:                 ".ptr); sayi_yaz(TRANSFORMER_TIME_ROPE_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> Token Embedding:                       ".ptr); sayi_yaz(G_PROF_EMBD_NS / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> Toplam Saf Uretim Suresi:              ".ptr); sayi_yaz((t_gen_end - t_gen_start) / 1000000); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("======================================================\n".ptr);
+    ekrana_yaz("[SONUC] CPU Uretim Hizi: ".ptr);
+    sayi_yaz(tok_int);
+    ekrana_yaz(".".ptr);
+    sayi_yaz(tok_frac);
+    ekrana_yaz(" token/saniye | 80 token suresi: ".ptr);
+    sayi_yaz(total_ms);
+    ekrana_yaz(" ms\n======================================================\n".ptr);
+
+    dondu 0;
+}
+

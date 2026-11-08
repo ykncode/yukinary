@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 28: Win32 Arayüzlü Ses Spektrum Görselleştirici
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 8 Frekans bandı yükseklikleri (0-100)
+degisken g_bantlar: [8]tamsayi;
+
+isv bantlari_guncelle(artis: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < 8) {
+        g_bantlar[i] = (g_bantlar[i] + artis * (i + 1) * 7) % 100;
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Ses Spektrum Analizoru".ptr, 600, 400);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 8 Adet Ekolayzer Sutunu
+    degisken i: tamsayi = 0;
+    dongu (i < 8) {
+        degisken x: tamsayi = 40 + (i * 65);
+        buton_olustur(p_h, "||||".ptr, 100 + i, x, 50, 50, 240);
+        i = i + 1;
+    }
+
+    buton_olustur(p_h, "Oynat (Play)".ptr, 201, 40, 310, 120, 40);
+    buton_olustur(p_h, "Duraklat".ptr, 202, 180, 310, 120, 40);
+    buton_olustur(p_h, "Bas Guclendir (Bass Boost)".ptr, 203, 320, 310, 220, 40);
+
+    bantlari_guncelle(5);
+    ekrana_yaz("Ses Spektrum analizoru aktif.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

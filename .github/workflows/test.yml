@@ -1,0 +1,356 @@
+name: Yukinary CI/CD Test Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      enable_macos:
+        description: 'Run planned macOS/Mach-O validation jobs'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-test:
+    name: Build Canonical Bootstrap Chain & Run Tests
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify Environment & Tools
+        shell: powershell
+        run: |
+          Write-Host "Checking g++..."
+          g++ --version
+          Write-Host "PowerShell version:"
+          $PSVersionTable.PSVersion
+
+      - name: Verify Keyword Registry and Generated UTF-8 Literals
+        shell: powershell
+        run: |
+          python tools\verify_keyword_registry.py
+          python tests\fix3\verify_i18n_matrix.py
+
+      - name: Verify Pure YKN Reality Audit Core
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\tooling\verify_reality_audit_core.ps1 -WindowsOnly
+
+      - name: Upload Reality Audit Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reality-audit-core-native-report
+          path: build/reports/reality-audit-core-native.json
+          if-no-files-found: warn
+
+      - name: Build and Verify Bootstrap Chain
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\bootstrap\run_bootstrap.ps1 `
+            -Cxx g++ -Optimization O2
+
+      - name: Run Native HTTP POST and Chunked Acceptance
+        shell: powershell
+        run: |
+          .\build\bootstrap\stage3.exe tests\stdlib\http_native_post_server.ykn build\http-post-server-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\http_native_post_client.ykn build\http-post-client-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\http_native_chunk_server.ykn build\http-chunk-server-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\http_native_chunk_client.ykn build\http-chunk-client-ci.exe
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\stdlib\run_http_native_post_chunk.ps1 `
+            -ServerPost build\http-post-server-ci.exe `
+            -ClientPost build\http-post-client-ci.exe `
+            -ServerChunk build\http-chunk-server-ci.exe `
+            -ClientChunk build\http-chunk-client-ci.exe
+
+      - name: Run Native Socket Timeout and Nonblocking Acceptance
+        shell: powershell
+        run: |
+          .\build\bootstrap\stage3.exe tests\stdlib\socket_timeout_probe_server.ykn build\socket-timeout-server-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\socket_timeout_probe_client.ykn build\socket-timeout-client-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\socket_nonblocking_probe_server.ykn build\socket-nonblocking-server-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\socket_nonblocking_probe_client.ykn build\socket-nonblocking-client-ci.exe
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\stdlib\run_socket_timeout_nonblocking.ps1 `
+            -TimeoutServer build\socket-timeout-server-ci.exe `
+            -TimeoutClient build\socket-timeout-client-ci.exe `
+            -NonblockingServer build\socket-nonblocking-server-ci.exe `
+            -NonblockingClient build\socket-nonblocking-client-ci.exe
+
+      - name: Run Generated DNS Wire Protocol Acceptance
+        shell: powershell
+        run: |
+          .\build\bootstrap\stage3.exe tests\stdlib\dns_generated_probe.ykn build\dns-generated-probe-ci.exe
+          .\build\bootstrap\stage3.exe tests\stdlib\dns_generated_negative_probe.ykn build\dns-generated-negative-ci.exe
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\stdlib\run_dns_native.ps1 `
+            -Client build\dns-generated-probe-ci.exe `
+            -NegativeClient build\dns-generated-negative-ci.exe
+
+      - name: Run FIX-2 Frontend Boundary Contracts
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\fix2\run_frontend_boundaries.ps1 `
+            -CompilerA .\build\bootstrap\stage0.exe `
+            -CompilerB .\build\bootstrap\stage3.exe `
+            -TimeoutMs 10000
+
+      - name: Run FIX-3 UTF-8 Acceptance Contracts
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\fix3\run_utf8_acceptance.ps1 `
+            -CompilerA .\build\bootstrap\stage0.exe `
+            -CompilerB .\build\bootstrap\stage3.exe `
+            -TimeoutMs 10000
+
+      - name: Run Native LLM SIMD PE Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\llm\run_simd_pe_acceptance.ps1 `
+            -Compiler .\build\bootstrap\stage0.exe -Cxx g++
+
+      - name: Run Real GGUF IQ2S Native PE Numeric Parity
+        shell: powershell
+        run: |
+          python tools\llm_simd_pe_numeric_parity.py `
+            --compiler .\build\bootstrap\stage0.exe
+
+      - name: Run Full Test Suite & Regression Guard
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\run_all_suites.ps1 `
+            -Compiler .\build\bootstrap\stage0.exe `
+            -MinPassThreshold 105 -TimeoutMs 15000 `
+            -OutputJson build\reports\test_results.json
+
+      - name: Run FIX-13 Null Safety Strict Suite
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\fix13\run_fix13_tests.ps1 `
+            -Compiler .\build\bootstrap\stage0.exe
+
+      - name: Run FIX-13 Null Safety Strict Suite (Stage-3)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\fix13\run_fix13_tests.ps1 `
+            -Compiler .\build\bootstrap\stage3.exe `
+            -OutputJson build\reports\fix13_results_stage3.json
+
+      - name: Run Stage-0 and Stage-3 Parity Gate
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\run_stage_parity.ps1 `
+            -CompilerA .\build\bootstrap\stage0.exe `
+            -CompilerB .\build\bootstrap\stage3.exe `
+            -TimeoutMs 15000 `
+            -OutputJson build\reports\stage-parity.json
+
+      - name: Run AST Coverage and Fail-Closed Native Gates
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_ast_coverage.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe `
+            -StageParityReport build\reports\stage-parity.json
+
+      - name: Build Launcher CLI (yukinary.exe)
+        shell: powershell
+        run: |
+          g++ -O2 -std=c++17 -o yukinary.exe app_full.cpp -lws2_32
+
+      - name: Run FAZ 7 Tooling Verification Suite
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\tooling\run_tooling_tests.ps1
+
+      - name: Run FAZ 8 Platform & Cross-Platform Suite
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\crossplatform\run_faz8_platform_tests.ps1
+
+      - name: Run FAZ 9 LLM, Self-Healing & Convert Suite
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\run_faz9_suites.ps1
+
+      - name: Run Saf YKNLLM Bounded Sandbox Arena Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\llm\verify_yknllm_sandbox_arena.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Saf YKNLLM AST Capability Gate Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\llm\verify_yknllm_ast_capability_gate.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Unsupported AST Codegen Rejection Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\codegen\verify_unsupported_ast.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Async Syntax Fail-Closed Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\async\verify_async_syntax_fail_closed.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Async Typechecker Future Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\async\verify_async_typechecker.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Explicit Future Generic Acceptance
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\async\verify_future_generic_typechecker.ps1 `
+            -CompilerStage0 build\bootstrap\stage0.exe `
+            -CompilerStage3 build\bootstrap\stage3.exe
+
+      - name: Run Seed Parity Check (informational)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\seed_parity\run_seed_parity_check.ps1 `
+            -CompilerA .\build\bootstrap\stage0.exe `
+            -CompilerB .\build\bootstrap\stage3.exe `
+            -OutputJson build\reports\seed_parity_report.json
+        continue-on-error: true
+
+      - name: Upload Build and Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: yukinary-build-and-test-results
+          path: |
+            build/bootstrap/
+            build/reports/
+            build/test-work/stage-parity/
+            build/test-work/fix3-utf8/
+          retention-days: 30
+
+  stage-drift-gate:
+    name: Adim 9.5 — Stage Yuzey Drift Kontrolu
+    runs-on: windows-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Download Stage-0 / Stage-3 Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: yukinary-build-and-test-results
+          path: .
+
+      - name: Verify downloaded artifacts
+        shell: pwsh
+        run: |
+          Write-Host "build/bootstrap icerigi:"
+          Get-ChildItem -Path build/bootstrap -ErrorAction SilentlyContinue | Format-Table -AutoSize
+          Write-Host ""
+          Write-Host "Binary mevcudiyeti:"
+          @("build/bootstrap/stage0.exe","build/bootstrap/stage3.exe","build/stage0.exe","build/stage3.exe") | ForEach-Object {
+            Write-Host "  $_ : $(Test-Path $_)"
+          }
+
+      - name: Run Stage Surface Drift Gate
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\denetle_stage_yuzu_kaymasi.ps1
+
+  linux-elf64-ci:
+    name: FAZ 8 — Linux ELF64 Execution CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Linux native test dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ python3
+      - name: Run Linux ELF64 Execution Test
+        shell: bash
+        run: |
+          bash tests/crossplatform/test_linux_elf_execution.sh
+      - name: Run real converter directive execution tests
+        shell: bash
+        run: |
+          python3 tests/convert/test_dynamic_backend.py
+          python3 tests/convert/test_directive_execution.py
+
+  macos-macho-ci:
+    name: Planned — macOS Mach-O Execution CI
+    if: github.event_name == 'workflow_dispatch' && inputs.enable_macos == true
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify macOS runner provenance
+        shell: bash
+        run: |
+          uname -a
+          uname -m
+          clang++ --version | sed -n '1p'
+      - name: Run macOS Mach-O Execution Test
+        shell: bash
+        run: |
+          bash tests/crossplatform/test_macos_execution.sh
+
+  macos-ci:
+    name: Planned — macOS Native Compiler CI
+    if: github.event_name == 'workflow_dispatch' && inputs.enable_macos == true
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify macOS toolchain and architecture
+        run: |
+          uname -a
+          uname -m
+          clang++ --version | sed -n '1p'
+      - name: Build Stage-0 on macOS (planned native validation)
+        run: clang++ -O2 -std=c++17 -o build/stage0_macos app_full.cpp
+      - name: Compile and execute Mach-O fixture
+        run: |
+          test -f tests/bootstrap/01_hello.ykn
+          ./build/stage0_macos --target macos tests/bootstrap/01_hello.ykn build/test_macos
+          test -f build/test_macos
+          file build/test_macos | grep -Eqi 'Mach-O|mach-o'
+          ./build/test_macos
+
+  arm64-macos-ci:
+    name: Planned — macOS ARM64 Compiler CI
+    if: github.event_name == 'workflow_dispatch' && inputs.enable_macos == true
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify ARM64 runner and toolchain
+        run: |
+          uname -a
+          test "$(uname -m)" = "arm64"
+          clang++ --version | sed -n '1p'
+      - name: Build Stage-0 ARM64
+        run: clang++ -O2 -std=c++17 -o build/stage0_arm64 app_full.cpp
+      - name: Compile and execute ARM64 Mach-O fixture
+        run: |
+          test -f tests/bootstrap/01_hello.ykn
+          ./build/stage0_arm64 --target macos-arm64 tests/bootstrap/01_hello.ykn build/test_arm64
+          test -f build/test_arm64
+          file build/test_arm64 | grep -Eqi 'Mach-O|mach-o'
+          ./build/test_arm64

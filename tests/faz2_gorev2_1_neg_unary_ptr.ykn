@@ -1,0 +1,8 @@
+# Negatif Test: Pointer uzerinde tekli eksi (-) yasaktir (E003)
+isv ana() -> tamsayi {
+    degisken deger: tamsayi = 42;
+    degisken p: *tamsayi = &deger;
+    degisken x = -p;
+    dondu 0;
+}
+

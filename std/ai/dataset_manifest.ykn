@@ -1,0 +1,209 @@
+# ============================================================
+# Saf YKN YKLM v1 dataset provenance/license manifesti
+#
+# YKDS payload'undan bagimsiz bounded binary sidecar'dir.
+# Her kayit kaynak yolu, lisans, split, sample id ve content SHA-256 tasir.
+# Ayni content hash'i farkli split'lerde gorulurse leakage reddedilir.
+# ============================================================
+
+ice_aktar "std/ai/dataset.ykn";
+
+degisken YKN_LM_MAGIC_0: u8 = 89;
+degisken YKN_LM_MAGIC_1: u8 = 75;
+degisken YKN_LM_MAGIC_2: u8 = 76;
+degisken YKN_LM_MAGIC_3: u8 = 77;
+degisken YKN_LM_VERSION: tamsayi = 1;
+degisken YKN_LM_HEADER_SIZE: tamsayi = 16;
+degisken YKN_LM_RECORD_HEADER_SIZE: tamsayi = 88;
+degisken YKN_LM_MAX_BYTES: tamsayi = 262144;
+degisken YKN_LM_MAX_TEXT: tamsayi = 16384;
+degisken YKN_LM_LAST_ERROR: tamsayi = 0;
+
+yapi YKNDatasetManifest {
+    buffer: *u8;
+    pos: tamsayi;
+    count: tamsayi;
+}
+
+isv ykn_lm_u32_yaz(buf: *u8, pos: tamsayi, deger: tamsayi) {
+    buf[pos] = deger & 255;
+    buf[pos + 1] = (deger >> 8) & 255;
+    buf[pos + 2] = (deger >> 16) & 255;
+    buf[pos + 3] = (deger >> 24) & 255;
+}
+
+isv ykn_lm_kopyala(buf: *u8, pos: tamsayi, kaynak: *u8, uzunluk: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        buf[pos + i] = kaynak[i];
+        i = i + 1;
+    }
+}
+
+isv ykn_lm_uzunluk(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu metin[n] != 0 {
+        n = n + 1;
+        eger n > YKN_LM_MAX_TEXT ise { dondu 0; }
+    }
+    dondu n;
+}
+
+isv ykn_dataset_manifest_olustur() -> *YKNDatasetManifest {
+    degisken m: *YKNDatasetManifest = bellek_tahsis_et(32);
+    eger m == 0 ise { dondu 0; }
+    m->buffer = bellek_tahsis_et(YKN_LM_MAX_BYTES);
+    eger m->buffer == 0 ise { dondu 0; }
+    m->pos = YKN_LM_HEADER_SIZE;
+    m->count = 0;
+    m->buffer[0] = YKN_LM_MAGIC_0;
+    m->buffer[1] = YKN_LM_MAGIC_1;
+    m->buffer[2] = YKN_LM_MAGIC_2;
+    m->buffer[3] = YKN_LM_MAGIC_3;
+    ykn_lm_u32_yaz(m->buffer, 4, YKN_LM_VERSION);
+    ykn_lm_u32_yaz(m->buffer, 8, 0);
+    ykn_lm_u32_yaz(m->buffer, 12, YKN_LM_HEADER_SIZE);
+    dondu m;
+}
+
+isv ykn_dataset_manifest_append(m: *YKNDatasetManifest,
+                                sample_id: tamsayi, split: tamsayi,
+                                kaynak_yolu: *u8, lisans: *u8,
+                                icerik: *u8, icerik_boyutu: tamsayi) -> tamsayi {
+    eger m == 0 veya m->buffer == 0 veya sample_id < 0 veya
+       split < 0 veya split > 2 veya kaynak_yolu == 0 veya lisans == 0 veya
+       icerik == 0 veya icerik_boyutu <= 0 ise { dondu 0; }
+    degisken yol_len: tamsayi = ykn_lm_uzunluk(kaynak_yolu);
+    degisken lisans_len: tamsayi = ykn_lm_uzunluk(lisans);
+    eger yol_len <= 0 veya lisans_len <= 0 veya
+       yol_len > YKN_LM_MAX_TEXT veya lisans_len > YKN_LM_MAX_TEXT veya
+       icerik_boyutu > YKN_LM_MAX_TEXT * 4 ise { dondu 0; }
+    degisken payload_len: tamsayi = yol_len + lisans_len;
+    degisken record_len: tamsayi = YKN_LM_RECORD_HEADER_SIZE + payload_len;
+    eger m->pos < YKN_LM_HEADER_SIZE veya
+       record_len > YKN_LM_MAX_BYTES - m->pos ise { dondu 0; }
+    degisken rec: tamsayi = m->pos;
+    ykn_lm_u32_yaz(m->buffer, rec, record_len);
+    ykn_lm_u32_yaz(m->buffer, rec + 4, split);
+    ykn_lm_u32_yaz(m->buffer, rec + 8, sample_id);
+    ykn_lm_u32_yaz(m->buffer, rec + 12, yol_len);
+    ykn_lm_u32_yaz(m->buffer, rec + 16, lisans_len);
+    ykn_lm_u32_yaz(m->buffer, rec + 20, icerik_boyutu);
+    degisken hash: [65]u8;
+    sha256_hesapla(icerik, icerik_boyutu, hash);
+    ykn_lm_kopyala(m->buffer, rec + 24, hash, 64);
+    ykn_lm_kopyala(m->buffer, rec + YKN_LM_RECORD_HEADER_SIZE, kaynak_yolu, yol_len);
+    ykn_lm_kopyala(m->buffer, rec + YKN_LM_RECORD_HEADER_SIZE + yol_len, lisans, lisans_len);
+    m->pos = rec + record_len;
+    m->count = m->count + 1;
+    dondu 1;
+}
+
+# Yeni üretim kayıtları lisans alanında makinece doğrulanabilir
+# provenance taşıyabilir: SPDX|category=<kategori>. Eski kayıtlar
+# yalnız SPDX lisansı ile geriye dönük uyumludur.
+isv ykn_dataset_manifest_append_kategori(m: *YKNDatasetManifest,
+                                         sample_id: tamsayi, split: tamsayi,
+                                         kaynak_yolu: *u8, lisans: *u8,
+                                         kategori: *u8,
+                                         icerik: *u8, icerik_boyutu: tamsayi) -> tamsayi {
+    eger lisans == 0 veya kategori == 0 ise { dondu 0; }
+    degisken lisans_len: tamsayi = ykn_lm_uzunluk(lisans);
+    degisken kategori_len: tamsayi = ykn_lm_uzunluk(kategori);
+    eger lisans_len <= 0 veya kategori_len <= 0 veya lisans_len + 10 + kategori_len >= 512 ise { dondu 0; }
+    degisken lisans_kategori: [512]u8;
+    ykn_lm_kopyala(lisans_kategori, 0, lisans, lisans_len);
+    ykn_lm_kopyala(lisans_kategori, lisans_len, "|category=".ptr, 10);
+    ykn_lm_kopyala(lisans_kategori, lisans_len + 10, kategori, kategori_len);
+    lisans_kategori[lisans_len + 10 + kategori_len] = 0;
+    dondu ykn_dataset_manifest_append(m, sample_id, split, kaynak_yolu,
+                                      lisans_kategori, icerik, icerik_boyutu);
+}
+
+isv ykn_lm_kategori_dogrula(buf: *u8, ofset: tamsayi, uzunluk: tamsayi) -> tamsayi {
+    eger buf == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i + 10 <= uzunluk {
+        eger buf[ofset + i] == 124 ve
+           buf[ofset + i + 1] == 99 ve buf[ofset + i + 2] == 97 ve
+           buf[ofset + i + 3] == 116 ve buf[ofset + i + 4] == 101 ve
+           buf[ofset + i + 5] == 103 ve buf[ofset + i + 6] == 111 ve
+           buf[ofset + i + 7] == 114 ve buf[ofset + i + 8] == 121 ve
+           buf[ofset + i + 9] == 61 ise {
+            degisken cat_ofset: tamsayi = ofset + i + 10;
+            degisken cat_len: tamsayi = uzunluk - i - 10;
+            eger (cat_len == 6 ve ykn_ds_ascii_esit(buf + cat_ofset, "syntax".ptr, 6) == 1) veya
+               (cat_len == 4 ve ykn_ds_ascii_esit(buf + cat_ofset, "type".ptr, 4) == 1) veya
+               (cat_len == 8 ve ykn_ds_ascii_esit(buf + cat_ofset, "nullable".ptr, 8) == 1) veya
+               (cat_len == 9 ve ykn_ds_ascii_esit(buf + cat_ofset, "ownership".ptr, 9) == 1) veya
+               (cat_len == 7 ve ykn_ds_ascii_esit(buf + cat_ofset, "generic".ptr, 7) == 1) veya
+               (cat_len == 7 ve ykn_ds_ascii_esit(buf + cat_ofset, "runtime".ptr, 7) == 1) ise { dondu 1; }
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    # Eski YKLM v1 kayıtlarında kategori alanı zorunlu değildir.
+    dondu 1;
+}
+
+isv ykn_dataset_manifest_dogrula(buf: *u8, boyut: tamsayi) -> tamsayi {
+    YKN_LM_LAST_ERROR = 0;
+    eger buf == 0 veya boyut < YKN_LM_HEADER_SIZE veya
+       buf[0] != YKN_LM_MAGIC_0 veya buf[1] != YKN_LM_MAGIC_1 veya
+       buf[2] != YKN_LM_MAGIC_2 veya buf[3] != YKN_LM_MAGIC_3 veya
+       ykn_ds_buf_u32_oku(buf, 4) != YKN_LM_VERSION veya
+       ykn_ds_buf_u32_oku(buf, 12) != YKN_LM_HEADER_SIZE ise { YKN_LM_LAST_ERROR = 1; dondu 0; }
+    degisken count: tamsayi = ykn_ds_buf_u32_oku(buf, 8);
+    degisken pos: tamsayi = YKN_LM_HEADER_SIZE;
+    degisken seen: tamsayi = 0;
+    dongu pos < boyut {
+        eger boyut - pos < YKN_LM_RECORD_HEADER_SIZE ise { YKN_LM_LAST_ERROR = 2; dondu 0; }
+        degisken record_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos);
+        eger record_len < YKN_LM_RECORD_HEADER_SIZE veya record_len > boyut - pos ise { YKN_LM_LAST_ERROR = 3; dondu 0; }
+        degisken split: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 4);
+        degisken path_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 12);
+        degisken license_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 16);
+        degisken content_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 20);
+        eger split > 2 veya path_len <= 0 veya license_len <= 0 veya
+           path_len > YKN_LM_MAX_TEXT veya license_len > YKN_LM_MAX_TEXT veya
+           content_len <= 0 veya content_len > YKN_LM_MAX_TEXT * 4 veya
+           record_len != YKN_LM_RECORD_HEADER_SIZE + path_len + license_len veya
+           ykn_lm_kategori_dogrula(buf, pos + YKN_LM_RECORD_HEADER_SIZE + path_len, license_len) == 0 ise { YKN_LM_LAST_ERROR = 4; dondu 0; }
+        degisken onceki: tamsayi = YKN_LM_HEADER_SIZE;
+        dongu onceki < pos {
+            degisken onceki_len: tamsayi = ykn_ds_buf_u32_oku(buf, onceki);
+            eger onceki_len < YKN_LM_RECORD_HEADER_SIZE veya onceki + onceki_len > pos ise { YKN_LM_LAST_ERROR = 5; dondu 0; }
+            eger ykn_ds_buf_u32_oku(buf, onceki + 4) != split ise {
+                degisken ayni: tamsayi = 1;
+                degisken hi: tamsayi = 0;
+                dongu hi < 64 {
+                    eger buf[onceki + 24 + hi] != buf[pos + 24 + hi] ise { ayni = 0; }
+                    hi = hi + 1;
+                }
+                eger ayni == 1 ise { YKN_LM_LAST_ERROR = 6; dondu 0; }
+            }
+            onceki = onceki + onceki_len;
+        }
+        pos = pos + record_len;
+        seen = seen + 1;
+    }
+    eger pos != boyut veya seen != count ise { YKN_LM_LAST_ERROR = 7; dondu 0; }
+    dondu 1;
+}
+
+isv ykn_dataset_manifest_kapat(m: *YKNDatasetManifest, yol: *u8) -> tamsayi {
+    eger m == 0 veya m->buffer == 0 veya yol == 0 veya m->count <= 0 ise { dondu 0; }
+    degisken manifest_buffer: *u8 = m->buffer;
+    degisken manifest_boyut: tamsayi = m->pos;
+    degisken manifest_count: tamsayi = m->count;
+    manifest_buffer[0] = 89;
+    manifest_buffer[1] = 75;
+    manifest_buffer[2] = 76;
+    manifest_buffer[3] = 77;
+    ykn_lm_u32_yaz(manifest_buffer, 4, 1);
+    ykn_lm_u32_yaz(manifest_buffer, 8, manifest_count);
+    ykn_lm_u32_yaz(manifest_buffer, 12, 16);
+    eger ykn_dataset_manifest_dogrula(manifest_buffer, manifest_boyut) == 0 ise { dondu 0; }
+    dondu diske_bas_ve_kapat(yol, manifest_buffer, manifest_boyut);
+}

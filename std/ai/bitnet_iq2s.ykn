@@ -1,0 +1,243 @@
+# ============================================================
+# Yukinary std/ai/bitnet_iq2s.ykn
+# Resmi GGML IQ2_S packed decoder + geriye dönük mini fixture decoder'i.
+#
+# Bu modul GGUF parser'dan bagimsizdir.
+# Type=36 resmi BitNet I2_S payload'i: her 128 eleman icin
+# 32 byte interleaved 2-bit veri + tensor sonunda 32 byte scale trailer.
+# Scale degerleri bu katmanda saklanir; ternary matmul icin quant kodlari
+# {-1,0,+1} temsiline donusturulur.
+# ============================================================
+
+isv bitnet_2bit_paket_coz(paket: tamsayi, cikti: *u8) {
+    degisken i: tamsayi = 0;
+    dongu i < 16 {
+        degisken bolen: tamsayi = 1;
+        degisken b: tamsayi = 0;
+        dongu b < i * 2 {
+            bolen = bolen * 2;
+            b = b + 1;
+        }
+        degisken kod: tamsayi = (paket / bolen) % 4;
+        cikti[i] = kod;
+        i = i + 1;
+    }
+}
+
+degisken I2S_SON_HATA = 0;
+
+# Resmi type=36 I2_S decoder.
+# raw 00 = -1, raw 01 = 0, raw 10 = +1, raw 11 gecersizdir.
+# YKN BitLinear temsili: 2 = -1, 0 = 0, 1 = +1.
+isv i2s_tensor_real_coz(sikistirilmis: *u8,
+                        bayt_sayisi: tamsayi,
+                        cozulmus: *u8,
+                        eleman_sayisi: tamsayi,
+                        maks_eleman: tamsayi) -> tamsayi {
+    I2S_SON_HATA = 0;
+    eger sikistirilmis == 0 veya cozulmus == 0 veya bayt_sayisi <= 0 veya
+       eleman_sayisi <= 0 veya maks_eleman <= 0 ise { I2S_SON_HATA = 1; dondu 0; }
+    degisken quant_bayt: tamsayi = (eleman_sayisi + 3) / 4;
+    eger bayt_sayisi < quant_bayt + 32 ise { I2S_SON_HATA = 2; dondu 0; }
+
+    degisken pos: tamsayi = 0;
+    degisken cikti_adet: tamsayi = eleman_sayisi;
+    eger cikti_adet > maks_eleman ise { cikti_adet = maks_eleman; }
+    dongu pos < cikti_adet {
+        degisken grup: tamsayi = pos / 32;
+        degisken grup_ici: tamsayi = pos % 32;
+        degisken bolen: tamsayi = 1;
+        eger grup == 0 ise { bolen = 64; }
+        eger grup == 1 ise { bolen = 16; }
+        eger grup == 2 ise { bolen = 4; }
+        degisken bayt: tamsayi = sikistirilmis[grup_ici];
+        eger bayt < 0 ise { bayt = bayt + 256; }
+        degisken ham_kod: tamsayi = (bayt / bolen) % 4;
+        eger ham_kod == 0 ise { cozulmus[pos] = 2; }
+        yoksa eger ham_kod == 1 ise { cozulmus[pos] = 0; }
+        yoksa eger ham_kod == 2 ise { cozulmus[pos] = 1; }
+        yoksa {
+            I2S_SON_HATA = 3;
+            dondu 0;
+        }
+        pos = pos + 1;
+    }
+    dondu cikti_adet;
+}
+
+isv i2s_tensor_coz(sikistirilmis: *u8,
+                   bayt_sayisi: tamsayi,
+                   cozulmus: *u8,
+                   maks_eleman: tamsayi) -> tamsayi {
+    eger sikistirilmis == 0 veya cozulmus == 0 veya bayt_sayisi <= 0 ise { dondu 0; }
+    degisken paket_ofseti: tamsayi = 0;
+    degisken cikti_ofseti: tamsayi = 0;
+    dongu paket_ofseti + 3 < bayt_sayisi ve cikti_ofseti + 15 < maks_eleman {
+        degisken b0: tamsayi = sikistirilmis[paket_ofseti];
+        degisken b1: tamsayi = sikistirilmis[paket_ofseti + 1];
+        degisken b2: tamsayi = sikistirilmis[paket_ofseti + 2];
+        degisken b3: tamsayi = sikistirilmis[paket_ofseti + 3];
+        eger b0 < 0 ise { b0 = b0 + 256; }
+        eger b1 < 0 ise { b1 = b1 + 256; }
+        eger b2 < 0 ise { b2 = b2 + 256; }
+        eger b3 < 0 ise { b3 = b3 + 256; }
+        degisken paket: tamsayi = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216;
+        bitnet_2bit_paket_coz(paket, cozulmus + cikti_ofseti);
+        paket_ofseti = paket_ofseti + 4;
+        cikti_ofseti = cikti_ofseti + 16;
+    }
+    dondu cikti_ofseti;
+}
+
+# ============================================================
+# Pointer-backed model buffers may expose u8 values as signed scalars in
+# Stage-1 codegen. Normalize every packed byte before bit-field arithmetic.
+isv bitnet_u8_byte(deger: tamsayi) -> tamsayi {
+    eger deger < 0 ise { dondu deger + 256; }
+    dondu deger;
+}
+
+# Resmi GGML IQ2_S yürütme yolu
+# ============================================================
+# IQ2_S blok düzeni: d(2) + qs(64) + qh(8) + scales(8) = 82 byte.
+# Her 32 elemanlık alt blokta dört adet 8-lane grid ve dört sign byte vardır.
+
+isv bitnet_iq2s_f16_q16(lo: tamsayi, hi: tamsayi) -> tamsayi {
+    degisken bits: tamsayi = bitnet_u8_byte(lo) + bitnet_u8_byte(hi) * 256;
+    degisken isaret: tamsayi = bits / 32768;
+    degisken us: tamsayi = (bits / 1024) % 32;
+    degisken mantis: tamsayi = bits % 1024;
+    eger us == 0 veya us == 31 ise { dondu 0; }
+    degisken sonuc: tamsayi = (1024 + mantis) * 64;
+    degisken fark: tamsayi = us - 15;
+    eger fark > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i < fark { sonuc = sonuc * 2; i = i + 1; }
+    } yoksa eger fark < 0 ise {
+        degisken j: tamsayi = 0;
+        dongu j < 0 - fark { sonuc = sonuc / 2; j = j + 1; }
+    }
+    eger isaret == 1 ise { dondu 0 - sonuc; }
+    dondu sonuc;
+}
+
+isv bitnet_iq2s_pow2(us: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    eger us < 0 veya us > 30 ise { dondu 0; }
+    dongu i < us { sonuc = sonuc * 2; i = i + 1; }
+    dondu sonuc;
+}
+
+# Bir IQ2_S bloğundan gerçek dequantized Q16.16 elemanı okur.
+isv bitnet_iq2s_eleman_q16(blok: *u8, eleman: tamsayi) -> tamsayi {
+    eger blok == 0 veya eleman < 0 veya eleman >= 256 ise { dondu 0; }
+    bitnet_iq2s_grid_baslat();
+    degisken d: tamsayi = bitnet_iq2s_f16_q16(blok[0], blok[1]);
+    degisken grup: tamsayi = eleman / 32;
+    degisken grup_ici: tamsayi = eleman % 32;
+    degisken l: tamsayi = grup_ici / 8;
+    degisken lane: tamsayi = grup_ici % 8;
+    degisken q: tamsayi = bitnet_u8_byte(blok[2 + grup * 4 + l]);
+    degisken h: tamsayi = bitnet_u8_byte(blok[66 + grup]);
+    degisken kaydir: tamsayi = 8 - 2 * l;
+    degisken grid_yuksek: tamsayi = ((h * bitnet_iq2s_pow2(kaydir)) / 256) % 4;
+        degisken grid_indeks: tamsayi = q + grid_yuksek * 256;
+    # Sign trailer, qs alanından sonra başlar: d(2) + qs(32) = 34.
+    # qh alanı 66..73'tür; sign byte'ını qh ile karıştırmak 4. grupta
+    # 82-byte bloğun dışına taşardı.
+    degisken isaretler: tamsayi = bitnet_u8_byte(blok[2 + 32 + grup * 4 + l]);
+    degisken nibble_bayt: tamsayi = bitnet_u8_byte(blok[74 + grup]);
+    degisken nibble: tamsayi = (nibble_bayt / bitnet_iq2s_pow2((grup_ici / 16) * 4)) % 16;
+    # db = d * (0.5 + nibble) * 0.25 = d * (1 + 2*nibble) / 8.
+    degisken db: tamsayi = (d * (1 + 2 * nibble)) / 8;
+    degisken grid: tamsayi = bitnet_iq2s_grid_bayt(grid_indeks, lane);
+    # IQ2_S grid kodları [8,25,43] Q5.0 katsayılarını taşır;
+    # GGML dequantization'da gerçek grid oranı 32'ye bölünür.
+    degisken sonuc: tamsayi = (db * grid) / 32;
+    degisken sign_bit: tamsayi = (isaretler / bitnet_iq2s_pow2(lane)) % 2;
+    eger sign_bit == 1 ise { sonuc = 0 - sonuc; }
+    dondu sonuc;
+}
+
+# Offset tabanlı sürüm: pointer aritmetiğinin host ABI'sine bağlı kalmadan
+# büyük tensorlerde doğrudan byte offset ile okur.
+isv bitnet_iq2s_eleman_q16_at(agirlik: *u8, blok_ofseti: tamsayi, eleman: tamsayi) -> tamsayi {
+    eger agirlik == 0 veya blok_ofseti < 0 veya eleman < 0 veya eleman >= 256 ise { dondu 0; }
+    degisken grup: tamsayi = eleman / 32;
+    degisken grup_ici: tamsayi = eleman % 32;
+    degisken l: tamsayi = grup_ici / 8;
+    degisken lane: tamsayi = grup_ici % 8;
+    degisken d: tamsayi = bitnet_iq2s_f16_q16(
+        bitnet_u8_byte(agirlik[blok_ofseti]), bitnet_u8_byte(agirlik[blok_ofseti + 1]));
+    degisken q: tamsayi = bitnet_u8_byte(agirlik[blok_ofseti + 2 + grup * 4 + l]);
+    degisken h: tamsayi = bitnet_u8_byte(agirlik[blok_ofseti + 66 + grup]);
+    degisken grid_yuksek: tamsayi = ((h * bitnet_iq2s_pow2(8 - 2 * l)) / 256) % 4;
+        degisken grid_indeks: tamsayi = q + grid_yuksek * 256;
+    degisken isaretler: tamsayi = bitnet_u8_byte(agirlik[blok_ofseti + 66 - 32 + grup * 4 + l]);
+    degisken nibble_bayt: tamsayi = bitnet_u8_byte(agirlik[blok_ofseti + 74 + grup]);
+    degisken nibble: tamsayi = (nibble_bayt / bitnet_iq2s_pow2((grup_ici / 16) * 4)) % 16;
+    degisken sonuc: tamsayi = (((d * (1 + 2 * nibble)) / 8) *
+        bitnet_iq2s_grid_bayt(grid_indeks, lane)) / 32;
+    eger (isaretler / bitnet_iq2s_pow2(lane)) % 2 == 1 ise { sonuc = 0 - sonuc; }
+    dondu sonuc;
+}
+
+# Tek elemanlı ABI smoke yolu: dequant ve Q16 çarpımını aynı çağrı
+# çerçevesinde doğrular. Büyük matmul bunun üzerine kuruludur.
+isv bitnet_iq2s_carp_tek(agirlik: *u8, aktivasyon: *tamsayi, cikti: *tamsayi) -> tamsayi {
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 ise { dondu 0; }
+    cikti[0] = (aktivasyon[0] * bitnet_iq2s_eleman_q16_at(agirlik, 0, 0)) / 65536;
+    dondu 1;
+}
+
+# Gerçek IQ2_S matmul. GGUF tensor boyutları [K,N] olduğundan her çıktı
+# satırı K elemanlıdır; M batch satırı desteklenir.
+isv bitnet_iq2s_paketli_matris_carp(agirlik: *u8,
+                                    aktivasyon: *tamsayi,
+                                    cikti: *tamsayi,
+                                    M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    I2S_SON_HATA = 0;
+    eger agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya M <= 0 veya
+       K <= 0 veya N <= 0 ise { I2S_SON_HATA = 4; dondu 0; }
+    # Son blok kısmi K için de 82 byte ayrılır; gerçek GGUF tensorleri
+    # çoğunlukla 256 hizalı olsa da bu yol küçük referans fixture'larında
+    # aynı kernel sözleşmesini korur.
+    degisken blok_sayisi: tamsayi = (K + 255) / 256;
+    degisken satir_bayti: tamsayi = blok_sayisi * 82;
+    # Buffer kapasitesi bu düşük seviyeli ABI'de ayrı argüman değildir;
+    # caller tensor metadata'sıyla aralığı doğrular. Böylece Win64'te 7.
+    # stack argümanına bağlı eski çağrı sözleşmesi kaldırılmış olur.
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            # Output pointer/index ifadesini inner loop'tan ayır. Bu düşük
+            # seviyeli ABI'de accumulator yerel değişkende tutulur; yalnızca
+            # tamamlanan dot product sonunda output buffer'a yazılır.
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken aktivasyon_ofseti: tamsayi = i * K + k;
+                degisken blok_ofseti: tamsayi = j * satir_bayti + (k / 256) * 82;
+                degisken x: tamsayi = aktivasyon[aktivasyon_ofseti];
+                degisken w: tamsayi = bitnet_iq2s_eleman_q16_at(agirlik, blok_ofseti, k % 256);
+                degisken carpim: tamsayi = x * w;
+                degisken katki: tamsayi = carpim / 65536;
+                toplam = toplam + katki;
+                k = k + 1;
+            }
+            cikti[i * N + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# FAZ 11.2: BitNet IQ2_S Donanım Bit-Manipulation Hızlandırıcısı (POPCNT)
+# Ternary {-1, 0, +1} filtreleme için 64-bit maskeler üzerinde tek döngüde
+# popcount hesaplayarak sıfır olmayan ağırlık yoğunluğunu ve yönünü tespit eder.
+isv bitnet_donanim_popcnt64(maske: tamsayi) -> tamsayi {
+    dondu ykn_popcnt64(maske);
+}

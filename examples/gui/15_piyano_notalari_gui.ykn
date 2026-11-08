@@ -1,0 +1,30 @@
+# ============================================================
+# Örnek 84: Win32 Piyano Notaları & Ses Tuşları GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+#c-lib "kernel32";
+harici isv Beep(dwFreq: tamsayi, dwDuration: tamsayi) -> tamsayi;
+
+isv nota_cal(frekans: tamsayi) {
+    Beep(frekans, 250); # 250 ms cal
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Sanal Piyano".ptr, 480, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # 7 Nota Butonu: DO (261Hz), RE (293Hz), MI (329Hz), FA (349Hz), SOL (392Hz), LA (440Hz), SI (493Hz)
+    buton_olustur(p_h, "DO".ptr,  9401, 20, 50, 55, 120);
+    buton_olustur(p_h, "RE".ptr,  9402, 85, 50, 55, 120);
+    buton_olustur(p_h, "MI".ptr,  9403, 150, 50, 55, 120);
+    buton_olustur(p_h, "FA".ptr,  9404, 215, 50, 55, 120);
+    buton_olustur(p_h, "SOL".ptr, 9405, 280, 50, 55, 120);
+    buton_olustur(p_h, "LA".ptr,  9406, 345, 50, 55, 120);
+    buton_olustur(p_h, "SI".ptr,  9407, 410, 50, 55, 120);
+
+    ekrana_yaz("YKN Sanal Piyano arayuzu hazir. 7 nota baglandi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

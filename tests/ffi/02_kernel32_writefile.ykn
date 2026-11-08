@@ -1,0 +1,13 @@
+# Faz 9: kernel32 WriteFile/GetStdHandle doğrudan IAT çağrısı testi
+#c-lib "kernel32";
+
+isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nBytes: tamsayi, lpWritten: *tamsayi, lpOverlapped: tamsayi) -> tamsayi;
+isv GetStdHandle(nHandle: tamsayi) -> tamsayi;
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken msg: *u8 = "FFI WriteFile OK\n".ptr;
+    degisken yazilan: tamsayi = 0;
+    degisken hOut: tamsayi = GetStdHandle((0 - 11));
+    WriteFile(hOut, msg, 17, &yazilan, 0);
+    dondu 0;
+}

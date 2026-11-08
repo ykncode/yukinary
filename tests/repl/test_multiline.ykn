@@ -1,0 +1,30 @@
+# REPL Multi-line blok testi
+# repl_cok_satir_tamamlandi_mi fonksiyonunu test eder
+ice_aktar "src/repl.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Tam kapanmis blok: tamamlandi olmali
+    degisken tam: *u8 = "isv f() { dondu 0; }".ptr;
+    degisken tam_uzn: tamsayi = 20;
+    degisken tam_mi: tamsayi = repl_cok_satir_tamamlandi_mi(tam, tam_uzn);
+    eger tam_mi == 1 ise {
+        ekrana_yaz("REPL_MULTILINE: kapali blok OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("REPL_MULTILINE: kapali blok FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Acik blok: tamamlanmamali
+    degisken acik: *u8 = "isv f() {".ptr;
+    degisken acik_uzn: tamsayi = 9;
+    degisken acik_mi: tamsayi = repl_cok_satir_tamamlandi_mi(acik, acik_uzn);
+    eger acik_mi == 0 ise {
+        ekrana_yaz("REPL_MULTILINE: acik blok OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("REPL_MULTILINE: acik blok FAILED\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("REPL_MULTILINE: PASS\n".ptr);
+    dondu 0;
+}

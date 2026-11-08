@@ -1,0 +1,41 @@
+# C -> YKN Donusum Temel Testi
+# int add(int a, int b) -> YKN harici isv bildirimi
+ice_aktar "src/convert_c.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    tip_tablosunu_yukle();
+
+    # C fonksiyon bildirimi: "int add(int a int b)"
+    degisken c_kaynak: *u8 = "int add(int a, int b)".ptr;
+    degisken uzunluk: tamsayi = 20;
+
+    degisken fonk: CFonksiyon;
+    degisken ok: tamsayi = c_fonksiyon_parse(c_kaynak, uzunluk, &fonk);
+
+    eger ok == 1 ve fonk.donusturuldu == 1 ise {
+        ekrana_yaz("C_TO_YKN: parse OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("C_TO_YKN: parse FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Uretilen YKN kodu
+    degisken cikis: [256]u8;
+    degisken uzn: tamsayi = c_fonksiyon_ykn_uret(&fonk, cikis, 256);
+    eger uzn > 0 ise {
+        ekrana_yaz("C_TO_YKN: YKN uretimi OK\n".ptr);
+        ekrana_yaz(cikis);
+    } yoksa {
+        ekrana_yaz("C_TO_YKN: YKN uretimi FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Basari orani
+    degisken oran: tamsayi = convert_basari_orani_hesapla(2, 2);
+    eger oran == 100 ise {
+        ekrana_yaz("C_TO_YKN: basari orani 100% OK\n".ptr);
+    }
+
+    ekrana_yaz("C_TO_YKN: PASS\n".ptr);
+    dondu 0;
+}

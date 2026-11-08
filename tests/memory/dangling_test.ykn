@@ -1,0 +1,17 @@
+# Memory Safety Test: dangling pointer
+# Serbest bırakılan bellek üzerindeki pointer ile yazma testi.
+# Beklenen davranis: deterministik abort/panic (exit != 0)
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken ptr: *u8 = bellek_tahsis_et(64);
+    eger ptr == 0 ise {
+        ekrana_yaz("BELLEK TAHSIS HATASI\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("DANGLING_TEST: tahsis OK\n".ptr);
+    bellek_serbest_birak(ptr);
+    ekrana_yaz("DANGLING_TEST: serbest birakma OK\n".ptr);
+    # Dangling pointer'a yazma — tanimlanmamis davranis / abort beklenir
+    ptr[0] = 99;
+    ekrana_yaz("DANGLING_TEST: ULASILMAMALI\n".ptr);
+    dondu 0;
+}

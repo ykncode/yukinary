@@ -1,0 +1,73 @@
+# ============================================================
+# FAZ 24: Async State Machine + MPSC Kanal + Aktor Modeli Testi
+# ============================================================
+
+ice_aktar "std/aktor/aktor.ykn";
+
+async isv asenkron_hesapla(x: tamsayi) -> tamsayi {
+    dondu x * 3;
+}
+
+async isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # 1. Asenkron Coroutine Testi
+    degisken hesap: tamsayi = await asenkron_hesapla(10);
+    eger hesap != 30 ise {
+        ekrana_yaz("ASYNC_HESAP_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 2. MPSC Kanal Testi (Cok Uretici - Tek Tuketici)
+    degisken tx1: Gonderici;
+    degisken rx: Alici;
+    degisken k_res: tamsayi = kanal_olustur(&tx1, &rx);
+    eger k_res != 0 ise {
+        ekrana_yaz("KANAL_OLUSTUR_HATA\n".ptr);
+        dondu 1;
+    }
+
+    degisken tx2: Gonderici;
+    gonderici_klonla(&tx1, &tx2);
+
+    # Uretici 1 ve 2 mesaj gonderir
+    kanal_gonder(&tx1, 100);
+    kanal_gonder(&tx2, 200);
+
+    degisken m1: tamsayi = 0;
+    degisken m2: tamsayi = 0;
+    degisken okundu1: tamsayi = kanal_al(&rx, &m1);
+    degisken okundu2: tamsayi = kanal_al(&rx, &m2);
+
+    eger okundu1 != 1 veya m1 != 100 veya okundu2 != 1 veya m2 != 200 ise {
+        ekrana_yaz("KANAL_AL_HATA\n".ptr);
+        dondu 1;
+    }
+
+    gonderici_kapat(&tx1);
+    gonderici_kapat(&tx2);
+    alici_kapat(&rx);
+
+    # 3. Aktor Modeli Testi
+    degisken ak: Aktor;
+    degisken ak_res: tamsayi = aktor_yarat(&ak, 50);
+    eger ak_res != 0 ise {
+        ekrana_yaz("AKTOR_YARAT_HATA\n".ptr);
+        dondu 1;
+    }
+
+    aktor_mesaj_at(&ak, 25);
+    aktor_mesaj_at(&ak, 15);
+
+    # 2 adim calistir
+    aktor_adim_calistir(&ak);
+    aktor_adim_calistir(&ak);
+
+    eger ak.durum != 90 veya ak.islenen_mesaj_sayisi != 2 ise {
+        ekrana_yaz("AKTOR_DURUM_HATA\n".ptr);
+        dondu 1;
+    }
+
+    aktor_durdur(&ak);
+
+    ekrana_yaz("ASYNC_ACTOR_CHANNEL_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,9 @@
+# FIX-13 olumsuz: guard edilen pointer bos'a ataninca narrowing gecersizlesir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        p = bos;
+        p[0] = 66;
+    }
+    dondu 0;
+}

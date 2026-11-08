@@ -1,0 +1,58 @@
+# FAZ 7 - std/metin.ykn tek test
+# Calisma dizini: d:\YukiLLM\yukinary_vanilla
+
+degisken test_bellek: [65536]u8;
+degisken test_bellek_kullanilan: tamsayi = 0;
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 {
+    eger boyut <= 0 veya test_bellek_kullanilan + boyut > 65536 ise { dondu 0; }
+    degisken sonuc: *u8 = test_bellek + test_bellek_kullanilan;
+    test_bellek_kullanilan = test_bellek_kullanilan + boyut;
+    dondu sonuc;
+}
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    if sayi == 0 ise { buf[0]=48; buf[1]=0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    if n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i]=(n%10)+48; n=n/10; i=i+1; }
+    if neg == 1 ise { buf[i]=45; i=i+1; }
+    degisken j: tamsayi = 0;
+    dongu j < i/2 {
+        degisken t: u8 = buf[j]; buf[j]=buf[i-1-j]; buf[i-1-j]=t;
+        j=j+1;
+    }
+    buf[i]=0;
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../std/metin.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("uzunluk=".ptr);
+    sayiyi_yazdir(metin_uzunluk("Yukinary".ptr));            # 8
+    ekrana_yaz(" kars=".ptr);
+    sayiyi_yazdir(metin_karsilastir("a".ptr,"b".ptr));       # -1
+    sayiyi_yazdir(metin_karsilastir("x".ptr,"x".ptr));       # 0
+    ekrana_yaz(" alt=".ptr);
+    ekrana_yaz(alt_dize("Merhaba".ptr, 3, 4));              # haba
+    ekrana_yaz(" atoi=".ptr);
+    sayiyi_yazdir(tamsayiya_cevir("2026".ptr));              # 2026
+    ekrana_yaz(" atoi2=".ptr);
+    sayiyi_yazdir(tamsayiya_cevir("  -17".ptr));             # -17
+    ekrana_yaz(" concat=".ptr);
+    ekrana_yaz(concat("Hello,".ptr, "YKN".ptr));             # Hello,YKN
+    ekrana_yaz(" ara=".ptr);
+    degisken kaynak_metin: *u8 = "HelloWorld".ptr;
+    degisken bul: *u8 = metin_ara(kaynak_metin, "World".ptr);
+    if bul != 0 ise {
+        degisken fd: tamsayi = bul - kaynak_metin;
+        sayiyi_yazdir(fd);                                   # 5
+    }
+    ekrana_yaz("\nstd-metin-PASS\n".ptr);
+    dondu 0;
+}

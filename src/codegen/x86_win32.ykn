@@ -1,0 +1,34 @@
+# ============================================================
+# Yukinary Codegen - Windows x86_64 ABI & IAT Yardimcilari
+# Modul: src/codegen/x86_win32.ykn
+# ============================================================
+
+# AND RSP, -16  =>  48 83 E4 F0
+# Win32 ABI: Her CALL oncesi RSP % 16 == 0 olmali
+isv emit_and_rsp_align(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE4); byte_yaz(a, 0xF0);
+}
+
+# Win32 API cagri hazirlik: AND RSP,-16 + SUB RSP,40 (shadow space 32 + hizalama 8)
+# Cagri sonrasinda ADD RSP, 40 ile geri alinmali
+isv win32_cagri_oncesi(a: *MakineKoduArenasi) {
+    emit_and_rsp_align(a);                                              # AND RSP, -16
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28); # SUB RSP, 40
+}
+
+# IAT call patch tablosu: slot 1=WriteFile, 2=GetStdHandle
+degisken g_iat_yama_text_offset: [16384]tamsayi;
+degisken g_iat_yama_slot: [16384]tamsayi;
+degisken g_iat_yama_adet: tamsayi = 0;
+
+isv iat_yama_kapasite_kontrol() -> tamsayi {
+    eger g_iat_yama_adet >= 16384 ise {
+        codegen_kapasite_reddet(9);
+        dondu 0;
+    }
+    dondu 1;
+}
+
+# SIMD native DLL importu yalnızca gerçek SIMD sembolü kullanıldığında etkinleşir.
+degisken g_iat_simd_kullanildi: tamsayi = 0;
+degisken g_iat_dynamic_kullanildi: tamsayi = 0;

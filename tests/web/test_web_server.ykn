@@ -1,0 +1,89 @@
+# tests/web/test_web_server.ykn
+# Yukinary Gercek Yerel HTTP Sunucu & Rota Entegrasyon Testi
+# Harici C++, Python, Node.js veya Harici Kutuphane KULLANMAZ (SIFIR BAGIMLILIK)
+
+ice_aktar "std/web/sunucu.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("ANA BASLADI\n".ptr);
+    degisken port: tamsayi = 19876;
+    degisken ws: WebSunucu;
+    web_sunucu_hazirla(&ws, port);
+    ekrana_yaz("HAZIRLANDI\n".ptr);
+
+    degisken r_ok: tamsayi = web_sunucu_rota_ekle(&ws, "/durum".ptr, 6, "YUKINARY_SERVER_OK".ptr, 18);
+    ekrana_yaz("ROTA EKLENDI\n".ptr);
+
+    degisken sunucu_fd: tamsayi = web_sunucu_baslat(&ws);
+    eger sunucu_fd < 0 ise {
+        ekrana_yaz("HATA: Sunucu baslatilamadi!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("SUNUCU BASLATILDI\n".ptr);
+
+    degisken yerel_ip: tamsayi = ipv4_adres(127, 0, 0, 1);
+    degisken c_fd: tamsayi = istemci_olustur(yerel_ip, port, 3000);
+    eger c_fd < 0 ise {
+        ekrana_yaz("HATA: Istemci baglanamadi!\n".ptr);
+        web_sunucu_kapat(&ws);
+        dondu 3;
+    }
+    ekrana_yaz("ISTEMCI BAGLANDI\n".ptr);
+
+    degisken istek_metni: *u8 = "GET /durum HTTP/1.1\r\nHost: localhost\r\n\r\n".ptr;
+    yukinary_sys_socket_send(c_fd, istek_metni, 39);
+    ekrana_yaz("ISTEK GONDERILDI\n".ptr);
+
+    degisken isle_sonuc: tamsayi = web_sunucu_tek_istek_isle(&ws);
+    ekrana_yaz("ISTEK ISLENDI\n".ptr);
+    eger isle_sonuc <= 0 ise {
+        ekrana_yaz("HATA: Sunucu istek isleyemedi!\n".ptr);
+        soket_kapat(c_fd);
+        web_sunucu_kapat(&ws);
+        dondu 4;
+    }
+
+    # Istemci yaniti okusun
+    degisken yanit_tampon: [1024]u8;
+    degisken okunan: tamsayi = yukinary_sys_socket_recv(c_fd, yanit_tampon, 1023);
+    eger okunan <= 0 ise {
+        ekrana_yaz("HATA: Istemci yanit alamadi!\n".ptr);
+        soket_kapat(c_fd);
+        web_sunucu_kapat(&ws);
+        dondu 5;
+    }
+    yanit_tampon[okunan] = 0;
+
+    # Yanit icinde "YUKINARY_SERVER_OK" var mi kontrol et
+    degisken aranan: *u8 = "YUKINARY_SERVER_OK".ptr;
+    degisken aranan_uzn: tamsayi = 18;
+    degisken bulundu: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i <= okunan - aranan_uzn {
+        degisken esit: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < aranan_uzn {
+            eger yanit_tampon[i + j] != aranan[j] ise {
+                esit = 0;
+                durdur;
+            }
+            j = j + 1;
+        }
+        eger esit == 1 ise {
+            bulundu = 1;
+            durdur;
+        }
+        i = i + 1;
+    }
+
+    soket_kapat(c_fd);
+    web_sunucu_kapat(&ws);
+
+    eger bulundu == 1 ise {
+        ekrana_yaz("PASS: REAL NATIVE HTTP SERVER & ROUTING VERIFIED (NO MOCK, ZERO DEPENDENCY)!\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz("HATA: Yanit icerigi eslesmedi!\n".ptr);
+    dondu 6;
+}

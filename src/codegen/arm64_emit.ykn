@@ -1,0 +1,230 @@
+# ============================================================
+# Yukinary Codegen - ARM64 (AArch64) Opcode & Thunk Yardimcilari
+# Modul: src/codegen/arm64_emit.ykn
+# ============================================================
+
+isv linux_arm64_baslangic_thunk_uret_legacy(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # LDR X0, [SP] (0xF94003E0)
+    byte_yaz(a, 0xE0); byte_yaz(a, 0x03); byte_yaz(a, 0x40); byte_yaz(a, 0xF9);
+    # ADD X1, SP, #8 (0x910023E1)
+    byte_yaz(a, 0xE1); byte_yaz(a, 0x23); byte_yaz(a, 0x00); byte_yaz(a, 0x91);
+    # BL ana_adres
+    degisken bl_pos: tamsayi = a.kullanilan;
+    degisken rel_inst: tamsayi = (ana_adres - bl_pos) / 4;
+    degisken imm26: tamsayi = rel_inst;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x94000000 + (imm26 % 67108864);
+    int32_yaz(a, opcode);
+    # MOVZ X8, #93 (0xD2800BA8) (SYS_exit=93)
+    byte_yaz(a, 0xA8); byte_yaz(a, 0x0B); byte_yaz(a, 0x80); byte_yaz(a, 0xD2);
+    # SVC #0 (0xD4000001)
+    byte_yaz(a, 0x01); byte_yaz(a, 0x00); byte_yaz(a, 0x00); byte_yaz(a, 0xD4);
+    dondu bas;
+}
+
+isv macos_arm64_baslangic_thunk_uret_legacy(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # LDR X0, [SP] (0xF94003E0)
+    byte_yaz(a, 0xE0); byte_yaz(a, 0x03); byte_yaz(a, 0x40); byte_yaz(a, 0xF9);
+    # ADD X1, SP, #8 (0x910023E1)
+    byte_yaz(a, 0xE1); byte_yaz(a, 0x23); byte_yaz(a, 0x00); byte_yaz(a, 0x91);
+    # BL ana_adres
+    degisken bl_pos: tamsayi = a.kullanilan;
+    degisken rel_inst: tamsayi = (ana_adres - bl_pos) / 4;
+    degisken imm26: tamsayi = rel_inst;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x94000000 + (imm26 % 67108864);
+    int32_yaz(a, opcode);
+    # MOVZ X16, #1 (0xD2800030) (macOS SYS_exit=1 in X16)
+    byte_yaz(a, 0x30); byte_yaz(a, 0x00); byte_yaz(a, 0x80); byte_yaz(a, 0xD2);
+    # SVC #0x80 (0xD4001001)
+    byte_yaz(a, 0x01); byte_yaz(a, 0x10); byte_yaz(a, 0x00); byte_yaz(a, 0xD4);
+    dondu bas;
+}
+
+# ============================================================
+# ARM64 AAPCS Calling Convention - Fonksiyon Prolog/Epilog
+# AArch64 ABI:
+#   - X0..X7   : Argumanlar / donus degeri (X0)
+#   - X29 (FP) : Frame Pointer (callee-saved)
+#   - X30 (LR) : Link Register (callee-saved)
+#   Stack: 16-byte hizali, asagi buyur
+# ============================================================
+
+# ARM64 32-bit talimat emit (4-byte little-endian)
+isv a64_int32_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    degisken u: tamsayi = v;
+    dongu u < 0 { u = u + 4294967296; }
+    byte_yaz(a, u % 256);
+    byte_yaz(a, (u / 256) % 256);
+    byte_yaz(a, (u / 65536) % 256);
+    byte_yaz(a, (u / 16777216) % 256);
+}
+
+# Prolog: STP X29, X30, [SP, #-16]!  +  MOV X29, SP
+isv arm64_emit_prolog(a: *MakineKoduArenasi) {
+    # STP X29, X30, [SP, #-16]!  (0xA9BF7BFD)
+    byte_yaz(a, 0xFD); byte_yaz(a, 0x7B); byte_yaz(a, 0xBF); byte_yaz(a, 0xA9);
+    # MOV X29, SP  ->  ADD X29, SP, #0  (0x910003FD)
+    byte_yaz(a, 0xFD); byte_yaz(a, 0x03); byte_yaz(a, 0x00); byte_yaz(a, 0x91);
+}
+
+# Stack frame: SUB SP, SP, #imm12 (16-byte hizali, >4080 icin parcali)
+isv arm64_emit_sub_sp(a: *MakineKoduArenasi, boyut: tamsayi) {
+    degisken frame: tamsayi = boyut;
+    eger frame % 16 != 0 ise {
+        frame = frame + (16 - (frame % 16));
+    }
+    eger frame < 16 ise { frame = 16; }
+    dongu frame > 4080 {
+        degisken chunk_instr: tamsayi = 0xD1000000 + (4080 * 1024) + (31 * 32) + 31;
+        a64_int32_yaz(a, chunk_instr);
+        frame = frame - 4080;
+    }
+    degisken imm12: tamsayi = frame;
+    degisken instr: tamsayi = 0xD1000000 + (imm12 * 1024) + (31 * 32) + 31;
+    a64_int32_yaz(a, instr);
+}
+
+# ADD SP, SP, #imm12 (epilog frame restore, >4080 icin parcali)
+isv arm64_emit_add_sp(a: *MakineKoduArenasi, boyut: tamsayi) {
+    degisken frame: tamsayi = boyut;
+    eger frame % 16 != 0 ise { frame = frame + (16 - (frame % 16)); }
+    eger frame < 16 ise { frame = 16; }
+    dongu frame > 4080 {
+        degisken chunk_instr: tamsayi = 0x91000000 + (4080 * 1024) + (31 * 32) + 31;
+        a64_int32_yaz(a, chunk_instr);
+        frame = frame - 4080;
+    }
+    degisken imm12: tamsayi = frame;
+    degisken instr: tamsayi = 0x91000000 + (imm12 * 1024) + (31 * 32) + 31;
+    a64_int32_yaz(a, instr);
+}
+
+# Epilog: LDP X29, X30, [SP], #16  +  RET
+isv arm64_emit_epilog(a: *MakineKoduArenasi) {
+    # LDP X29, X30, [SP], #16  (0xA8C17BFD)
+    byte_yaz(a, 0xFD); byte_yaz(a, 0x7B); byte_yaz(a, 0xC1); byte_yaz(a, 0xA8);
+    # RET  (0xD65F03C0)
+    byte_yaz(a, 0xC0); byte_yaz(a, 0x03); byte_yaz(a, 0x5F); byte_yaz(a, 0xD6);
+}
+
+# ============================================================
+# ARM64 lokal degisken store/load (FP-relative, [X29, #-off])
+# off <= 256: STUR/LDUR X0, [X29, #-simm9]
+# off > 256:  SUB X9, X29, #off + STR/LDR X0, [X9]
+# ============================================================
+isv arm64_emit_str_x0_fp(a: *MakineKoduArenasi, off: tamsayi) {
+    eger off <= 256 ve off >= 0 - 255 ise {
+        degisken simm9: tamsayi = (0 - off) & 511;
+        degisken instr: tamsayi = 0xF8000000 + (simm9 * 4096) + (29 * 32) + 0;
+        a64_int32_yaz(a, instr);
+    } yoksa {
+        # SUB X9, X29, #off (imm12 up to 4095)
+        degisken rem: tamsayi = off;
+        degisken base_reg: tamsayi = 29;
+        dongu rem > 4080 {
+            degisken sub_chunk: tamsayi = 0xD1000000 + (4080 * 1024) + (base_reg * 32) + 9;
+            a64_int32_yaz(a, sub_chunk);
+            rem = rem - 4080;
+            base_reg = 9;
+        }
+        degisken sub_instr: tamsayi = 0xD1000000 + ((rem & 4095) * 1024) + (base_reg * 32) + 9;
+        a64_int32_yaz(a, sub_instr);
+        # STR X0, [X9] => 0xF9000120
+        a64_int32_yaz(a, 0xF9000120);
+    }
+}
+
+isv arm64_emit_ldr_x0_fp(a: *MakineKoduArenasi, off: tamsayi) {
+    eger off <= 256 ve off >= 0 - 255 ise {
+        degisken simm9: tamsayi = (0 - off) & 511;
+        degisken instr: tamsayi = 0xF8400000 + (simm9 * 4096) + (29 * 32) + 0;
+        a64_int32_yaz(a, instr);
+    } yoksa {
+        degisken rem: tamsayi = off;
+        degisken base_reg: tamsayi = 29;
+        dongu rem > 4080 {
+            degisken sub_chunk: tamsayi = 0xD1000000 + (4080 * 1024) + (base_reg * 32) + 9;
+            a64_int32_yaz(a, sub_chunk);
+            rem = rem - 4080;
+            base_reg = 9;
+        }
+        degisken sub_instr: tamsayi = 0xD1000000 + ((rem & 4095) * 1024) + (base_reg * 32) + 9;
+        a64_int32_yaz(a, sub_instr);
+        # LDR X0, [X9] => 0xF9400120
+        a64_int32_yaz(a, 0xF9400120);
+    }
+}
+
+# ARM64 BL (Branch-Link)
+isv arm64_emit_bl_rel(a: *MakineKoduArenasi, hedef: tamsayi) {
+    degisken bl_pos: tamsayi = a.kullanilan;
+    degisken rel: tamsayi = (hedef - bl_pos) / 4;
+    degisken imm26: tamsayi = rel;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x94000000 + (imm26 % 67108864);
+    a64_int32_yaz(a, opcode);
+}
+
+# ARM64 B (Branch unconditional)
+isv arm64_emit_b_rel(a: *MakineKoduArenasi, hedef: tamsayi) {
+    degisken b_pos: tamsayi = a.kullanilan;
+    degisken rel: tamsayi = (hedef - b_pos) / 4;
+    degisken imm26: tamsayi = rel;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x14000000 + (imm26 % 67108864);
+    a64_int32_yaz(a, opcode);
+}
+
+# ARM64 MOV X0, #imm16 (MOVZ)
+isv arm64_emit_movz_x0_imm(a: *MakineKoduArenasi, imm16: tamsayi) {
+    degisken instr: tamsayi = 0xD2800000 + ((imm16 & 65535) * 32);
+    a64_int32_yaz(a, instr);
+}
+
+# ARM64 RET talimati
+isv arm64_emit_ret(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0xC0); byte_yaz(a, 0x03); byte_yaz(a, 0x5F); byte_yaz(a, 0xD6);
+}
+
+# ARM64 NOP
+isv arm64_emit_nop(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x1F); byte_yaz(a, 0x20); byte_yaz(a, 0x03); byte_yaz(a, 0xD5);
+}
+
+# ============================================================
+# ARM64 Platform kontrolcusu
+# g_target_platform: 0=Win x86, 1=Linux x86, 2=macOS x86
+#                    3=Linux ARM64, 4=macOS ARM64
+# ============================================================
+isv platform_arm64_mi() -> tamsayi {
+    eger g_target_platform == 3 veya g_target_platform == 4 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# ARM64 Aritmetik (Register-to-Register)
+# ============================================================
+isv arm64_emit_add_reg(a: *MakineKoduArenasi, rd: tamsayi, rn: tamsayi, rm: tamsayi) {
+    degisken instr: tamsayi = 0x8B000000 + (rm * 65536) + (rn * 32) + rd;
+    a64_int32_yaz(a, instr);
+}
+
+isv arm64_emit_sub_reg(a: *MakineKoduArenasi, rd: tamsayi, rn: tamsayi, rm: tamsayi) {
+    degisken instr: tamsayi = 0xCB000000 + (rm * 65536) + (rn * 32) + rd;
+    a64_int32_yaz(a, instr);
+}
+
+isv arm64_emit_mul_reg(a: *MakineKoduArenasi, rd: tamsayi, rn: tamsayi, rm: tamsayi) {
+    degisken instr: tamsayi = 0x9B007C00 + (rm * 65536) + (rn * 32) + rd;
+    a64_int32_yaz(a, instr);
+}
+
+isv arm64_emit_cmp_reg(a: *MakineKoduArenasi, rn: tamsayi, rm: tamsayi) {
+    degisken instr: tamsayi = 0xEB000000 + (rm * 65536) + (rn * 32) + 31;
+    a64_int32_yaz(a, instr);
+}

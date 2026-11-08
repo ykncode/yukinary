@@ -1,0 +1,7 @@
+# Negatif Test 01: Tanimsiz degisken kullanimi
+# Beklenen: TC HATA: Tanimsiz sembol, derleme DURUR
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = tanimsiz_degisken + 1;
+    dondu 0;
+}

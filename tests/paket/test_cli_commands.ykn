@@ -1,0 +1,37 @@
+# ============================================================
+# tests/paket/test_cli_commands.ykn
+# FAZ 53: CLI Test, Doc ve LSP Formatting Testi
+# ============================================================
+
+ice_aktar "src/cli_dispatcher.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 53: CLI Test, Doc & LSP Formatting Testi Basliyor...\n".ptr);
+
+    # 1. CLI Test Motoru Kosumu
+    degisken test_hatalari: tamsayi = cli_test_calistir();
+    eger test_hatalari != 0 ise {
+        ekrana_yaz("HATA: CLI test motoru basarisiz oldu!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. CLI Doc Motoru Uretimi
+    degisken doc_tampon: *u8 = bellek_tahsis_et(256);
+    degisken kayit_sayisi: tamsayi = cli_doc_uret("matematik".ptr, doc_tampon);
+    eger kayit_sayisi != 1 ise {
+        ekrana_yaz("HATA: Dokumantasyon uretimi basarisiz!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. LSP Formatlama Kancasi
+    degisken kod: *u8 = "degisken a = 5;".ptr;
+    degisken fmt_len: tamsayi = lsp_formatla_kod(kod, 15);
+    eger fmt_len != 15 ise {
+        ekrana_yaz("HATA: LSP formatlama gecersiz!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("CLI_COMMANDS_LSP_FMT_PASS\n".ptr);
+    dondu 0;
+}
+

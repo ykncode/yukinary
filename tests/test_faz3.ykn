@@ -1,0 +1,89 @@
+# Test FAZ 3: Fallback Shell (Win32 & POSIX real execution) and GLFW Binding Real Context
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fallback_shell.ykn";
+ice_aktar "std/window/glfw_binding.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== FAZ 3 TESTLERI BASLIYOR ===\n".ptr);
+
+    # 1. TEST: Real Shell Command Execution & Output Capture
+    ekrana_yaz("[1/2] Fallback Shell Komut Calistirma ve Stdout Yakalama Testi... ".ptr);
+    degisken cmd: *u8 = "echo YKN_SHELL_OK".ptr;
+    degisken cmd_uzn: tamsayi = 17;
+    degisken sonuc: *ShellSonuc = shell_calistir(cmd, cmd_uzn);
+
+    eger sonuc == 0 ise {
+        ekrana_yaz("BASARISIZ! shell_calistir NULL dondu!\n".ptr);
+        dondu 1;
+    }
+    eger sonuc.basarili != 1 ise {
+        ekrana_yaz("BASARISIZ! Shell komutu basarisiz oldu!\n".ptr);
+        dondu 1;
+    }
+    eger sonuc.cikis_kodu != 0 ise {
+        ekrana_yaz("BASARISIZ! Cikis kodu 0 degil!\n".ptr);
+        dondu 1;
+    }
+    eger sonuc.stdout_uzn <= 0 veya sonuc.stdout_tampon == 0 ise {
+        ekrana_yaz("BASARISIZ! Stdout yakalanamadi!\n".ptr);
+        dondu 1;
+    }
+    # Stdout icinde "YKN_SHELL_OK" gectigini kontrol et
+    degisken out_str: *u8 = sonuc.stdout_tampon;
+    degisken out_len: tamsayi = sonuc.stdout_uzn;
+    degisken bulundu: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i + 12 <= out_len {
+        eger out_str[i] == 89 ve out_str[i+1] == 75 ve out_str[i+2] == 78 ve out_str[i+3] == 95 { # "YKN_"
+            bulundu = 1;
+            durdur;
+        }
+        i = i + 1;
+    }
+    eger bulundu == 0 ise {
+        ekrana_yaz("BASARISIZ! Ciktida beklenen imza bulunamadi!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    # 2. TEST: GLFW Binding (Sifir Mock, Gercek Context / Temiz Fallback)
+    ekrana_yaz("[2/2] GLFW Binding (Real Context / Sifir Mock 1001) Testi... ".ptr);
+    degisken py: *PencereYonetici = pencere_yoneticisi_olustur(640, 480);
+    eger py == 0 ise {
+        ekrana_yaz("BASARISIZ! pencere_yoneticisi_olustur NULL dondu!\n".ptr);
+        dondu 2;
+    }
+    # Eger GLFW baslatilamadiysa (sistemde DLL yoksa), aktif_pencere ASLA sahte 1001 OLMAMALI (0 olmali)
+    eger py.baslatildi == 0 ise {
+        eger py.aktif_pencere != 0 ise {
+            ekrana_yaz("BASARISIZ! DLL olmadan sahte 1001 handle uretildi!\n".ptr);
+            dondu 2;
+        }
+    } yoksa {
+        # Eger baslatildiysa g_glfw_create_win_ptr ile olusturulan pencere handle'i atanmis olmali
+        eger py.aktif_pencere == 1001 ise {
+            ekrana_yaz("BASARISIZ! Gercek pencere yerine sahte 1001 handle bulundu!\n".ptr);
+            dondu 2;
+        }
+    }
+    
+    # Pencere olaylarini tara ve tampon takas et
+    degisken ev_ok: tamsayi = pencere_olaylari_tara(py);
+    degisken sw_ok: tamsayi = pencere_tampon_takas(py);
+    eger ev_ok != 1 veya sw_ok != 1 ise {
+        ekrana_yaz("BASARISIZ! Olay veya tampon islemi basarisiz!\n".ptr);
+        dondu 2;
+    }
+
+    # Kapat ve temizle
+    pencere_kapat(py);
+    eger py.aktif_pencere != 0 ise {
+        ekrana_yaz("BASARISIZ! pencere_kapat sonrasi aktif pencere 0 olmali!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    ekrana_yaz(">>> FAZ 3 TUM TESTLERI BASARIYLA GECTI! <<<\n".ptr);
+    dondu 0;
+}
+

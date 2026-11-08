@@ -1,0 +1,73 @@
+# ============================================================
+# Örnek 52: Konsol Tabanlı Yapılacaklar (Todo) Listesi Yöneticisi
+# ============================================================
+ice_aktar "std/collection/vec.ykn";
+
+yapi Gorev {
+    id: tamsayi;
+    baslik: *u8;
+    tamamlandi: tamsayi;
+}
+
+degisken g_gorev_id_sayaci: tamsayi = 1;
+degisken g_gorevler: [100]Gorev;
+degisken g_toplam_gorev: tamsayi = 0;
+
+isv gorev_ekle(metin: *u8) {
+    eger g_toplam_gorev >= 100 ise {
+        ekrana_yaz("Gorev listesi dolu!\n".ptr);
+        dondu;
+    }
+    g_gorevler[g_toplam_gorev].id = g_gorev_id_sayaci;
+    g_gorevler[g_toplam_gorev].baslik = metin;
+    g_gorevler[g_toplam_gorev].tamamlandi = 0;
+
+    g_gorev_id_sayaci = g_gorev_id_sayaci + 1;
+    g_toplam_gorev = g_toplam_gorev + 1;
+    ekrana_yaz("Gorev eklendi: ".ptr); ekrana_yaz(metin); ekrana_yaz("\n".ptr);
+}
+
+isv gorev_tamamla(hedef_id: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < g_toplam_gorev) {
+        eger g_gorevler[i].id == hedef_id ise {
+            g_gorevler[i].tamamlandi = 1;
+            ekrana_yaz("Gorev tamamlandi olarak isaretlendi!\n".ptr);
+            dondu;
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("Gorev bulunamadi!\n".ptr);
+}
+
+isv gorevleri_listele() {
+    ekrana_yaz("\n=== YAPILACAKLAR LISTESI ===\n".ptr);
+    degisken i: tamsayi = 0;
+    dongu (i < g_toplam_gorev) {
+        eger g_gorevler[i].tamamlandi == 1 ise {
+            ekrana_yaz("[X] ".ptr);
+        } yoksa {
+            ekrana_yaz("[ ] ".ptr);
+        }
+        sayiyi_ekrana_yaz(g_gorevler[i].id);
+        ekrana_yaz(". ".ptr);
+        ekrana_yaz(g_gorevler[i].baslik);
+        ekrana_yaz("\n".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("============================\n\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    gorev_ekle("YKN derleyicisini test et".ptr);
+    gorev_ekle("Standart kutuphaneye JSON ayristirici ekle".ptr);
+    gorev_ekle("YKNLLM veri setini hazirla".ptr);
+
+    gorevleri_listele();
+
+    gorev_tamamla(1);
+    gorev_tamamla(3);
+
+    gorevleri_listele();
+    dondu 0;
+}

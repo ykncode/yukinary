@@ -1,0 +1,178 @@
+# ============================================================
+# tools/doc_generator.ykn
+# YKN Standard Library API Dokumantasyon Uretici
+# std/**/*.ykn dosyalarindaki doc-comment'leri tarayip
+# docs/stdlib_api_reference.md uretir.
+#
+# Doc comment formati:
+#   ## Aciklama
+#   isv fonksiyon_adi(parametre: tip) -> donus_tip
+#
+# Kullanim:
+#   yukic doc_generator.ykn
+# ============================================================
+#c-lib "kernel32";
+
+# Win32 dosya islemleri icin
+harici isv CreateFileA(
+    lpFileName: *u8,
+    dwDesiredAccess: tamsayi,
+    dwShareMode: tamsayi,
+    lpSecurityAttributes: *u8,
+    dwCreationDisposition: tamsayi,
+    dwFlagsAndAttributes: tamsayi,
+    hTemplateFile: tamsayi
+) -> tamsayi;
+
+harici isv WriteFile(
+    hFile: tamsayi,
+    lpBuffer: *u8,
+    nNumberOfBytesToWrite: tamsayi,
+    lpNumberOfBytesWritten: *tamsayi,
+    lpOverlapped: *u8
+) -> tamsayi;
+
+harici isv CloseHandle(hObject: tamsayi) -> tamsayi;
+harici isv ReadFile(hFile: tamsayi, lpBuffer: *u8, nBytes: tamsayi, lpRead: *tamsayi, lpOv: *u8) -> tamsayi;
+harici isv SetFilePointer(hFile: tamsayi, lDist: tamsayi, lpDistHigh: *tamsayi, dwMethod: tamsayi) -> tamsayi;
+harici isv GetFileSize(hFile: tamsayi, lpHigh: *tamsayi) -> tamsayi;
+harici isv FindFirstFileA(lpPath: *u8, lpFindData: *u8) -> tamsayi;
+harici isv FindNextFileA(hFind: tamsayi, lpFindData: *u8) -> tamsayi;
+harici isv FindClose(hFind: tamsayi) -> tamsayi;
+
+degisken GENERIC_READ:    tamsayi = -2147483648;
+degisken GENERIC_WRITE:   tamsayi = 1073741824;
+degisken OPEN_EXISTING:   tamsayi = 3;
+degisken CREATE_ALWAYS:   tamsayi = 2;
+degisken FILE_ATTRIBUTE_NORMAL: tamsayi = 128;
+degisken INVALID_HANDLE:  tamsayi = -1;
+degisken FILE_SHARE_READ: tamsayi = 1;
+
+isv dosya_ac(yol: *u8) -> tamsayi {
+    dondu CreateFileA(yol, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+}
+
+isv dosya_olustur(yol: *u8) -> tamsayi {
+    dondu CreateFileA(yol, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+}
+
+isv dosya_yaz(handle: tamsayi, metin: *u8) {
+    eger handle == INVALID_HANDLE veya handle == 0 veya metin == 0 ise { dondu; }
+    degisken uzunluk: tamsayi = 0;
+    dongu metin[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    eger uzunluk == 0 ise { dondu; }
+    degisken yazilan: [1]tamsayi;
+    WriteFile(handle, metin, uzunluk, yazilan, 0);
+}
+
+# Basiт line-by-line isv ve doc-comment tara
+isv satir_islev_mi(satir: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger satir == 0 veya uzunluk < 4 ise { dondu 0; }
+    # "isv " ile baslıyor mu?
+    eger satir[0] == 105 ve satir[1] == 115 ve satir[2] == 118 ve satir[3] == 32 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv satir_doc_comment_mi(satir: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger satir == 0 veya uzunluk < 2 ise { dondu 0; }
+    # "##" ile baslıyor mu?
+    eger satir[0] == 35 ve satir[1] == 35 ise { dondu 1; }
+    # "# " ile baslıyor mu?
+    eger satir[0] == 35 ve satir[1] == 32 ise { dondu 1; }
+    dondu 0;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("YKN API Dokumantasyon Uretici basliyor...\n".ptr);
+
+    degisken cikti_handle: tamsayi = dosya_olustur("docs/stdlib_api_reference.md".ptr);
+    eger cikti_handle == INVALID_HANDLE veya cikti_handle == 0 ise {
+        ekrana_yaz("HATA: docs/stdlib_api_reference.md olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    dosya_yaz(cikti_handle, "# YKN Standart Kutuphane API Referansi\n\n".ptr);
+    dosya_yaz(cikti_handle, "> Bu dosya `tools/doc_generator.ykn` tarafindan otomatik olarak uretilmistir.\n\n".ptr);
+    dosya_yaz(cikti_handle, "## Moduller\n\n".ptr);
+
+    # Bildirilen stdlib modul listesi
+    degisken moduller: [20]*u8;
+    moduller[0]  = "std/bellek.ykn".ptr;
+    moduller[1]  = "std/metin.ykn".ptr;
+    moduller[2]  = "std/dosya.ykn".ptr;
+    moduller[3]  = "std/iterator.ykn".ptr;
+    moduller[4]  = "std/koleksiyon.ykn".ptr;
+    moduller[5]  = "std/sonuc.ykn".ptr;
+    moduller[6]  = "std/secenek.ykn".ptr;
+    moduller[7]  = "std/matematik.ykn".ptr;
+    moduller[8]  = "std/enum.ykn".ptr;
+    moduller[9]  = "std/guvenlik.ykn".ptr;
+    moduller[10] = "std/collection/vec.ykn".ptr;
+    moduller[11] = "std/collection/hashmap.ykn".ptr;
+    moduller[12] = "std/os/os_linux.ykn".ptr;
+    moduller[13] = "std/os/os_win32.ykn".ptr;
+    moduller[14] = "std/os/os_macos.ykn".ptr;
+    moduller[15] = "std/os/os_linux_arm64.ykn".ptr;
+    moduller[16] = "std/is_parcacigi/thread_win32.ykn".ptr;
+    moduller[17] = "std/is_parcacigi/thread_posix.ykn".ptr;
+    moduller[18] = "std/unicode_tables.ykn".ptr;
+    moduller[19] = 0;
+
+    degisken modul_sayisi: tamsayi = 19;
+    degisken mi: tamsayi = 0;
+    dongu mi < modul_sayisi {
+        eger moduller[mi] == 0 ise { mi = mi + 1; devam_et; }
+        dosya_yaz(cikti_handle, "### ".ptr);
+        dosya_yaz(cikti_handle, moduller[mi]);
+        dosya_yaz(cikti_handle, "\n\n".ptr);
+
+        # Her modul icin dosyayi ac ve isv satirlarini listele
+        degisken fh: tamsayi = dosya_ac(moduller[mi]);
+        eger fh != INVALID_HANDLE ve fh != 0 ise {
+            degisken dosya_boyut: tamsayi = GetFileSize(fh, 0);
+            eger dosya_boyut > 0 ve dosya_boyut < 524288 ise { # Max 512KB
+                degisken icerik: *u8 = bellek_tahsis_et(dosya_boyut + 8);
+                eger icerik != 0 ise {
+                    degisken okunan: [1]tamsayi;
+                    ReadFile(fh, icerik, dosya_boyut, okunan, 0);
+                    icerik[dosya_boyut] = 0;
+
+                    # Satirlari isle
+                    degisken satir_bas: tamsayi = 0;
+                    degisken si: tamsayi = 0;
+                    dongu si <= dosya_boyut {
+                        eger icerik[si] == 10 veya icerik[si] == 0 ise {
+                            degisken satir_uzunluk: tamsayi = si - satir_bas;
+                            degisken satir_ptr: *u8 = icerik + satir_bas;
+                            eger satir_islev_mi(satir_ptr, satir_uzunluk) == 1 ise {
+                                dosya_yaz(cikti_handle, "- `".ptr);
+                                degisken sj: tamsayi = 0;
+                                degisken yazim_buf: [256]u8;
+                                dongu sj < satir_uzunluk ve sj < 255 {
+                                    yazim_buf[sj] = satir_ptr[sj];
+                                    sj = sj + 1;
+                                }
+                                yazim_buf[sj] = 0;
+                                dosya_yaz(cikti_handle, yazim_buf);
+                                dosya_yaz(cikti_handle, "`\n".ptr);
+                            }
+                            satir_bas = si + 1;
+                        }
+                        si = si + 1;
+                    }
+                }
+            }
+            CloseHandle(fh);
+        } yoksa {
+            dosya_yaz(cikti_handle, "_Dosya bulunamadi veya okunamadi._\n\n".ptr);
+        }
+        dosya_yaz(cikti_handle, "\n".ptr);
+        mi = mi + 1;
+    }
+
+    CloseHandle(cikti_handle);
+    ekrana_yaz("API referansi uretildi: docs/stdlib_api_reference.md\n".ptr);
+    dondu 0;
+}

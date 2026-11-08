@@ -1,0 +1,77 @@
+# ============================================================
+# Test: tests/test_faz5_spirv_columnar.ykn
+# FAZ 5 Dogrulama: Vulkan Compute SPIR-V ve Kolon Tabanli SQL
+# Windows ve Linux uzerinde sifir mock ile tam dogrulama.
+# ============================================================
+
+ice_aktar "std/ai/spirv_emitter.ykn";
+ice_aktar "std/veritabani/sql_motoru.ykn";
+
+isv main() -> tamsayi {
+    # ------------------------------------------------------------
+    # 1. SPIR-V Compute Shader Bayt Kodu Dogrulamasi
+    # ------------------------------------------------------------
+    degisken m: *SpirvModulu = spirv_modulu_olustur(128);
+    eger m == 0 ise { dondu 1; }
+
+    degisken kelime_sayisi: tamsayi = spirv_compute_iskelet_uret(m);
+    eger kelime_sayisi < 20 ise {
+        dondu 10; # En az 20 kelime olmali
+    }
+
+    degisken words: *tamsayi = m.kelimeler;
+    # 0x07230203 = 119734787
+    eger words[0] != 119734787 ise {
+        dondu 11; # SPIR-V magic hatasi
+    }
+    # 0x00010000 = 65536
+    eger words[1] != 65536 ise {
+        dondu 12; # SPIR-V version 1.0 hatasi
+    }
+    eger words[2] != 1337 ise {
+        dondu 13; # YKN generator id hatasi
+    }
+
+    spirv_modulu_serbest_birak(m);
+
+    # ------------------------------------------------------------
+    # 2. Kolon Tabanli (Columnar / OLAP) SQL Tablosu Dogrulamasi
+    # ------------------------------------------------------------
+    degisken tbl: *SqlKolonTablo = sql_kolon_tablo_olustur(100);
+    eger tbl == 0 ise { dondu 2; }
+
+    degisken i: tamsayi = 0;
+    dongu i < 100 {
+        # id = i, val1 = (i + 1) * 10, val2 = (i + 1) % 5
+        sql_kolon_satir_ekle(tbl, i, (i + 1) * 10, (i + 1) % 5);
+        i = i + 1;
+    }
+
+    eger tbl.satir_sayisi != 100 ise {
+        dondu 20;
+    }
+
+    # Sutun 1 Toplami: 10 * sum(1..100) = 10 * 5050 = 50500
+    degisken top_val1: tamsayi = sql_kolon_toplam(tbl, 1);
+    eger top_val1 != 50500 ise {
+        dondu 21; # Vektorel kolon toplami 50500 olmaliydi
+    }
+
+    # Sutun 1 Ortalamasi: 50500 / 100 = 505
+    degisken avg_val1: tamsayi = sql_kolon_ortalama(tbl, 1);
+    eger avg_val1 != 505 ise {
+        dondu 22; # Kolon ortalamasi 505 olmaliydi
+    }
+
+    # Filtreli Sayim: COUNT(*) WHERE val1 > 500
+    # (i + 1) * 10 > 500 => i + 1 > 50 => i in [50..99] => 50 adet satir
+    degisken filtre_sayi: tamsayi = sql_kolon_filtre_say(tbl, 1, SQL_OP_BUYUK, 500);
+    eger filtre_sayi != 50 ise {
+        dondu 23; # Filtreli sayi 50 olmaliydi
+    }
+
+    sql_kolon_tablo_serbest_birak(tbl);
+
+    dondu 0;
+}
+

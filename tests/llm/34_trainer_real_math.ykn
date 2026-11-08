@@ -1,0 +1,47 @@
+# Saf YKN trainer numeric acceptance: deterministic fixed-point primitives.
+ice_aktar "std/ai/trainer.ykn";
+
+isv ana() -> tamsayi {
+    degisken bir: tamsayi = 65536;
+    degisken sig: tamsayi = q16_sigmoid_yaklasik(bir);
+    eger sig < 47000 veya sig > 50000 ise {
+        ekrana_yaz("FAIL: sigmoid\n".ptr);
+        dondu 1;
+    }
+    degisken silu: tamsayi = q16_silu(bir);
+    eger silu < 47000 veya silu > 50000 ise {
+        ekrana_yaz("FAIL: silu\n".ptr);
+        dondu 2;
+    }
+    eger q16_sqrt(bir) < 65535 veya q16_sqrt(bir) > 65537 ise {
+        ekrana_yaz("FAIL: sqrt\n".ptr);
+        dondu 3;
+    }
+
+    degisken logits: [3]tamsayi;
+    degisken logp: [3]tamsayi;
+    logits[0] = 3 * bir;
+    logits[1] = bir;
+    logits[2] = 0;
+    eger q16_log_softmax(logits, logp, 3) == 0 ise {
+        ekrana_yaz("FAIL: log_softmax status\n".ptr);
+        dondu 4;
+    }
+    degisken loss: tamsayi = cross_entropy_loss_yaklasik(logits, 0, 3);
+    eger loss < 5000 veya loss > 20000 ise {
+        ekrana_yaz("FAIL: cross_entropy\n".ptr);
+        dondu 5;
+    }
+
+    degisken d: *AdamWDurumu = adamw_durumu_olustur();
+    degisken agirlik: tamsayi = bir;
+    degisken m: tamsayi = 0;
+    degisken v: tamsayi = 0;
+    adamw_guncelle(d, &agirlik, bir, &m, &v);
+    eger agirlik >= bir veya agirlik <= 0 ise {
+        ekrana_yaz("FAIL: adamw update\n".ptr);
+        dondu 6;
+    }
+    ekrana_yaz("YKN_TRAINER_REAL_MATH_PASS\n".ptr);
+    dondu 0;
+}

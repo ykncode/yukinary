@@ -1,0 +1,20 @@
+# Saf YKN gercek TCP server: response header/body iki ayri send ile yollanir.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu 40; }
+    degisken sunucu: tamsayi = sunucu_olustur(18082);
+    eger sunucu < 0 ise { dondu 41; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { soket_kapat(sunucu); dondu 42; }
+
+    degisken ilk: *u8 = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\nHELLO".ptr;
+    degisken ikinci: *u8 = " WORLD".ptr;
+    eger soket_gonder_tam(istemci, ilk, 63) != 63 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 43; }
+    degisken bekle: tamsayi = 0;
+    dongu bekle < 5000000 { bekle = bekle + 1; }
+    eger soket_gonder_tam(istemci, ikinci, 6) != 6 ise { soket_kapat(istemci); soket_kapat(sunucu); dondu 44; }
+    soket_kapat(istemci);
+    soket_kapat(sunucu);
+    dondu 0;
+}

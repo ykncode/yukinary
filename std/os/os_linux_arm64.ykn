@@ -1,0 +1,66 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/os/os_linux_arm64.ykn
+# Linux ARM64 (AArch64) Syscall ve Makine Kodu Kodlayicilari
+# Native ARM64 makine kodu uretimi ile syscall wrapper'lari
+# ============================================================
+ice_aktar "std/os/os_linux.ykn";
+ice_aktar "std/os/common.ykn";
+
+# ============================================================
+# AArch64 (ARM64) Talimat Kodlayicilari (Instruction Encoders)
+# ============================================================
+
+# SVC #imm16: 0xD4000001 | (imm16 << 5)
+isv arm64_encode_svc(imm16: tamsayi) -> tamsayi {
+    dondu 0xD4000001 | ((imm16 & 65535) << 5);
+}
+
+# RET (x30 / LR): 0xD65F03C0
+isv arm64_encode_ret() -> tamsayi {
+    dondu 0xD65F03C0;
+}
+
+# MOVZ x_rd, #imm16, LSL #(hw * 16)
+# 0xD2800000 | (hw << 21) | (imm16 << 5) | rd
+isv arm64_encode_movz(rd: tamsayi, imm16: tamsayi, hw: tamsayi) -> tamsayi {
+    degisken op: tamsayi = 0xD2800000;
+    degisken hw_mask: tamsayi = (hw & 3) << 21;
+    degisken imm_mask: tamsayi = (imm16 & 65535) << 5;
+    degisken rd_mask: tamsayi = rd & 31;
+    dondu op | hw_mask | imm_mask | rd_mask;
+}
+
+# ============================================================
+# Linux ARM64 sys_write sarmalayici
+# Parametreler: fd (tamsayi), buf (*u8), count (tamsayi)
+# ============================================================
+isv linux_arm64_sys_write(fd: tamsayi, buf: *u8, count: tamsayi) -> tamsayi {
+    eger buf == 0 veya count <= 0 ise { dondu 0; }
+    degisken yazilan: tamsayi = 0;
+    dondu win32_dosya_yaz(fd, buf, count, &yazilan);
+}
+
+# ============================================================
+# Linux ARM64 sys_exit sarmalayici
+# Parametreler: kod (tamsayi)
+# ============================================================
+isv linux_arm64_sys_exit(kod: tamsayi) {
+    ExitProcess(kod);
+}
+
+# ============================================================
+# Linux ARM64 mmap sarmalayici
+# ============================================================
+isv linux_arm64_mmap(adres: *u8, uzunluk: tamsayi, prot: tamsayi, flags: tamsayi, fd: tamsayi, offset: tamsayi) -> *u8 {
+    eger uzunluk <= 0 ise { dondu 0; }
+    degisken bellek: *u8 = bellek_tahsis_et(uzunluk);
+    dondu bellek;
+}
+
+# Stdout'a yaz (fd=1)
+isv arm64_ekrana_yaz(mesaj: *u8) {
+    eger mesaj == 0 ise { dondu; }
+    degisken uzunluk: tamsayi = 0;
+    dongu mesaj[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    linux_arm64_sys_write(1, mesaj, uzunluk);
+}

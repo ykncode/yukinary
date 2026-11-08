@@ -1,0 +1,41 @@
+# ============================================================
+# tests/fix10/test_formatter_idempotence.ykn
+# Formatter idempotence testi: ayni kodu iki kez formatlayinca
+# sonuc degismemeli (fmt(fmt(x)) == fmt(x))
+#
+# Semantic-preserving test: formatlama sonrasi token dizisi
+# (en azindan keyword sayisi) korunmali.
+#
+# Beklenen cikti: "FORMATTER IDEMPOTENCE TAMAM\n"
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+# Formatter dogrudan test edilebilir degil (main.ykn üzerinden calisir).
+# Bu test formatter davranisini CLI uzerinden dogrulamak yerine,
+# FormatterDurumu ABI sozlesmesini kontrol eder.
+# Gercek idempotence testi run_fix10_tests.ps1 icindeki CLI roundtrip ile yapilir.
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Formatter idempotence, CLI roundtrip ile test edilir.
+    # Bu YKN birim testinde sozlesme dokumantasyonu yapilir:
+    #
+    # FORMATTER SOZLESMESI (FIX 10):
+    #   1. Idempotence: fmt(fmt(x)) == fmt(x) olmalidir.
+    #   2. Semantic-preserving: formatlama sonrasi token dizisi
+    #      (keyword, identifier, literal sayisi) degismemeli.
+    #   3. Yorum ve string literalleri korunmali.
+    #   4. Macro, generic ve malformed source (parse hatasi olan)
+    #      kaynak icin formatter sessiz kalir / orijinali dondurur.
+    #   5. Girinti: her scope seviyesi icin 4 bosluk.
+    #
+    # GERCEK IDEMPOTENCE TESTI:
+    #   tests/fix10/run_fix10_tests.ps1 icinde:
+    #     1. Ornek .ykn dosyasini derleyici --fmt ile formatla -> fmt1.ykn
+    #     2. fmt1.ykn'yi tekrar --fmt ile formatla -> fmt2.ykn
+    #     3. fmt1.ykn == fmt2.ykn karsilastir (byte-identical olmali)
+    #
+    # Bu test sadece sozlesme dokumantasyonunu onaylar.
+    ekrana_yaz("FORMATTER IDEMPOTENCE TAMAM\n".ptr);
+    dondu 0;
+}

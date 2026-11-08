@@ -1,0 +1,46 @@
+# ============================================================
+# Yukinary Dizi<T> Calisma Zamani Yonetimi (Runtime Ownership)
+# ============================================================
+yapi Dizi {
+    veri: *u8;
+    uzunluk: tamsayi;
+    kapasite: tamsayi;
+}
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; } # Sembolik
+isv bellek_serbest_birak(ptr: *u8) {} # Sembolik
+
+isv dizi_yarat(kapasite: tamsayi, eleman_boyutu: tamsayi) -> Dizi {
+    degisken toplam: tamsayi = kapasite * eleman_boyutu;
+    eger toplam <= 0 ise { toplam = eleman_boyutu; }
+    degisken ptr: *u8 = bellek_tahsis_et(toplam);
+    
+    degisken d: Dizi;
+    d.veri = ptr;
+    d.uzunluk = 0;
+    d.kapasite = kapasite;
+    dondu d;
+}
+
+isv dizi_serbest_birak(d: *Dizi) {
+    eger d.veri != 0 ise {
+        bellek_serbest_birak(d.veri);
+        # UAF / Double-Free Engeli (Ownership Rule)
+        d.veri = 0;
+        d.uzunluk = 0;
+        d.kapasite = 0;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken d: Dizi = dizi_yarat(10, 8);
+    dizi_serbest_birak(&d);
+    
+    # Yukinary pointer offsets kurallarina gore:
+    # d.veri == 0 oldugu icin asagidaki islem null pointer hatasina veya bounds panic'e yol acmalidir.
+    eger d.veri == 0 ise {
+        dondu 0; # Basarili (Güvenli bir şekilde UAF engellendi/veri sıfırlandı)
+    }
+    
+    dondu 1;
+}

@@ -1,0 +1,52 @@
+# F11.12: Dynamic Dispatch / Vtable Testi
+# Fat pointer (16-byte: veri + vtable) ve polymorphism dogrulamasi
+
+ozellik Cizim {
+    isv alan_hesapla(s: *u8) -> tamsayi;
+}
+
+yapi Kare {
+    kenar: tamsayi;
+}
+
+uygula Cizim icin Kare {
+    isv alan_hesapla(k: *Kare) -> tamsayi {
+        dondu k.kenar * k.kenar;
+    }
+}
+
+yapi Dikdortgen {
+    en: tamsayi;
+    boy: tamsayi;
+}
+
+uygula Cizim icin Dikdortgen {
+    isv alan_hesapla(d: *Dikdortgen) -> tamsayi {
+        dondu d.en * d.boy;
+    }
+}
+
+isv alan_yazdir(sekil: dyn Cizim) -> tamsayi {
+    dondu sekil.alan_hesapla();
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken k: Kare;
+    k.kenar = 5;
+
+    degisken d: Dikdortgen;
+    d.en = 4;
+    d.boy = 10;
+
+    degisken obj_k: dyn Cizim = dyn_yarat(&k, vtable__Kare__Cizim());
+    degisken obj_d: dyn Cizim = dyn_yarat(&d, vtable__Dikdortgen__Cizim());
+
+    degisken alan1: tamsayi = alan_yazdir(obj_k);
+    degisken alan2: tamsayi = alan_yazdir(obj_d);
+
+    eger alan1 == 25 ve alan2 == 40 ise {
+        ekrana_yaz("F11.12 PASS: Dynamic dispatch vtable polymorphism basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

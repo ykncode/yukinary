@@ -1,0 +1,40 @@
+# GOREV 3.2 Test 6: Trait kisitli generic dispatch genisletilmis test
+# uygula ve ozellik keyword'leri app.exe/out.exe ile test edilir
+# (parser eklentisi yeni derleyici binary'sinde aktif)
+
+# Trait kisitli generic fonksiyonlar
+isv kucuk_mu<T: Esit>(a: T, b: T) -> tamsayi {
+    eger a == b ise {
+        dondu 0; # esit, kucuk degil
+    }
+    dondu 1; # farkli
+}
+
+isv carpim_trait<T: Toplama>(a: T, b: T, c: T) -> T {
+    degisken ara: T = a + b;
+    dondu ara + c;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    # Esit trait — esit degerler
+    degisken r1: tamsayi = kucuk_mu<tamsayi>(7, 7);
+    degisken r2: tamsayi = kucuk_mu<tamsayi>(3, 9);
+
+    eger r1 == 0 ve r2 == 1 ise {
+        ekrana_yaz("TEST 06 GENERICS: TRAIT ESIT OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 06 GENERICS: TRAIT ESIT FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Toplama trait — uc deger toplami
+    degisken r3: tamsayi = carpim_trait<tamsayi>(10, 20, 12);
+    eger r3 == 42 ise {
+        ekrana_yaz("TEST 06 GENERICS: TRAIT TOPLAMA3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 06 GENERICS: TRAIT TOPLAMA3 FAILED\n".ptr);
+        dondu 1;
+    }
+
+    dondu 0;
+}

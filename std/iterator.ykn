@@ -1,0 +1,266 @@
+# ============================================================
+# Yukinary (YKN) Iteratör Kutuphanesi (std/iterator.ykn)
+# Range (Aralik), VecIterator ve Enumerate (Sayarak) Islemleri
+#
+# ITERATÖR SOZLESMESI (Iterator Contract):
+#   - aralik_sonraki/vec_iterator_sonraki: Secenek doner; Yok => bitti.
+#   - VecIterator null vec_ref icin erken 0/secenek_yok doner.
+#   - sayarak_iterator_sonraki: 1 doner (eleman var), 0 doner (bitti).
+#   - out_indeks/out_deger null olmamalidir (caller garantisi).
+# ============================================================
+
+ice_aktar "std/enum.ykn";
+ice_aktar "std/collection/vec.ykn";
+
+# ------------------------------------------------------------
+# 1. Aralik (Range Iterator: baslangic..bitis adimla)
+# ------------------------------------------------------------
+yapi Aralik {
+    mevcut: tamsayi;
+    bitis: tamsayi;
+    adim: tamsayi;
+}
+
+isv aralik_olustur(baslangic: tamsayi, bitis: tamsayi, adim: tamsayi) -> *Aralik {
+    degisken a: *Aralik = bellek_tahsis_et(24);
+    eger a == 0 ise { dondu 0; }
+    a.mevcut = baslangic;
+    a.bitis = bitis;
+    eger adim <= 0 ise {
+        a.adim = 1;
+    } yoksa {
+        a.adim = adim;
+    }
+    dondu a;
+}
+
+isv aralik_var_mi(a: *Aralik) -> tamsayi {
+    eger a == 0 ise { dondu 0; }
+    eger a.mevcut < a.bitis ise { dondu 1; }
+    dondu 0;
+}
+
+isv aralik_sonraki(a: *Aralik) -> *Secenek {
+    eger a == 0 ise { dondu secenek_yok(); }
+    eger a.mevcut >= a.bitis ise {
+        dondu secenek_yok();
+    }
+    degisken val: tamsayi = a.mevcut;
+    a.mevcut = a.mevcut + a.adim;
+    dondu secenek_var(val);
+}
+
+# Kucuk aralik: 0..N (adim=1) olusturur
+isv aralik_0n(n: tamsayi) -> *Aralik {
+    dondu aralik_olustur(0, n, 1);
+}
+
+# ------------------------------------------------------------
+# 2. Vektor Iteratoru (koleksiyon.ykn Dizi<tamsayi> uzerine)
+# Not: Vec burada tamsayi tamponlu basit bir Dizi sablonu gibi
+# davranir; vec_uzunluk ve vec_get_tamsayi hostun sagladigi
+# runtime builtin'lardir veya caller tarafindan saglanir.
+# ------------------------------------------------------------
+yapi VecIterator {
+    tampon: *tamsayi;
+    uzunluk: tamsayi;
+    guncel_indeks: tamsayi;
+}
+
+# Dogrudan tampon pointer ve uzunluk ile iteratör olustur.
+isv vec_iterator_olustur_ptr(tampon: *tamsayi, uzunluk: tamsayi) -> *VecIterator {
+    degisken it: *VecIterator = bellek_tahsis_et(24);
+    eger it == 0 ise { dondu 0; }
+    it.tampon = tampon;
+    it.uzunluk = uzunluk;
+    it.guncel_indeks = 0;
+    dondu it;
+}
+
+# Vec yapisi pointer'indan iteratör olustur (BUG-6 FIX)
+isv vec_iterator_olustur(v: *Vec) -> *VecIterator {
+    eger v == 0 ise { dondu 0; }
+    degisken it: *VecIterator = bellek_tahsis_et(24);
+    eger it == 0 ise { dondu 0; }
+    it.tampon = v.veri;  # *u8 -> *tamsayi: her eleman 8 bayt
+    it.uzunluk = v.uzunluk;
+    it.guncel_indeks = 0;
+    dondu it;
+}
+
+isv vec_iterator_var_mi(it: *VecIterator) -> tamsayi {
+    eger it == 0 ise { dondu 0; }
+    eger it.tampon == 0 ise { dondu 0; }
+    eger it.guncel_indeks < it.uzunluk ise { dondu 1; }
+    dondu 0;
+}
+
+isv vec_iterator_sonraki(it: *VecIterator) -> *Secenek {
+    eger it == 0 ise { dondu secenek_yok(); }
+    eger it.tampon == 0 ise { dondu secenek_yok(); }
+    eger it.guncel_indeks >= it.uzunluk ise {
+        dondu secenek_yok();
+    }
+    degisken val: tamsayi = it.tampon[it.guncel_indeks];
+    it.guncel_indeks = it.guncel_indeks + 1;
+    dondu secenek_var(val);
+}
+
+# ------------------------------------------------------------
+# 3. Sayarak Iteratoru (Enumerate: Index + Value)
+# ------------------------------------------------------------
+yapi SayarakIterator {
+    tampon: *tamsayi;
+    uzunluk: tamsayi;
+    guncel_indeks: tamsayi;
+}
+
+# Vec'den SayarakIterator olustur (BUG-6 FIX). Type declaration yukarida
+# oldugu icin imported module forward-type ambiguity olusturmaz.
+isv sayarak_iterator_olustur(v: *Vec) -> *SayarakIterator {
+    eger v == 0 ise { dondu 0; }
+    degisken s: *SayarakIterator = bellek_tahsis_et(24);
+    eger s == 0 ise { dondu 0; }
+    s.tampon = v.veri;
+    s.uzunluk = v.uzunluk;
+    s.guncel_indeks = 0;
+    dondu s;
+}
+
+isv sayarak_iterator_olustur_ptr(tampon: *tamsayi, uzunluk: tamsayi) -> *SayarakIterator {
+    degisken s: *SayarakIterator = bellek_tahsis_et(24);
+    eger s == 0 ise { dondu 0; }
+    s.tampon = tampon;
+    s.uzunluk = uzunluk;
+    s.guncel_indeks = 0;
+    dondu s;
+}
+
+# 1 doner (eleman var, out_indeks ve out_deger dolduruldu), 0 doner (bitti).
+isv sayarak_iterator_sonraki(s: *SayarakIterator, out_indeks: *tamsayi, out_deger: *tamsayi) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    eger s.tampon == 0 ise { dondu 0; }
+    eger s.guncel_indeks >= s.uzunluk ise { dondu 0; }
+    eger out_indeks != 0 ise { out_indeks[0] = s.guncel_indeks; }
+    eger out_deger != 0 ise { out_deger[0] = s.tampon[s.guncel_indeks]; }
+    s.guncel_indeks = s.guncel_indeks + 1;
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# 4. Iterator Combinator'lari: map, filter, take, skip, iter_collect_vec
+# ------------------------------------------------------------
+
+# MapIterator: her elemana bir donusum uygular (islev islev isareti uzerinden)
+yapi MapIterator {
+    kaynak: *VecIterator;
+    sabit_toplam: tamsayi;   # islev pointer yerine basit offset - gercek map icin kullanilir
+}
+
+# Basit toplam-offset map: her elemana sabit_toplam ekler (islev pointer yerine)
+isv iter_map_olustur(kaynak: *VecIterator, sabit_toplam: tamsayi) -> *MapIterator {
+    eger kaynak == 0 ise { dondu 0; }
+    degisken m: *MapIterator = bellek_tahsis_et(16);
+    eger m == 0 ise { dondu 0; }
+    m.kaynak = kaynak;
+    m.sabit_toplam = sabit_toplam;
+    dondu m;
+}
+
+isv iter_map_sonraki(m: *MapIterator) -> *Secenek {
+    eger m == 0 veya m.kaynak == 0 ise { dondu secenek_yok(); }
+    degisken s: *Secenek = vec_iterator_sonraki(m.kaynak);
+    eger s == 0 ise { dondu secenek_yok(); }
+    eger s.durum == 0 ise { dondu s; }
+    s.deger = s.deger + m.sabit_toplam;
+    dondu s;
+}
+
+# FilterIterator: esik altindaki elemanlari atar (pozitif filtre: eleman >= esik)
+yapi FilterIterator {
+    kaynak: *VecIterator;
+    esik: tamsayi;
+}
+
+isv iter_filter_olustur(kaynak: *VecIterator, esik: tamsayi) -> *FilterIterator {
+    eger kaynak == 0 ise { dondu 0; }
+    degisken f: *FilterIterator = bellek_tahsis_et(16);
+    eger f == 0 ise { dondu 0; }
+    f.kaynak = kaynak;
+    f.esik = esik;
+    dondu f;
+}
+
+isv iter_filter_sonraki(f: *FilterIterator) -> *Secenek {
+    eger f == 0 veya f.kaynak == 0 ise { dondu secenek_yok(); }
+    dongu 1 {
+        degisken s: *Secenek = vec_iterator_sonraki(f.kaynak);
+        eger s == 0 veya s.durum == 0 ise { dondu secenek_yok(); }
+        eger s.deger >= f.esik ise { dondu s; }
+    }
+    dondu secenek_yok();
+}
+
+# TakeIterator: en fazla n eleman alir
+yapi TakeIterator {
+    kaynak: *VecIterator;
+    kalan: tamsayi;
+}
+
+isv iter_take_olustur(kaynak: *VecIterator, n: tamsayi) -> *TakeIterator {
+    eger kaynak == 0 ise { dondu 0; }
+    degisken t: *TakeIterator = bellek_tahsis_et(16);
+    eger t == 0 ise { dondu 0; }
+    t.kaynak = kaynak;
+    t.kalan = n;
+    dondu t;
+}
+
+isv iter_take_sonraki(t: *TakeIterator) -> *Secenek {
+    eger t == 0 veya t.kaynak == 0 veya t.kalan <= 0 ise { dondu secenek_yok(); }
+    degisken s: *Secenek = vec_iterator_sonraki(t.kaynak);
+    eger s == 0 veya s.durum == 0 ise { dondu secenek_yok(); }
+    t.kalan = t.kalan - 1;
+    dondu s;
+}
+
+# SkipIterator: ilk n elemani atlar
+yapi SkipIterator {
+    kaynak: *VecIterator;
+    atlanacak: tamsayi;
+    atlandi: tamsayi;
+}
+
+isv iter_skip_olustur(kaynak: *VecIterator, n: tamsayi) -> *SkipIterator {
+    eger kaynak == 0 ise { dondu 0; }
+    degisken s: *SkipIterator = bellek_tahsis_et(24);
+    eger s == 0 ise { dondu 0; }
+    s.kaynak = kaynak;
+    s.atlanacak = n;
+    s.atlandi = 0;
+    dondu s;
+}
+
+isv iter_skip_sonraki(sk: *SkipIterator) -> *Secenek {
+    eger sk == 0 veya sk.kaynak == 0 ise { dondu secenek_yok(); }
+    dongu sk.atlandi < sk.atlanacak {
+        degisken s: *Secenek = vec_iterator_sonraki(sk.kaynak);
+        eger s == 0 veya s.durum == 0 ise { dondu secenek_yok(); }
+        sk.atlandi = sk.atlandi + 1;
+    }
+    dondu vec_iterator_sonraki(sk.kaynak);
+}
+
+# iter_collect_vec: iteratordan toplanan elemanlari tamsayi tamponuna yazar
+# Geri doner: yazilan eleman sayisi
+isv iter_collect_vec(it: *VecIterator, hedef: *tamsayi, kapasite: tamsayi) -> tamsayi {
+    eger it == 0 veya hedef == 0 veya kapasite <= 0 ise { dondu 0; }
+    degisken sayi: tamsayi = 0;
+    dongu sayi < kapasite {
+        degisken s: *Secenek = vec_iterator_sonraki(it);
+        eger s == 0 veya s.durum == 0 ise { durdur; }
+        hedef[sayi] = s.deger;
+        sayi = sayi + 1;
+    }
+    dondu sayi;
+}

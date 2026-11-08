@@ -1,0 +1,50 @@
+# Deterministic integer, function-call, branch, and array workload.
+isv ekrana_yaz(m: *u8) {}
+
+degisken sayilar: [256]tamsayi;
+
+isv fibonacci_iteratif(n: tamsayi) -> tamsayi {
+    degisken a: tamsayi = 0;
+    degisken b: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken sonraki: tamsayi = a + b;
+        a = b;
+        b = sonraki;
+        i = i + 1;
+    }
+    dondu a;
+}
+
+isv ana() -> tamsayi {
+    degisken tur: tamsayi = 0;
+    degisken toplam: tamsayi = 0;
+    dongu tur < 10000 {
+        degisken i: tamsayi = 0;
+        dongu i < 256 {
+            sayilar[i] = (i * 17 + tur) % 997;
+            i = i + 1;
+        }
+        degisken j: tamsayi = 0;
+        dongu j < 256 {
+            eger sayilar[j] % 2 == 0 {
+                toplam = toplam + sayilar[j];
+            } yoksa {
+                toplam = toplam - sayilar[j];
+            }
+            j = j + 1;
+        }
+        tur = tur + 1;
+    }
+    degisken f: tamsayi = fibonacci_iteratif(40);
+    eger f != 102334155 {
+        ekrana_yaz("FAIL fibonacci\n".ptr);
+        dondu 1;
+    }
+    eger toplam != 1277871 {
+        ekrana_yaz("FAIL checksum\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("RUNTIME-BENCH-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,10 @@
+# Gercek Linux socket syscall probe: net_init/create/reuse/bind/listen/close.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger soket_baslat() != 0 ise { dondu 10; }
+    degisken sunucu: tamsayi = sunucu_olustur(0);
+    eger sunucu < 0 ise { dondu 11; }
+    eger soket_kapat(sunucu) != 0 ise { dondu 12; }
+    dondu 0;
+}

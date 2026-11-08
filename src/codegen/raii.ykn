@@ -1,0 +1,193 @@
+# ============================================================
+# Yukinary RAII & Scope-based Resource Management (FAZ 9)
+# Modul: src/codegen/raii.ykn
+#
+# Deterministik kaynak temizleme (Destructors / Drop trait).
+# Scope cikisinda (blok sonu, erken donus, hata yolu) stack'te
+# olusturulmus struct ve kaynaklarin `birak` fonksiyonlarini
+# LIFO (son giren ilk cikar) sirasiyla cagirir.
+# ============================================================
+
+degisken RAII_MAKS_KAYIT: tamsayi = 512;
+
+degisken g_raii_kayit_adet: tamsayi = 0;
+degisken g_raii_kayit_off: [512]tamsayi;
+degisken g_raii_kayit_fn_isim: [512]*u8;
+degisken g_raii_kayit_fn_uzn: [512]tamsayi;
+degisken g_raii_kayit_derinlik: [512]tamsayi;
+
+degisken g_raii_suanki_derinlik: tamsayi = 0;
+
+# Kod tabaninda tespit edilen destructor sahibi struct tipleri
+degisken g_raii_tip_isim: [256]*u8;
+degisken g_raii_tip_uzunluk: [256]tamsayi;
+degisken g_raii_tip_adet: tamsayi = 0;
+
+isv raii_sifirla() {
+    g_raii_kayit_adet = 0;
+    g_raii_suanki_derinlik = 0;
+}
+
+isv raii_destructor_tipi_kaydet(tip_isim: *u8, tip_uzn: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < g_raii_tip_adet {
+        eger g_raii_tip_uzunluk[i] == tip_uzn ve bellek_esit_mi(g_raii_tip_isim[i], tip_isim, tip_uzn) == 1 ise {
+            dondu; # Zaten kayitli
+        }
+        i = i + 1;
+    }
+    eger g_raii_tip_adet < 256 ise {
+        g_raii_tip_isim[g_raii_tip_adet] = tip_isim;
+        g_raii_tip_uzunluk[g_raii_tip_adet] = tip_uzn;
+        g_raii_tip_adet = g_raii_tip_adet + 1;
+    }
+}
+
+isv raii_destructor_tipi_var_mi(tip_isim: *u8, tip_uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_raii_tip_adet {
+        eger g_raii_tip_uzunluk[i] == tip_uzn ve bellek_esit_mi(g_raii_tip_isim[i], tip_isim, tip_uzn) == 1 ise {
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Pre-scan: AST'deki tum `_birak` fonksiyonlarini tespit eder
+isv raii_ast_destructorlari_tara(kok: *AstDugum) {
+    g_raii_tip_adet = 0;
+    degisken iter: *AstDugum = kok;
+    dongu iter != 0 {
+        eger iter.tip == 10 veya iter.tip == 41 ise { # AST_ISLEV veya AST_ASYNC_ISLEV
+            eger iter.ilk_jeton != 0 ve iter.ilk_jeton.uzunluk > 6 {
+                degisken uzn: tamsayi = iter.ilk_jeton.uzunluk;
+                degisken bas: *u8 = iter.ilk_jeton.baslangic;
+                eger bellek_esit_mi(bas + (uzn - 6), "_birak".ptr, 6) == 1 ise {
+                    raii_destructor_tipi_kaydet(bas, uzn - 6);
+                }
+            }
+        }
+        iter = iter.sonraki;
+    }
+}
+
+isv raii_blok_gir() {
+    g_raii_suanki_derinlik = g_raii_suanki_derinlik + 1;
+}
+
+isv raii_kayit_ekle(off: tamsayi, fn_isim: *u8, fn_uzn: tamsayi) {
+    eger g_raii_kayit_adet >= RAII_MAKS_KAYIT {
+        dondu;
+    }
+    degisken idx: tamsayi = g_raii_kayit_adet;
+    g_raii_kayit_off[idx] = off;
+    g_raii_kayit_fn_isim[idx] = fn_isim;
+    g_raii_kayit_fn_uzn[idx] = fn_uzn;
+    g_raii_kayit_derinlik[idx] = g_raii_suanki_derinlik;
+    g_raii_kayit_adet = g_raii_kayit_adet + 1;
+}
+
+# Tek bir destructor cagrisi emit eder
+isv raii_cagri_emit(a: *MakineKoduArenasi, off: tamsayi, fn_isim: *u8, fn_uzn: tamsayi) {
+    # Donus degerini (RAX) koru
+    byte_yaz(a, 0x50); # PUSH RAX
+    
+    # Arguman 0 = &nesne (kendisi adresi)
+    # Yukinary fonksiyon prologu 1. argumani RCX'ten okur (Linux dahil);
+    # Linux ABI (RDI) uyumlulugu icin RDI'ya da kopyalanir.
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x8D);
+    int32_yaz(a, 0 - off);
+    eger g_target_platform == 1 ise {
+        # MOV RDI, RCX (48 89 CF)
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xCF);
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x08); # SUB RSP, 8 (align 16)
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28); # SUB RSP, 40 (32 shadow + 8 align)
+    }
+
+    # CALL rel32
+    byte_yaz(a, 0xE8);
+    eger yama_kapasite_kontrol() != 0 ise {
+        degisken y_idx: tamsayi = g_yama_adet;
+        g_yama_isim[y_idx] = fn_isim;
+        g_yama_uzunluk[y_idx] = fn_uzn;
+        g_yama_adres[y_idx] = 0;
+        g_yama_tip[y_idx] = 0;
+        g_yama_cagri_pos[y_idx] = a.kullanilan;
+        g_yama_adet = g_yama_adet + 1;
+    }
+    int32_yaz(a, 0);
+
+    # Stack temizle
+    eger g_target_platform == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x08); # ADD RSP, 8
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28); # ADD RSP, 40
+    }
+
+    # RAX geri yukle
+    byte_yaz(a, 0x58); # POP RAX
+}
+
+# Belirli bir derinlikteki nesneleri LIFO sirayla serbest birakir
+isv raii_blok_cik_emit(a: *MakineKoduArenasi) {
+    degisken d: tamsayi = g_raii_suanki_derinlik;
+    degisken i: tamsayi = g_raii_kayit_adet;
+    dongu i > 0 {
+        i = i - 1;
+        eger g_raii_kayit_derinlik[i] == d {
+            raii_cagri_emit(a, g_raii_kayit_off[i], g_raii_kayit_fn_isim[i], g_raii_kayit_fn_uzn[i]);
+            g_raii_kayit_adet = i; # LIFO budama
+        }
+    }
+    eger g_raii_suanki_derinlik > 0 {
+        g_raii_suanki_derinlik = g_raii_suanki_derinlik - 1;
+    }
+}
+
+# Fonksiyondan donuste (return) tum aktif nesneleri LIFO sirayla serbest birakir
+isv raii_fonksiyon_donus_emit(a: *MakineKoduArenasi) {
+    degisken i: tamsayi = g_raii_kayit_adet;
+    dongu i > 0 {
+        i = i - 1;
+        raii_cagri_emit(a, g_raii_kayit_off[i], g_raii_kayit_fn_isim[i], g_raii_kayit_fn_uzn[i]);
+    }
+}
+
+# Belirli bir hedef derinlige kadar (hedef_derinlik haric, daha derindeki)
+# tum aktif nesneleri LIFO sirayla serbest birakir (dongu kir / devam_et / unwind)
+isv raii_unwind_to_derinlik(a: *MakineKoduArenasi, hedef_derinlik: tamsayi) {
+    degisken i: tamsayi = g_raii_kayit_adet;
+    dongu i > 0 {
+        i = i - 1;
+        eger g_raii_kayit_derinlik[i] > hedef_derinlik {
+            raii_cagri_emit(a, g_raii_kayit_off[i], g_raii_kayit_fn_isim[i], g_raii_kayit_fn_uzn[i]);
+        }
+    }
+}
+
+# Yapi tanimi icin birak metodu var mi kontrol eder
+isv raii_degisken_kontrol(tip_adi: *u8, tip_uzn: tamsayi, off: tamsayi) {
+    eger tip_adi == 0 veya tip_uzn <= 0 ise { dondu; }
+    
+    # Sadece destructor tipi kayitli struct'lar icin aday olustur
+    eger raii_destructor_tipi_var_mi(tip_adi, tip_uzn) == 1 ise {
+        degisken fn_uzn: tamsayi = tip_uzn + 6;
+        degisken fn_buf: *u8 = compiler_tahsis_et(fn_uzn + 1);
+        degisken bi: tamsayi = 0;
+        dongu bi < tip_uzn {
+            fn_buf[bi] = tip_adi[bi];
+            bi = bi + 1;
+        }
+        # "_birak" ekle
+        fn_buf[bi] = 95;      # '_'
+        fn_buf[bi + 1] = 98;  # 'b'
+        fn_buf[bi + 2] = 105; # 'i'
+        fn_buf[bi + 3] = 114; # 'r'
+        fn_buf[bi + 4] = 97;  # 'a'
+        fn_buf[bi + 5] = 107; # 'k'
+        fn_buf[fn_uzn] = 0;
+        raii_kayit_ekle(off, fn_buf, fn_uzn);
+    }
+}

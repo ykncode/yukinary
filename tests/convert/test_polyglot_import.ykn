@@ -1,0 +1,13 @@
+ice_aktar "build/test_rust_modul.ykn";
+
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = hesapla(21);
+    eger sonuc == 42 {
+        ekrana_yaz("POLYGLOT CONVERT TEST PASS: sonuc=42\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}
+

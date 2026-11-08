@@ -1,0 +1,22 @@
+isv deger_guncelle(ptr: *tamsayi, yeni_deger: tamsayi) {
+    *ptr = yeni_deger;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken p: *tamsayi = &x;
+    
+    eger *p != 42 ise {
+        ekrana_yaz("TEST 04: POINTER DEREF FAILED\n".ptr);
+        dondu 1;
+    }
+    
+    deger_guncelle(&x, 100);
+    
+    eger x == 100 ise {
+        ekrana_yaz("TEST 04: POINTERS OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 04: POINTER MUTATION FAILED\n".ptr);
+    }
+    dondu 0;
+}

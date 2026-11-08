@@ -1,0 +1,20 @@
+# Collection Ownership Test NEGATIF: Vec double-free
+# Vec serbest biraksildiktan sonra tekrar serbest birakilamaz.
+ice_aktar "std/collection/vec.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken v: *Vec = vec_olustur(16);
+    eger v == 0 ise {
+        ekrana_yaz("VEC_DOUBLE_FREE_NEG: tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+    vec_ekle(v, 1);
+    vec_ekle(v, 2);
+    ekrana_yaz("VEC_DOUBLE_FREE_NEG: vec hazir\n".ptr);
+    vec_yok_et(v);
+    ekrana_yaz("VEC_DOUBLE_FREE_NEG: ilk yok_et OK\n".ptr);
+    # Ikinci yok_et — double-free / runtime hata beklenir
+    vec_yok_et(v);
+    ekrana_yaz("VEC_DOUBLE_FREE_NEG: ULASILMAMALI\n".ptr);
+    dondu 0;
+}

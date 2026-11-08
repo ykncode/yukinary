@@ -1,0 +1,39 @@
+# ============================================================
+# tests/gui/test_font_atlas.ykn
+# FAZ 52: Font Doku Atlasi (Texture Atlas) ve GPU Cizim Testi
+# ============================================================
+
+ice_aktar "std/gui/font_atlas.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 52: Font Doku Atlasi & Cizim Testi Basliyor...\n".ptr);
+
+    # 1. 64x64 Atlas olustur (8x8 glifler)
+    degisken fa: *FontAtlas = font_atlas_olustur(64, 64, 8, 8);
+    eger fa == 0 ise {
+        ekrana_yaz("HATA: Font atlasi olusturulamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. 8x8 glif deseni tanimla (slot 9)
+    degisken desen: *u8 = bellek_tahsis_et(64);
+    degisken k: tamsayi = 0;
+    dongu k < 64 {
+        desen[k] = 255; # Beyaz piksel
+        k = k + 1;
+    }
+    font_atlas_glif_yaz(fa, 9, desen);
+
+    # 3. 128x128 32-bit Framebuffer uzerine ciz
+    degisken fb: *u8 = bellek_tahsis_et(128 * 128 * 4);
+    degisken cizilen: tamsayi = font_atlas_metin_ciz(fa, fb, 128, 128, 10, 10, "Y".ptr, 1);
+
+    eger cizilen != 64 ise {
+        ekrana_yaz("HATA: Cizilen piksel sayisi 64 olmali!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("FONT_TEXTURE_ATLAS_PASS\n".ptr);
+    dondu 0;
+}
+

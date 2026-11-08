@@ -1,0 +1,260 @@
+# ============================================================
+# mir.ykn - Yukinary Medium-Level Intermediate Representation
+# FIX 7: HIR ile LIR arasında, kontrol akışının düzleştirildiği katman
+# ============================================================
+
+# MIR komut tipleri
+degisken MIR_ATAMA = 1;
+degisken MIR_JMP = 2;
+degisken MIR_JMP_Z = 3;
+degisken MIR_CALL = 4;
+degisken MIR_RET = 5;
+
+yapi MirKomutu {
+    tip: tamsayi;
+    
+    hedef: *HirDugum;
+    sol: *HirDugum;
+    sag: *HirDugum;
+    
+    hedef_blok_id: tamsayi;
+    sonraki: *MirKomutu;
+}
+
+yapi MirBloku {
+    id: tamsayi;
+    ilk_komut: *MirKomutu;
+    son_komut: *MirKomutu;
+    
+    sonraki_blok_id_1: tamsayi;
+    sonraki_blok_id_2: tamsayi;
+    
+    sonraki: *MirBloku;
+}
+
+yapi MirIslev {
+    isim_hash: tamsayi;
+    ilk_blok: *MirBloku;
+    son_blok: *MirBloku;
+    sonraki: *MirIslev;
+}
+
+yapi MirMotoru {
+    kullanilan: tamsayi;
+    kapasite: tamsayi;
+    arena: *u8;
+    
+    blok_sayaci: tamsayi;
+    aktif_islev: *MirIslev;
+    aktif_blok: *MirBloku;
+    
+    ilk_islev: *MirIslev;
+    son_islev: *MirIslev;
+}
+
+isv mir_motoru_olustur(kapasite: tamsayi) -> *MirMotoru {
+    degisken m: *MirMotoru = compiler_tahsis_et(64);
+    m.kullanilan = 0;
+    m.kapasite = kapasite;
+    m.arena = compiler_tahsis_et(kapasite);
+    m.blok_sayaci = 0;
+    m.aktif_islev = 0;
+    m.aktif_blok = 0;
+    m.ilk_islev = 0;
+    m.son_islev = 0;
+    dondu m;
+}
+
+isv mir_arena_tahsis(m: *MirMotoru, boyut: tamsayi) -> *u8 {
+    eger m.kullanilan + boyut > m.kapasite ise {
+        degisken yeni_kap: tamsayi = m.kapasite * 2;
+        eger yeni_kap < 16777216 ise { yeni_kap = 16777216; }
+        degisken yeni_arena: *u8 = compiler_tahsis_et(yeni_kap);
+        eger yeni_arena == 0 ise {
+            ekrana_yaz("HATA [E016] [ERR_MIR_LIMIT] [class=compiler]: MIR arena kapasitesi asildi.\n".ptr);
+            dondu 0;
+        }
+        m.arena = yeni_arena;
+        m.kapasite = yeni_kap;
+        m.kullanilan = 0;
+    }
+    degisken ptr: *u8 = m.arena + m.kullanilan;
+    m.kullanilan = m.kullanilan + boyut;
+    dondu ptr;
+}
+
+isv mir_blok_olustur(m: *MirMotoru) -> *MirBloku {
+    degisken b: *MirBloku = mir_arena_tahsis(m, 64);
+    eger b == 0 ise { dondu 0; }
+    m.blok_sayaci = m.blok_sayaci + 1;
+    b.id = m.blok_sayaci;
+    b.ilk_komut = 0;
+    b.son_komut = 0;
+    b.sonraki_blok_id_1 = 0;
+    b.sonraki_blok_id_2 = 0;
+    b.sonraki = 0;
+    eger m.aktif_islev != 0 ise {
+        degisken cur_islev: *MirIslev = m.aktif_islev;
+        eger cur_islev.ilk_blok == 0 ise {
+            cur_islev.ilk_blok = b;
+            cur_islev.son_blok = b;
+        } yoksa {
+            degisken cur_son: *MirBloku = cur_islev.son_blok;
+            cur_son.sonraki = b;
+            cur_islev.son_blok = b;
+        }
+    }
+    dondu b;
+}
+
+isv mir_islev_olustur(m: *MirMotoru, isim_hash: tamsayi) -> *MirIslev {
+    degisken f: *MirIslev = mir_arena_tahsis(m, 64);
+    eger f == 0 ise { dondu 0; }
+    f.isim_hash = isim_hash;
+    f.ilk_blok = 0;
+    f.son_blok = 0;
+    f.sonraki = 0;
+    dondu f;
+}
+
+# HIR'den MIR'a çeviren (flattening) süreç
+isv hir_to_mir_islev(m: *MirMotoru, hir_islev: *HirDugum) {
+    degisken f: *MirIslev = mir_islev_olustur(m, hir_islev.deger);
+    
+    eger m.ilk_islev == 0 ise {
+        m.ilk_islev = f;
+    } yoksa {
+        m.son_islev.sonraki = f;
+    }
+    m.son_islev = f;
+    m.aktif_islev = f;
+    
+    degisken b: *MirBloku = mir_blok_olustur(m);
+    m.aktif_blok = b;
+    
+    # HIR govdesini MIR bloklarina cevir
+    eger hir_islev.govde != 0 ise {
+        hir_ifade_to_mir(m, b, hir_islev.govde);
+    }
+}
+
+isv mir_komut_ekle(m: *MirMotoru, b: *MirBloku, k_tip: tamsayi) -> *MirKomutu {
+    degisken k: *MirKomutu = mir_arena_tahsis(m, 64);
+    eger k == 0 ise { dondu 0; }
+    k.tip = k_tip;
+    k.hedef = 0;
+    k.sol = 0;
+    k.sag = 0;
+    k.hedef_blok_id = 0;
+    k.sonraki = 0;
+    eger b.ilk_komut == 0 ise {
+        b.ilk_komut = k;
+    } yoksa {
+        b.son_komut.sonraki = k;
+    }
+    b.son_komut = k;
+    dondu k;
+}
+
+isv hir_ifade_to_mir(m: *MirMotoru, b: *MirBloku, h: *HirDugum) -> *MirBloku {
+    eger h == 0 ise { dondu b; }
+    degisken h_tip: tamsayi = h.tip;
+    eger h_tip == 2 ise { # HIR_BLOK
+        degisken i: *HirDugum = h.sol;
+        dongu i != 0 {
+            b = hir_ifade_to_mir(m, b, i);
+            i = i.sonraki;
+        }
+    } yoksa eger h_tip == 3 ise { # HIR_ATAMA
+        degisken k: *MirKomutu = mir_komut_ekle(m, b, 1); # MIR_ATAMA
+        k.hedef = h.sol;
+        k.sol = h.sag;
+    } yoksa eger h_tip == 9 ise { # HIR_DONDUR
+        degisken k: *MirKomutu = mir_komut_ekle(m, b, 5); # MIR_RET
+        k.sol = h.sol;
+    } yoksa eger h_tip == 10 ise { # HIR_ISLEV_CAGRISI
+        degisken k: *MirKomutu = mir_komut_ekle(m, b, 4); # MIR_CALL
+        k.hedef = h;
+        k.sol = h.sol;
+        k.sag = h.govde;
+    } yoksa eger h_tip == 7 ise { # HIR_EGER
+        # Gercek CFG dallanmasi: then, else, join bloklari
+        degisken then_b: *MirBloku = mir_blok_olustur(m);
+        degisken else_b: *MirBloku = 0;
+        degisken join_b: *MirBloku = mir_blok_olustur(m);
+        
+        eger h.sag != 0 ise {
+            else_b = mir_blok_olustur(m);
+        }
+        
+        degisken target_else_id: tamsayi = join_b.id;
+        eger else_b != 0 ise {
+            target_else_id = else_b.id;
+        }
+        
+        # Kosul yanlissa else (veya join)'e atla
+        degisken jz: *MirKomutu = mir_komut_ekle(m, b, 3); # MIR_JMP_Z
+        jz.sol = h.sol;
+        jz.hedef_blok_id = target_else_id;
+        b.sonraki_blok_id_1 = then_b.id;
+        b.sonraki_blok_id_2 = target_else_id;
+        
+        # Then blogu
+        m.aktif_blok = then_b;
+        degisken b_then_end: *MirBloku = hir_ifade_to_mir(m, then_b, h.govde);
+        degisken jmp_join: *MirKomutu = mir_komut_ekle(m, b_then_end, 2); # MIR_JMP
+        jmp_join.hedef_blok_id = join_b.id;
+        b_then_end.sonraki_blok_id_1 = join_b.id;
+        
+        # Else blogu
+        eger else_b != 0 ise {
+            m.aktif_blok = else_b;
+            degisken b_else_end: *MirBloku = hir_ifade_to_mir(m, else_b, h.sag);
+            degisken jmp_join2: *MirKomutu = mir_komut_ekle(m, b_else_end, 2); # MIR_JMP
+            jmp_join2.hedef_blok_id = join_b.id;
+            b_else_end.sonraki_blok_id_1 = join_b.id;
+        }
+        
+        m.aktif_blok = join_b;
+        b = join_b;
+    } yoksa eger h_tip == 8 ise { # HIR_DONGU
+        # Gercek CFG dongu yapisi: cond, body, exit bloklari
+        degisken cond_b: *MirBloku = mir_blok_olustur(m);
+        degisken body_b: *MirBloku = mir_blok_olustur(m);
+        degisken exit_b: *MirBloku = mir_blok_olustur(m);
+        
+        # Onceki bloktan cond_b'ye atla
+        degisken jmp_c: *MirKomutu = mir_komut_ekle(m, b, 2); # MIR_JMP
+        jmp_c.hedef_blok_id = cond_b.id;
+        b.sonraki_blok_id_1 = cond_b.id;
+        
+        # Kosul blogu
+        m.aktif_blok = cond_b;
+        degisken jz_exit: *MirKomutu = mir_komut_ekle(m, cond_b, 3); # MIR_JMP_Z
+        jz_exit.sol = h.sol;
+        jz_exit.hedef_blok_id = exit_b.id;
+        cond_b.sonraki_blok_id_1 = body_b.id;
+        cond_b.sonraki_blok_id_2 = exit_b.id;
+        
+        # Body blogu: govdeyi calistir ve tekrar cond_b'ye zipla (back-edge)
+        m.aktif_blok = body_b;
+        degisken b_body_end: *MirBloku = hir_ifade_to_mir(m, body_b, h.govde);
+        degisken jmp_back: *MirKomutu = mir_komut_ekle(m, b_body_end, 2); # MIR_JMP
+        jmp_back.hedef_blok_id = cond_b.id;
+        b_body_end.sonraki_blok_id_1 = cond_b.id;
+        
+        m.aktif_blok = exit_b;
+        b = exit_b;
+    }
+    dondu b;
+}
+
+isv hir_to_mir(m: *MirMotoru, hir_koku: *HirDugum) {
+    degisken iter: *HirDugum = hir_koku;
+    dongu iter != 0 {
+        eger iter.tip == 1 ise { # HIR_ISLEV = 1
+            hir_to_mir_islev(m, iter);
+        }
+        iter = iter.sonraki;
+    }
+}

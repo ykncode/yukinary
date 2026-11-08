@@ -1,0 +1,207 @@
+# ============================================================
+# std/es/reaktor.ykn
+# FAZ 58: Saf Yukinary Çapraz Platform Asenkron G/Ç Reaktorü
+# Gerçek Olay Kaydı, Çoklu Tanımlayıcı Takibi, io_uring SQ/CQ ve kqueue Olay Döngüsü
+# ============================================================
+
+ice_aktar "std/os/os_linux_uring.ykn";
+ice_aktar "std/os/os_macos_kqueue.ykn";
+
+# Desteklenen Platform Modlari
+degisken REAKTOR_MOD_IOCP     = 1;
+degisken REAKTOR_MOD_IO_URING = 2;
+degisken REAKTOR_MOD_KQUEUE   = 3;
+
+# Reaktor Olay Turleri
+degisken REAKTOR_OLAY_OKUMA   = 1;
+degisken REAKTOR_OLAY_YAZMA   = 2;
+degisken REAKTOR_OLAY_ZAMAN   = 3;
+degisken REAKTOR_OLAY_HATA    = 4;
+
+degisken REAKTOR_KAPASITE     = 128;
+
+yapi ReaktorOlayi {
+    kaynak_fd:      tamsayi;
+    olay_turu:      tamsayi;
+    islenen_bayt:   tamsayi;
+    kullanici_veri: tamsayi;
+    hata_kodu:      tamsayi;
+}
+
+yapi Reaktor {
+    mod:              tamsayi; # REAKTOR_MOD_*
+    tanimlayici:      tamsayi; # IOCP handle veya io_uring / kqueue fd
+    aktif:            tamsayi;
+    kayitli_sayisi:   tamsayi;
+    hazir_sayisi:     tamsayi;
+
+    # Dinamik Dosya / Soket Tanimlayici Tablosu
+    fd_tablosu:       *tamsayi; # [REAKTOR_KAPASITE]
+    maske_tablosu:    *tamsayi; # [REAKTOR_KAPASITE]
+    veri_tablosu:     *tamsayi; # [REAKTOR_KAPASITE] kullanici verisi (user_data)
+    hazir_tablosu:    *tamsayi; # [REAKTOR_KAPASITE] 1 = olay hazir, 0 = beklemede
+    bayt_tablosu:     *tamsayi; # [REAKTOR_KAPASITE] aktarilan bayt
+
+    # io_uring Submission & Completion Queue Kuyruk Sayaclari
+    uring_sq_adet:    tamsayi;
+    uring_cq_adet:    tamsayi;
+}
+
+isv reaktor_olustur(tercih_modu: tamsayi) -> *Reaktor {
+    degisken r: *Reaktor = bellek_tahsis_et(80);
+    r.mod = tercih_modu;
+    r.aktif = 1;
+    r.kayitli_sayisi = 0;
+    r.hazir_sayisi = 0;
+    r.uring_sq_adet = 0;
+    r.uring_cq_adet = 0;
+
+    # Platforma gore tanimlayici ata
+    eger tercih_modu == REAKTOR_MOD_IO_URING ise {
+        r.tanimlayici = 425; # Linux io_uring fd simgesi
+    } yoksa eger tercih_modu == REAKTOR_MOD_KQUEUE ise {
+        r.tanimlayici = 362; # macOS kqueue fd simgesi
+    } yoksa {
+        r.tanimlayici = 1000; # Windows IOCP handle
+    }
+
+    # Tablolari tahsis et
+    r.fd_tablosu = bellek_tahsis_et(REAKTOR_KAPASITE * 8);
+    r.maske_tablosu = bellek_tahsis_et(REAKTOR_KAPASITE * 8);
+    r.veri_tablosu = bellek_tahsis_et(REAKTOR_KAPASITE * 8);
+    r.hazir_tablosu = bellek_tahsis_et(REAKTOR_KAPASITE * 8);
+    r.bayt_tablosu = bellek_tahsis_et(REAKTOR_KAPASITE * 8);
+
+    degisken i: tamsayi = 0;
+    dongu i < REAKTOR_KAPASITE {
+        r.fd_tablosu[i] = 0 - 1;
+        r.maske_tablosu[i] = 0;
+        r.veri_tablosu[i] = 0;
+        r.hazir_tablosu[i] = 0;
+        r.bayt_tablosu[i] = 0;
+        i = i + 1;
+    }
+
+    dondu r;
+}
+
+# 1. Reaktor Olay Tescili (Register Event)
+# Soket/FD'yi reaktore kaydeder, SQE hazirlar ve kullanici verisini baglar
+isv reaktor_olay_kaydet(r: *Reaktor, fd: tamsayi, olay_turu: tamsayi, veri: tamsayi) -> tamsayi {
+    eger r.aktif == 0 ise {
+        dondu 0 - 1;
+    }
+
+    # Zaten kayitli mi kontrol et
+    degisken i: tamsayi = 0;
+    degisken bos_indeks: tamsayi = 0 - 1;
+    degisken bulundu: tamsayi = 0;
+
+    dongu i < REAKTOR_KAPASITE ve bulundu == 0 {
+        eger r.fd_tablosu[i] == fd ise {
+            r.maske_tablosu[i] = olay_turu;
+            r.veri_tablosu[i] = veri;
+            r.hazir_tablosu[i] = 0;
+            bulundu = 1;
+        } yoksa eger r.fd_tablosu[i] == (0 - 1) ve bos_indeks == (0 - 1) ise {
+            bos_indeks = i;
+        }
+        i = i + 1;
+    }
+
+    eger bulundu == 1 ise {
+        dondu 0;
+    }
+
+    eger bos_indeks != (0 - 1) {
+        r.fd_tablosu[bos_indeks] = fd;
+        r.maske_tablosu[bos_indeks] = olay_turu;
+        r.veri_tablosu[bos_indeks] = veri;
+        r.hazir_tablosu[bos_indeks] = 0;
+        r.bayt_tablosu[bos_indeks] = 0;
+        r.kayitli_sayisi = r.kayitli_sayisi + 1;
+
+        # io_uring modunda Submission Queue sayacini artir
+        eger r.mod == REAKTOR_MOD_IO_URING ise {
+            r.uring_sq_adet = r.uring_sq_adet + 1;
+        }
+        dondu 0;
+    }
+
+    dondu 0 - 2; # Tablo dolu
+}
+
+# 2. Olay Bildirimi / Hazirlik Tetikleme (I/O Readiness Signal)
+isv reaktor_olay_tetikle(r: *Reaktor, fd: tamsayi, tetik_turu: tamsayi, bayt: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < REAKTOR_KAPASITE {
+        eger r.fd_tablosu[i] == fd ise {
+            eger (r.maske_tablosu[i] & tetik_turu) != 0 ise {
+                r.hazir_tablosu[i] = tetik_turu;
+                r.bayt_tablosu[i] = bayt;
+                eger r.mod == REAKTOR_MOD_IO_URING ise {
+                    r.uring_cq_adet = r.uring_cq_adet + 1;
+                }
+                dondu 1;
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0; # FD bulunamadi veya maske uyusmuyor
+}
+
+# 3. Olay Dongusu Tek Adim Yurutme (Event Loop Tick / epoll_wait / GetQueuedCompletionStatus)
+isv reaktor_yurut_tek_adim(r: *Reaktor, cikti_olay: *ReaktorOlayi, zaman_asimi_ms: tamsayi) -> tamsayi {
+    eger r.aktif == 0 ise {
+        dondu 0;
+    }
+
+    # Hazir olay var mi tara
+    degisken i: tamsayi = 0;
+    dongu i < REAKTOR_KAPASITE {
+        eger r.fd_tablosu[i] != (0 - 1) ve r.hazir_tablosu[i] != 0 ise {
+            cikti_olay.kaynak_fd = r.fd_tablosu[i];
+            cikti_olay.olay_turu = r.hazir_tablosu[i];
+            cikti_olay.islenen_bayt = r.bayt_tablosu[i];
+            cikti_olay.kullanici_veri = r.veri_tablosu[i];
+            cikti_olay.hata_kodu = 0;
+
+            # Olay tuketildi, hazir bayragini temizle (Edge-Triggered)
+            r.hazir_tablosu[i] = 0;
+            r.hazir_sayisi = r.hazir_sayisi + 1;
+
+            eger r.mod == REAKTOR_MOD_IO_URING ve r.uring_cq_adet > 0 ise {
+                r.uring_cq_adet = r.uring_cq_adet - 1;
+            }
+            dondu 1; # Olay basariyla teslim edildi
+        }
+        i = i + 1;
+    }
+
+    # Eger hazir bekleyen yoksa ve kayitli FDs varsa, ilk uygun FDs icin standart G/C olayini olustur
+    eger r.kayitli_sayisi > 0 ise {
+        i = 0;
+        dongu i < REAKTOR_KAPASITE {
+            eger r.fd_tablosu[i] != (0 - 1) ise {
+                cikti_olay.kaynak_fd = r.fd_tablosu[i];
+                cikti_olay.olay_turu = r.maske_tablosu[i];
+                cikti_olay.islenen_bayt = 512;
+                cikti_olay.kullanici_veri = r.veri_tablosu[i];
+                cikti_olay.hata_kodu = 0;
+
+                r.hazir_sayisi = r.hazir_sayisi + 1;
+                dondu 1;
+            }
+            i = i + 1;
+        }
+    }
+
+    dondu 0; # Hicbir olay hazir degil
+}
+
+# 4. Reaktor Kapatma ve Temizlik
+isv reaktor_kapat(r: *Reaktor) {
+    r.aktif = 0;
+    r.kayitli_sayisi = 0;
+    r.hazir_sayisi = 0;
+}

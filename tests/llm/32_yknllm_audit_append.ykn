@@ -1,0 +1,32 @@
+# Saf YKN audit writer: SHA-256 + append-only binary kayit testi.
+ice_aktar "src/yknllm_audit.ykn";
+
+isv ana() -> tamsayi {
+    degisken input: YKNLLMAuditInput;
+    input.correlation_id = "corr-typed-0001".ptr;
+    input.intent = "YKN ile typed gateway yaz".ptr;
+    input.ykn_code = "isv ana() -> tamsayi { dondu 0; }".ptr;
+    input.model_version = "yknllm-test-1".ptr;
+    input.selected_model = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    input.diagnostics = "compiler_exit=0; artifact=accepted".ptr;
+    input.compiler_exit = 0;
+    input.accepted = 1;
+
+    degisken yol: *u8 = "build/test-work/yknllm-audit.bin".ptr;
+    degisken ilk: tamsayi = yknllm_audit_append(yol, &input);
+    eger ilk <= 0 ise {
+        ekrana_yaz("FAIL: audit ilk append basarisiz\n".ptr);
+        dondu 1;
+    }
+    input.correlation_id = "corr-typed-0002".ptr;
+    input.accepted = 0;
+    input.compiler_exit = 1;
+    input.diagnostics = "compiler_exit=1; rejected".ptr;
+    degisken ikinci: tamsayi = yknllm_audit_append(yol, &input);
+    eger ikinci <= 0 ise {
+        ekrana_yaz("FAIL: audit ikinci append basarisiz\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("YKNLLM_AUDIT_APPEND_PASS\n".ptr);
+    dondu 0;
+}

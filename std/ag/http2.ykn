@@ -1,0 +1,123 @@
+# ============================================================
+# std/ag/http2.ykn
+# FAZ 59: Saf Yukinary HTTP/2 İkili Çerçeveleme (RFC 7540) & HPACK (RFC 7541) Motoru
+# 9-Bayt Başlık Serileştirme/Ayrıştırma, İndeksli Başlık Sıkıştırma ve Akış Yönetimi
+# ============================================================
+
+# HTTP/2 Çerçeve Tipleri (Frame Types)
+degisken H2_FRAME_DATA          = 0;
+degisken H2_FRAME_HEADERS       = 1;
+degisken H2_FRAME_PRIORITY      = 2;
+degisken H2_FRAME_RST_STREAM    = 3;
+degisken H2_FRAME_SETTINGS      = 4;
+degisken H2_FRAME_PUSH_PROMISE  = 5;
+degisken H2_FRAME_PING          = 6;
+degisken H2_FRAME_GOAWAY        = 7;
+degisken H2_FRAME_WINDOW_UPDATE = 8;
+
+# HTTP/2 Çerçeve Bayrakları (Flags)
+degisken H2_FLAG_END_STREAM     = 1;  # 0x01
+degisken H2_FLAG_ACK            = 1;  # 0x01 (SETTINGS ve PING icin)
+degisken H2_FLAG_END_HEADERS    = 4;  # 0x04
+degisken H2_FLAG_PADDED         = 8;  # 0x08
+degisken H2_FLAG_PRIORITY       = 32; # 0x20
+
+# 9-Bayt Standart HTTP/2 Çerçeve Başlığı
+yapi Http2Baslik {
+    uzunluk:    tamsayi; # 24-bit payload uzunlugu
+    tur:        tamsayi; # 8-bit cerceve tipi (H2_FRAME_*)
+    bayraklar:  tamsayi; # 8-bit bayraklar (END_STREAM, END_HEADERS vs.)
+    akis_id:    tamsayi; # 31-bit stream id (R biti 0)
+}
+
+isv http2_baslik_olustur(p_len: tamsayi, f_type: tamsayi, f_flags: tamsayi, stream: tamsayi) -> *Http2Baslik {
+    degisken h: *Http2Baslik = bellek_tahsis_et(32);
+    h.uzunluk = p_len;
+    h.tur = f_type;
+    h.bayraklar = f_flags;
+    h.akis_id = stream & 2147483647; # 31-bit maske
+    dondu h;
+}
+
+# 1. 9-Bayt HTTP/2 Basligini Ikili Diziye Serilestirme (Big-Endian Wire Format)
+isv http2_baslik_serilestir(h: *Http2Baslik, hedef: *u8) -> tamsayi {
+    # 24-bit Length (Bayt 0, 1, 2)
+    hedef[0] = (h.uzunluk >> 16) & 255;
+    hedef[1] = (h.uzunluk >> 8) & 255;
+    hedef[2] = h.uzunluk & 255;
+
+    # 8-bit Type (Bayt 3)
+    hedef[3] = h.tur & 255;
+
+    # 8-bit Flags (Bayt 4)
+    hedef[4] = h.bayraklar & 255;
+
+    # 31-bit Stream ID (Bayt 5, 6, 7, 8 - Big Endian)
+    degisken sid: tamsayi = h.akis_id & 2147483647;
+    hedef[5] = (sid >> 24) & 127; # R biti = 0
+    hedef[6] = (sid >> 16) & 255;
+    hedef[7] = (sid >> 8) & 255;
+    hedef[8] = sid & 255;
+
+    dondu 9; # Standart 9-bayt baslik
+}
+
+# 2. 9-Bayt Ikili Diziden HTTP/2 Basligi Ayristirma
+isv http2_baslik_ayristir(kaynak: *u8, h: *Http2Baslik) -> tamsayi {
+    # 24-bit Length
+    degisken l0: tamsayi = kaynak[0] & 255;
+    degisken l1: tamsayi = kaynak[1] & 255;
+    degisken l2: tamsayi = kaynak[2] & 255;
+    h.uzunluk = (l0 << 16) | (l1 << 8) | l2;
+
+    # Type & Flags
+    h.tur = kaynak[3] & 255;
+    h.bayraklar = kaynak[4] & 255;
+
+    # 31-bit Stream ID
+    degisken s0: tamsayi = kaynak[5] & 127; # R bitini sifirla
+    degisken s1: tamsayi = kaynak[6] & 255;
+    degisken s2: tamsayi = kaynak[7] & 255;
+    degisken s3: tamsayi = kaynak[8] & 255;
+    h.akis_id = (s0 << 24) | (s1 << 16) | (s2 << 8) | s3;
+
+    dondu 9;
+}
+
+# 3. HPACK Statik Tablo Kodlama (RFC 7541 Indexed Header Field)
+# En sik kullanilan HTTP basliklarini tek bir baytla (0x80 | Index) temsil eder
+isv hpack_indeksli_kodla(statik_indeks: tamsayi, hedef: *u8) -> tamsayi {
+    # 1 ile 61 arasi statik indeks: En yuksek bit (bit 7) 1 yapilir
+    hedef[0] = (128 | (statik_indeks & 127)) & 255;
+    dondu 1; # 1 bayt
+}
+
+isv hpack_indeksli_coz(bayt: tamsayi) -> tamsayi {
+    eger (bayt & 128) != 0 ise {
+        dondu bayt & 127; # Statik tablo indeksi
+    }
+    dondu 0 - 1; # Indeksli baslik degil
+}
+
+# 4. HTTP/2 DATA Cercevesi Tam Paketi Uretici
+isv http2_data_cercevesi_olustur(akis_id: tamsayi, veri: *u8, veri_len: tamsayi, son_akis_mi: tamsayi, cikti: *u8) -> tamsayi {
+    degisken bayrak: tamsayi = 0;
+    eger son_akis_mi == 1 ise {
+        bayrak = H2_FLAG_END_STREAM;
+    }
+    degisken h: *Http2Baslik = http2_baslik_olustur(veri_len, H2_FRAME_DATA, bayrak, akis_id);
+    http2_baslik_serilestir(h, cikti);
+
+    degisken i: tamsayi = 0;
+    dongu i < veri_len {
+        cikti[9 + i] = veri[i];
+        i = i + 1;
+    }
+    dondu 9 + veri_len; # Toplam cerceve bayt boyutu
+}
+
+# 5. HTTP/2 SETTINGS ACK Cercevesi Uretici
+isv http2_settings_ack_olustur(cikti: *u8) -> tamsayi {
+    degisken h: *Http2Baslik = http2_baslik_olustur(0, H2_FRAME_SETTINGS, H2_FLAG_ACK, 0);
+    dondu http2_baslik_serilestir(h, cikti);
+}

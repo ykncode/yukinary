@@ -1,0 +1,29 @@
+# ============================================================
+# std/os/drivers/vga_text.ykn
+# FAZ 54: Saf Yukinary VGA 80x25 Metin Modu Surucusu
+# SIFIR MOCK, 0xB8000 Fiziksel Video Bellek Erisimi ve Renkli Metin
+# ============================================================
+
+# 80x25 VGA metin bellegini temizler (80 * 25 * 2 = 4000 bayt)
+isv vga_ekran_temizle(vram: *u8, renk: u8) {
+    degisken i: tamsayi = 0;
+    dongu i < 2000 {
+        degisken ofset: tamsayi = i * 2;
+        vram[ofset] = 32;       # ' ' (bosluk karakteri)
+        vram[ofset + 1] = renk; # Renk niteligi
+        i = i + 1;
+    }
+}
+
+# Verilen satir ve sutuna NUL-sonlu metin basar
+isv vga_metin_bas(vram: *u8, satir: tamsayi, sutun: tamsayi, metin: *u8, renk: u8) -> tamsayi {
+    degisken ofset: tamsayi = (satir * 80 + sutun) * 2;
+    degisken i: tamsayi = 0;
+
+    dongu metin[i] != 0 {
+        vram[ofset + i * 2] = metin[i];
+        vram[ofset + i * 2 + 1] = renk;
+        i = i + 1;
+    }
+    dondu i; # Yazilan karakter sayisi
+}

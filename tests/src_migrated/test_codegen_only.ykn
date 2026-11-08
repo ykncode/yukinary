@@ -1,0 +1,11 @@
+﻿ice_aktar "codegen.ykn";
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(mesaj: *u8) {}
+isv diske_bas_ve_kapat(dosya_adi: *u8, bellek: *u8, boyut: tamsayi) {}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("Codegen only test OK\n".ptr);
+    dondu 42;
+}

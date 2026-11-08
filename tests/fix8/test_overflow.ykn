@@ -1,0 +1,15 @@
+isv ekrana_yaz(mesaj: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {}
+
+isv ana() -> tamsayi {
+    # 2^63 - 1 (Maksimum pozitif signed 64-bit tamsayi)
+    degisken maks: tamsayi = 9223372036854775807;
+    degisken sonuc: tamsayi = maks + 1;
+    
+    # Yukinary calisma zamani sozlesmesine gore tasmalarda panik atilmaz, wrap-around yapilir.
+    # Sonu -9223372036854775808 (Minimum negatif) olmali.
+    eger sonuc < 0 ise {
+        dondu 0; # Basarili, wrap-around calisiyor
+    }
+    dondu 1; # Basarisiz
+}

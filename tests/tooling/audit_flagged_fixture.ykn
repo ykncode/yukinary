@@ -1,0 +1,4 @@
+isv fixture() -> tamsayi {
+    degisken mock_value: tamsayi = 0;
+    dondu 0;
+}

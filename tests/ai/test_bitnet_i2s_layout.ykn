@@ -1,0 +1,45 @@
+# Microsoft/BitNet GGUF type-36 I2_S layout smoke test.
+ice_aktar "std/ai/bitnet_backend.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv ana() -> tamsayi {
+    degisken packed: [96]u8;
+    degisken activation: [128]tamsayi;
+    degisken output: [2]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 128 { activation[i] = 65536; i = i + 1; }
+
+    # Each packed code is 10b (+1); the tensor trailer starts at K*N/4.
+    i = 0;
+    dongu i < 64 { packed[i] = 170; i = i + 1; }
+    packed[64] = 0; packed[65] = 0; packed[66] = 128; packed[67] = 63;
+    eger bitnet_i2s_paketli_matris_carp(packed, activation, output, 1, 128, 2) != 1 {
+        ekrana_yaz("I2S_LAYOUT_CALL_FAIL\n".ptr); dondu 1;
+    }
+    eger output[0] != 8388608 veya output[1] != 8388608 {
+        ekrana_yaz("I2S_LAYOUT_POSITIVE_FAIL\n".ptr); dondu 2;
+    }
+
+    i = 0;
+    dongu i < 64 { packed[i] = 0; i = i + 1; }
+    eger bitnet_i2s_paketli_matris_carp(packed, activation, output, 1, 128, 2) != 1 {
+        ekrana_yaz("I2S_LAYOUT_NEGATIVE_CALL_FAIL\n".ptr); dondu 3;
+    }
+    eger output[0] != -8388608 veya output[1] != -8388608 {
+        ekrana_yaz("I2S_LAYOUT_NEGATIVE_FAIL\n".ptr); dondu 4;
+    }
+
+    i = 0;
+    dongu i < 64 { packed[i] = 85; i = i + 1; }
+    eger bitnet_i2s_paketli_matris_carp(packed, activation, output, 1, 128, 2) != 1 {
+        ekrana_yaz("I2S_LAYOUT_ZERO_CALL_FAIL\n".ptr); dondu 5;
+    }
+    eger output[0] != 0 veya output[1] != 0 {
+        ekrana_yaz("I2S_LAYOUT_ZERO_FAIL\n".ptr); dondu 6;
+    }
+
+    ekrana_yaz("BITNET_I2S_LAYOUT_PASS\n".ptr);
+    dondu 0;
+}

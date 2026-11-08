@@ -1,0 +1,92 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/gui/bilesenler.ykn
+# Modern Reaktif Bileşen Mimarisi (Widget Tree & Event Handling)
+# ============================================================
+
+ice_aktar "std/gui/cizim.ykn";
+
+degisken UI_TIP_PANEL: tamsayi = 1;
+degisken UI_TIP_BUTON: tamsayi = 2;
+degisken UI_TIP_METIN: tamsayi = 3;
+
+yapi UIBilesen {
+    tip: tamsayi;
+    x: tamsayi;
+    y: tamsayi;
+    genislik: tamsayi;
+    yukseklik: tamsayi;
+    arka_plan_renk: tamsayi;
+    kenar_renk: tamsayi;
+    etiket_ptr: *u8;
+    etiket_uzunluk: tamsayi;
+    tiklandi_mi: tamsayi;
+    gorunur_mu: tamsayi;
+}
+
+isv ui_bilesen_ilklendir(b: *UIBilesen, tip: tamsayi, x: tamsayi, y: tamsayi, w: tamsayi, h: tamsayi, renk: tamsayi) {
+    eger b == 0 ise { dondu; }
+    b.tip = tip;
+    b.x = x;
+    b.y = y;
+    b.genislik = w;
+    b.yukseklik = h;
+    b.arka_plan_renk = renk;
+    b.kenar_renk = 0xFFFFFFFF;
+    b.etiket_ptr = 0;
+    b.etiket_uzunluk = 0;
+    b.tiklandi_mi = 0;
+    b.gorunur_mu = 1;
+}
+
+isv ui_panel_olustur(b: *UIBilesen, x: tamsayi, y: tamsayi, w: tamsayi, h: tamsayi, renk: tamsayi) {
+    ui_bilesen_ilklendir(b, UI_TIP_PANEL, x, y, w, h, renk);
+}
+
+isv ui_buton_olustur(b: *UIBilesen, x: tamsayi, y: tamsayi, w: tamsayi, h: tamsayi, etiket: *u8, etiket_uzn: tamsayi) {
+    ui_bilesen_ilklendir(b, UI_TIP_BUTON, x, y, w, h, 0xFF336699); # Yukinary Mavisi
+    b.etiket_ptr = etiket;
+    b.etiket_uzunluk = etiket_uzn;
+}
+
+# Hit-test: Verilen (fx, fy) koordinati bileşen sınırları içinde mi?
+isv ui_bilesen_tiklama_dene(b: *UIBilesen, fx: tamsayi, fy: tamsayi) -> tamsayi {
+    eger b == 0 veya b.gorunur_mu == 0 ise { dondu 0; }
+    
+    degisken icinde_mi: tamsayi = 0;
+    eger fx >= b.x ve fx <= (b.x + b.genislik) ve fy >= b.y ve fy <= (b.y + b.yukseklik) ise {
+        icinde_mi = 1;
+        b.tiklandi_mi = 1;
+    } yoksa {
+        b.tiklandi_mi = 0;
+    }
+    dondu icinde_mi;
+}
+
+# Çizim motoru üzerinden bileşeni piksel arabelleğine rasterize et
+isv ui_bilesen_ciz(yuzey: *CizimYuzeyi, b: *UIBilesen) -> tamsayi {
+    eger yuzey == 0 veya b == 0 veya b.gorunur_mu == 0 ise { dondu -1; }
+    
+    # 1. Gövdeyi doldur
+    degisken aktif_renk: tamsayi = b.arka_plan_renk;
+    eger b.tiklandi_mi == 1 ise {
+        # Tıklanma vurgusu (hover/active state)
+        aktif_renk = aktif_renk + 0x00222222;
+    }
+    
+    cizim_dikdortgen_doldur(yuzey, b.x, b.y, b.genislik, b.yukseklik, aktif_renk);
+    
+    # 2. İnce kenarlık çiz (1 piksel çerçeve)
+    degisken bx: tamsayi = b.x;
+    degisken by: tamsayi = b.y;
+    degisken bw: tamsayi = b.genislik;
+    degisken bh: tamsayi = b.yukseklik;
+    
+    # Üst ve alt kenar
+    cizim_dikdortgen_doldur(yuzey, bx, by, bw, 1, b.kenar_renk);
+    cizim_dikdortgen_doldur(yuzey, bx, by + bh - 1, bw, 1, b.kenar_renk);
+    # Sol ve sağ kenar
+    cizim_dikdortgen_doldur(yuzey, bx, by, 1, bh, b.kenar_renk);
+    cizim_dikdortgen_doldur(yuzey, bx + bw - 1, by, 1, bh, b.kenar_renk);
+    
+    dondu 0;
+}

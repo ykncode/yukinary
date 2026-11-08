@@ -1,0 +1,99 @@
+# ============================================================
+# tests/fix11/test_platform_destek.ykn
+# FIX 11 - Platform destek matrisi ve header dogrulama testi
+#
+# Bu test:
+#   1. PLATFORM_* sabitleri dogru tanimlanmis olmali
+#   2. Windows PE32+ magic bytes (0x4D 0x5A = "MZ") dogrulanmali
+#   3. ELF64 magic bytes (0x7F 0x45 0x4C 0x46 = 0x7F"ELF") tanimlanmis olmali
+#   4. Mach-O magic (0xFE 0xED 0xFA 0xCF = 64-bit Mach-O) tanimlanmis olmali
+#   5. Platform sabiti tutarlilik: WINDOWS != LINUX != MACOS
+#
+# Beklenen cikti: "PLATFORM DESTEK TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- Platform sabitleri dogru tanimlanmis olmali ---
+    eger PLATFORM_WINDOWS != 0 ise {
+        ekrana_yaz("HATA: PLATFORM_WINDOWS 0 olmali\n".ptr);
+        dondu 1;
+    }
+    eger PLATFORM_LINUX_X86_64 != 1 ise {
+        ekrana_yaz("HATA: PLATFORM_LINUX_X86_64 1 olmali\n".ptr);
+        dondu 1;
+    }
+    eger PLATFORM_MACOS_X86_64 != 2 ise {
+        ekrana_yaz("HATA: PLATFORM_MACOS_X86_64 2 olmali\n".ptr);
+        dondu 1;
+    }
+    eger PLATFORM_LINUX_ARM64 != 3 ise {
+        ekrana_yaz("HATA: PLATFORM_LINUX_ARM64 3 olmali\n".ptr);
+        dondu 1;
+    }
+    eger PLATFORM_MACOS_ARM64 != 4 ise {
+        ekrana_yaz("HATA: PLATFORM_MACOS_ARM64 4 olmali\n".ptr);
+        dondu 1;
+    }
+    # Tum platform sabitleri farkli olmali
+    eger PLATFORM_WINDOWS == PLATFORM_LINUX_X86_64 ise {
+        ekrana_yaz("HATA: Platform sabitleri cakisiyor\n".ptr);
+        dondu 1;
+    }
+
+    # --- PE32+ magic bytes: "MZ" = 0x4D 0x5A ---
+    degisken pe_magic: [4]u8;
+    pe_magic[0] = 77;   # 'M'
+    pe_magic[1] = 90;   # 'Z'
+    pe_magic[2] = 0;
+    pe_magic[3] = 0;
+    eger pe_magic[0] != 77 veya pe_magic[1] != 90 ise {
+        ekrana_yaz("HATA: PE32+ magic bytes yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # --- ELF64 magic bytes: 0x7F + "ELF" ---
+    degisken elf_magic: [5]u8;
+    elf_magic[0] = 127;  # 0x7F
+    elf_magic[1] = 69;   # 'E'
+    elf_magic[2] = 76;   # 'L'
+    elf_magic[3] = 70;   # 'F'
+    elf_magic[4] = 0;
+    eger elf_magic[0] != 127 ise {
+        ekrana_yaz("HATA: ELF magic byte yanlis\n".ptr);
+        dondu 1;
+    }
+    eger elf_magic[1] != 69 veya elf_magic[2] != 76 veya elf_magic[3] != 70 ise {
+        ekrana_yaz("HATA: ELF 'ELF' bytes yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # --- Mach-O 64-bit magic: 0xCF 0xFA 0xED 0xFE (little-endian) ---
+    degisken macho_magic: [4]u8;
+    macho_magic[0] = 207;  # 0xCF
+    macho_magic[1] = 250;  # 0xFA
+    macho_magic[2] = 237;  # 0xED
+    macho_magic[3] = 254;  # 0xFE
+    eger macho_magic[0] != 207 veya macho_magic[1] != 250 ise {
+        ekrana_yaz("HATA: Mach-O magic bytes yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # --- Windows hedef derleyicisi PE binary uretmeli ---
+    # Bu test Windows'ta calistiginda stage0'in urettigi binary PE olmali
+    degisken exe_dosya: *u8 = "build\\bootstrap\\stage0.exe".ptr;
+    degisken header_buf: [16]u8;
+    degisken okunan: tamsayi = dosya_oku(exe_dosya, header_buf, 16);
+    eger okunan < 2 ise {
+        ekrana_yaz("HATA: stage0.exe okunamadi\n".ptr);
+        dondu 1;
+    }
+    eger header_buf[0] != 77 veya header_buf[1] != 90 ise {
+        ekrana_yaz("HATA: stage0.exe PE32+ MZ magic hatasi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("PLATFORM DESTEK TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,58 @@
+# ============================================================
+# F11.2: AsyncFrame Memory ABI Derinlemesine Denetimi
+# Future ve AsyncFrame yapilarinin ABI ve alan dogrulamasi
+# ============================================================
+
+yapi OzetFuture {
+    poll: *u8;
+    context: *u8;
+    durum: tamsayi;
+    hata: tamsayi;
+    poll_sayisi: tamsayi;
+    poll_limiti: tamsayi;
+    sonuc_bellegi: *u8;
+    sonuc_boyutu: tamsayi;
+    sonuc_tipi: tamsayi;
+    frame: *OzetAsyncFrame;
+}
+
+yapi OzetAsyncFrame {
+    magic: tamsayi;
+    boyut: tamsayi;
+    program_sayaci: tamsayi;
+    sonuc_durumu: tamsayi;
+    sonuc_hata: tamsayi;
+    beklenen: *OzetFuture;
+    sahibi: *OzetFuture;
+    slotlar: *tamsayi;
+    slot_sayisi: tamsayi;
+}
+
+async isv hedef_is() -> *OzetFuture {
+    dondu 777;
+}
+
+async isv test_surucu() -> *OzetFuture {
+    # hedef_is cagrildiginda Future dondurur
+    degisken f_raw: *OzetFuture = hedef_is();
+    dondu f_raw;
+}
+
+async isv ana() -> tamsayi {
+    degisken f: *OzetFuture = await test_surucu();
+    eger f == 0 ise { dondu 1; }
+    eger f.durum != 1 ise { dondu 2; }
+    eger f.poll == 0 ise { dondu 3; }
+    eger f.context == 0 ise { dondu 4; }
+    eger f.frame == 0 ise { dondu 5; }
+
+    degisken fr: *OzetAsyncFrame = f.frame;
+    eger fr.magic != 0x594B4E46 ise { dondu 6; }
+    eger fr.boyut != 64 ise { dondu 7; }
+    eger fr.sonuc_durumu != 1 ise { dondu 8; }
+    eger fr.sonuc_hata != 777 ise { dondu 9; }
+    eger fr.sahibi != f ise { dondu 10; }
+
+    ekrana_yaz("F11.2 PASS: AsyncFrame Magic & Owner ABI Basarili!\n".ptr);
+    dondu 0;
+}

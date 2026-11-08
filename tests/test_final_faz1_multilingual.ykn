@@ -1,0 +1,134 @@
+# ============================================================
+# Yukinary Faz 1 & Faz 2: Evrensel Cok Dilli Tip, Token ve #config Testi
+# %100 Gercek Kod, Zero Mocks, Windows PE32+ ve Linux ELF64 Uyumlu
+# ============================================================
+#config {
+    yigin_boyutu: 16777216,
+    is_parcacigi: 4,
+    bellek: "arena",
+    islemci: "native"
+}
+
+isv test_turkce_tipler() -> tamsayi {
+    degisken a: tamsayi = 42;
+    degisken b: bayt = 255;
+    degisken c: mantiksal = dogru;
+    degisken d: mantiksal = degil yanlis;
+
+    eger a == 42 ve b == 255 ve c == dogru ve d == dogru ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_ingilizce_tipler() -> i64 {
+    degisken x: i64 = 100;
+    degisken y: u8 = 128;
+    degisken ok: bool = true;
+    degisken n: bool = not false;
+
+    eger x == 100 and y == 128 and ok == true and n == true ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_rusca_tipler() -> целое {
+    degisken r1: целое = 200;
+    degisken r2: байт = 64;
+    degisken r3: логическое = истина;
+    degisken r4: символ = 65;
+    degisken r5: логическое = не ложь;
+
+    eger r1 == 200 и r2 == 64 и r3 == истина и r4 == 65 и r5 == истина ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_japonca_tipler() -> 整数 {
+    degisken j1: 整数 = 300;
+    degisken j2: バイト = 32;
+    degisken j3: 論理 = 真;
+    degisken j4: 文字 = 66;
+    degisken j5: 論理 = 否定 偽;
+
+    eger j1 == 300 かつ j2 == 32 かつ j3 == 真 かつ j4 == 66 かつ j5 == 真 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_cince_tipler() -> 整数 {
+    degisken z1: 整数 = 400;
+    degisken z2: 字节 = 16;
+    degisken z3: 布尔 = 真;
+    degisken z4: 字符 = 67;
+    degisken z5: 布尔 = 非 假;
+
+    eger z1 == 400 并且 z2 == 16 并且 z3 == 真 并且 z4 == 67 并且 z5 == 真 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_korece_tipler() -> 정수 {
+    degisken k1: 정수 = 500;
+    degisken k2: 바이트 = 8;
+    degisken k3: 논리 = 참;
+    degisken k4: 문자 = 68;
+    degisken k5: 논리 = 아니다 거짓;
+
+    eger k1 == 500 그리고 k2 == 8 그리고 k3 == 참 그리고 k4 == 68 그리고 k5 == 참 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv test_cok_dilli_veya_ve_null() -> tamsayi {
+    degisken v1: tamsayi = 0;
+    degisken v2: tamsayi = 1;
+
+    degisken p1: *u8 = bos;
+    degisken p2: *u8 = null;
+    degisken p3: *u8 = пусто;
+    degisken p4: *u8 = 無;
+    degisken p5: *u8 = 널;
+
+    degisken null_tamam: tamsayi = 0;
+    eger p1 == 0 ve p2 == 0 ve p3 == 0 ve p4 == 0 ve p5 == 0 ise {
+        null_tamam = 1;
+    }
+
+    degisken veya_tamam: tamsayi = 0;
+    eger (v1 == 1 veya v2 == 1) ve
+         (v1 == 1 or v2 == 1) ve
+         (v1 == 1 или v2 == 1) ve
+         (v1 == 1 または v2 == 1) ve
+         (v1 == 1 或者 v2 == 1) ve
+         (v1 == 1 또는 v2 == 1) ise {
+        veya_tamam = 1;
+    }
+
+    eger null_tamam == 1 ve veya_tamam == 1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv main() -> tamsayi {
+    degisken t1: tamsayi = test_turkce_tipler();
+    degisken t2: tamsayi = test_ingilizce_tipler();
+    degisken t3: tamsayi = test_rusca_tipler();
+    degisken t4: tamsayi = test_japonca_tipler();
+    degisken t5: tamsayi = test_cince_tipler();
+    degisken t6: tamsayi = test_korece_tipler();
+    degisken t7: tamsayi = test_cok_dilli_veya_ve_null();
+
+    # Tum 7 cok dilli test basarili olmali
+    eger t1 == 1 ve t2 == 1 ve t3 == 1 ve t4 == 1 ve t5 == 1 ve t6 == 1 ve t7 == 1 ise {
+        dondu 0; # Basarili - Exit Code 0
+    }
+    dondu 1; # Hata
+}
+

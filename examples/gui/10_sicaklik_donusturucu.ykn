@@ -1,0 +1,34 @@
+# ============================================================
+# Örnek 62: Win32 Sıcaklık Dönüştürücü GUI (Celsius <-> Fahrenheit)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# C'den F'ye: (C * 9 / 5) + 32
+isv celsius_to_fahrenheit(c: tamsayi) -> tamsayi {
+    dondu (c * 9 / 5) + 32;
+}
+
+# F'den C'ye: (F - 32) * 5 / 9
+isv fahrenheit_to_celsius(f: tamsayi) -> tamsayi {
+    dondu (f - 32) * 5 / 9;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Sicaklik Donusturucu".ptr, 340, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Celsius Giris Kutusu
+    metin_kutusu_olustur(p_h, 8001, 30, 40, 260, 32);
+
+    # Donusum Butonlari
+    buton_olustur(p_h, "Celsius -> Fahrenheit".ptr, 8010, 30, 90, 260, 38);
+    buton_olustur(p_h, "Fahrenheit -> Celsius".ptr, 8011, 30, 140, 260, 38);
+
+    ekrana_yaz("Sicaklik Donusturucu GUI hazir.\n".ptr);
+    ekrana_yaz("25 C = "); sayiyi_ekrana_yaz(celsius_to_fahrenheit(25)); ekrana_yaz(" F\n".ptr);
+    ekrana_yaz("100 F = "); sayiyi_ekrana_yaz(fahrenheit_to_celsius(100)); ekrana_yaz(" C\n".ptr);
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

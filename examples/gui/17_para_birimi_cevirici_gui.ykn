@@ -1,0 +1,33 @@
+# ============================================================
+# Örnek 59: Win32 Para Birimi Çevirici GUI (Döviz Dönüştürücü)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# Sabit Kurlar (Tamsayi x100): 1 USD = 3400 kurus (34 TL), 1 EUR = 3700 kurus (37 TL)
+isv usd_to_try(usd: tamsayi) -> tamsayi {
+    dondu usd * 34;
+}
+
+isv eur_to_try(eur: tamsayi) -> tamsayi {
+    dondu eur * 37;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Doviz Cevirici".ptr, 360, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Miktar Giris Kutusu
+    metin_kutusu_olustur(p_h, 9601, 40, 35, 260, 35);
+
+    # Donusum Butonlari
+    buton_olustur(p_h, "USD -> TL (Kur: 34)".ptr, 9610, 40, 90, 260, 40);
+    buton_olustur(p_h, "EUR -> TL (Kur: 37)".ptr, 9611, 40, 145, 260, 40);
+
+    ekrana_yaz("Doviz Cevirici GUI baslatildi.\n".ptr);
+    ekrana_yaz("100 USD = "); sayiyi_ekrana_yaz(usd_to_try(100)); ekrana_yaz(" TL\n".ptr);
+    ekrana_yaz("100 EUR = "); sayiyi_ekrana_yaz(eur_to_try(100)); ekrana_yaz(" TL\n".ptr);
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

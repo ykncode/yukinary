@@ -1,0 +1,16 @@
+# ============================================================
+# tests/faz6_neg_gguf_corrupt.ykn
+# FAZ 6: Bozuk GGUF / Gecersiz Model Yukleme Negatif Testi
+# ============================================================
+
+ice_aktar "std/ai/gguf_mmap.ykn";
+
+isv ana() -> tamsayi {
+    degisken m: GGUFMmapModel;
+    degisken res: tamsayi = gguf_mmap_yukle(&m, "olmayan_dosya_gecersiz.gguf".ptr);
+    eger res < 0 {
+        ekrana_yaz("BEKLENEN HATA: GGUF yuklenemedi (fail-closed basarili)!\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
+}

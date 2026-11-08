@@ -1,0 +1,98 @@
+ice_aktar "std/ai/relational_core.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("[TEST FAZ 15] YKN-CORE (Code-Oriented Relational Engine) Baslatiliyor...\n".ptr);
+
+    # 1. Graf İlklendirme
+    ekrana_yaz("1. Graf Ilklendirme ve Dugum Ekleme Testi: ".ptr);
+    ykn_core_sifirla();
+
+    # Dugum 0: ana() fonksiyonu
+    ykn_core_dugum_ekle(0, CORE_DUGUM_FONKSIYON);
+    # Dugum 1: kullanici_girdisi degiskeni
+    ykn_core_dugum_ekle(1, CORE_DUGUM_DEGISKEN);
+    # Dugum 2: tamsayi tipi
+    ykn_core_dugum_ekle(2, CORE_DUGUM_TIP);
+    # Dugum 3: guvenlik_dogrula() fonksiyonu
+    ykn_core_dugum_ekle(3, CORE_DUGUM_FONKSIYON);
+
+    eger g_core_dugum_sayisi == 4 ise {
+        ekrana_yaz("BASARILI (4 AST Sembol Dugumu Eklendi)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Dugum sayisi uyusmuyor!\n".ptr);
+        ExitProcess(1);
+    }
+
+    # 2. Kenar Ekleme (AST & Semantik Iliskiler)
+    ekrana_yaz("2. Semantik Kenar (Relations) Ekleme Testi: ".ptr);
+    # ana() DEFINES kullanici_girdisi
+    ykn_core_kenar_ekle(0, 1, CORE_KENAR_DEFINES, 65536);
+    # kullanici_girdisi HAS_TYPE tamsayi
+    ykn_core_kenar_ekle(1, 2, CORE_KENAR_HAS_TYPE, 65536);
+    # ana() CALLS guvenlik_dogrula()
+    ykn_core_kenar_ekle(0, 3, CORE_KENAR_CALLS, 65536);
+    # guvenlik_dogrula() USES kullanici_girdisi
+    ykn_core_kenar_ekle(3, 1, CORE_KENAR_USES, 65536);
+
+    eger g_core_kenar_sayisi == 4 ise {
+        ekrana_yaz("BASARILI (4 Semantik Kenar Baglandi)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Kenar sayisi uyusmuyor!\n".ptr);
+        ExitProcess(2);
+    }
+
+    # 3. PageRank / Centrality Skoru Hesaplama
+    ekrana_yaz("3. Kod Grafinda PageRank / Centrality Testi: ".ptr);
+    ykn_core_pagerank_hesapla(5);
+
+    # kullanici_girdisi dugumu (1) hem ana() hem guvenlik_dogrula() tarafindan beslendigi icin skoru artmalidir
+    degisken skor_1: tamsayi = g_core_dugum_skorlari[1];
+    eger skor_1 > 9830 ise {
+        ekrana_yaz("BASARILI (Dugum 1 Onem Skoru: ".ptr);
+        sayi_yaz(skor_1);
+        ekrana_yaz(" [Q16.16])\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Centrality skoru beklenen duzeyde degil!\n".ptr);
+        ExitProcess(3);
+    }
+
+    # 4. Baglamsal Kod Tamamlama ve Iliskisel Aday Secimi
+    ekrana_yaz("4. Baglamsal Iliskisel Sembol Onerisi Testi: ".ptr);
+    # ana() fonksiyonu (0) icindeyken onerilecek en uygun FONKSIYON hangisi olmali?
+    degisken oneri_fn: tamsayi = ykn_core_en_iyi_adayi_bul(0, CORE_DUGUM_FONKSIYON);
+    
+    # Beklenen: guvenlik_dogrula() yani Dugum 3
+    eger oneri_fn == 3 ise {
+        ekrana_yaz("BASARILI (Onerilen Sembol ID: 3 [guvenlik_dogrula])\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Onerilen sembol hatali! Bulunan ID: ".ptr);
+        sayi_yaz(oneri_fn);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(4);
+    }
+
+    ekrana_yaz("\n>>> [SONUC] FAZ 15 YKN-CORE TUM TESTLERI BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,10 @@
+# Async syntax is parsed into AST_ASYNC_ISLEV/AST_AWAIT, but codegen lowering
+# is intentionally not accepted until Future<T> state-machine support exists.
+async isv fetch() -> tamsayi {
+    dondu 1;
+}
+
+async isv ana() -> tamsayi {
+    degisken value: tamsayi = await fetch();
+    dondu value;
+}

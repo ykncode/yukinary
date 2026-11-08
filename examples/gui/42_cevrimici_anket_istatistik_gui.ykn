@@ -1,0 +1,39 @@
+# ============================================================
+# Örnek 42: Win32 Arayüzlü Anket ve Oy İstatistikleri
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_secenek_a: tamsayi = 45;
+degisken g_secenek_b: tamsayi = 30;
+degisken g_secenek_c: tamsayi = 25;
+
+isv yuzde_bul(pay: tamsayi, payda: tamsayi) -> tamsayi {
+    eger payda == 0 ise { dondu 0; }
+    dondu (pay * 100) / payda;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Anket Sistemi".ptr, 580, 450);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Anket Sorusu Basligi
+    metin_kutusu_olustur(p_h, 100, 20, 20, 520, 60);
+
+    # Oy Butonlari
+    buton_olustur(p_h, "A) Yukinary Native".ptr, 201, 20, 100, 240, 45);
+    buton_olustur(p_h, "B) C / C++".ptr, 202, 20, 160, 240, 45);
+    buton_olustur(p_h, "C) Rust".ptr, 203, 20, 220, 240, 45);
+
+    # Sag Istatistik Barlari
+    metin_kutusu_olustur(p_h, 301, 280, 100, 260, 165);
+
+    buton_olustur(p_h, "Sonuclari Yenile".ptr, 401, 20, 300, 520, 40);
+
+    ekrana_yaz("Anket paneli aktif. Toplam 100 oy sayildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

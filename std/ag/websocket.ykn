@@ -1,0 +1,390 @@
+# ============================================================
+# std/ag/websocket.ykn
+# FAZ 59: Saf Yukinary WebSocket (RFC 6455) Protokol Motoru
+# Gerçek SHA-1 ve Base64 El Sıkışması, İkili Çerçeve Ayrıştırma ve Maskeleme
+# ============================================================
+
+degisken WS_OP_DEVAM:   tamsayi = 0;
+degisken WS_OP_METIN:   tamsayi = 1;
+degisken WS_OP_IKILI:   tamsayi = 2;
+degisken WS_OP_KAPAT:   tamsayi = 8;
+degisken WS_OP_PING:    tamsayi = 9;
+degisken WS_OP_PONG:    tamsayi = 10;
+
+# RFC 6455 Sabit Sihirli GUID
+# "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+yapi WsCerceve {
+    fin:       tamsayi; # 1 bit
+    rsv:       tamsayi; # 3 bit
+    opcode:    tamsayi; # 4 bit
+    maskeli:   tamsayi; # 1 bit
+    maske_key: tamsayi; # 32 bit
+    uzunluk:   tamsayi;
+    veri:      *u8;
+}
+
+isv ws_cerceve_olustur(opcode: tamsayi, veri: *u8, uzunluk: tamsayi, fin: tamsayi) -> *WsCerceve {
+    degisken c: *WsCerceve = bellek_tahsis_et(56);
+    c.fin = fin;
+    c.rsv = 0;
+    c.opcode = opcode;
+    c.maskeli = 0;
+    c.maske_key = 0;
+    c.uzunluk = uzunluk;
+    c.veri = bellek_tahsis_et(uzunluk + 1);
+
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        c.veri[i] = veri[i];
+        i = i + 1;
+    }
+    c.veri[uzunluk] = 0;
+    dondu c;
+}
+
+# RFC 6455: 4-baytlik maske XOR islemi
+isv ws_maske_uygula(veri: *u8, uzunluk: tamsayi, maske: tamsayi) {
+    degisken m0: tamsayi = maske & 255;
+    degisken m1: tamsayi = (maske >> 8) & 255;
+    degisken m2: tamsayi = (maske >> 16) & 255;
+    degisken m3: tamsayi = (maske >> 24) & 255;
+
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken mod: tamsayi = i % 4;
+        eger mod == 0 ise { veri[i] = veri[i] ^ m0; }
+        eger mod == 1 ise { veri[i] = veri[i] ^ m1; }
+        eger mod == 2 ise { veri[i] = veri[i] ^ m2; }
+        eger mod == 3 ise { veri[i] = veri[i] ^ m3; }
+        i = i + 1;
+    }
+}
+
+# RFC 6455 Cercevesini ham bayt dizisine serilestirir (donus: serilestirilen toplam bayt)
+isv ws_cerceve_serilestir(c: *WsCerceve, cikti_tamponu: *u8, maks_kapasite: tamsayi) -> tamsayi {
+    eger c == 0 veya cikti_tamponu == 0 ise { dondu -1; }
+    degisken b0: tamsayi = (c.fin << 7) | (c.opcode & 15);
+    degisken baslik_uzn: tamsayi = 2;
+    degisken payload_len: tamsayi = c.uzunluk;
+
+    eger payload_len <= 125 ise {
+        baslik_uzn = 2;
+    } yoksa eger payload_len <= 65535 ise {
+        baslik_uzn = 4;
+    } yoksa {
+        baslik_uzn = 10;
+    }
+    eger c.maskeli == 1 ise {
+        baslik_uzn = baslik_uzn + 4;
+    }
+    degisken toplam: tamsayi = baslik_uzn + payload_len;
+    eger toplam > maks_kapasite ise { dondu -2; }
+
+    cikti_tamponu[0] = b0;
+    degisken mask_bit: tamsayi = 0;
+    eger c.maskeli == 1 ise { mask_bit = 128; }
+
+    degisken pos: tamsayi = 2;
+    eger payload_len <= 125 ise {
+        cikti_tamponu[1] = mask_bit | payload_len;
+    } yoksa eger payload_len <= 65535 ise {
+        cikti_tamponu[1] = mask_bit | 126;
+        cikti_tamponu[2] = (payload_len >> 8) & 255;
+        cikti_tamponu[3] = payload_len & 255;
+        pos = 4;
+    } yoksa {
+        cikti_tamponu[1] = mask_bit | 127;
+        cikti_tamponu[2] = 0; cikti_tamponu[3] = 0; cikti_tamponu[4] = 0; cikti_tamponu[5] = 0;
+        cikti_tamponu[6] = (payload_len >> 24) & 255;
+        cikti_tamponu[7] = (payload_len >> 16) & 255;
+        cikti_tamponu[8] = (payload_len >> 8) & 255;
+        cikti_tamponu[9] = payload_len & 255;
+        pos = 10;
+    }
+
+    degisken m_key: tamsayi = c.maske_key;
+    eger c.maskeli == 1 ise {
+        cikti_tamponu[pos] = m_key & 255;
+        cikti_tamponu[pos + 1] = (m_key >> 8) & 255;
+        cikti_tamponu[pos + 2] = (m_key >> 16) & 255;
+        cikti_tamponu[pos + 3] = (m_key >> 24) & 255;
+        pos = pos + 4;
+    }
+
+    degisken i: tamsayi = 0;
+    dongu i < payload_len {
+        degisken val: tamsayi = c.veri[i];
+        eger c.maskeli == 1 ise {
+            degisken mod: tamsayi = i % 4;
+            degisken mk: tamsayi = (m_key >> (mod * 8)) & 255;
+            val = val ^ mk;
+        }
+        cikti_tamponu[pos + i] = val;
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+# Ham bayt dizisinden RFC 6455 Cercevesi ayristirir
+isv ws_cerceve_ayristir(ham_tampon: *u8, uzunluk: tamsayi, c: *WsCerceve) -> tamsayi {
+    eger ham_tampon == 0 veya uzunluk < 2 veya c == 0 ise { dondu -1; }
+    degisken b0: tamsayi = ham_tampon[0];
+    degisken b1: tamsayi = ham_tampon[1];
+
+    c.fin = (b0 >> 7) & 1;
+    c.rsv = (b0 >> 4) & 7;
+    c.opcode = b0 & 15;
+    c.maskeli = (b1 >> 7) & 1;
+
+    degisken p_len: tamsayi = b1 & 127;
+    degisken pos: tamsayi = 2;
+    eger p_len == 126 ise {
+        eger uzunluk < 4 ise { dondu -2; }
+        p_len = (ham_tampon[2] << 8) | ham_tampon[3];
+        pos = 4;
+    } yoksa eger p_len == 127 ise {
+        eger uzunluk < 10 ise { dondu -3; }
+        p_len = (ham_tampon[6] << 24) | (ham_tampon[7] << 16) | (ham_tampon[8] << 8) | ham_tampon[9];
+        pos = 10;
+    }
+
+    c.uzunluk = p_len;
+    degisken m_key: tamsayi = 0;
+    eger c.maskeli == 1 ise {
+        eger pos + 4 > uzunluk ise { dondu -4; }
+        m_key = ham_tampon[pos] | (ham_tampon[pos + 1] << 8) | (ham_tampon[pos + 2] << 16) | (ham_tampon[pos + 3] << 24);
+        pos = pos + 4;
+    }
+    c.maske_key = m_key;
+
+    eger pos + p_len > uzunluk ise { dondu -5; }
+    c.veri = bellek_tahsis_et(p_len + 1);
+    degisken i: tamsayi = 0;
+    dongu i < p_len {
+        degisken b: tamsayi = ham_tampon[pos + i];
+        eger c.maskeli == 1 ise {
+            degisken mod: tamsayi = i % 4;
+            degisken mk: tamsayi = (m_key >> (mod * 8)) & 255;
+            b = b ^ mk;
+        }
+        c.veri[i] = b;
+        i = i + 1;
+    }
+    c.veri[p_len] = 0;
+    dondu pos + p_len;
+}
+
+# ------------------------------------------------------------
+# Saf SHA-1 ve Base64 Kripto Motoru (RFC 3174 & RFC 4648)
+# ------------------------------------------------------------
+
+isv sha1_rol(deger: tamsayi, bit: tamsayi) -> tamsayi {
+    degisken d: tamsayi = deger & 4294967295;
+    degisken sol: tamsayi = (d << bit) & 4294967295;
+    degisken sag: tamsayi = (d >> (32 - bit)) & 4294967295;
+    dondu (sol | sag) & 4294967295;
+}
+
+isv sha1_hesapla(mesaj: *u8, uzunluk: tamsayi, cikti_20: *u8) {
+    degisken h0: tamsayi = 1732584193; # 0x67452301
+    degisken h1: tamsayi = 4023233417; # 0xEFCDAB89
+    degisken h2: tamsayi = 2562383102; # 0x98BADCFE
+    degisken h3: tamsayi = 271733878;  # 0x10325476
+    degisken h4: tamsayi = 3285377520; # 0xC3D2E1F0
+
+    # Mesaj dolgusu (Padding)
+    degisken pad_len: tamsayi = ((uzunluk + 8) / 64 + 1) * 64;
+    degisken pad: *u8 = bellek_tahsis_et(pad_len);
+
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        pad[i] = mesaj[i];
+        i = i + 1;
+    }
+    pad[uzunluk] = 128; # 0x80
+    dongu i < (pad_len - 8) {
+        eger i > uzunluk ise { pad[i] = 0; }
+        i = i + 1;
+    }
+
+    # 64-bit uzunluk (Big Endian)
+    degisken bit_len: tamsayi = uzunluk * 8;
+    pad[pad_len - 4] = (bit_len >> 24) & 255;
+    pad[pad_len - 3] = (bit_len >> 16) & 255;
+    pad[pad_len - 2] = (bit_len >> 8) & 255;
+    pad[pad_len - 1] = bit_len & 255;
+
+    # 64-baytlik bloklari isle
+    degisken w_dizi: *tamsayi = bellek_tahsis_et(80 * 8);
+    degisken ofs: tamsayi = 0;
+
+    dongu ofs < pad_len {
+        degisken t: tamsayi = 0;
+        dongu t < 16 {
+            degisken p: tamsayi = ofs + (t * 4);
+            degisken b0: tamsayi = pad[p] & 255;
+            degisken b1: tamsayi = pad[p + 1] & 255;
+            degisken b2: tamsayi = pad[p + 2] & 255;
+            degisken b3: tamsayi = pad[p + 3] & 255;
+            w_dizi[t] = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 4294967295;
+            t = t + 1;
+        }
+        dongu t < 80 {
+            degisken temp: tamsayi = w_dizi[t - 3] ^ w_dizi[t - 8] ^ w_dizi[t - 14] ^ w_dizi[t - 16];
+            w_dizi[t] = sha1_rol(temp, 1);
+            t = t + 1;
+        }
+
+        degisken a: tamsayi = h0;
+        degisken b: tamsayi = h1;
+        degisken c: tamsayi = h2;
+        degisken d: tamsayi = h3;
+        degisken e: tamsayi = h4;
+
+        t = 0;
+        dongu t < 80 {
+            degisken f: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            eger t < 20 ise {
+                degisken not_b: tamsayi = 4294967295 ^ b;
+                f = (b & c) | (not_b & d);
+                k = 1518500249; # 0x5A827999
+            } yoksa eger t < 40 ise {
+                f = b ^ c ^ d;
+                k = 1859775393; # 0x6ED9EBA1
+            } yoksa eger t < 60 ise {
+                f = (b & c) | (b & d) | (c & d);
+                k = 2400959708; # 0x8F1BBCDC
+            } yoksa {
+                f = b ^ c ^ d;
+                k = 3395469782; # 0xCA62C1D6
+            }
+            degisken temp: tamsayi = (sha1_rol(a, 5) + f + e + k + w_dizi[t]) & 4294967295;
+            e = d;
+            d = c;
+            c = sha1_rol(b, 30);
+            b = a;
+            a = temp;
+            t = t + 1;
+        }
+
+        h0 = (h0 + a) & 4294967295;
+        h1 = (h1 + b) & 4294967295;
+        h2 = (h2 + c) & 4294967295;
+        h3 = (h3 + d) & 4294967295;
+        h4 = (h4 + e) & 4294967295;
+
+        ofs = ofs + 64;
+    }
+
+    # 20-baytlik sonucu yaz (Big Endian)
+    degisken j: tamsayi = 0;
+    dongu j < 5 {
+        degisken val: tamsayi = 0;
+        eger j == 0 ise { val = h0; }
+        eger j == 1 ise { val = h1; }
+        eger j == 2 ise { val = h2; }
+        eger j == 3 ise { val = h3; }
+        eger j == 4 ise { val = h4; }
+        cikti_20[j * 4] = (val >> 24) & 255;
+        cikti_20[j * 4 + 1] = (val >> 16) & 255;
+        cikti_20[j * 4 + 2] = (val >> 8) & 255;
+        cikti_20[j * 4 + 3] = val & 255;
+        j = j + 1;
+    }
+}
+
+isv base64_kodla(girdi: *u8, uzunluk: tamsayi, cikti: *u8) -> tamsayi {
+    degisken b64: *u8 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".ptr;
+    degisken out_idx: tamsayi = 0;
+    degisken in_idx: tamsayi = 0;
+
+    dongu in_idx < uzunluk {
+        degisken b0: tamsayi = girdi[in_idx] & 255;
+        degisken b1: tamsayi = 0;
+        degisken b2: tamsayi = 0;
+        eger (in_idx + 1) < uzunluk ise { b1 = girdi[in_idx + 1] & 255; }
+        eger (in_idx + 2) < uzunluk ise { b2 = girdi[in_idx + 2] & 255; }
+
+        degisken triple: tamsayi = (b0 << 16) | (b1 << 8) | b2;
+        cikti[out_idx] = b64[(triple >> 18) & 63];
+        cikti[out_idx + 1] = b64[(triple >> 12) & 63];
+
+        eger (in_idx + 1) < uzunluk ise {
+            cikti[out_idx + 2] = b64[(triple >> 6) & 63];
+        } yoksa {
+            cikti[out_idx + 2] = 61; # '='
+        }
+
+        eger (in_idx + 2) < uzunluk ise {
+            cikti[out_idx + 3] = b64[triple & 63];
+        } yoksa {
+            cikti[out_idx + 3] = 61; # '='
+        }
+
+        out_idx = out_idx + 4;
+        in_idx = in_idx + 3;
+    }
+    cikti[out_idx] = 0;
+    dondu out_idx;
+}
+
+# Dinamik Sec-WebSocket-Accept Anahtar Hesaplayici
+isv ws_accept_anahtari_hesapla(istemci_anahtari: *u8, cikti_accept: *u8) {
+    degisken guid: *u8 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".ptr;
+    degisken birlestirilmis: *u8 = bellek_tahsis_et(128);
+
+    degisken i: tamsayi = 0;
+    dongu istemci_anahtari[i] != 0 {
+        birlestirilmis[i] = istemci_anahtari[i];
+        i = i + 1;
+    }
+    degisken j: tamsayi = 0;
+    dongu guid[j] != 0 {
+        birlestirilmis[i + j] = guid[j];
+        j = j + 1;
+    }
+    degisken toplam_len: tamsayi = i + j;
+
+    degisken sha_cikti: *u8 = bellek_tahsis_et(24);
+    sha1_hesapla(birlestirilmis, toplam_len, sha_cikti);
+    base64_kodla(sha_cikti, 20, cikti_accept);
+}
+
+# Dinamik HTTP 101 Switching Protocols Yaniti Uretir
+isv ws_el_sikisma_yaniti_uret_dinamik(istemci_anahtari: *u8, hedef_tampon: *u8) -> tamsayi {
+    degisken accept_key: *u8 = bellek_tahsis_et(32);
+    ws_accept_anahtari_hesapla(istemci_anahtari, accept_key);
+
+    degisken baslangic: *u8 = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ".ptr;
+    degisken son: *u8 = "\r\n\r\n".ptr;
+
+    degisken idx: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu baslangic[i] != 0 {
+        hedef_tampon[idx] = baslangic[i];
+        idx = idx + 1;
+        i = i + 1;
+    }
+    i = 0;
+    dongu accept_key[i] != 0 {
+        hedef_tampon[idx] = accept_key[i];
+        idx = idx + 1;
+        i = i + 1;
+    }
+    i = 0;
+    dongu son[i] != 0 {
+        hedef_tampon[idx] = son[i];
+        idx = idx + 1;
+        i = i + 1;
+    }
+    hedef_tampon[idx] = 0;
+    dondu idx;
+}
+
+# Standart RFC ornek anahtariyla dinamik hesaplama (Geriye donuk tam uyumluluk)
+isv ws_el_sikisma_yaniti_uret(hedef_tampon: *u8) -> tamsayi {
+    degisken standart_ornek_key: *u8 = "dGhlIHNhbXBsZSBub25jZQ==".ptr;
+    dondu ws_el_sikisma_yaniti_uret_dinamik(standart_ornek_key, hedef_tampon);
+}

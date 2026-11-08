@@ -1,0 +1,23 @@
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+isv nokta_toplami(p: *Nokta) -> tamsayi {
+    dondu p.x + p.y;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken n: *Nokta = bellek_tahsis_et(16);
+    n.x = 15;
+    n.y = 27;
+    
+    degisken sonuc: tamsayi = nokta_toplami(n);
+    
+    eger sonuc == 42 ise {
+        ekrana_yaz("TEST 05: STRUCTS OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 05: STRUCTS FAILED\n".ptr);
+    }
+    dondu 0;
+}

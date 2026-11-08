@@ -1,0 +1,18 @@
+# ============================================================
+# std/web/websocket.ykn
+# FAZ 50: Web Katmani WebSocket Yonlendiricisi
+# ============================================================
+
+ice_aktar "std/ag/websocket.ykn";
+ice_aktar "std/ag/soket.ykn";
+
+isv ws_el_sikisma(istemci_soket: tamsayi, anahtar: *u8) -> tamsayi {
+    eger anahtar == 0 ise { dondu -1; }
+    degisken yanit: *u8 = bellek_tahsis_et(512);
+    eger yanit == 0 ise { dondu -1; }
+    degisken len: tamsayi = ws_el_sikisma_yaniti_uret_dinamik(anahtar, yanit);
+    eger istemci_soket >= 0 ve len > 0 ise {
+        soket_gonder_tam(istemci_soket, yanit, len);
+    }
+    dondu len;
+}

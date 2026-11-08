@@ -1,0 +1,53 @@
+# ============================================================
+# Örnek 5: Konsol Tabanlı Base64 Kodlayıcı (Encoder)
+# ============================================================
+
+degisken g_b64_tablo: *u8 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".ptr;
+
+isv base64_kodla(kaynak: *u8, uzunluk: tamsayi, cikti: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    degisken j: tamsayi = 0;
+
+    dongu (i < uzunluk) {
+        degisken b0: tamsayi = kaynak[i];
+        degisken b1: tamsayi = 0;
+        degisken b2: tamsayi = 0;
+
+        eger i + 1 < uzunluk ise { b1 = kaynak[i + 1]; }
+        eger i + 2 < uzunluk ise { b2 = kaynak[i + 2]; }
+
+        degisken w: tamsayi = (b0 * 65536) + (b1 * 256) + b2;
+
+        cikti[j] = g_b64_tablo[(w / 262144) % 64];
+        cikti[j + 1] = g_b64_tablo[(w / 4096) % 64];
+
+        eger i + 1 < uzunluk ise {
+            cikti[j + 2] = g_b64_tablo[(w / 64) % 64];
+        } yoksa {
+            cikti[j + 2] = 61; # '='
+        }
+
+        eger i + 2 < uzunluk ise {
+            cikti[j + 3] = g_b64_tablo[w % 64];
+        } yoksa {
+            cikti[j + 3] = 61; # '='
+        }
+
+        i = i + 3;
+        j = j + 4;
+    }
+    cikti[j] = 0;
+    dondu j;
+}
+
+isv ana() -> tamsayi {
+    degisken mesaj: *u8 = "Yukinary Dili".ptr;
+    degisken uzunluk: tamsayi = 13;
+
+    degisken sonuc_tampon: [64]u8;
+    base64_kodla(mesaj, uzunluk, sonuc_tampon);
+
+    ekrana_yaz("Orijinal Metin : ".ptr); ekrana_yaz(mesaj); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Base64 Ciktisi : ".ptr); ekrana_yaz(sonuc_tampon); ekrana_yaz("\n".ptr);
+    dondu 0;
+}

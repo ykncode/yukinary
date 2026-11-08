@@ -1,0 +1,73 @@
+# ============================================================
+# tests/ag/test_websocket_live.ykn
+# FAZ 59: Canli WebSocket Dinamik El Sikisma & Yanki Cercevesi Testi
+# Gerçek SHA-1 + Base64 Sec-WebSocket-Accept Hesaplaması ve Maskeleme
+# ============================================================
+
+ice_aktar "std/ag/websocket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 59: WebSocket Canli Handshake & Echo Testi Basliyor...\n".ptr);
+
+    # ============================================================
+    # 1. RFC 6455 GERÇEK SHA-1 & BASE64 EL SIKIŞMASI TESTİ
+    # ============================================================
+    # Standart RFC 6455 ornek anahtari: "dGhlIHNhbXBsZSBub25jZQ=="
+    # Beklenen dinamik Accept anahtari: "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+    degisken hesaplanan_accept: *u8 = bellek_tahsis_et(32);
+    ws_accept_anahtari_hesapla("dGhlIHNhbXBsZSBub25jZQ==".ptr, hesaplanan_accept);
+
+    # İlk 4 ve son 4 karakteri dogrula: "s3pP..." ve "...xOo="
+    eger hesaplanan_accept[0] != 115 veya hesaplanan_accept[1] != 51 veya hesaplanan_accept[2] != 112 veya hesaplanan_accept[3] != 80 ise {
+        ekrana_yaz("HATA: Dinamik SHA-1 + Base64 WebSocket accept anahtari hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # HTTP 101 Switching Protocols Yaniti Uretim Testi
+    degisken yanit: *u8 = bellek_tahsis_et(512);
+    degisken yanit_len: tamsayi = ws_el_sikisma_yaniti_uret(yanit);
+    eger yanit_len < 100 ise {
+        ekrana_yaz("HATA: WebSocket handshake yanit boyutu gecersiz!\n".ptr);
+        dondu 2;
+    }
+
+    # ============================================================
+    # 2. ÖZEL İSTEMCİ ANAHTARIYLA DİNAMİK EL SIKIŞMASI TESTİ
+    # ============================================================
+    degisken ozel_accept: *u8 = bellek_tahsis_et(32);
+    ws_accept_anahtari_hesapla("x3JJHMbDL1EzLkh9GBhXDw==".ptr, ozel_accept);
+    # Base64 uzunlugu 28 bayt olmali (20 bayt SHA-1 -> 28 bayt Base64)
+    degisken acc_len: tamsayi = 0;
+    dongu ozel_accept[acc_len] != 0 {
+        acc_len = acc_len + 1;
+    }
+    eger acc_len != 28 ise {
+        ekrana_yaz("HATA: Ozel accept anahtari 28 karakter olmali!\n".ptr);
+        dondu 3;
+    }
+
+    # ============================================================
+    # 3. WEBSOCKET İKİLİ ÇERÇEVE VE MASKELEME / ÇÖZME TESTİ
+    # ============================================================
+    degisken mesaj: *u8 = "ECHO".ptr;
+    degisken ws: *WsCerceve = ws_cerceve_olustur(WS_OP_METIN, mesaj, 4, 1);
+
+    degisken maske: tamsayi = 305419896; # 0x12345678
+    ws_maske_uygula(ws.veri, 4, maske);
+
+    # Maskelenmis veri artik orijinal 'E' (69) olmamali
+    eger ws.veri[0] == 69 ise {
+        ekrana_yaz("HATA: Veri maskelenemedi!\n".ptr);
+        dondu 4;
+    }
+
+    # Sunucu tarafinda tekrar ayni maske XOR uygulanarak orijinal veri cozulur
+    ws_maske_uygula(ws.veri, 4, maske);
+    eger ws.veri[0] != 69 veya ws.veri[1] != 67 veya ws.veri[2] != 72 veya ws.veri[3] != 79 ise {
+        ekrana_yaz("HATA: Maske cozumu sonrasi 'ECHO' elde edilemedi!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("WEBSOCKET_HANDSHAKE_LIVE_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,2251 @@
+{
+  "schema": "ykn.performance.v2",
+  "compiler": "D:\\yukinary\\yukinary-language\\app_full.exe",
+  "compiler_sha256": "7c6d4e2f47fa2105e837242d37084d40c049fa338365b6fb17cd857ba26a83c0",
+  "compiler_flags": [],
+  "repeats": 7,
+  "warmups": 2,
+  "timer": "perf_counter; process startup included",
+  "source_revision": null,
+  "source_hashes": {
+    "tests\\optimizer\\02_advanced_opt.ykn": "38c78f9db6925b89d563350e1277e3ea9d168844f449df6a9d6761fc350b3ac6",
+    "tests\\generics\\03_multi_specialization.ykn": "74f6f5c507825fa9d131936ca25b2b26478624533187a649a215b6128e92be28",
+    "examples\\cli\\11_matris_carpimi.ykn": "347dae68cc0a6287071cbfbcb61846460e2c03a01a855a4112da762fa927f16e",
+    "examples\\cli\\16_quicksort_hizli_sirala.ykn": "2d93999d7a4b476fc78854822669f1fb4523e2ef97ab5e11b2aa834a12f128c6",
+    "tests\\ownership\\borrow_conflict_pos.ykn": "934de92e8e9d4b1862dbe65b3a03589d4ab317ea2ac4faf82cff56fb417a772c",
+    "tests\\optimizer\\04_loop_vectorization_unroll.ykn": "0ed7b0d6abc9cd54ff24fcdaa1ce0b35136647f878b9932706074aaf5127cc6e",
+    "tests\\ag\\test_https_schannel.ykn": "4100a3ea18dc2d835df6a9a184cd8a6ee708992b6cf1ca371b347989d4df4877",
+    "tests\\guvenlik\\04_smart_pointers_pos.ykn": "3d7cb0e15aa63a5a7e86d16a5b77039d849eed3287ad0dfa78e02d3540ffb882",
+    "tests\\async\\04_async_actor_channel_pos.ykn": "e29884167f874109e104b231138da10552cf756ac461daa61811ba41cc0f850b",
+    "tests\\gui\\test_gui_engine.ykn": "fd89b9c83d30446bb647c8cb451ae5fa9c2b9de88af6fdeb6b636bc3aa227147",
+    "tests\\paket\\test_package_checksum.ykn": "0174e09be962118bd8a2b9d78287680df0858443381bdf21cd94522ee0ae2501",
+    "tests\\profiler\\test_profiler_sampling.ykn": "78dea0e8715d36f11fc1927a003e5606004ab746ae12c62eea6ec63d5294ebaa",
+    "tests\\optimizer\\05_ssa_gvn_slp.ykn": "da66a8d98bdbbed52d557a65f220a01fe065d55ef51f6655fb6dad46bce2d85f",
+    "tests\\guvenlik\\05_nll_early_drop.ykn": "f4e57ed7904532e72e7357c538b48d481316a6b902a43a467e3c0f93b3448dd0",
+    "tests\\ag\\test_reactor_scale.ykn": "192470c5076b1dae675dfc17037d64486d98b48f097897b8fcf1e9bd3d33f6fe",
+    "tests\\cross_target\\test_wasm_riscv_emit.ykn": "d453403313c795c1db9b1eace3d9ed2617848e6ac1003db04a5715a42f2ce469",
+    "tests\\ai\\test_vulkan_inference.ykn": "0916e7696219e26cab4d80b43798f8c3ddf884379a4b7d127a87049a9e7512ba",
+    "tests\\ai\\test_autograd_training.ykn": "e7a019c9fbaa6c593c7d272b318188ae129c8b5c15b245a249fc8d759d31254f",
+    "tests\\veritabani\\test_acid_wal.ykn": "2a74393dd0ec66dc07815eee7dfde1fb2667b3ee8ab9b390406b48f38473ec4a",
+    "tests\\debug\\test_debug_symbols.ykn": "865b4aafab38bbbca19b9b9c4dca7c706a10dbd727d42516732bfeb7ebf5f7e3",
+    "tests\\generics\\04_traits_vtable_comptime.ykn": "ae06c66fdc621fc1c728644b1aa7d3821b0745094384c4b11b47018415db0bd7",
+    "tests\\ai\\test_flash_attn_moe.ykn": "bd5c2c67b5a67a6e1a951f7e04186def0e926337319bf077ff223e5d861c8565",
+    "tests\\ai\\test_lora_finetuning.ykn": "67c9a57f5c804762a4829ee91ea2ab1927495d2568944b320d836827e523e5c6",
+    "tests\\veritabani\\test_hnsw_vector.ykn": "949568ce4658013310413be05ba42c49f57c9d0c61669f86ec3b91f3dce2e763",
+    "tests\\ag\\test_websocket_http2.ykn": "93391f873a84e845e2dc2bb9b6bd5679f37eeffeba4352d4f9d3536840246c88",
+    "tests\\gui\\test_font_render.ykn": "222bdc9889fb21fc8057522e1e9c6fc757dd1970d32a862b9a59c0a3e9d9741a",
+    "tests\\veritabani\\test_sql_engine.ykn": "8f6367ad58423cac7e8e8ed426047dba16a4aba4167dcfdb4879d9ba4253e7e5",
+    "tests\\paket\\test_cli_tooling.ykn": "718f9c4e859effb66a0155931c7d07e1a44b7c4561bf818b7c301681181dd12b",
+    "tests\\dagitik\\test_raft_consensus.ykn": "77b42dc8919ff319542b696421dead3c7f4bb157a0b69f199011055a611d58cc",
+    "tests\\veri\\test_dataframe_csv.ykn": "c71443c9883c9a7e34c96236c1983d09ccb8acb50dd7dbf99a5c5601db8356d3",
+    "tests\\ecs\\test_ecs_engine.ykn": "fcc1caf2ad879d945f1ddd980197c7bba4c9b291e441330f1ff0448d675f5b87",
+    "tests\\gui\\test_window_context.ykn": "908da5e5b4ea2ecfe256924b48b7380bc264caed4e028dd24f94b999e8ba55af",
+    "tests\\apps\\test_desktop_apps.ykn": "5109262d49375386b0a56b410381a6b7633f5fb262386e1bb6c6d9a1a2ec29e9",
+    "tests\\ag\\test_websocket_live.ykn": "bdb212ca0156577ae19deac086abe9a19fa35d9ac9fd483170ed4b13909b6eb2",
+    "tests\\veritabani\\test_sql_parser_btree.ykn": "635f7f3394e367eed4093215546b208efe8fcb4d2b9bdc6eb00093581f81ed1b",
+    "tests\\gui\\test_font_atlas.ykn": "06f5b331db7ff684ef1dd62a4910d35b27ca982555a9b81855ab1a0752c5cd7c",
+    "tests\\paket\\test_cli_commands.ykn": "1d7ac93968cb5c59bd833f4dfc2ac941fbb906b074ffcd782ab544e97c1f8888",
+    "tests\\os\\test_baremetal_kernel.ykn": "e1faf54e57908db46b6dbf8e08ef2f02839386dbc19a59523a3259807aece9dc",
+    "benchmarks\\runtime.ykn": "ef170df3c2989d7a5358f350f26da166a477ec891dc6dff9c8af5e0fa9012840",
+    "benchmarks\\rivals\\workload.c": "e68dd861b6d188f5ed3474b01537a785c420d083a3e607118fadaf30cc753a9f",
+    "benchmarks\\rivals\\workload.cpp": "ab563b3e2fd5aec5211609b6f68f6017212e9cc151d7a867d2af5dd7d8b1ccc5",
+    "benchmarks\\rivals\\workload.go": "b3e33f7376f587cfc4cf3a57f49e5245034a5170270dc65252432b4fd8e77c44",
+    "benchmarks\\rivals\\workload.rs": "9b7959ca64c0765df01d3b3525bb481be6329aa790c861ed391abfc391ef6903",
+    "benchmarks\\rival_python.py": "287f6f9c75459e13f9e99d582f8872e2ec92d63194fe821b3622400afea446bd"
+  },
+  "measurement_protocol": {
+    "percentile": "nearest-rank P95; highly uncertain below 20 samples",
+    "raw_samples": "stored per case",
+    "peak_rss_sampling_interval_ms": 2,
+    "peak_rss_limitation": "short-lived peaks may be missed"
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "python": "3.13.3 (tags/v3.13.3:6280bb5, Apr  8 2025, 14:47:33) [MSC v.1943 64 bit (AMD64)]",
+    "peak_rss_probe": "psutil 2ms polling"
+  },
+  "ykn": {
+    "optimizer": {
+      "source": "tests\\optimizer\\02_advanced_opt.ykn",
+      "source_sha256": "38c78f9db6925b89d563350e1277e3ea9d168844f449df6a9d6761fc350b3ac6",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.018444300047121942,
+          0.023505099990870804,
+          0.018624399963300675,
+          0.018679700035136193,
+          0.018639699963387102,
+          0.018164800014346838,
+          0.01873499999055639
+        ],
+        "sample_count": 7,
+        "median_s": 0.018639699963387102,
+        "min_s": 0.018164800014346838,
+        "max_s": 0.023505099990870804,
+        "stdev_s": 0.0018835574415000547,
+        "p95_nearest_rank_s": 0.023505099990870804,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.022480799991171807,
+          0.024235400022007525,
+          0.02331429999321699,
+          0.022418399981688708,
+          0.022997900028713048,
+          0.024579000019002706,
+          0.023171200009528548
+        ],
+        "sample_count": 7,
+        "median_s": 0.023171200009528548,
+        "min_s": 0.022418399981688708,
+        "max_s": 0.024579000019002706,
+        "stdev_s": 0.0008231884831172018,
+        "p95_nearest_rank_s": 0.024579000019002706,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 4096,
+      "compile_peak_rss_bytes": 39862272,
+      "run_peak_rss_bytes": 3723264
+    },
+    "generics": {
+      "source": "tests\\generics\\03_multi_specialization.ykn",
+      "source_sha256": "74f6f5c507825fa9d131936ca25b2b26478624533187a649a215b6128e92be28",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.018724099965766072,
+          0.018446800007950515,
+          0.01799409999512136,
+          0.01827100000809878,
+          0.01774209999712184,
+          0.018630800012033433,
+          0.018268899992108345
+        ],
+        "sample_count": 7,
+        "median_s": 0.01827100000809878,
+        "min_s": 0.01774209999712184,
+        "max_s": 0.018724099965766072,
+        "stdev_s": 0.00034578526612700697,
+        "p95_nearest_rank_s": 0.018724099965766072,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.02381109999259934,
+          0.022579000040423125,
+          0.02238089998718351,
+          0.02217539999401197,
+          0.021654199983458966,
+          0.02311140001984313,
+          0.022570999979507178
+        ],
+        "sample_count": 7,
+        "median_s": 0.022570999979507178,
+        "min_s": 0.021654199983458966,
+        "max_s": 0.02381109999259934,
+        "stdev_s": 0.0006893739528325783,
+        "p95_nearest_rank_s": 0.02381109999259934,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 2560,
+      "compile_peak_rss_bytes": 39936000,
+      "run_peak_rss_bytes": 3743744
+    },
+    "arrays": {
+      "source": "examples\\cli\\11_matris_carpimi.ykn",
+      "source_sha256": "347dae68cc0a6287071cbfbcb61846460e2c03a01a855a4112da762fa927f16e",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.018406999995931983,
+          0.018833100039046258,
+          0.018317800015211105,
+          0.018412900040857494,
+          0.018337499990593642,
+          0.018584100005682558,
+          0.018336999986786395
+        ],
+        "sample_count": 7,
+        "median_s": 0.018406999995931983,
+        "min_s": 0.018317800015211105,
+        "max_s": 0.018833100039046258,
+        "stdev_s": 0.00018707187803179275,
+        "p95_nearest_rank_s": 0.018833100039046258,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.040705200051888824,
+          0.040026100003160536,
+          0.04325080005219206,
+          0.0395534000126645,
+          0.04180090001318604,
+          0.14431030000559986,
+          0.04025069996714592
+        ],
+        "sample_count": 7,
+        "median_s": 0.040705200051888824,
+        "min_s": 0.0395534000126645,
+        "max_s": 0.14431030000559986,
+        "stdev_s": 0.03909360893025801,
+        "p95_nearest_rank_s": 0.14431030000559986,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 33792,
+      "compile_peak_rss_bytes": 39862272,
+      "run_peak_rss_bytes": 3678208
+    },
+    "sorting": {
+      "source": "examples\\cli\\16_quicksort_hizli_sirala.ykn",
+      "source_sha256": "2d93999d7a4b476fc78854822669f1fb4523e2ef97ab5e11b2aa834a12f128c6",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.017674500006251037,
+          0.01781340001616627,
+          0.01836460002232343,
+          0.017974000016693026,
+          0.01952610001899302,
+          0.018710699980147183,
+          0.018373699975199997
+        ],
+        "sample_count": 7,
+        "median_s": 0.01836460002232343,
+        "min_s": 0.017674500006251037,
+        "max_s": 0.01952610001899302,
+        "stdev_s": 0.0006324136579747033,
+        "p95_nearest_rank_s": 0.01952610001899302,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.038769799983128905,
+          0.04030939994845539,
+          0.03992590005509555,
+          0.03887750004651025,
+          0.03877390001434833,
+          0.038676499971188605,
+          0.03884920000564307
+        ],
+        "sample_count": 7,
+        "median_s": 0.03884920000564307,
+        "min_s": 0.038676499971188605,
+        "max_s": 0.04030939994845539,
+        "stdev_s": 0.0006606404511537765,
+        "p95_nearest_rank_s": 0.04030939994845539,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 12800,
+      "compile_peak_rss_bytes": 40103936,
+      "run_peak_rss_bytes": 3571712
+    },
+    "ownership": {
+      "source": "tests\\ownership\\borrow_conflict_pos.ykn",
+      "source_sha256": "934de92e8e9d4b1862dbe65b3a03589d4ab317ea2ac4faf82cff56fb417a772c",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.01802199997473508,
+          0.01811730000190437,
+          0.017743400007020682,
+          0.01768140000058338,
+          0.12316119996830821,
+          0.017835000006016344,
+          0.018094300001394004
+        ],
+        "sample_count": 7,
+        "median_s": 0.01802199997473508,
+        "min_s": 0.01768140000058338,
+        "max_s": 0.12316119996830821,
+        "stdev_s": 0.03977947680073749,
+        "p95_nearest_rank_s": 0.12316119996830821,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.022133300022687763,
+          0.022297100047580898,
+          0.021132599969860166,
+          0.02299169998150319,
+          0.023045899986755103,
+          0.021610099996905774,
+          0.021560900029726326
+        ],
+        "sample_count": 7,
+        "median_s": 0.022133300022687763,
+        "min_s": 0.021132599969860166,
+        "max_s": 0.023045899986755103,
+        "stdev_s": 0.000729791546160975,
+        "p95_nearest_rank_s": 0.023045899986755103,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 2560,
+      "compile_peak_rss_bytes": 31707136,
+      "run_peak_rss_bytes": 3764224
+    },
+    "vectorization": {
+      "source": "tests\\optimizer\\04_loop_vectorization_unroll.ykn",
+      "source_sha256": "0ed7b0d6abc9cd54ff24fcdaa1ce0b35136647f878b9932706074aaf5127cc6e",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.01886080001713708,
+          0.018490999995265156,
+          0.018873399996664375,
+          0.028953000030014664,
+          0.020462699991185218,
+          0.019654500007163733,
+          0.023441199969965965
+        ],
+        "sample_count": 7,
+        "median_s": 0.019654500007163733,
+        "min_s": 0.018490999995265156,
+        "max_s": 0.028953000030014664,
+        "stdev_s": 0.0037919121783628446,
+        "p95_nearest_rank_s": 0.028953000030014664,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03757619997486472,
+          0.038812900020275265,
+          0.04699770000297576,
+          0.04450449999421835,
+          0.03672590001951903,
+          0.04779990005772561,
+          0.04506769997533411
+        ],
+        "sample_count": 7,
+        "median_s": 0.04450449999421835,
+        "min_s": 0.03672590001951903,
+        "max_s": 0.04779990005772561,
+        "stdev_s": 0.0046566808611549285,
+        "p95_nearest_rank_s": 0.04779990005772561,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 27648,
+      "compile_peak_rss_bytes": 39448576,
+      "run_peak_rss_bytes": 3751936
+    },
+    "https_tls": {
+      "source": "tests\\ag\\test_https_schannel.ykn",
+      "source_sha256": "4100a3ea18dc2d835df6a9a184cd8a6ee708992b6cf1ca371b347989d4df4877",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.026139499968849123,
+          0.026062500022817403,
+          0.02321660000598058,
+          0.021764500008430332,
+          0.023105100030079484,
+          0.024297899974044412,
+          0.022737300023436546
+        ],
+        "sample_count": 7,
+        "median_s": 0.02321660000598058,
+        "min_s": 0.021764500008430332,
+        "max_s": 0.026139499968849123,
+        "stdev_s": 0.0016763624105446831,
+        "p95_nearest_rank_s": 0.026139499968849123,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.0522793999989517,
+          0.04356359998928383,
+          0.14946569997118786,
+          0.04420930001651868,
+          0.04277880000881851,
+          0.042343600012827665,
+          0.04362389998277649
+        ],
+        "sample_count": 7,
+        "median_s": 0.04362389998277649,
+        "min_s": 0.042343600012827665,
+        "max_s": 0.14946569997118786,
+        "stdev_s": 0.03970576164988775,
+        "p95_nearest_rank_s": 0.14946569997118786,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 70656,
+      "compile_peak_rss_bytes": 74280960,
+      "run_peak_rss_bytes": 6094848
+    },
+    "smart_pointers": {
+      "source": "tests\\guvenlik\\04_smart_pointers_pos.ykn",
+      "source_sha256": "3d7cb0e15aa63a5a7e86d16a5b77039d849eed3287ad0dfa78e02d3540ffb882",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.024450099968817085,
+          0.025586200004909188,
+          0.024474100035149604,
+          0.02603309997357428,
+          0.03052239998942241,
+          0.025934899982530624,
+          0.024234300013631582
+        ],
+        "sample_count": 7,
+        "median_s": 0.025586200004909188,
+        "min_s": 0.024234300013631582,
+        "max_s": 0.03052239998942241,
+        "stdev_s": 0.0021753674497788002,
+        "p95_nearest_rank_s": 0.03052239998942241,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03936190000968054,
+          0.0408068000106141,
+          0.038639799982775,
+          0.04450200003338978,
+          0.03887730004498735,
+          0.0404837999958545,
+          0.038699000026099384
+        ],
+        "sample_count": 7,
+        "median_s": 0.03936190000968054,
+        "min_s": 0.038639799982775,
+        "max_s": 0.04450200003338978,
+        "stdev_s": 0.002085465626618548,
+        "p95_nearest_rank_s": 0.04450200003338978,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 480256,
+      "compile_peak_rss_bytes": 75272192,
+      "run_peak_rss_bytes": 3567616
+    },
+    "concurrency": {
+      "source": "tests\\async\\04_async_actor_channel_pos.ykn",
+      "source_sha256": "e29884167f874109e104b231138da10552cf756ac461daa61811ba41cc0f850b",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02661430003354326,
+          0.1290401999722235,
+          0.026202600041870028,
+          0.02616660000057891,
+          0.026546699984464794,
+          0.027168600005097687,
+          0.02767340000718832
+        ],
+        "sample_count": 7,
+        "median_s": 0.02661430003354326,
+        "min_s": 0.02616660000057891,
+        "max_s": 0.1290401999722235,
+        "stdev_s": 0.0386738291532906,
+        "p95_nearest_rank_s": 0.1290401999722235,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.0385408999864012,
+          0.03788319998420775,
+          0.03796750004403293,
+          0.04006600001594052,
+          0.04166380001697689,
+          0.04038530000252649,
+          0.039527699991595
+        ],
+        "sample_count": 7,
+        "median_s": 0.039527699991595,
+        "min_s": 0.03788319998420775,
+        "max_s": 0.04166380001697689,
+        "stdev_s": 0.0013927438213725157,
+        "p95_nearest_rank_s": 0.04166380001697689,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 422912,
+      "compile_peak_rss_bytes": 91865088,
+      "run_peak_rss_bytes": 3579904
+    },
+    "native_gui": {
+      "source": "tests\\gui\\test_gui_engine.ykn",
+      "source_sha256": "fd89b9c83d30446bb647c8cb451ae5fa9c2b9de88af6fdeb6b636bc3aa227147",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.026325699989683926,
+          0.025564300012774765,
+          0.02640049997717142,
+          0.025542400020640343,
+          0.025441500009037554,
+          0.027950900024734437,
+          0.026256199984345585
+        ],
+        "sample_count": 7,
+        "median_s": 0.026256199984345585,
+        "min_s": 0.025441500009037554,
+        "max_s": 0.027950900024734437,
+        "stdev_s": 0.0008694572648808442,
+        "p95_nearest_rank_s": 0.027950900024734437,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.09976409998489544,
+          0.10153730004094541,
+          0.0983723999815993,
+          0.10027870000340044,
+          0.10000400000717491,
+          0.09804200002690777,
+          0.10031660000095144
+        ],
+        "sample_count": 7,
+        "median_s": 0.10000400000717491,
+        "min_s": 0.09804200002690777,
+        "max_s": 0.10153730004094541,
+        "stdev_s": 0.0012023695904465456,
+        "p95_nearest_rank_s": 0.10153730004094541,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 448000,
+      "compile_peak_rss_bytes": 91230208,
+      "run_peak_rss_bytes": 3817472
+    },
+    "pkg_integrity": {
+      "source": "tests\\paket\\test_package_checksum.ykn",
+      "source_sha256": "0174e09be962118bd8a2b9d78287680df0858443381bdf21cd94522ee0ae2501",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.020034499990288168,
+          0.020272199995815754,
+          0.02013810002245009,
+          0.020609900006093085,
+          0.02147600002354011,
+          0.02127579995431006,
+          0.021519500005524606
+        ],
+        "sample_count": 7,
+        "median_s": 0.020609900006093085,
+        "min_s": 0.020034499990288168,
+        "max_s": 0.021519500005524606,
+        "stdev_s": 0.000649246927926922,
+        "p95_nearest_rank_s": 0.021519500005524606,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.04244250000920147,
+          0.04132829996524379,
+          0.04170690005412325,
+          0.04020360001595691,
+          0.04189069999847561,
+          0.04131639999104664,
+          0.04113119997782633
+        ],
+        "sample_count": 7,
+        "median_s": 0.04132829996524379,
+        "min_s": 0.04020360001595691,
+        "max_s": 0.04244250000920147,
+        "stdev_s": 0.0006988857160593219,
+        "p95_nearest_rank_s": 0.04244250000920147,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 20992,
+      "compile_peak_rss_bytes": 56094720,
+      "run_peak_rss_bytes": 4890624
+    },
+    "profiler": {
+      "source": "tests\\profiler\\test_profiler_sampling.ykn",
+      "source_sha256": "78dea0e8715d36f11fc1927a003e5606004ab746ae12c62eea6ec63d5294ebaa",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.023771999985910952,
+          0.023922199965454638,
+          0.023457299976143986,
+          0.023940700048115104,
+          0.024704700044821948,
+          0.024035400012508035,
+          0.023451699991710484
+        ],
+        "sample_count": 7,
+        "median_s": 0.023922199965454638,
+        "min_s": 0.023451699991710484,
+        "max_s": 0.024704700044821948,
+        "stdev_s": 0.00042452489105505837,
+        "p95_nearest_rank_s": 0.024704700044821948,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.04279040003893897,
+          0.04263859998900443,
+          0.043400100024882704,
+          0.04350919998250902,
+          0.042100499966181815,
+          0.043959999980870634,
+          0.04342930001439527
+        ],
+        "sample_count": 7,
+        "median_s": 0.043400100024882704,
+        "min_s": 0.042100499966181815,
+        "max_s": 0.043959999980870634,
+        "stdev_s": 0.0006338955369977764,
+        "p95_nearest_rank_s": 0.043959999980870634,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 487424,
+      "compile_peak_rss_bytes": 74784768,
+      "run_peak_rss_bytes": 3792896
+    },
+    "ssa_gvn_slp": {
+      "source": "tests\\optimizer\\05_ssa_gvn_slp.ykn",
+      "source_sha256": "da66a8d98bdbbed52d557a65f220a01fe065d55ef51f6655fb6dad46bce2d85f",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.018501700018532574,
+          0.01971570000750944,
+          0.018397899984847754,
+          0.019094300048891455,
+          0.019385699997656047,
+          0.018730899959336966,
+          0.01845199998933822
+        ],
+        "sample_count": 7,
+        "median_s": 0.018730899959336966,
+        "min_s": 0.018397899984847754,
+        "max_s": 0.01971570000750944,
+        "stdev_s": 0.0005129980086609726,
+        "p95_nearest_rank_s": 0.01971570000750944,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.023932599986437708,
+          0.022305199992842972,
+          0.024524099950212985,
+          0.02398729999549687,
+          0.02237250003963709,
+          0.024624699959531426,
+          0.02390150004066527
+        ],
+        "sample_count": 7,
+        "median_s": 0.023932599986437708,
+        "min_s": 0.022305199992842972,
+        "max_s": 0.024624699959531426,
+        "stdev_s": 0.0009495701704241806,
+        "p95_nearest_rank_s": 0.024624699959531426,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 3584,
+      "compile_peak_rss_bytes": 39440384,
+      "run_peak_rss_bytes": 3698688
+    },
+    "nll_safety": {
+      "source": "tests\\guvenlik\\05_nll_early_drop.ykn",
+      "source_sha256": "f4e57ed7904532e72e7357c538b48d481316a6b902a43a467e3c0f93b3448dd0",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.01820759999100119,
+          0.018531000008806586,
+          0.01793199998792261,
+          0.017956099996808916,
+          0.018342600029427558,
+          0.018187100009527057,
+          0.018653900013305247
+        ],
+        "sample_count": 7,
+        "median_s": 0.01820759999100119,
+        "min_s": 0.01793199998792261,
+        "max_s": 0.018653900013305247,
+        "stdev_s": 0.00027184767125672656,
+        "p95_nearest_rank_s": 0.018653900013305247,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.02282840001862496,
+          0.022565999999642372,
+          0.023104799969587475,
+          0.022516199969686568,
+          0.02232910000020638,
+          0.022229700000025332,
+          0.12644960003672168
+        ],
+        "sample_count": 7,
+        "median_s": 0.022565999999642372,
+        "min_s": 0.022229700000025332,
+        "max_s": 0.12644960003672168,
+        "stdev_s": 0.03925420034779173,
+        "p95_nearest_rank_s": 0.12644960003672168,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 3072,
+      "compile_peak_rss_bytes": 39940096,
+      "run_peak_rss_bytes": 3657728
+    },
+    "async_reactor": {
+      "source": "tests\\ag\\test_reactor_scale.ykn",
+      "source_sha256": "192470c5076b1dae675dfc17037d64486d98b48f097897b8fcf1e9bd3d33f6fe",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.03304740000749007,
+          0.026314200018532574,
+          0.02558429999044165,
+          0.0294941000174731,
+          0.03424459998495877,
+          0.025600199995096773,
+          0.02612639998551458
+        ],
+        "sample_count": 7,
+        "median_s": 0.026314200018532574,
+        "min_s": 0.02558429999044165,
+        "max_s": 0.03424459998495877,
+        "stdev_s": 0.003693930690028045,
+        "p95_nearest_rank_s": 0.03424459998495877,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03174740000395104,
+          0.039124100003391504,
+          0.04557129996828735,
+          0.05051359999924898,
+          0.035479500016663224,
+          0.03920869994908571,
+          0.03788140002870932
+        ],
+        "sample_count": 7,
+        "median_s": 0.039124100003391504,
+        "min_s": 0.03174740000395104,
+        "max_s": 0.05051359999924898,
+        "stdev_s": 0.006271167101802625,
+        "p95_nearest_rank_s": 0.05051359999924898,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 319488,
+      "compile_peak_rss_bytes": 91340800,
+      "run_peak_rss_bytes": 3907584
+    },
+    "wasm_riscv": {
+      "source": "tests\\cross_target\\test_wasm_riscv_emit.ykn",
+      "source_sha256": "d453403313c795c1db9b1eace3d9ed2617848e6ac1003db04a5715a42f2ce469",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.026466200011782348,
+          0.02643489994807169,
+          0.026070800027810037,
+          0.02896409999812022,
+          0.02624370000557974,
+          0.1298772000009194,
+          0.028003999963402748
+        ],
+        "sample_count": 7,
+        "median_s": 0.026466200011782348,
+        "min_s": 0.026070800027810037,
+        "max_s": 0.1298772000009194,
+        "stdev_s": 0.03888714335618677,
+        "p95_nearest_rank_s": 0.1298772000009194,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03970740002114326,
+          0.04090579994954169,
+          0.041262099985033274,
+          0.03766929998528212,
+          0.04076080000959337,
+          0.0402616000501439,
+          0.04093489999650046
+        ],
+        "sample_count": 7,
+        "median_s": 0.04076080000959337,
+        "min_s": 0.03766929998528212,
+        "max_s": 0.041262099985033274,
+        "stdev_s": 0.0012335715828209804,
+        "p95_nearest_rank_s": 0.041262099985033274,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 519168,
+      "compile_peak_rss_bytes": 91922432,
+      "run_peak_rss_bytes": 3883008
+    },
+    "vulkan_ai": {
+      "source": "tests\\ai\\test_vulkan_inference.ykn",
+      "source_sha256": "0916e7696219e26cab4d80b43798f8c3ddf884379a4b7d127a87049a9e7512ba",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02388200000859797,
+          0.02398999995784834,
+          0.024390899983700365,
+          0.02589730004547164,
+          0.025916800019331276,
+          0.026158900000154972,
+          0.04162829997949302
+        ],
+        "sample_count": 7,
+        "median_s": 0.02589730004547164,
+        "min_s": 0.02388200000859797,
+        "max_s": 0.04162829997949302,
+        "stdev_s": 0.006344306597014234,
+        "p95_nearest_rank_s": 0.04162829997949302,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.04251579998526722,
+          0.04102310002781451,
+          0.04383140004938468,
+          0.04385449999244884,
+          0.04602200002409518,
+          0.042666499968618155,
+          0.0495859999791719
+        ],
+        "sample_count": 7,
+        "median_s": 0.04383140004938468,
+        "min_s": 0.04102310002781451,
+        "max_s": 0.0495859999791719,
+        "stdev_s": 0.0028243982506370945,
+        "p95_nearest_rank_s": 0.0495859999791719,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 197632,
+      "compile_peak_rss_bytes": 73715712,
+      "run_peak_rss_bytes": 3538944
+    },
+    "autograd_train": {
+      "source": "tests\\ai\\test_autograd_training.ykn",
+      "source_sha256": "e7a019c9fbaa6c593c7d272b318188ae129c8b5c15b245a249fc8d759d31254f",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02460080001037568,
+          0.024735899991355836,
+          0.024061899981461465,
+          0.02559189999010414,
+          0.024169699987396598,
+          0.024678200017660856,
+          0.023965300002600998
+        ],
+        "sample_count": 7,
+        "median_s": 0.02460080001037568,
+        "min_s": 0.023965300002600998,
+        "max_s": 0.02559189999010414,
+        "stdev_s": 0.0005573101851316546,
+        "p95_nearest_rank_s": 0.02559189999010414,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.023937200021464378,
+          0.023238199995830655,
+          0.02460520004387945,
+          0.12770980002824217,
+          0.022895700007211417,
+          0.02425399998901412,
+          0.023991999973077327
+        ],
+        "sample_count": 7,
+        "median_s": 0.023991999973077327,
+        "min_s": 0.022895700007211417,
+        "max_s": 0.12770980002824217,
+        "stdev_s": 0.039270839978933686,
+        "p95_nearest_rank_s": 0.12770980002824217,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 7680,
+      "compile_peak_rss_bytes": 89804800,
+      "run_peak_rss_bytes": 3870720
+    },
+    "acid_btree_wal": {
+      "source": "tests\\veritabani\\test_acid_wal.ykn",
+      "source_sha256": "2a74393dd0ec66dc07815eee7dfde1fb2667b3ee8ab9b390406b48f38473ec4a",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.025217399990651757,
+          0.03282500000204891,
+          0.030838599952403456,
+          0.039163900015410036,
+          0.03103090001968667,
+          0.025161299970932305,
+          0.024048399995081127
+        ],
+        "sample_count": 7,
+        "median_s": 0.030838599952403456,
+        "min_s": 0.024048399995081127,
+        "max_s": 0.039163900015410036,
+        "stdev_s": 0.005400796031018263,
+        "p95_nearest_rank_s": 0.039163900015410036,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.050363500020466745,
+          0.058290200016926974,
+          0.07145439996384084,
+          0.06080480001401156,
+          0.04693569999653846,
+          0.04458490002434701,
+          0.046990000002551824
+        ],
+        "sample_count": 7,
+        "median_s": 0.050363500020466745,
+        "min_s": 0.04458490002434701,
+        "max_s": 0.07145439996384084,
+        "stdev_s": 0.009746712204301556,
+        "p95_nearest_rank_s": 0.07145439996384084,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 69632,
+      "compile_peak_rss_bytes": 74223616,
+      "run_peak_rss_bytes": 3657728
+    },
+    "debug_symbols": {
+      "source": "tests\\debug\\test_debug_symbols.ykn",
+      "source_sha256": "865b4aafab38bbbca19b9b9c4dca7c706a10dbd727d42516732bfeb7ebf5f7e3",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.0235365999978967,
+          0.022659200010821223,
+          0.02228650002507493,
+          0.022919799957890064,
+          0.023131299996748567,
+          0.022337300004437566,
+          0.023296300030779094
+        ],
+        "sample_count": 7,
+        "median_s": 0.022919799957890064,
+        "min_s": 0.02228650002507493,
+        "max_s": 0.0235365999978967,
+        "stdev_s": 0.00047691301416367325,
+        "p95_nearest_rank_s": 0.0235365999978967,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.05376630002865568,
+          0.05472109996480867,
+          0.1580919999978505,
+          0.05437470000470057,
+          0.05362799996510148,
+          0.0540414999704808,
+          0.05361929995706305
+        ],
+        "sample_count": 7,
+        "median_s": 0.0540414999704808,
+        "min_s": 0.05361929995706305,
+        "max_s": 0.1580919999978505,
+        "stdev_s": 0.0393356827423086,
+        "p95_nearest_rank_s": 0.1580919999978505,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 177152,
+      "compile_peak_rss_bytes": 73478144,
+      "run_peak_rss_bytes": 3567616
+    },
+    "traits_vtable": {
+      "source": "tests\\generics\\04_traits_vtable_comptime.ykn",
+      "source_sha256": "ae06c66fdc621fc1c728644b1aa7d3821b0745094384c4b11b47018415db0bd7",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02234110003337264,
+          0.02242440002737567,
+          0.023173399968072772,
+          0.02259439998306334,
+          0.022201200015842915,
+          0.022221999999601394,
+          0.021917900012340397
+        ],
+        "sample_count": 7,
+        "median_s": 0.02234110003337264,
+        "min_s": 0.021917900012340397,
+        "max_s": 0.023173399968072772,
+        "stdev_s": 0.00039640856382046916,
+        "p95_nearest_rank_s": 0.023173399968072772,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.036279199994169176,
+          0.03794650000054389,
+          0.036270399985369295,
+          0.03837809996912256,
+          0.03819589997874573,
+          0.03674710000632331,
+          0.037758200021926314
+        ],
+        "sample_count": 7,
+        "median_s": 0.037758200021926314,
+        "min_s": 0.036270399985369295,
+        "max_s": 0.03837809996912256,
+        "stdev_s": 0.00090997862847572,
+        "p95_nearest_rank_s": 0.03837809996912256,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 12800,
+      "compile_peak_rss_bytes": 73162752,
+      "run_peak_rss_bytes": 3567616
+    },
+    "flash_moe": {
+      "source": "tests\\ai\\test_flash_attn_moe.ykn",
+      "source_sha256": "bd5c2c67b5a67a6e1a951f7e04186def0e926337319bf077ff223e5d861c8565",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.024171500001102686,
+          0.023748299980070442,
+          0.12786359997699037,
+          0.02341520000481978,
+          0.023666099994443357,
+          0.024099400034174323,
+          0.024661900009959936
+        ],
+        "sample_count": 7,
+        "median_s": 0.024099400034174323,
+        "min_s": 0.02341520000481978,
+        "max_s": 0.12786359997699037,
+        "stdev_s": 0.03927380794064304,
+        "p95_nearest_rank_s": 0.12786359997699037,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03797499998472631,
+          0.03967890003696084,
+          0.03980490000685677,
+          0.03892170003382489,
+          0.03968480002367869,
+          0.039137499989010394,
+          0.03895270003704354
+        ],
+        "sample_count": 7,
+        "median_s": 0.039137499989010394,
+        "min_s": 0.03797499998472631,
+        "max_s": 0.03980490000685677,
+        "stdev_s": 0.0006409471806654125,
+        "p95_nearest_rank_s": 0.03980490000685677,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 23040,
+      "compile_peak_rss_bytes": 89649152,
+      "run_peak_rss_bytes": 3657728
+    },
+    "lora_ft": {
+      "source": "tests\\ai\\test_lora_finetuning.ykn",
+      "source_sha256": "67c9a57f5c804762a4829ee91ea2ab1927495d2568944b320d836827e523e5c6",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.025720099976751953,
+          0.026022100006230175,
+          0.028385500016156584,
+          0.03150919999461621,
+          0.028661200019996613,
+          0.028921899967826903,
+          0.027847099991049618
+        ],
+        "sample_count": 7,
+        "median_s": 0.028385500016156584,
+        "min_s": 0.025720099976751953,
+        "max_s": 0.03150919999461621,
+        "stdev_s": 0.0019459752923825548,
+        "p95_nearest_rank_s": 0.03150919999461621,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.034756300039589405,
+          0.035314699984155595,
+          0.039196700032334775,
+          0.03978389996336773,
+          0.03789209999376908,
+          0.0377211999730207,
+          0.03529769997112453
+        ],
+        "sample_count": 7,
+        "median_s": 0.0377211999730207,
+        "min_s": 0.034756300039589405,
+        "max_s": 0.03978389996336773,
+        "stdev_s": 0.0020220221579079992,
+        "p95_nearest_rank_s": 0.03978389996336773,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 9216,
+      "compile_peak_rss_bytes": 107470848,
+      "run_peak_rss_bytes": 3719168
+    },
+    "hnsw_vec": {
+      "source": "tests\\veritabani\\test_hnsw_vector.ykn",
+      "source_sha256": "949568ce4658013310413be05ba42c49f57c9d0c61669f86ec3b91f3dce2e763",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02127460000338033,
+          0.021635600016452372,
+          0.022442999994382262,
+          0.02247760002501309,
+          0.02181960002053529,
+          0.021586199989542365,
+          0.023000799992587417
+        ],
+        "sample_count": 7,
+        "median_s": 0.02181960002053529,
+        "min_s": 0.02127460000338033,
+        "max_s": 0.023000799992587417,
+        "stdev_s": 0.0006165315961299114,
+        "p95_nearest_rank_s": 0.023000799992587417,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.1553245999966748,
+          0.04151910002110526,
+          0.04246009996859357,
+          0.041456100007053465,
+          0.042597100022248924,
+          0.042044400004670024,
+          0.04208390001440421
+        ],
+        "sample_count": 7,
+        "median_s": 0.04208390001440421,
+        "min_s": 0.041456100007053465,
+        "max_s": 0.1553245999966748,
+        "stdev_s": 0.04282469016587801,
+        "p95_nearest_rank_s": 0.1553245999966748,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 41472,
+      "compile_peak_rss_bytes": 56770560,
+      "run_peak_rss_bytes": 3772416
+    },
+    "ws_http2": {
+      "source": "tests\\ag\\test_websocket_http2.ykn",
+      "source_sha256": "93391f873a84e845e2dc2bb9b6bd5679f37eeffeba4352d4f9d3536840246c88",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.023348000016994774,
+          0.023423300008289516,
+          0.023447500017937273,
+          0.023691499955020845,
+          0.02355040004476905,
+          0.023194900015369058,
+          0.023398100049234927
+        ],
+        "sample_count": 7,
+        "median_s": 0.023423300008289516,
+        "min_s": 0.023194900015369058,
+        "max_s": 0.023691499955020845,
+        "stdev_s": 0.0001559756019475262,
+        "p95_nearest_rank_s": 0.023691499955020845,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.05404469999484718,
+          0.05177000002004206,
+          0.0524612000444904,
+          0.053255299979355186,
+          0.05274209997151047,
+          0.054670599987730384,
+          0.05306489998474717
+        ],
+        "sample_count": 7,
+        "median_s": 0.05306489998474717,
+        "min_s": 0.05177000002004206,
+        "max_s": 0.054670599987730384,
+        "stdev_s": 0.000972627692278086,
+        "p95_nearest_rank_s": 0.054670599987730384,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 181760,
+      "compile_peak_rss_bytes": 74739712,
+      "run_peak_rss_bytes": 3567616
+    },
+    "font_raster": {
+      "source": "tests\\gui\\test_font_render.ykn",
+      "source_sha256": "222bdc9889fb21fc8057522e1e9c6fc757dd1970d32a862b9a59c0a3e9d9741a",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02215909998631105,
+          0.02905880002072081,
+          0.022407100012060255,
+          0.022420499997679144,
+          0.02263869997113943,
+          0.022432200028561056,
+          0.022893300047144294
+        ],
+        "sample_count": 7,
+        "median_s": 0.022432200028561056,
+        "min_s": 0.02215909998631105,
+        "max_s": 0.02905880002072081,
+        "stdev_s": 0.0024924485452159965,
+        "p95_nearest_rank_s": 0.02905880002072081,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03837029996793717,
+          0.0315847999881953,
+          0.03760469995904714,
+          0.037951999984215945,
+          0.037328400008846074,
+          0.037482099956832826,
+          0.03813010000158101
+        ],
+        "sample_count": 7,
+        "median_s": 0.03760469995904714,
+        "min_s": 0.0315847999881953,
+        "max_s": 0.03837029996793717,
+        "stdev_s": 0.0023821780699457146,
+        "p95_nearest_rank_s": 0.03837029996793717,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 68096,
+      "compile_peak_rss_bytes": 73351168,
+      "run_peak_rss_bytes": 3735552
+    },
+    "sql_engine": {
+      "source": "tests\\veritabani\\test_sql_engine.ykn",
+      "source_sha256": "8f6367ad58423cac7e8e8ed426047dba16a4aba4167dcfdb4879d9ba4253e7e5",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.022322200005874038,
+          0.02235899999504909,
+          0.02207140001701191,
+          0.022442600049544126,
+          0.02228009997634217,
+          0.022150800039526075,
+          0.022304299985989928
+        ],
+        "sample_count": 7,
+        "median_s": 0.022304299985989928,
+        "min_s": 0.02207140001701191,
+        "max_s": 0.022442600049544126,
+        "stdev_s": 0.000125918315255606,
+        "p95_nearest_rank_s": 0.022442600049544126,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.039140199951361865,
+          0.039528399996925145,
+          0.03883549995953217,
+          0.039147800009232014,
+          0.03867029998218641,
+          0.039216000004671514,
+          0.037190500006545335
+        ],
+        "sample_count": 7,
+        "median_s": 0.039140199951361865,
+        "min_s": 0.037190500006545335,
+        "max_s": 0.039528399996925145,
+        "stdev_s": 0.0007688226654305052,
+        "p95_nearest_rank_s": 0.039528399996925145,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 98304,
+      "compile_peak_rss_bytes": 73523200,
+      "run_peak_rss_bytes": 3563520
+    },
+    "cli_tooling": {
+      "source": "tests\\paket\\test_cli_tooling.ykn",
+      "source_sha256": "718f9c4e859effb66a0155931c7d07e1a44b7c4561bf818b7c301681181dd12b",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.022681600006762892,
+          0.022627600003033876,
+          0.022298700001556426,
+          0.02261670003645122,
+          0.022097599983680993,
+          0.022165699978359044,
+          0.022159999993164092
+        ],
+        "sample_count": 7,
+        "median_s": 0.022298700001556426,
+        "min_s": 0.022097599983680993,
+        "max_s": 0.022681600006762892,
+        "stdev_s": 0.00025461025063839914,
+        "p95_nearest_rank_s": 0.022681600006762892,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.02425820002099499,
+          0.022762599983252585,
+          0.023097799974493682,
+          0.02377949998481199,
+          0.023198499984573573,
+          0.02371749997837469,
+          0.02420789998723194
+        ],
+        "sample_count": 7,
+        "median_s": 0.02371749997837469,
+        "min_s": 0.022762599983252585,
+        "max_s": 0.02425820002099499,
+        "stdev_s": 0.0005713895019355505,
+        "p95_nearest_rank_s": 0.02425820002099499,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 8192,
+      "compile_peak_rss_bytes": 72908800,
+      "run_peak_rss_bytes": 3878912
+    },
+    "raft_rpc": {
+      "source": "tests\\dagitik\\test_raft_consensus.ykn",
+      "source_sha256": "77b42dc8919ff319542b696421dead3c7f4bb157a0b69f199011055a611d58cc",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.022959999972954392,
+          0.023997900018002838,
+          0.022880000004079193,
+          0.022490000003017485,
+          0.02235310000833124,
+          0.022898600029293448,
+          0.023018600011710078
+        ],
+        "sample_count": 7,
+        "median_s": 0.022898600029293448,
+        "min_s": 0.02235310000833124,
+        "max_s": 0.023997900018002838,
+        "stdev_s": 0.0005288271052043758,
+        "p95_nearest_rank_s": 0.023997900018002838,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.040414499992039055,
+          0.039709200034849346,
+          0.041445599985308945,
+          0.04011450003599748,
+          0.04013499995926395,
+          0.03941259998828173,
+          0.04229499999200925
+        ],
+        "sample_count": 7,
+        "median_s": 0.04013499995926395,
+        "min_s": 0.03941259998828173,
+        "max_s": 0.04229499999200925,
+        "stdev_s": 0.0010175979569243257,
+        "p95_nearest_rank_s": 0.04229499999200925,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 92672,
+      "compile_peak_rss_bytes": 73170944,
+      "run_peak_rss_bytes": 3665920
+    },
+    "df_csv": {
+      "source": "tests\\veri\\test_dataframe_csv.ykn",
+      "source_sha256": "c71443c9883c9a7e34c96236c1983d09ccb8acb50dd7dbf99a5c5601db8356d3",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.020786099950782955,
+          0.020580000011250377,
+          0.021369699970819056,
+          0.02095450001070276,
+          0.02048740000464022,
+          0.02006399998208508,
+          0.020079599984455854
+        ],
+        "sample_count": 7,
+        "median_s": 0.020580000011250377,
+        "min_s": 0.02006399998208508,
+        "max_s": 0.021369699970819056,
+        "stdev_s": 0.000469366682434496,
+        "p95_nearest_rank_s": 0.021369699970819056,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.040493200009223074,
+          0.039476600009948015,
+          0.04058390000136569,
+          0.04175129998475313,
+          0.0397516000084579,
+          0.03942410001764074,
+          0.04048770002555102
+        ],
+        "sample_count": 7,
+        "median_s": 0.04048770002555102,
+        "min_s": 0.03942410001764074,
+        "max_s": 0.04175129998475313,
+        "stdev_s": 0.0008167909968543967,
+        "p95_nearest_rank_s": 0.04175129998475313,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 43008,
+      "compile_peak_rss_bytes": 56582144,
+      "run_peak_rss_bytes": 3682304
+    },
+    "ecs_physics": {
+      "source": "tests\\ecs\\test_ecs_engine.ykn",
+      "source_sha256": "fcc1caf2ad879d945f1ddd980197c7bba4c9b291e441330f1ff0448d675f5b87",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.021902300009969622,
+          0.021821900038048625,
+          0.021230699960142374,
+          0.021547299984376878,
+          0.02201250003417954,
+          0.022210400027688593,
+          0.021887200011406094
+        ],
+        "sample_count": 7,
+        "median_s": 0.021887200011406094,
+        "min_s": 0.021230699960142374,
+        "max_s": 0.022210400027688593,
+        "stdev_s": 0.00032147353782699796,
+        "p95_nearest_rank_s": 0.022210400027688593,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.022779099992476404,
+          0.023589600052218884,
+          0.022753400029614568,
+          0.022915700043085963,
+          0.023922799970023334,
+          0.022498800011817366,
+          0.02279009995982051
+        ],
+        "sample_count": 7,
+        "median_s": 0.02279009995982051,
+        "min_s": 0.022498800011817366,
+        "max_s": 0.023922799970023334,
+        "stdev_s": 0.0005167638734889571,
+        "p95_nearest_rank_s": 0.023922799970023334,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 5632,
+      "compile_peak_rss_bytes": 73117696,
+      "run_peak_rss_bytes": 3624960
+    },
+    "window_ctx": {
+      "source": "tests\\gui\\test_window_context.ykn",
+      "source_sha256": "908da5e5b4ea2ecfe256924b48b7380bc264caed4e028dd24f94b999e8ba55af",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.020567000028677285,
+          0.02081519999774173,
+          0.020519200013950467,
+          0.02145360002759844,
+          0.020718000014312565,
+          0.020984700007829815,
+          0.020590499974787235
+        ],
+        "sample_count": 7,
+        "median_s": 0.020718000014312565,
+        "min_s": 0.020519200013950467,
+        "max_s": 0.02145360002759844,
+        "stdev_s": 0.00032786128001456995,
+        "p95_nearest_rank_s": 0.02145360002759844,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.05803489999379963,
+          0.05657760001486167,
+          0.05828150000888854,
+          0.05672629998298362,
+          0.057037999969907105,
+          0.05660060001537204,
+          0.05815479997545481
+        ],
+        "sample_count": 7,
+        "median_s": 0.057037999969907105,
+        "min_s": 0.05657760001486167,
+        "max_s": 0.05828150000888854,
+        "stdev_s": 0.0007776934733271777,
+        "p95_nearest_rank_s": 0.05828150000888854,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 79360,
+      "compile_peak_rss_bytes": 55918592,
+      "run_peak_rss_bytes": 4468736
+    },
+    "desktop_apps": {
+      "source": "tests\\apps\\test_desktop_apps.ykn",
+      "source_sha256": "5109262d49375386b0a56b410381a6b7633f5fb262386e1bb6c6d9a1a2ec29e9",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.026521299965679646,
+          0.02569099998800084,
+          0.024242199957370758,
+          0.024424700008239597,
+          0.02447750000283122,
+          0.026936199981719255,
+          0.025980299978982657
+        ],
+        "sample_count": 7,
+        "median_s": 0.02569099998800084,
+        "min_s": 0.024242199957370758,
+        "max_s": 0.026936199981719255,
+        "stdev_s": 0.001091587682288959,
+        "p95_nearest_rank_s": 0.026936199981719255,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.03846870001871139,
+          0.0374669999582693,
+          0.03643839998403564,
+          0.036835100036114454,
+          0.03705350001109764,
+          0.03677770000649616,
+          0.03757650003535673
+        ],
+        "sample_count": 7,
+        "median_s": 0.03705350001109764,
+        "min_s": 0.03643839998403564,
+        "max_s": 0.03846870001871139,
+        "stdev_s": 0.0006744017455626676,
+        "p95_nearest_rank_s": 0.03846870001871139,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 11776,
+      "compile_peak_rss_bytes": 90251264,
+      "run_peak_rss_bytes": 3653632
+    },
+    "ws_live": {
+      "source": "tests\\ag\\test_websocket_live.ykn",
+      "source_sha256": "bdb212ca0156577ae19deac086abe9a19fa35d9ac9fd483170ed4b13909b6eb2",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02126090001547709,
+          0.021022699947934598,
+          0.02148019999731332,
+          0.020450199954211712,
+          0.022809699992649257,
+          0.023774600005708635,
+          0.023399800003971905
+        ],
+        "sample_count": 7,
+        "median_s": 0.02148019999731332,
+        "min_s": 0.020450199954211712,
+        "max_s": 0.023774600005708635,
+        "stdev_s": 0.0012866046717210772,
+        "p95_nearest_rank_s": 0.023774600005708635,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.042068100010510534,
+          0.04157329996814951,
+          0.04137830005493015,
+          0.04346389998681843,
+          0.04908130003605038,
+          0.045404399977996945,
+          0.04505209997296333
+        ],
+        "sample_count": 7,
+        "median_s": 0.04346389998681843,
+        "min_s": 0.04137830005493015,
+        "max_s": 0.04908130003605038,
+        "stdev_s": 0.0027592457521593175,
+        "p95_nearest_rank_s": 0.04908130003605038,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 64512,
+      "compile_peak_rss_bytes": 57401344,
+      "run_peak_rss_bytes": 3743744
+    },
+    "sql_str_btree": {
+      "source": "tests\\veritabani\\test_sql_parser_btree.ykn",
+      "source_sha256": "635f7f3394e367eed4093215546b208efe8fcb4d2b9bdc6eb00093581f81ed1b",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.028823699976783246,
+          0.02945119998184964,
+          0.025131199974566698,
+          0.025163000042084605,
+          0.02521089999936521,
+          0.02863329998217523,
+          0.026633600005879998
+        ],
+        "sample_count": 7,
+        "median_s": 0.026633600005879998,
+        "min_s": 0.025131199974566698,
+        "max_s": 0.02945119998184964,
+        "stdev_s": 0.0019236998946048156,
+        "p95_nearest_rank_s": 0.02945119998184964,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.06037939997622743,
+          0.05781219998607412,
+          0.05084460001671687,
+          0.048692100041080266,
+          0.0531601999537088,
+          0.05321310000726953,
+          0.05076299997745082
+        ],
+        "sample_count": 7,
+        "median_s": 0.0531601999537088,
+        "min_s": 0.048692100041080266,
+        "max_s": 0.06037939997622743,
+        "stdev_s": 0.004158489673600063,
+        "p95_nearest_rank_s": 0.06037939997622743,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 101376,
+      "compile_peak_rss_bytes": 90042368,
+      "run_peak_rss_bytes": 3698688
+    },
+    "font_atlas": {
+      "source": "tests\\gui\\test_font_atlas.ykn",
+      "source_sha256": "06f5b331db7ff684ef1dd62a4910d35b27ca982555a9b81855ab1a0752c5cd7c",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02031140000326559,
+          0.020597799972165376,
+          0.020771600014995784,
+          0.019965099985711277,
+          0.019725000020116568,
+          0.019544499984476715,
+          0.01966089999768883
+        ],
+        "sample_count": 7,
+        "median_s": 0.019965099985711277,
+        "min_s": 0.019544499984476715,
+        "max_s": 0.020771600014995784,
+        "stdev_s": 0.0004833162310843714,
+        "p95_nearest_rank_s": 0.020771600014995784,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.022694299987051636,
+          0.023494500026572496,
+          0.023389400041196495,
+          0.02337850001640618,
+          0.023580400040373206,
+          0.02399340004194528,
+          0.022790400020312518
+        ],
+        "sample_count": 7,
+        "median_s": 0.023389400041196495,
+        "min_s": 0.022694299987051636,
+        "max_s": 0.02399340004194528,
+        "stdev_s": 0.0004529544388866075,
+        "p95_nearest_rank_s": 0.02399340004194528,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 5120,
+      "compile_peak_rss_bytes": 56201216,
+      "run_peak_rss_bytes": 3497984
+    },
+    "cli_fmt": {
+      "source": "tests\\paket\\test_cli_commands.ykn",
+      "source_sha256": "1d7ac93968cb5c59bd833f4dfc2ac941fbb906b074ffcd782ab544e97c1f8888",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.02462389995343983,
+          0.024330299987923354,
+          0.02424380002776161,
+          0.02488639997318387,
+          0.024383799987845123,
+          0.024634199973661453,
+          0.023614800011273474
+        ],
+        "sample_count": 7,
+        "median_s": 0.024383799987845123,
+        "min_s": 0.023614800011273474,
+        "max_s": 0.02488639997318387,
+        "stdev_s": 0.0004055129115709147,
+        "p95_nearest_rank_s": 0.02488639997318387,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.036233299993909895,
+          0.03478989994619042,
+          0.034347200009506196,
+          0.03608340001665056,
+          0.033880800008773804,
+          0.0349483999889344,
+          0.035138199978973716
+        ],
+        "sample_count": 7,
+        "median_s": 0.0349483999889344,
+        "min_s": 0.033880800008773804,
+        "max_s": 0.036233299993909895,
+        "stdev_s": 0.0008577198987334288,
+        "p95_nearest_rank_s": 0.036233299993909895,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 9728,
+      "compile_peak_rss_bytes": 90804224,
+      "run_peak_rss_bytes": 3805184
+    },
+    "baremetal_os": {
+      "source": "tests\\os\\test_baremetal_kernel.ykn",
+      "source_sha256": "e1faf54e57908db46b6dbf8e08ef2f02839386dbc19a59523a3259807aece9dc",
+      "status": "PASS",
+      "correctness_validation": "expected output marker plus exit code",
+      "compile": {
+        "samples_s": [
+          0.030028600012883544,
+          0.030083700024988502,
+          0.029739799967501312,
+          0.0301018999889493,
+          0.03004380001220852,
+          0.030898600001819432,
+          0.030472800019197166
+        ],
+        "sample_count": 7,
+        "median_s": 0.030083700024988502,
+        "min_s": 0.029739799967501312,
+        "max_s": 0.030898600001819432,
+        "stdev_s": 0.00037661564211091474,
+        "p95_nearest_rank_s": 0.030898600001819432,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.039485600020270795,
+          0.03777380002429709,
+          0.03880520001985133,
+          0.037752099975477904,
+          0.03745750000234693,
+          0.0386401999858208,
+          0.03828350000549108
+        ],
+        "sample_count": 7,
+        "median_s": 0.03828350000549108,
+        "min_s": 0.03745750000234693,
+        "max_s": 0.039485600020270795,
+        "stdev_s": 0.0007144229190139472,
+        "p95_nearest_rank_s": 0.039485600020270795,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 106496,
+      "compile_peak_rss_bytes": 140013568,
+      "run_peak_rss_bytes": 3735552
+    },
+    "runtime": {
+      "source": "benchmarks\\runtime.ykn",
+      "source_sha256": "ef170df3c2989d7a5358f350f26da166a477ec891dc6dff9c8af5e0fa9012840",
+      "status": "PASS",
+      "correctness_validation": "checksum and Fibonacci assertions, then pass marker",
+      "compile": {
+        "samples_s": [
+          0.01851560000795871,
+          0.01825349999126047,
+          0.017458199989050627,
+          0.018058800022117794,
+          0.018498499994166195,
+          0.01806059997761622,
+          0.018311499967239797
+        ],
+        "sample_count": 7,
+        "median_s": 0.01825349999126047,
+        "min_s": 0.017458199989050627,
+        "max_s": 0.01851560000795871,
+        "stdev_s": 0.00036175054553408366,
+        "p95_nearest_rank_s": 0.01851560000795871,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.15668130002450198,
+          0.15631869999924675,
+          0.15650659997481853,
+          0.15470339998137206,
+          0.15660719998413697,
+          0.15627209999365732,
+          0.1566974999732338
+        ],
+        "sample_count": 7,
+        "median_s": 0.15650659997481853,
+        "min_s": 0.15470339998137206,
+        "max_s": 0.1566974999732338,
+        "stdev_s": 0.0007043552096336953,
+        "p95_nearest_rank_s": 0.1566974999732338,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 11264,
+      "compile_peak_rss_bytes": 39546880,
+      "run_peak_rss_bytes": 4395008
+    }
+  },
+  "rivals": {
+    "gcc-O0": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\gcc.EXE",
+      "compiler_version": [
+        "gcc.EXE (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r3) 16.1.0"
+      ],
+      "build_flags": [
+        "-O0",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.c",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.21691640000790358,
+          0.19303749996470287,
+          0.18671129998983815,
+          0.1841581000480801,
+          0.192415900004562,
+          0.18980390002252534,
+          0.2879873999627307
+        ],
+        "sample_count": 7,
+        "median_s": 0.192415900004562,
+        "min_s": 0.1841581000480801,
+        "max_s": 0.2879873999627307,
+        "stdev_s": 0.03717849272466525,
+        "p95_nearest_rank_s": 0.2879873999627307,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.014413500030059367,
+          0.015283200016710907,
+          0.014718699967488647,
+          0.0186907000024803,
+          0.017229199991561472,
+          0.020648600009735674,
+          0.020931600010953844
+        ],
+        "sample_count": 7,
+        "median_s": 0.017229199991561472,
+        "min_s": 0.014413500030059367,
+        "max_s": 0.020931600010953844,
+        "stdev_s": 0.002747974046244671,
+        "p95_nearest_rank_s": 0.020931600010953844,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 60761,
+      "peak_rss_bytes": 4718592
+    },
+    "gcc-O3": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\gcc.EXE",
+      "compiler_version": [
+        "gcc.EXE (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r3) 16.1.0"
+      ],
+      "build_flags": [
+        "-O3",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.c",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.21107650001067668,
+          0.20485520001966506,
+          0.3092620000243187,
+          0.21942109998781234,
+          0.20637309999438003,
+          0.3062311999965459,
+          0.29901419999077916
+        ],
+        "sample_count": 7,
+        "median_s": 0.21942109998781234,
+        "min_s": 0.20485520001966506,
+        "max_s": 0.3092620000243187,
+        "stdev_s": 0.05076455632264545,
+        "p95_nearest_rank_s": 0.3092620000243187,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.010206000006292015,
+          0.1143584999954328,
+          0.010920500033535063,
+          0.009882499987725168,
+          0.010118600039277226,
+          0.1157969000050798,
+          0.010452299960888922
+        ],
+        "sample_count": 7,
+        "median_s": 0.010452299960888922,
+        "min_s": 0.009882499987725168,
+        "max_s": 0.1157969000050798,
+        "stdev_s": 0.051121187051285134,
+        "p95_nearest_rank_s": 0.1157969000050798,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 60797,
+      "peak_rss_bytes": 4317184
+    },
+    "g++-O0": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\g++.EXE",
+      "compiler_version": [
+        "g++.EXE (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r3) 16.1.0"
+      ],
+      "build_flags": [
+        "-O0",
+        "-std=c++20",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.cpp",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.6156723000458442,
+          0.6064300999860279,
+          0.5841914000338875,
+          0.5919148999964818,
+          0.6832558000460267,
+          0.6919528000289574,
+          0.6995361000299454
+        ],
+        "sample_count": 7,
+        "median_s": 0.6156723000458442,
+        "min_s": 0.5841914000338875,
+        "max_s": 0.6995361000299454,
+        "stdev_s": 0.0504201732277427,
+        "p95_nearest_rank_s": 0.6995361000299454,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.13021720002871007,
+          0.2052485000458546,
+          0.12625710002612323,
+          0.022966799966525286,
+          0.13221200002590194,
+          0.02314419997856021,
+          0.12767810001969337
+        ],
+        "sample_count": 7,
+        "median_s": 0.12767810001969337,
+        "min_s": 0.022966799966525286,
+        "max_s": 0.2052485000458546,
+        "stdev_s": 0.06540790117921545,
+        "p95_nearest_rank_s": 0.2052485000458546,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 64198,
+      "peak_rss_bytes": 4968448
+    },
+    "g++-O3": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\g++.EXE",
+      "compiler_version": [
+        "g++.EXE (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r3) 16.1.0"
+      ],
+      "build_flags": [
+        "-O3",
+        "-std=c++20",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.cpp",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.5814803999965079,
+          0.5829858999932185,
+          0.5877871999982744,
+          0.5896294999984093,
+          0.5825386000215076,
+          0.5780204000184312,
+          0.5832242000033148
+        ],
+        "sample_count": 7,
+        "median_s": 0.5829858999932185,
+        "min_s": 0.5780204000184312,
+        "max_s": 0.5896294999984093,
+        "stdev_s": 0.003897136120104162,
+        "p95_nearest_rank_s": 0.5896294999984093,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.0184045999776572,
+          0.01633179996861145,
+          0.01591399998869747,
+          0.0184917000005953,
+          0.015739399997983128,
+          0.015960399992763996,
+          0.015865400026086718
+        ],
+        "sample_count": 7,
+        "median_s": 0.015960399992763996,
+        "min_s": 0.015739399997983128,
+        "max_s": 0.0184917000005953,
+        "stdev_s": 0.001226800048197432,
+        "p95_nearest_rank_s": 0.0184917000005953,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 61748,
+      "peak_rss_bytes": 5230592
+    },
+    "clang-O0": {
+      "status": "UNAVAILABLE",
+      "reason": "clang not installed"
+    },
+    "clang-O3": {
+      "status": "UNAVAILABLE",
+      "reason": "clang not installed"
+    },
+    "clang++-O0": {
+      "status": "UNAVAILABLE",
+      "reason": "clang++ not installed"
+    },
+    "clang++-O3": {
+      "status": "UNAVAILABLE",
+      "reason": "clang++ not installed"
+    },
+    "cl-Od": {
+      "status": "UNAVAILABLE",
+      "reason": "cl not installed"
+    },
+    "cl-O2": {
+      "status": "UNAVAILABLE",
+      "reason": "cl not installed"
+    },
+    "rustc-O0": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\.cargo\\bin\\rustc.EXE",
+      "compiler_version": [
+        "rustc 1.96.1 (31fca3adb 2026-06-26)"
+      ],
+      "build_flags": [
+        "-C",
+        "opt-level=0",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.rs",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.1769757000147365,
+          0.27826059999642894,
+          0.1746477999840863,
+          0.17422099999384955,
+          0.17890840000472963,
+          0.17468329996336251,
+          0.17429280001670122
+        ],
+        "sample_count": 7,
+        "median_s": 0.17468329996336251,
+        "min_s": 0.17422099999384955,
+        "max_s": 0.27826059999642894,
+        "stdev_s": 0.03883299350850675,
+        "p95_nearest_rank_s": 0.27826059999642894,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.04461969999829307,
+          0.04366389999631792,
+          0.04386180004803464,
+          0.044094700017012656,
+          0.04410749999806285,
+          0.04397280002012849,
+          0.043374500004574656
+        ],
+        "sample_count": 7,
+        "median_s": 0.04397280002012849,
+        "min_s": 0.043374500004574656,
+        "max_s": 0.04461969999829307,
+        "stdev_s": 0.0003905779817200506,
+        "p95_nearest_rank_s": 0.04461969999829307,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 134144,
+      "peak_rss_bytes": 4407296
+    },
+    "rustc-O3": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\.cargo\\bin\\rustc.EXE",
+      "compiler_version": [
+        "rustc 1.96.1 (31fca3adb 2026-06-26)"
+      ],
+      "build_flags": [
+        "-C",
+        "opt-level=3",
+        "D:\\yukinary\\yukinary-language\\benchmarks\\rivals\\workload.rs",
+        "-o"
+      ],
+      "build": {
+        "samples_s": [
+          0.29895199998281896,
+          0.20377890003146604,
+          0.2721795000252314,
+          0.3965087000397034,
+          0.411461700045038,
+          0.20367020001867786,
+          0.20312039996497333
+        ],
+        "sample_count": 7,
+        "median_s": 0.2721795000252314,
+        "min_s": 0.20312039996497333,
+        "max_s": 0.411461700045038,
+        "stdev_s": 0.09009013204428876,
+        "p95_nearest_rank_s": 0.411461700045038,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.011964099947363138,
+          0.013240600004792213,
+          0.011910200002603233,
+          0.011443600000347942,
+          0.011062400008086115,
+          0.010483300022315234,
+          0.011043299979064614
+        ],
+        "sample_count": 7,
+        "median_s": 0.011443600000347942,
+        "min_s": 0.010483300022315234,
+        "max_s": 0.013240600004792213,
+        "stdev_s": 0.0008935300688043718,
+        "p95_nearest_rank_s": 0.013240600004792213,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 125952,
+      "peak_rss_bytes": 4399104
+    },
+    "go-default": {
+      "status": "PASS",
+      "compiler": "C:\\Users\\naitr\\AppData\\Local\\Programs\\go\\bin\\go.exe",
+      "compiler_version": [
+        "go version go1.27.2 windows/amd64"
+      ],
+      "build_flags": [
+        "go build",
+        "default optimizations"
+      ],
+      "build": {
+        "samples_s": [
+          0.26740420004352927,
+          0.3084556999965571,
+          0.33818419999442995,
+          0.3814291000016965,
+          0.31305320002138615,
+          0.3204404000425711,
+          0.23099850001744926
+        ],
+        "sample_count": 7,
+        "median_s": 0.31305320002138615,
+        "min_s": 0.23099850001744926,
+        "max_s": 0.3814291000016965,
+        "stdev_s": 0.04840528285029895,
+        "p95_nearest_rank_s": 0.3814291000016965,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "run": {
+        "samples_s": [
+          0.015495500003453344,
+          0.014412399963475764,
+          0.014953500009141862,
+          0.015138100017793477,
+          0.014203400001861155,
+          0.014429099974222481,
+          0.014357800013385713
+        ],
+        "sample_count": 7,
+        "median_s": 0.014429099974222481,
+        "min_s": 0.014203400001861155,
+        "max_s": 0.015495500003453344,
+        "stdev_s": 0.0004843681665149768,
+        "p95_nearest_rank_s": 0.015495500003453344,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": 2502656,
+      "peak_rss_bytes": 6287360
+    },
+    "Python": {
+      "status": "PASS",
+      "compiler_version": "3.13.3",
+      "build_flags": [
+        "interpreted, CPython default"
+      ],
+      "build": null,
+      "run": {
+        "samples_s": [
+          0.3239861999754794,
+          0.32718319998821244,
+          0.3963639999856241,
+          0.33967940002912655,
+          0.32288750004954636,
+          0.3230059000197798,
+          0.3206171999918297
+        ],
+        "sample_count": 7,
+        "median_s": 0.3239861999754794,
+        "min_s": 0.3206171999918297,
+        "max_s": 0.3963639999856241,
+        "stdev_s": 0.027253159928573002,
+        "p95_nearest_rank_s": 0.3963639999856241,
+        "p95_interpretation": "nearest-rank; highly uncertain with fewer than 20 measured samples"
+      },
+      "binary_bytes": null,
+      "peak_rss_bytes": 13475840,
+      "process_startup_included": true
+    }
+  },
+  "cross_platform": {
+    "status": "PASS",
+    "targets": [
+      "linux-x64",
+      "macos-x64",
+      "macos-arm64"
+    ]
+  },
+  "conformance_suite": {
+    "status": "PASS",
+    "tested_count": 56
+  },
+  "bootstrap_fixpoint": {
+    "status": "PASS",
+    "stage1_selfhost": "VERIFIED"
+  }
+}

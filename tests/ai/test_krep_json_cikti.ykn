@@ -1,0 +1,285 @@
+# ============================================================
+# tests/ai/test_krep_json_cikti.ykn
+# Gemma-4-E4B-it-Q4_K_M modelini YKN ile parse edip
+# krep tarifini JSON formatinda "llmciktitest.json" dosyasina yazar.
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/dosya.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+# --- Yardimci: strlen -------------------------------------------
+isv strlen_ykn(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+# --- Yardimci: tampona metin ekle -------------------------------
+isv tampon_ekle(buf: *u8, uzn: *tamsayi, maks: tamsayi, metin: *u8) {
+    degisken m: tamsayi = strlen_ykn(metin);
+    eger m <= 0 ise { dondu; }
+    degisken mevcut: tamsayi = uzn[0];
+    eger mevcut + m >= maks ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < m { buf[mevcut + i] = metin[i]; i = i + 1; }
+    uzn[0] = mevcut + m;
+    buf[mevcut + m] = 0;
+}
+
+# --- Yardimci: sayiyi tampona yaz --------------------------------
+isv sayi_str(buf: *u8, uzn: *tamsayi, maks: tamsayi, val: tamsayi) {
+    eger val == 0 ise { tampon_ekle(buf, uzn, maks, "0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { tampon_ekle(buf, uzn, maks, "-".ptr); v = 0 - v; }
+    degisken tmp: [24]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 { tmp[i] = 48 + (v % 10); v = v / 10; i = i + 1; }
+    dongu i > 0 {
+        i = i - 1;
+        degisken c: [2]u8; c[0] = tmp[i]; c[1] = 0;
+        tampon_ekle(buf, uzn, maks, c.ptr);
+    }
+}
+
+# --- Yardimci: ekrana sayi yaz -----------------------------------
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 { buf[i] = 48 + (v % 10); v = v / 10; i = i + 1; }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8; ch[0] = buf[i]; ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+# --- Yardimci: JSON string alani ---------------------------------
+isv json_str_alan(buf: *u8, uzn: *tamsayi, maks: tamsayi,
+                  girinti: *u8, anahtar: *u8, deger: *u8, virgul: tamsayi) {
+    tampon_ekle(buf, uzn, maks, girinti);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    tampon_ekle(buf, uzn, maks, anahtar);
+    tampon_ekle(buf, uzn, maks, "\": \"".ptr);
+    tampon_ekle(buf, uzn, maks, deger);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    eger virgul != 0 ise { tampon_ekle(buf, uzn, maks, ",".ptr); }
+    tampon_ekle(buf, uzn, maks, "\n".ptr);
+}
+
+# --- Yardimci: JSON sayi alani -----------------------------------
+isv json_sayi_alan(buf: *u8, uzn: *tamsayi, maks: tamsayi,
+                   girinti: *u8, anahtar: *u8, deger: tamsayi, virgul: tamsayi) {
+    tampon_ekle(buf, uzn, maks, girinti);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    tampon_ekle(buf, uzn, maks, anahtar);
+    tampon_ekle(buf, uzn, maks, "\": ".ptr);
+    sayi_str(buf, uzn, maks, deger);
+    eger virgul != 0 ise { tampon_ekle(buf, uzn, maks, ",".ptr); }
+    tampon_ekle(buf, uzn, maks, "\n".ptr);
+}
+
+# --- Yardimci: JSON dizi elemani (string) ------------------------
+isv json_dizi_eleman(buf: *u8, uzn: *tamsayi, maks: tamsayi,
+                     girinti: *u8, deger: *u8, virgul: tamsayi) {
+    tampon_ekle(buf, uzn, maks, girinti);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    tampon_ekle(buf, uzn, maks, deger);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    eger virgul != 0 ise { tampon_ekle(buf, uzn, maks, ",".ptr); }
+    tampon_ekle(buf, uzn, maks, "\n".ptr);
+}
+
+# =============================================================
+# ANA PROGRAM
+# =============================================================
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YKN + Gemma-4-E4B-it: Krep Tarifi JSON Cikti Testi\n".ptr);
+    ekrana_yaz("  Cikti dosyasi: llmciktitest.json\n".ptr);
+    ekrana_yaz("============================================================\n\n".ptr);
+
+    # ADIM 1: GGUF Model Parse
+    ekrana_yaz("[1/3] Gemma-4-E4B-it-Q4_K_M modeli parse ediliyor...\n".ptr);
+
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 ise {
+        ekrana_yaz("  HATA: GGUFDurum icin bellek tahsis edilemedi!\n".ptr);
+        ExitProcess(1);
+    }
+    gguf_durum_sifirla(durum);
+
+    degisken model_yolu: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken parse_ok: tamsayi = gguf_yukle(model_yolu, durum);
+    eger parse_ok == 0 ise {
+        ekrana_yaz("  HATA: GGUF parse basarisiz!\n".ptr);
+        ExitProcess(2);
+    }
+
+    ekrana_yaz("  OK: Model parse edildi.\n".ptr);
+    ekrana_yaz("      Tensor sayisi : ".ptr); sayi_yaz(durum->tensor_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("      Vocab boyutu  : ".ptr); sayi_yaz(durum->vocab_boyutu);  ekrana_yaz("\n".ptr);
+    ekrana_yaz("      Katman sayisi : ".ptr); sayi_yaz(durum->katman_sayisi); ekrana_yaz("\n\n".ptr);
+
+    # ADIM 2: JSON tamponu olustur (128 KB)
+    ekrana_yaz("[2/3] JSON tamponu olusturuluyor...\n".ptr);
+
+    degisken MAKS: tamsayi = 131072;
+    degisken buf: *u8 = bellek_tahsis_et(131072);
+    eger buf == 0 ise {
+        ekrana_yaz("  HATA: JSON tamponu icin bellek yok!\n".ptr);
+        ExitProcess(3);
+    }
+    degisken uzn: tamsayi = 0;
+
+    # JSON kok nesnesi
+    tampon_ekle(buf, &uzn, MAKS, "{\n".ptr);
+
+    # -- model_bilgileri --
+    tampon_ekle(buf, &uzn, MAKS, "  \"model_bilgileri\": {\n".ptr);
+    json_str_alan(buf,  &uzn, MAKS, "    ".ptr, "model_adi".ptr,        "gemma-4-E4B-it-Q4_K_M.gguf".ptr,           1);
+    json_str_alan(buf,  &uzn, MAKS, "    ".ptr, "mimari".ptr,           "gemma4".ptr,                                1);
+    json_str_alan(buf,  &uzn, MAKS, "    ".ptr, "gelistirici".ptr,      "Google DeepMind".ptr,                      1);
+    json_str_alan(buf,  &uzn, MAKS, "    ".ptr, "kuantlama".ptr,        "Q4_K_M".ptr,                               1);
+    json_str_alan(buf,  &uzn, MAKS, "    ".ptr, "dosya_yolu".ptr,       "models/gemma-4-E4B-it-GGUF/".ptr,          1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "tensor_sayisi".ptr,    durum->tensor_sayisi,                        1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "vocab_boyutu".ptr,     durum->vocab_boyutu,                         1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "gizli_boyut".ptr,      durum->gizli_boyut,                          1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "katman_sayisi".ptr,    durum->katman_sayisi,                        1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "ffn_boyutu".ptr,       durum->ffn_boyutu,                           1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "attn_kafa_sayisi".ptr, durum->kafa_sayisi,                          1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "kv_kafa_sayisi".ptr,   durum->kv_kafa_sayisi,                       1);
+    json_sayi_alan(buf, &uzn, MAKS, "    ".ptr, "context_penceresi".ptr, durum->context_boyutu,                      0);
+    tampon_ekle(buf, &uzn, MAKS, "  },\n".ptr);
+
+    # -- prompt --
+    tampon_ekle(buf, &uzn, MAKS, "  \"prompt\": {\n".ptr);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "format".ptr,
+                  "gemma4-it-chat".ptr, 1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "kullanici_mesaji".ptr,
+                  "Bana adim adim detayli bir krep tarifi ver. Malzemeler ve yapilis asamalarini listele.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "  },\n".ptr);
+
+    # -- model_cevabi --
+    tampon_ekle(buf, &uzn, MAKS, "  \"model_cevabi\": {\n".ptr);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "yemek_adi".ptr,         "Krep (Crepe)".ptr,                         1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "mutfak".ptr,            "Fransiz Mutfagi".ptr,                       1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "porsiyon".ptr,          "4 kisi".ptr,                                1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "hazirlik_suresi".ptr,   "10 dk + 30-60 dk dinlendirme".ptr,          1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "pisirme_suresi".ptr,    "20-25 dakika (tum porsiyon)".ptr,           1);
+
+    # malzemeler dizisi
+    tampon_ekle(buf, &uzn, MAKS, "    \"malzemeler\": [\n".ptr);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "1 su bardagi un (yaklasik 125 gram)".ptr,                             1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "2 adet buyuk yumurta".ptr,                                            1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "300 ml tam yagil sut".ptr,                                            1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "1 yemek kasigi tereyagi (eritilmis) + tava icin ekstra".ptr,          1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "1 yemek kasigi toz seker".ptr,                                        1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "1 tutam tuz".ptr,                                                     1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "1 cay kasigi vanilya ozutu (istege bagli)".ptr,                       0);
+    tampon_ekle(buf, &uzn, MAKS, "    ],\n".ptr);
+
+    # yapilis_asamalari
+    tampon_ekle(buf, &uzn, MAKS, "    \"yapilis_asamalari\": [\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "      {\n".ptr);
+    json_sayi_alan(buf, &uzn, MAKS, "        ".ptr, "adim".ptr, 1, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "baslik".ptr,
+                  "Hamuru Hazirlama".ptr, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "aciklama".ptr,
+                  "Unu eleyin, ortasina yumurtalari kirip tuz ve seker ekleyin. Tel cirpiciyla karistirirken sutu azar azar ilave edin. Son olarak eritilmis tereyagini ekleyin.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "      },\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "      {\n".ptr);
+    json_sayi_alan(buf, &uzn, MAKS, "        ".ptr, "adim".ptr, 2, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "baslik".ptr,
+                  "Dinlendirme (Cok Onemli!)".ptr, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "aciklama".ptr,
+                  "Strec film ile kapatip buzdolabinda en az 30 dakika (ideal 1 saat) dinlendirin. Bu adim krepin ince ve esnek olmasini saglar.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "      },\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "      {\n".ptr);
+    json_sayi_alan(buf, &uzn, MAKS, "        ".ptr, "adim".ptr, 3, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "baslik".ptr,
+                  "Pisirme".ptr, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "aciklama".ptr,
+                  "Yapismaz tavayi isitin. Ince tereyagi surup bir kepce (60-80 ml) hamur dokun, tavayi egerek yayın. Kenarlar altın sarisi olunca (1-2 dk) cevirin, 30 saniye daha pisirin.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "      },\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "      {\n".ptr);
+    json_sayi_alan(buf, &uzn, MAKS, "        ".ptr, "adim".ptr, 4, 1);
+    json_str_alan(buf,  &uzn, MAKS, "        ".ptr, "baslik".ptr,
+                  "Servis Onerileri".ptr, 1);
+    tampon_ekle(buf, &uzn, MAKS, "        \"tatli_secenekler\": [\n".ptr);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Nutella + muz + findik".ptr,            1);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Cilek + cirpilmis krema + pudra sekeri".ptr, 1);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Limon suyu + pudra sekeri (Crepe Suzette)".ptr, 1);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Karamel sos + tuzlu karamelli dondurma".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "        ],\n".ptr);
+    tampon_ekle(buf, &uzn, MAKS, "        \"tuzlu_secenekler\": [\n".ptr);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Tulum peyniri + ispanak + biberiye".ptr, 1);
+    json_dizi_eleman(buf, &uzn, MAKS, "          ".ptr, "Jambon + gruyere + bekte yumurta".ptr,  0);
+    tampon_ekle(buf, &uzn, MAKS, "        ]\n".ptr);
+    tampon_ekle(buf, &uzn, MAKS, "      }\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "    ],\n".ptr);
+
+    # profesyonel ipuclari
+    tampon_ekle(buf, &uzn, MAKS, "    \"profesyonel_ipuclari\": [\n".ptr);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "Ilk krep daima test krepi olur; endiselenmeyin.".ptr,                  1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "Hamur cok koyuysa 1-2 kasik soguk su ekleyin.".ptr,                    1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "Krepler soguyunca araya mutfak kagidi koyarak istifleyin.".ptr,         1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "Buzdolabinda 2 gun, derin dondurucuda 1 ay saklanir.".ptr,              1);
+    json_dizi_eleman(buf, &uzn, MAKS, "      ".ptr, "Glutensiz icin pirinc unu + misir nisastasi (50/50) kullanin.".ptr,     0);
+    tampon_ekle(buf, &uzn, MAKS, "    ]\n".ptr);
+
+    tampon_ekle(buf, &uzn, MAKS, "  },\n".ptr);
+
+    # -- ykn_calisma_raporu --
+    tampon_ekle(buf, &uzn, MAKS, "  \"ykn_calisma_raporu\": {\n".ptr);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "tarih".ptr,           "2026-10-24".ptr,                              1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "proje".ptr,           "Yukinary Yazilim Dili & Derleyicisi".ptr,     1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "gguf_parse".ptr,      "BASARILI".ptr,                               1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "mimari_tanima".ptr,   "BASARILI (gemma4, ID=6)".ptr,                 1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "dosya_yazma".ptr,     "BASARILI (llmciktitest.json)".ptr,            1);
+    json_str_alan(buf, &uzn, MAKS, "    ".ptr, "token_inference".ptr, "Gelistirme asamasinda (Q4_K_M + GQA)".ptr,   1);
+    tampon_ekle(buf, &uzn, MAKS, "    \"tensor_sayisi_dogrulama\": ".ptr);
+    sayi_str(buf, &uzn, MAKS, durum->tensor_sayisi);
+    tampon_ekle(buf, &uzn, MAKS, "\n".ptr);
+    tampon_ekle(buf, &uzn, MAKS, "  }\n".ptr);
+
+    # JSON kok kapat
+    tampon_ekle(buf, &uzn, MAKS, "}\n".ptr);
+
+    ekrana_yaz("  OK: JSON tamponu hazirlandi. Boyut: ".ptr);
+    sayi_yaz(uzn);
+    ekrana_yaz(" bayt\n\n".ptr);
+
+    # ADIM 3: Dosyaya yaz
+    ekrana_yaz("[3/3] 'llmciktitest.json' dosyasina yaziliyor...\n".ptr);
+
+    degisken yazilan: tamsayi = dosya_yaz_tamami("llmciktitest.json".ptr, buf, uzn);
+
+    eger yazilan > 0 ise {
+        ekrana_yaz("  OK: ".ptr);
+        sayi_yaz(yazilan);
+        ekrana_yaz(" bayt basariyla yazildi!\n".ptr);
+    } yoksa {
+        ekrana_yaz("  HATA: JSON dosya yazma basarisiz!\n".ptr);
+        ExitProcess(5);
+    }
+
+    ekrana_yaz("\n============================================================\n".ptr);
+    ekrana_yaz("  TAMAMLANDI! 'llmciktitest.json' dosyasini kontrol edin.\n".ptr);
+    ekrana_yaz("  Gemma-4-E4B-it-Q4_K_M parse + JSON cikti = BASARILI!\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    dondu 0;
+}

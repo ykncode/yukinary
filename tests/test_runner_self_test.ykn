@@ -1,0 +1,26 @@
+# ============================================================
+# Test: tests/test_runner_self_test.ykn
+# FAZ 1 Dogrulama: Test Kosucusu ve Harness Motoru
+# ============================================================
+
+ice_aktar "tools/test_runner.ykn";
+
+isv main() -> tamsayi {
+    degisken tk: *TestKosuSonucu = test_kosucu_olustur(16);
+    eger tk == 0 ise { dondu 1; }
+
+    # Test sonuclari kaydet
+    test_kaydi_ekle(tk, "test_trait_vtable".ptr, TEST_DURUM_BASARILI, 12);
+    test_kaydi_ekle(tk, "test_simd_ssa".ptr, TEST_DURUM_BASARILI, 8);
+    test_kaydi_ekle(tk, "test_macho_arm64".ptr, TEST_DURUM_BASARILI, 15);
+    test_kaydi_ekle(tk, "test_work_stealing".ptr, TEST_DURUM_BASARILI, 22);
+    test_kaydi_ekle(tk, "test_expected_fail".ptr, TEST_DURUM_BASARISIZ, 5);
+
+    eger tk.toplam != 5 ise { dondu 10; }
+    eger tk.basarili != 4 ise { dondu 11; }
+    eger tk.basarisiz != 1 ise { dondu 12; }
+
+    test_kosucu_serbest_birak(tk);
+    dondu 0;
+}
+

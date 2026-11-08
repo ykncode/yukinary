@@ -1,0 +1,54 @@
+# ============================================================
+# tests/stdlib/13_lambda_fonksiyon.ykn
+# P4 Adim O - Birinci Sinif Fonksiyonlar, Fonksiyon Isaretcileri & Lambda
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv uygula(sayi: tamsayi, fn_ptr: *u8) -> tamsayi {
+    dondu fn_ptr(sayi, 10);
+}
+
+isv ana() -> tamsayi {
+    # 1. Isimli fonksiyon isaretcisi (Function Pointer)
+    degisken f_topla: *u8 = topla;
+    degisken r1: tamsayi = f_topla(15, 27);
+    eger r1 != 42 ise {
+        ekrana_yaz("FAIL: Fonksiyon isaretcisi hatali\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Anonim Lambda Fonksiyonu (Closure / Inline Anonymous Function)
+    degisken carp = isv(a: tamsayi, b: tamsayi) -> tamsayi {
+        dondu a * b;
+    };
+    degisken r2: tamsayi = carp(6, 7);
+    eger r2 != 42 ise {
+        ekrana_yaz("FAIL: Lambda cagrisi hatali\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Fonksiyonu arguman olarak baska fonksiyona iletme (Higher-Order Function)
+    degisken r3: tamsayi = uygula(32, topla);
+    eger r3 != 42 ise {
+        ekrana_yaz("FAIL: Higher-order fonksiyon hatali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Lambda'yi arguman olarak iletme
+    degisken katsayi = isv(x: tamsayi, y: tamsayi) -> tamsayi {
+        dondu x + y + 22;
+    };
+    degisken r4: tamsayi = uygula(10, katsayi);
+    eger r4 != 42 ise {
+        ekrana_yaz("FAIL: Lambda argumani hatali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("LAMBDA-CLOSURE-PASS\n".ptr);
+    dondu 0;
+}

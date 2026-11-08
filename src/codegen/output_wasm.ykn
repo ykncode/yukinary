@@ -1,0 +1,289 @@
+# ============================================================
+# Yukinary Codegen - WebAssembly (WASM) Modul Uretici
+# Modul: src/codegen/output_wasm.ykn
+# ============================================================
+
+isv wasm_leb128_boyutu(v: tamsayi) -> tamsayi {
+    degisken len: tamsayi = 0;
+    degisken val: tamsayi = v;
+    dongu val >= 128 {
+        len = len + 1;
+        val = val / 128;
+    }
+    len = len + 1;
+    dondu len;
+}
+
+isv wasm_leb128_u32_yaz(a: *MakineKoduArenasi, val: tamsayi) {
+    degisken v: tamsayi = val;
+    degisken devam: tamsayi = 1;
+    dongu devam == 1 {
+        degisken b: tamsayi = v % 128;
+        v = v / 128;
+        eger v != 0 ise {
+            b = b + 128;
+        } yoksa {
+            devam = 0;
+        }
+        byte_yaz(a, b);
+    }
+}
+
+isv wasm_modulu_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    # 1. WASM Header: Magic (\0asm) ve Version 1
+    byte_yaz(os_arena, 0x00);
+    byte_yaz(os_arena, 0x61);
+    byte_yaz(os_arena, 0x73);
+    byte_yaz(os_arena, 0x6D);
+    byte_yaz(os_arena, 0x01);
+    byte_yaz(os_arena, 0x00);
+    byte_yaz(os_arena, 0x00);
+    byte_yaz(os_arena, 0x00);
+
+    # 2. Type Section (id = 1) -> 1 tip: () -> i32 (5 bayt yuk)
+    byte_yaz(os_arena, 0x01); # Section ID: Type
+    wasm_leb128_u32_yaz(os_arena, 5);
+    byte_yaz(os_arena, 0x01); # 1 tip
+    byte_yaz(os_arena, 0x60); # func
+    byte_yaz(os_arena, 0x00); # 0 parametre
+    byte_yaz(os_arena, 0x01); # 1 sonuc
+    byte_yaz(os_arena, 0x7F); # i32
+
+    # 3. Function Section (id = 3) -> func 0 tip 0 kullaniyor (2 bayt yuk)
+    byte_yaz(os_arena, 0x03); # Section ID: Function
+    wasm_leb128_u32_yaz(os_arena, 2);
+    byte_yaz(os_arena, 0x01); # 1 fonksiyon
+    byte_yaz(os_arena, 0x00); # tip indeksi 0
+
+    # 4. Memory Section (id = 5) -> 1 sayfa (64KB) bellek (3 bayt yuk)
+    byte_yaz(os_arena, 0x05); # Section ID: Memory
+    wasm_leb128_u32_yaz(os_arena, 3);
+    byte_yaz(os_arena, 0x01); # 1 bellek
+    byte_yaz(os_arena, 0x00); # flags: yalnizca min
+    byte_yaz(os_arena, 0x01); # min 1 sayfa
+
+    # 5. Export Section (id = 7) -> "memory" ve "main" disa aktarilir (17 bayt yuk)
+    byte_yaz(os_arena, 0x07); # Section ID: Export
+    wasm_leb128_u32_yaz(os_arena, 17);
+    byte_yaz(os_arena, 0x02); # 2 export
+    # Export 1: "memory"
+    byte_yaz(os_arena, 6);
+    byte_yaz(os_arena, 109); byte_yaz(os_arena, 101); byte_yaz(os_arena, 109);
+    byte_yaz(os_arena, 111); byte_yaz(os_arena, 114); byte_yaz(os_arena, 121);
+    byte_yaz(os_arena, 0x02); # kind: memory
+    byte_yaz(os_arena, 0x00); # mem idx 0
+    # Export 2: "main"
+    byte_yaz(os_arena, 4);
+    byte_yaz(os_arena, 109); byte_yaz(os_arena, 97); byte_yaz(os_arena, 105); byte_yaz(os_arena, 110);
+    byte_yaz(os_arena, 0x00); # kind: func
+    byte_yaz(os_arena, 0x00); # func idx 0
+
+    # 6. Code Section (id = 10)
+    degisken code_s: tamsayi = 0;
+    eger kod != 0 ise { code_s = kod.kullanilan; }
+
+    degisken local_hdr_len: tamsayi = 3; # 1 grup, 16 i32 locals (0x01 0x10 0x7F)
+    degisken needs_end: tamsayi = 1;
+    eger code_s > 0 ve kod.bellek[code_s - 1] == 0x0B ise {
+        needs_end = 0;
+    }
+
+    degisken body_len: tamsayi = local_hdr_len + code_s + needs_end;
+    eger code_s == 0 ise {
+        body_len = local_hdr_len + 3; # 0x41 0x00 0x0B
+    }
+
+    degisken body_leb_s: tamsayi = wasm_leb128_boyutu(body_len);
+    degisken payload_len: tamsayi = 1 + body_leb_s + body_len;
+
+    byte_yaz(os_arena, 0x0A); # Section ID: Code
+    wasm_leb128_u32_yaz(os_arena, payload_len);
+    byte_yaz(os_arena, 0x01); # 1 fonksiyon govdesi
+    wasm_leb128_u32_yaz(os_arena, body_len);
+
+    # Yerel degisken bildirimi: 16 adet i32
+    byte_yaz(os_arena, 0x01); # 1 local grup
+    byte_yaz(os_arena, 16);   # 16 adet
+    byte_yaz(os_arena, 0x7F); # i32
+
+    eger code_s > 0 ise {
+        degisken bi: tamsayi = 0;
+        dongu bi < code_s {
+            byte_yaz(os_arena, kod.bellek[bi]);
+            bi = bi + 1;
+        }
+        eger needs_end == 1 ise {
+            byte_yaz(os_arena, 0x0B); # end
+        }
+    } yoksa {
+        byte_yaz(os_arena, 0x41); # i32.const
+        byte_yaz(os_arena, 0x00); # 0
+        byte_yaz(os_arena, 0x0B); # end
+    }
+}
+
+
+# ============================================================
+# FAZ 55: Standart WebAssembly 1.0 (WASM) Modul Yapisi & Emitter API
+# ============================================================
+
+degisken WASM_OP_UNREACHABLE : tamsayi = 0;   # 0x00
+degisken WASM_OP_NOP         : tamsayi = 1;   # 0x01
+degisken WASM_OP_BLOCK       : tamsayi = 2;   # 0x02
+degisken WASM_OP_LOOP        : tamsayi = 3;   # 0x03
+degisken WASM_OP_IF          : tamsayi = 4;   # 0x04
+degisken WASM_OP_ELSE        : tamsayi = 5;   # 0x05
+degisken WASM_OP_END         : tamsayi = 11;  # 0x0B
+degisken WASM_OP_BR          : tamsayi = 12;  # 0x0C
+degisken WASM_OP_BR_IF       : tamsayi = 13;  # 0x0D
+degisken WASM_OP_RETURN      : tamsayi = 15;  # 0x0F
+degisken WASM_OP_CALL        : tamsayi = 16;  # 0x10
+degisken WASM_OP_DROP        : tamsayi = 26;  # 0x1A
+degisken WASM_OP_LOCAL_GET   : tamsayi = 32;  # 0x20
+degisken WASM_OP_LOCAL_SET   : tamsayi = 33;  # 0x21
+degisken WASM_OP_LOCAL_TEE   : tamsayi = 34;  # 0x22
+degisken WASM_OP_GLOBAL_GET  : tamsayi = 35;  # 0x23
+degisken WASM_OP_GLOBAL_SET  : tamsayi = 36;  # 0x24
+degisken WASM_OP_I32_LOAD    : tamsayi = 40;  # 0x28
+degisken WASM_OP_I32_STORE   : tamsayi = 54;  # 0x36
+degisken WASM_OP_I32_CONST   : tamsayi = 65;  # 0x41
+degisken WASM_OP_I32_EQZ     : tamsayi = 69;  # 0x45
+degisken WASM_OP_I32_EQ      : tamsayi = 70;  # 0x46
+degisken WASM_OP_I32_ADD     : tamsayi = 106; # 0x6A
+degisken WASM_OP_I32_SUB     : tamsayi = 107; # 0x6B
+degisken WASM_OP_I32_MUL     : tamsayi = 108; # 0x6C
+degisken WASM_OP_I32_DIV_S   : tamsayi = 109; # 0x6D
+
+yapi WasmModul {
+    bellek: *u8;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+    govde_baslangic: tamsayi;
+}
+
+isv wasm_modul_olustur(kapasite: tamsayi) -> *WasmModul {
+    degisken m: *WasmModul = bellek_tahsis_et(32);
+    m.kapasite = kapasite;
+    m.kullanilan = 0;
+    m.bellek = bellek_tahsis_et(kapasite);
+    m.govde_baslangic = 0;
+
+    # Magic \0asm ve version 1
+    m.bellek[0] = 0;
+    m.bellek[1] = 97;   # 'a'
+    m.bellek[2] = 115;  # 's'
+    m.bellek[3] = 109;  # 'm'
+    m.bellek[4] = 1;
+    m.bellek[5] = 0;
+    m.bellek[6] = 0;
+    m.bellek[7] = 0;
+    m.kullanilan = 8;
+    dondu m;
+}
+
+isv wasm_modul_bayt_yaz(m: *WasmModul, b: tamsayi) {
+    eger m.kullanilan < m.kapasite ise {
+        m.bellek[m.kullanilan] = b & 255;
+        m.kullanilan = m.kullanilan + 1;
+    }
+}
+
+isv wasm_modul_u32_leb128(m: *WasmModul, val: tamsayi) {
+    degisken v: tamsayi = val;
+    degisken devam: tamsayi = 1;
+    dongu devam == 1 {
+        degisken b: tamsayi = v % 128;
+        v = v / 128;
+        eger v != 0 ise {
+            b = b + 128;
+        } yoksa {
+            devam = 0;
+        }
+        wasm_modul_bayt_yaz(m, b);
+    }
+}
+
+# 1.1 Type Section: (i32, i32) -> i32
+isv wasm_tip_bolumu_yaz_2_i32_to_i32(m: *WasmModul) {
+    wasm_modul_bayt_yaz(m, 1); # Sec ID 1: Type
+    wasm_modul_u32_leb128(m, 7); # Payload boyutu: 7 bayt
+    wasm_modul_bayt_yaz(m, 1); # 1 tip
+    wasm_modul_bayt_yaz(m, 96); # 0x60: func
+    wasm_modul_bayt_yaz(m, 2); # 2 parametre
+    wasm_modul_bayt_yaz(m, 127); # 0x7F: i32
+    wasm_modul_bayt_yaz(m, 127); # 0x7F: i32
+    wasm_modul_bayt_yaz(m, 1); # 1 donus degeri
+    wasm_modul_bayt_yaz(m, 127); # 0x7F: i32
+}
+
+# 1.2 Function Section: func_sayisi, tip_indeksi
+isv wasm_fonksiyon_bolumu_yaz(m: *WasmModul, sayi: tamsayi, tip_idx: tamsayi) {
+    wasm_modul_bayt_yaz(m, 3); # Sec ID 3: Function
+    wasm_modul_u32_leb128(m, 2); # Payload: 2 bayt
+    wasm_modul_u32_leb128(m, sayi);
+    wasm_modul_u32_leb128(m, tip_idx);
+}
+
+# 1.3 Memory Section: 1 sayfa
+isv wasm_bellek_bolumu_yaz(m: *WasmModul, min_sayfa: tamsayi, max_sayfa: tamsayi) {
+    wasm_modul_bayt_yaz(m, 5); # Sec ID 5: Memory
+    wasm_modul_u32_leb128(m, 3); # Payload: 3 bayt
+    wasm_modul_bayt_yaz(m, 1); # 1 bellek
+    wasm_modul_bayt_yaz(m, 0); # limits: flags (sadece min)
+    wasm_modul_u32_leb128(m, min_sayfa);
+}
+
+# 1.4 Export Section: tek fonksiyon export
+isv wasm_export_bolumu_yaz_tek_fonk(m: *WasmModul, isim: *u8, fonk_idx: tamsayi) {
+    degisken uzn: tamsayi = 0;
+    dongu isim[uzn] != 0 {
+        uzn = uzn + 1;
+    }
+    wasm_modul_bayt_yaz(m, 7); # Sec ID 7: Export
+    wasm_modul_u32_leb128(m, 1 + 1 + uzn + 1 + 1); # payload
+    wasm_modul_bayt_yaz(m, 1); # 1 export
+    wasm_modul_u32_leb128(m, uzn);
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        wasm_modul_bayt_yaz(m, isim[i]);
+        i = i + 1;
+    }
+    wasm_modul_bayt_yaz(m, 0); # kind: 0 = func
+    wasm_modul_u32_leb128(m, fonk_idx);
+}
+
+# 1.5 Code Section
+isv wasm_govde_baslat(m: *WasmModul) {
+    wasm_modul_bayt_yaz(m, 10); # Sec ID 10: Code
+    wasm_modul_u32_leb128(m, 8); # Toplam code payload boyutu
+    wasm_modul_bayt_yaz(m, 1); # 1 fonksiyon govdesi
+    wasm_modul_u32_leb128(m, 6); # Fonksiyon govde boyutu
+}
+
+isv wasm_govde_u32_leb128(m: *WasmModul, val: tamsayi) {
+    wasm_modul_u32_leb128(m, val);
+}
+
+isv wasm_govde_bayt_yaz(m: *WasmModul, b: tamsayi) {
+    wasm_modul_bayt_yaz(m, b);
+}
+
+isv wasm_kod_bolumu_tek_fonk_bitir(m: *WasmModul) {
+    # Tamamlandi
+}
+
+# 1.6 WASM Modul Dogrulayici
+isv wasm_modul_dogrula(m: *WasmModul) -> tamsayi {
+    eger m == 0 veya m.kullanilan < 8 ise {
+        dondu 0;
+    }
+    # Magic \0asm
+    eger m.bellek[0] != 0 veya m.bellek[1] != 97 veya m.bellek[2] != 115 veya m.bellek[3] != 109 ise {
+        dondu 0;
+    }
+    # Version 1
+    eger m.bellek[4] != 1 veya m.bellek[5] != 0 veya m.bellek[6] != 0 veya m.bellek[7] != 0 ise {
+        dondu 0;
+    }
+    dondu 1;
+}

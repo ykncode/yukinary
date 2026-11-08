@@ -1,0 +1,33 @@
+# ============================================================
+# Örnek 46: Win32 Arayüzlü Mini Paint Çizim Tahtası
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_firca_tipi: tamsayi = 1; # 1: Kalem, 2: Silgi, 3: Firca
+degisken g_firca_kalinlik: tamsayi = 3;
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Mini Paint".ptr, 650, 500);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Cizim Kanvasi
+    metin_kutusu_olustur(p_h, 100, 140, 20, 480, 420);
+
+    # Sol Arac Cubugu
+    buton_olustur(p_h, "Kalem".ptr, 201, 20, 20, 100, 40);
+    buton_olustur(p_h, "Firca".ptr, 202, 20, 70, 100, 40);
+    buton_olustur(p_h, "Silgi".ptr, 203, 20, 120, 100, 40);
+    buton_olustur(p_h, "Cizgi".ptr, 204, 20, 170, 100, 40);
+    buton_olustur(p_h, "Diktortgen".ptr, 205, 20, 220, 100, 40);
+
+    buton_olustur(p_h, "Kalinlik +".ptr, 206, 20, 280, 100, 35);
+    buton_olustur(p_h, "Temizle".ptr, 207, 20, 330, 100, 35);
+
+    ekrana_yaz("Mini Paint araci hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

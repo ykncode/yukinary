@@ -1,0 +1,73 @@
+# ============================================================
+# Örnek 19: Konsol Tabanlı Dijkstra En Kısa Yol Algoritması (4 Düğüm)
+# ============================================================
+
+degisken g_graf: [16]tamsayi; # 4x4 Komsuluk Matrisi
+degisken g_mesafe: [4]tamsayi;
+degisken g_ziyaret: [4]tamsayi;
+
+isv en_yakin_dugum_bul() -> tamsayi {
+    degisken min_deger: tamsayi = 999999;
+    degisken min_indis: tamsayi = 0 - 1;
+    degisken v: tamsayi = 0;
+
+    dongu (v < 4) {
+        eger g_ziyaret[v] == 0 ve g_mesafe[v] <= min_deger ise {
+            min_deger = g_mesafe[v];
+            min_indis = v;
+        }
+        v = v + 1;
+    }
+    dondu min_indis;
+}
+
+isv dijkstra(baslangic: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < 4) {
+        g_mesafe[i] = 999999;
+        g_ziyaret[i] = 0;
+        i = i + 1;
+    }
+    g_mesafe[baslangic] = 0;
+
+    degisken sayac: tamsayi = 0;
+    dongu (sayac < 3) {
+        degisken u: tamsayi = en_yakin_dugum_bul();
+        eger u < 0 ise { dondu; }
+        g_ziyaret[u] = 1;
+
+        degisken v: tamsayi = 0;
+        dongu (v < 4) {
+            degisken maliyet: tamsayi = g_graf[u * 4 + v];
+            eger g_ziyaret[v] == 0 ve maliyet > 0 ve g_mesafe[u] + maliyet < g_mesafe[v] ise {
+                g_mesafe[v] = g_mesafe[u] + maliyet;
+            }
+            v = v + 1;
+        }
+        sayac = sayac + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    # 4 Düğümlü Yol Haritası
+    # 0 -> 1 (10), 0 -> 2 (15)
+    # 1 -> 3 (12), 2 -> 3 (10)
+    degisken k: tamsayi = 0;
+    dongu (k < 16) { g_graf[k] = 0; k = k + 1; }
+
+    g_graf[0 * 4 + 1] = 10;
+    g_graf[0 * 4 + 2] = 15;
+    g_graf[1 * 4 + 3] = 12;
+    g_graf[2 * 4 + 3] = 10;
+
+    dijkstra(0);
+
+    ekrana_yaz("=== 0. Dugumden Diger Dugumlere En Kisa Mesafeler ===\n".ptr);
+    degisken n: tamsayi = 0;
+    dongu (n < 4) {
+        ekrana_yaz("Hedef "); sayiyi_ekrana_yaz(n); ekrana_yaz(": Mesafe = ");
+        sayiyi_ekrana_yaz(g_mesafe[n]); ekrana_yaz("\n".ptr);
+        n = n + 1;
+    }
+    dondu 0;
+}

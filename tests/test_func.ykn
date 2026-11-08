@@ -1,0 +1,2 @@
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }
+isv ana() -> tamsayi { dondu topla(10, 20); }

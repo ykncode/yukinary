@@ -1,0 +1,10 @@
+# Seed Parity Fixture: ffi_basics.ykn
+# Test: harici isv bildirimi ve FFI çağrısı
+#c-lib "kernel32";
+
+harici isv GetLastError() -> tamsayi;
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("FFI_BASICS: harici isv bildirimi OK\n".ptr);
+    dondu 0;
+}

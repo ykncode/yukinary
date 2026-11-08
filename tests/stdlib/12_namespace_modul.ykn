@@ -1,0 +1,34 @@
+# ============================================================
+# tests/stdlib/12_namespace_modul.ykn
+# Namespace ve Modul Kapsam Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/moduller/matematik_modul.ykn";
+ice_aktar "../../std/moduller/geometri_modul.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Matematik modulu cagrilari (:: soz dizimi)
+    degisken k: tamsayi = matematik::kare(7);
+    eger k != 49 ise { dondu 10; }
+
+    degisken kp: tamsayi = matematik::kup(3);
+    eger kp != 27 ise { dondu 20; }
+
+    degisken m: tamsayi = matematik::mutlak(-15);
+    eger m != 15 ise { dondu 30; }
+
+    # 2. Geometri modulu cagrilari (:: soz dizimi)
+    degisken g_kare: tamsayi = geometri::kare_alani(10);
+    eger g_kare != 100 ise { dondu 40; }
+
+    degisken g_dik: tamsayi = geometri::dikdortgen_alani(8, 5);
+    eger g_dik != 40 ise { dondu 50; }
+
+    degisken g_daire: f64 = geometri::daire_alani(5.0);
+    eger tamsayi(g_daire) != 78 ise { dondu 60; }
+
+    ekrana_yaz("NAMESPACE-MODULE-PASS\n".ptr);
+    dondu 0;
+}

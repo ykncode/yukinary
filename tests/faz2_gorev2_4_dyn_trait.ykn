@@ -1,0 +1,32 @@
+# FAZ 2.4 POZITIF TEST: dyn Trait, VTable ve Dinamik Cagrilar
+
+ozellik Hesaplayici {
+    isv hesapla(self: *Self, ek: tamsayi) -> tamsayi;
+}
+
+yapi Kare {
+    kenar: tamsayi;
+}
+
+uygula Hesaplayici Kare {
+    isv hesapla(self: *Kare, ek: tamsayi) -> tamsayi {
+        dondu (self.kenar * self.kenar) + ek;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken k: Kare;
+    k.kenar = 5;
+
+    degisken vt: *u8 = vtable__Kare__Hesaplayici();
+    degisken obj: *dyn Hesaplayici = dyn_yarat(&k, vt);
+
+    degisken sonuc: tamsayi = obj.hesapla(10);
+
+    eger sonuc == 35 ise {
+        ekrana_yaz("FAZ 2.4 DYN TRAIT VTABLE BASARILI!\n".ptr);
+        dondu 0;
+    }
+
+    dondu 1;
+}

@@ -1,0 +1,14 @@
+[TEST-1] Struct elle doldur testi:
+    buf_len=132 OK
+    versiyon=3 OK
+    tensor=1 OK
+[1/6] GGUF yuklemesi: OK (132 bayt / buffer)
+[2/6] Header: OK (v3 / 1 tensor / 1 metakv)
+[3/6] Tensor blk.0.weight: OK (bulundu)
+[4/6] Tensor metadata: OK (2x3 IQ2_S / 4 bayt sikistirilmis)
+[5/6] I2_S dekompresyon: OK (6/6 deger dogru: [1,-1,1,1,-1,0])
+[6/6] Agirlik toplami: OK (1 = +1-1+1+1-1+0)
+
+TEST 03 FAZ 8: BASARILI! (GGUF v3 + I2_S BitNet 2-bit DEKOMPRESYON %100)
+    Yuklenen: tests/llm/mini_test.gguf (132 bayt / 1 tensor / 6 deger)
+    Faz 8.3 GGUF Loader + I2_S => TAMAMLANDI

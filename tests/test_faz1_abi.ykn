@@ -1,0 +1,48 @@
+# Test Faz 1: Core Register & ABI Isolation
+ice_aktar "std/io.ykn";
+
+isv topla_3(a: tamsayi, b: tamsayi, c: tamsayi) -> tamsayi {
+    dondu a + b + c;
+}
+
+isv topla_4(a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi) -> tamsayi {
+    dondu a + b + c + d;
+}
+
+isv topla_2(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 1 ABI Testi Basliyor...\n".ptr);
+
+    # 1. 2-arg dynamic call
+    degisken p2: tamsayi = topla_2 as tamsayi;
+    degisken r2: tamsayi = ykn_dyn_call_ptr_i64(p2, 10, 25);
+    eger r2 != 35 ise {
+        ekrana_yaz("HATA: 2-arg dynamic call basarisiz!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("2-arg dynamic call BASARILI (35)\n".ptr);
+
+    # 2. 3-arg dynamic call
+    degisken p3: tamsayi = topla_3 as tamsayi;
+    degisken r3: tamsayi = ykn_dyn_call_ptr_3(p3, 100, 200, 300);
+    eger r3 != 600 ise {
+        ekrana_yaz("HATA: 3-arg dynamic call basarisiz!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("3-arg dynamic call BASARILI (600)\n".ptr);
+
+    # 3. 4-arg dynamic call
+    degisken p4: tamsayi = topla_4 as tamsayi;
+    degisken r4: tamsayi = ykn_dyn_call_ptr_4(p4, 1, 2, 3, 4);
+    eger r4 != 10 ise {
+        ekrana_yaz("HATA: 4-arg dynamic call basarisiz!\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("4-arg dynamic call BASARILI (10)\n".ptr);
+
+    ekrana_yaz("FAZ 1 ABI TESTI TAMAMLANDI!\n".ptr);
+    dondu 0;
+}

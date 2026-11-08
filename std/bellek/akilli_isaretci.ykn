@@ -1,0 +1,231 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - Arc Smart Pointer
+# ============================================================
+#
+# Arc handle'i caller-owned bir yapi olarak kullanilir. YKN native ABI'si
+# struct-return icin yalnizca scalar RAX tasidigi icin bu modulde yeni/kopya
+# islemleri output parameter kullanir; boylece handle stack'te kalir.
+#
+# Yasam dongusu:
+#   Arc a;
+#   arc_yeni(&a, boyut) == 0
+#   arc_kopyala(&a, &b) == 0
+#   arc_birak(&b); arc_birak(&a)
+#
+# `arc_birak` handle'i free'den once sifirlar. Ayni handle ikinci kez
+# birakilirse serbest bloga erismeden deterministik hata doner.
+# Refcount degisiklikleri x86-64 lock xadd intrinsic'iyle atomiktir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+harici isv ykn_atomic_inc_i64(ptr: *tamsayi) -> tamsayi;
+harici isv ykn_atomic_dec_i64(ptr: *tamsayi) -> tamsayi;
+harici isv ykn_atomic_load_i64(ptr: *tamsayi) -> tamsayi;
+harici isv ykn_atomic_store_i64(ptr: *tamsayi, deger: tamsayi) -> tamsayi;
+
+degisken ARC_BASARILI: tamsayi = 0;
+degisken ARC_HATA_HANDLE_NULL: tamsayi = -1;
+degisken ARC_HATA_KONTROL_NULL: tamsayi = -2;
+degisken ARC_HATA_REF_UNDERFLOW: tamsayi = -3;
+degisken ARC_HATA_OOM: tamsayi = -4;
+degisken ARC_MAKS_PAYLOAD: tamsayi = 67108864;
+degisken ARC_SON_BIRAKILDI: tamsayi = 1;
+
+yapi ArcKontrol {
+    veri_ptr: *u8;
+    ref_sayisi_ptr: *tamsayi;
+}
+
+yapi Arc {
+    kontrol_ptr: *ArcKontrol;
+}
+
+isv arc_ref_ilklendir(ptr: *tamsayi) {
+    eger ptr != 0 ise { ptr[0] = 1; }
+}
+
+isv arc_kontrol_olustur(kontrol: *ArcKontrol, veri: *u8, ref_ptr: *tamsayi) {
+    eger kontrol == 0 ise { dondu; }
+    kontrol.veri_ptr = veri;
+    kontrol.ref_sayisi_ptr = ref_ptr;
+    ref_ptr[0] = 1;
+}
+
+# Caller-owned handle'i gercek allocation ile baslatir.
+# 0 = basarili, ARC_HATA_OOM = partial allocation temizlenerek basarisiz.
+isv arc_yeni(a: *Arc, boyut: tamsayi) -> tamsayi {
+    eger a == 0 ise { dondu -1; }
+    # Başarısız her oluşturma yolu caller-owned handle'i de temiz bırakır.
+    a.kontrol_ptr = 0;
+    # Kritik kaynak sınırı global sembol çözümlemesine bağlı değildir:
+    # 64 MiB üstü istek hiçbir allocation yapmadan deterministik -4 döner.
+    eger boyut > 67108864 ise { dondu -4; }
+
+    degisken kontrol: *ArcKontrol = bellek_tahsis_et(16);
+    eger kontrol == 0 ise { dondu ARC_HATA_OOM; }
+
+    degisken gercek_boyut: tamsayi = boyut;
+    eger gercek_boyut <= 0 ise { gercek_boyut = 1; }
+    degisken veri: *u8 = bellek_tahsis_et(gercek_boyut);
+    eger veri == 0 ise {
+        os_bellek_serbest(kontrol);
+        dondu ARC_HATA_OOM;
+    }
+
+    degisken ref_ptr: *tamsayi = bellek_tahsis_et(8);
+    eger ref_ptr == 0 ise {
+        os_bellek_serbest(veri);
+        os_bellek_serbest(kontrol);
+        dondu ARC_HATA_OOM;
+    }
+
+    arc_kontrol_olustur(kontrol, veri, ref_ptr);
+    a.kontrol_ptr = kontrol;
+    dondu 0;
+}
+
+# Aktif kaynak handle'dan hedef caller-owned handle'e clone yapar.
+isv arc_kopyala(kaynak: *Arc, hedef: *Arc) -> tamsayi {
+    eger hedef == 0 ise { dondu -1; }
+    hedef.kontrol_ptr = 0;
+    eger kaynak == 0 veya kaynak.kontrol_ptr == 0 ise { dondu -2; }
+
+    degisken kontrol: *ArcKontrol = kaynak.kontrol_ptr;
+    eger kontrol.ref_sayisi_ptr == 0 veya kontrol.veri_ptr == 0 ise { dondu -2; }
+    degisken mevcut: tamsayi = ykn_atomic_load_i64(kontrol.ref_sayisi_ptr);
+    # Iki ayri guard kullanilir: overflow siniri, short-circuit lowering'a
+    # baglanmadan fail-closed olarak reddedilmelidir.
+    eger mevcut <= 0 ise { dondu -3; }
+    eger mevcut >= 0x7fffffffffffffff ise { dondu -3; }
+
+    degisken yeni: tamsayi = ykn_atomic_inc_i64(kontrol.ref_sayisi_ptr);
+    eger yeni <= mevcut veya yeni <= 0 ise {
+        ykn_atomic_dec_i64(kontrol.ref_sayisi_ptr);
+        dondu -3;
+    }
+    hedef.kontrol_ptr = kontrol;
+    dondu 0;
+}
+
+# Handle'i tuketir. Son strong reference'ta payload/ref/control serbest kalir.
+isv arc_birak(a: *Arc) -> tamsayi {
+    eger a == 0 ise { dondu -1; }
+    eger a.kontrol_ptr == 0 ise { dondu -2; }
+
+    degisken kontrol: *ArcKontrol = a.kontrol_ptr;
+    degisken veri: *u8 = kontrol.veri_ptr;
+    degisken ref_ptr: *tamsayi = kontrol.ref_sayisi_ptr;
+    eger ref_ptr == 0 veya veri == 0 ise {
+        a.kontrol_ptr = 0;
+        dondu -2;
+    }
+
+    degisken yeni_ref: tamsayi = ykn_atomic_dec_i64(ref_ptr);
+    # Atomic decrement sıfırdan -1'e indiğinde underflow tam olarak -1'dir.
+    # Eşitlik guard'ı ayrıca negatif karşılaştırma lowering'ına güvenmez;
+    # beklenmedik daha küçük değer de fail-closed reddedilir.
+    eger yeni_ref == -1 ise {
+        ykn_atomic_inc_i64(ref_ptr);
+        dondu -3;
+    }
+    eger yeni_ref < -1 ise {
+        ykn_atomic_inc_i64(ref_ptr);
+        dondu -3;
+    }
+
+    a.kontrol_ptr = 0;
+    eger yeni_ref > 0 ise { dondu ARC_BASARILI; }
+
+    os_bellek_serbest(veri);
+    os_bellek_serbest(ref_ptr);
+    os_bellek_serbest(kontrol);
+    dondu ARC_SON_BIRAKILDI;
+}
+
+isv arc_gecerli_mi(a: *Arc) -> tamsayi {
+    eger a == 0 veya a.kontrol_ptr == 0 ise { dondu 0; }
+    eger a.kontrol_ptr.ref_sayisi_ptr == 0 veya a.kontrol_ptr.veri_ptr == 0 ise { dondu 0; }
+    eger ykn_atomic_load_i64(a.kontrol_ptr.ref_sayisi_ptr) <= 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# ============================================================
+# Kutu (Box<T>) - Tek Sahipli Heap Isaretcisi
+# ============================================================
+yapi Kutu {
+    veri_ptr: *u8;
+    boyut: tamsayi;
+}
+
+isv kutu_yeni(k: *Kutu, boyut: tamsayi) -> tamsayi {
+    eger k == 0 ise { dondu -1; }
+    degisken gercek_b: tamsayi = boyut;
+    eger gercek_b <= 0 ise { gercek_b = 8; }
+    degisken ptr: *u8 = bellek_tahsis_et(gercek_b);
+    eger ptr == 0 ise { dondu -4; }
+    k.veri_ptr = ptr;
+    k.boyut = gercek_b;
+    dondu 0;
+}
+
+isv kutu_birak(k: *Kutu) -> tamsayi {
+    eger k == 0 veya k.veri_ptr == 0 ise { dondu -1; }
+    os_bellek_serbest(k.veri_ptr);
+    k.veri_ptr = 0;
+    k.boyut = 0;
+    dondu 0;
+}
+
+# ============================================================
+# Rc (SayacliRef<T>) - Referans Sayimli Isaretci
+# ============================================================
+yapi RcKontrol {
+    veri_ptr: *u8;
+    ref_sayisi: tamsayi;
+}
+
+yapi Rc {
+    kontrol_ptr: *RcKontrol;
+}
+
+isv rc_yeni(r: *Rc, boyut: tamsayi) -> tamsayi {
+    eger r == 0 ise { dondu -1; }
+    r.kontrol_ptr = 0;
+    degisken ctrl: *RcKontrol = bellek_tahsis_et(16);
+    eger ctrl == 0 ise { dondu -4; }
+    degisken b: tamsayi = boyut;
+    eger b <= 0 ise { b = 8; }
+    degisken v: *u8 = bellek_tahsis_et(b);
+    eger v == 0 ise {
+        os_bellek_serbest(ctrl);
+        dondu -4;
+    }
+    ctrl.veri_ptr = v;
+    ctrl.ref_sayisi = 1;
+    r.kontrol_ptr = ctrl;
+    dondu 0;
+}
+
+isv rc_kopyala(kaynak: *Rc, hedef: *Rc) -> tamsayi {
+    eger hedef == 0 ise { dondu -1; }
+    hedef.kontrol_ptr = 0;
+    eger kaynak == 0 veya kaynak.kontrol_ptr == 0 ise { dondu -2; }
+    degisken ctrl: *RcKontrol = kaynak.kontrol_ptr;
+    ctrl.ref_sayisi = ctrl.ref_sayisi + 1;
+    hedef.kontrol_ptr = ctrl;
+    dondu 0;
+}
+
+isv rc_birak(r: *Rc) -> tamsayi {
+    eger r == 0 veya r.kontrol_ptr == 0 ise { dondu -1; }
+    degisken ctrl: *RcKontrol = r.kontrol_ptr;
+    r.kontrol_ptr = 0;
+    ctrl.ref_sayisi = ctrl.ref_sayisi - 1;
+    eger ctrl.ref_sayisi <= 0 ise {
+        os_bellek_serbest(ctrl.veri_ptr);
+        os_bellek_serbest(ctrl);
+        dondu 1; # Son birakildi
+    }
+    dondu 0; # Referanslar hala var
+}

@@ -1,0 +1,66 @@
+# ============================================================
+# src/codegen/debug_dwarf.ykn
+# FAZ 36: Linux & macOS DWARF 5 Sembol Tablosu Ureticisi
+# GDB ve LLDB icin .debug_line ve .debug_info kesitlerini uretir.
+# ============================================================
+
+# DWARF Standart Opcode Sabitleri
+degisken DW_LNS_copy             = 1;
+degisken DW_LNS_advance_pc       = 2;
+degisken DW_LNS_advance_line     = 3;
+degisken DW_LNS_set_file         = 4;
+degisken DW_LNS_set_column       = 5;
+degisken DW_LNS_negate_stmt      = 6;
+degisken DW_LNS_set_basic_block  = 7;
+degisken DW_LNS_const_add_pc     = 8;
+degisken DW_LNS_fixed_advance_pc = 9;
+
+# DWARF Tag Sabitleri
+degisken DW_TAG_compile_unit     = 17;
+degisken DW_TAG_subprogram       = 46;
+degisken DW_TAG_variable         = 52;
+degisken DW_TAG_base_type        = 36;
+
+yapi DwarfLineAkisi {
+    tampon:       *u8;
+    kapasite:     tamsayi;
+    kullanilan:   tamsayi;
+    guncel_satir: tamsayi;
+    guncel_pc:    tamsayi;
+}
+
+isv dwarf_line_olustur(kapasite_bayt: tamsayi) -> *DwarfLineAkisi {
+    degisken d: *DwarfLineAkisi = bellek_tahsis_et(40);
+    d.tampon = bellek_tahsis_et(kapasite_bayt);
+    d.kapasite = kapasite_bayt;
+    d.kullanilan = 0;
+    d.guncel_satir = 1;
+    d.guncel_pc = 0;
+
+    # DWARF 5 Line Header baslangic baytlari
+    d.tampon[0] = 5; # DWARF version 5
+    d.tampon[1] = 0;
+    d.tampon[2] = 8; # 64-bit address size
+    d.tampon[3] = 0; # Segment selector
+    d.kullanilan = 4;
+
+    dondu d;
+}
+
+isv dwarf_line_ilerle(d: *DwarfLineAkisi, yeni_satir: tamsayi, yeni_pc: tamsayi) {
+    degisken satir_farki: tamsayi = yeni_satir - d.guncel_satir;
+    degisken pc_farki: tamsayi = yeni_pc - d.guncel_pc;
+
+    eger (d.kullanilan + 4) <= d.kapasite ise {
+        # DW_LNS_advance_line
+        d.tampon[d.kullanilan] = DW_LNS_advance_line;
+        d.tampon[d.kullanilan + 1] = (satir_farki & 127);
+        # DW_LNS_copy
+        d.tampon[d.kullanilan + 2] = DW_LNS_copy;
+        d.kullanilan = d.kullanilan + 3;
+
+        d.guncel_satir = yeni_satir;
+        d.guncel_pc = yeni_pc;
+    }
+}
+

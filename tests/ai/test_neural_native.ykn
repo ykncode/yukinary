@@ -1,0 +1,63 @@
+# ============================================================
+# tests/ai/test_neural_native.ykn
+# YUKINARY KENDISI MODEL (Neural-Symbolic Zero-Prompt Test)
+# SIFIR HARICI MODEL, SIFIR PYTHON, SIFIR #prompt DIREKTIFI!
+# ============================================================
+
+ice_aktar "std/ai/semantik.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("YUKINARY NATIVE NEURAL AI BASLATILIYOR...\n".ptr);
+
+    # Test 1: Anlamsal Benzerlik (Semantic Similarity)
+    degisken m1: *u8 = "kargo takip sorgulama".ptr;
+    degisken m2: *u8 = "kargo sorgulama".ptr;
+    degisken m3: *u8 = "sifremi unuttum parola".ptr;
+
+    degisken sim_yakin: tamsayi = semantik_benzerlik(m1, 21, m2, 15);
+    degisken sim_uzak: tamsayi = semantik_benzerlik(m1, 21, m3, 22);
+
+    ekrana_yaz("TEST 1: Anlamsal Yakinlik Olcumu...\n".ptr);
+    ekrana_yaz("sim_yakin = ".ptr); sayi_yaz(sim_yakin); ekrana_yaz("\n".ptr);
+    ekrana_yaz("sim_uzak  = ".ptr); sayi_yaz(sim_uzak);  ekrana_yaz("\n".ptr);
+    eger sim_yakin <= sim_uzak ise {
+        ekrana_yaz("HATA: Yakin kavram skoru uzak kavramdan kucuk cikti!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("OK: Yakin kavram (kargo) skoru uzak kavramdan (sifre) yuksek cikti!\n".ptr);
+
+    # Test 2: Zero-Prompt Dogal Dil Siniflandirma (Niyet Tahmini)
+    ekrana_yaz("TEST 2: Zero-Prompt Niyet Siniflandirma...\n".ptr);
+    degisken musteri_mesaji: *u8 = "urun cok kotu geldi parami derhal iade edin".ptr;
+    degisken musteri_len: tamsayi = 43;
+
+    # 4 Farkli Kategori Adayi
+    degisken aday0: *u8 = "merhaba gunaydin selamlama".ptr;
+    degisken aday1: *u8 = "para iadesi urun degisimi talep".ptr;
+    degisken aday2: *u8 = "siparis kargo nerede takip".ptr;
+    degisken aday3: *u8 = "hesap giris sifremi unuttum".ptr;
+
+    degisken aday_dizisi: [4]*u8;
+    aday_dizisi[0] = aday0;
+    aday_dizisi[1] = aday1;
+    aday_dizisi[2] = aday2;
+    aday_dizisi[3] = aday3;
+
+    degisken uzunluk_dizisi: [4]tamsayi;
+    uzunluk_dizisi[0] = 26;
+    uzunluk_dizisi[1] = 31;
+    uzunluk_dizisi[2] = 26;
+    uzunluk_dizisi[3] = 27;
+
+    degisken secilen_kategori: tamsayi = semantik_siniflandir(musteri_mesaji, musteri_len,
+                                                             aday_dizisi, uzunluk_dizisi, 4);
+
+    eger secilen_kategori != 1 ise {
+        ekrana_yaz("HATA: Model yanlis kategori secti!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("OK: Model #prompt OLMADAN 'para iadesi' kategorisini basariyla secti!\n".ptr);
+    ekrana_yaz("PASS: YUKINARY LANGUAGE-AS-A-MODEL IS WORKING NATIVELY!\n".ptr);
+    dondu 0;
+}

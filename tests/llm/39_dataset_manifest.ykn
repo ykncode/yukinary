@@ -1,0 +1,49 @@
+# Saf YKN YKLM provenance/license ve split leakage acceptance.
+ice_aktar "std/ai/dataset_manifest.ykn";
+
+degisken DATA_BYTES: tamsayi = 32768;
+
+isv ana() -> tamsayi {
+    degisken yol: *u8 = "build/test-work/ykds-manifest.yklm".ptr;
+    degisken m: *YKNDatasetManifest = ykn_dataset_manifest_olustur();
+    eger m == 0 ise { ekrana_yaz("FAIL: manifest alloc\n".ptr); dondu 1; }
+    eger ykn_dataset_manifest_append(m, 41, 0, "src/a.ykn".ptr, "MIT".ptr, "abcd".ptr, 4) == 0 ise {
+        ekrana_yaz("FAIL: manifest append1\n".ptr);
+        dondu 1;
+    }
+    eger ykn_dataset_manifest_append(m, 42, 1, "src/b.ykn".ptr, "Apache-2.0".ptr, "efgh".ptr, 4) == 0 ise {
+        ekrana_yaz("FAIL: manifest append2\n".ptr);
+        dondu 1;
+    }
+    eger ykn_dataset_manifest_kapat(m, yol) <= 0 ise {
+        ekrana_yaz("FAIL: manifest close\n".ptr);
+        dondu 1;
+    }
+    degisken data: *u8 = bellek_tahsis_et(DATA_BYTES);
+    eger data == 0 ise { ekrana_yaz("FAIL: manifest buffer\n".ptr); dondu 2; }
+    degisken size: tamsayi = dosya_oku(yol, data, DATA_BYTES);
+    eger size <= 0 veya ykn_dataset_manifest_dogrula(data, size) == 0 ise {
+        ekrana_yaz("FAIL: manifest read validate\n".ptr);
+        dondu 3;
+    }
+    eger data[0] != 89 veya data[1] != 75 veya data[2] != 76 veya data[3] != 77 veya
+       ykn_ds_buf_u32_oku(data, 4) != 1 veya ykn_ds_buf_u32_oku(data, 8) != 2 veya
+       ykn_ds_buf_u32_oku(data, 12) != 16 ise {
+        ekrana_yaz("FAIL: manifest header\n".ptr);
+        dondu 4;
+    }
+    degisken leak: *YKNDatasetManifest = ykn_dataset_manifest_olustur();
+    eger leak == 0 veya ykn_dataset_manifest_append(leak, 51, 0, "src/c.ykn".ptr, "MIT".ptr, "same".ptr, 4) == 0 veya
+       ykn_dataset_manifest_append(leak, 52, 1, "src/d.ykn".ptr, "MIT".ptr, "same".ptr, 4) == 0 veya
+       ykn_dataset_manifest_kapat(leak, "build/test-work/ykds-manifest-leak.yklm".ptr) != 0 ise {
+        ekrana_yaz("FAIL: cross-split leakage accepted\n".ptr);
+        dondu 5;
+    }
+    eger ykn_dataset_manifest_append(m, 53, 9, "src/e.ykn".ptr, "MIT".ptr, "new".ptr, 3) != 0 veya
+       ykn_dataset_manifest_append(m, 54, 0, 0, "MIT".ptr, "new".ptr, 3) != 0 ise {
+        ekrana_yaz("FAIL: invalid manifest record accepted\n".ptr);
+        dondu 6;
+    }
+    ekrana_yaz("YKN_DATASET_MANIFEST_PASS\n".ptr);
+    dondu 0;
+}

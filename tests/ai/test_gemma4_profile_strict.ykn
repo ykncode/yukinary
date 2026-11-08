@@ -1,0 +1,203 @@
+# Strict preflight for the real Gemma-4 GGUF architecture profile.
+# This validates every layer's parsed geometry/pattern, not transformer inference.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 {
+        rakamlar[adet] = 48 + n % 10;
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv katman_tensor_adi_yaz(katman: tamsayi, suffix: *u8, cikti: *u8) {
+    degisken pos: tamsayi = 0;
+    cikti[pos] = 98; pos = pos + 1;
+    cikti[pos] = 108; pos = pos + 1;
+    cikti[pos] = 107; pos = pos + 1;
+    cikti[pos] = 46; pos = pos + 1;
+    degisken rakamlar: [20]u8;
+    degisken adet: tamsayi = 0;
+    degisken n: tamsayi = katman;
+    eger n == 0 { rakamlar[0] = 48; adet = 1; }
+    yoksa { dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; } }
+    dongu adet > 0 { adet = adet - 1; cikti[pos] = rakamlar[adet]; pos = pos + 1; }
+    degisken i: tamsayi = 0;
+    dongu suffix[i] != 0 { cikti[pos] = suffix[i]; pos = pos + 1; i = i + 1; }
+    cikti[pos] = 0;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken path: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle(path, durum) == 0 {
+        ekrana_yaz("GEMMA4_PROFILE_FAIL load error=".ptr);
+        sayi_yaz(GGUF_SON_HATA); ekrana_yaz("\n".ptr); ExitProcess(2);
+    }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    eger profile == 0 or durum->mimari_adi == 0 or durum->katman_sayisi != 42 or
+       profile->sliding_window_pattern_count != durum->katman_sayisi or
+       profile->shared_kv_layers < 0 or profile->shared_kv_layers >= durum->katman_sayisi or
+       profile->logit_softcap_q16 <= 0 or profile->per_layer_input_length <= 0 {
+        ekrana_yaz("GEMMA4_PROFILE_FAIL invalid profile metadata\n".ptr); ExitProcess(3);
+    }
+
+    degisken per_layer_tokens: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_token_embd.weight".ptr);
+    degisken per_layer_model: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_model_proj.weight".ptr);
+    degisken per_layer_model_norm: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "per_layer_proj_norm.weight".ptr);
+    degisken rope_freqs: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum, "rope_freqs.weight".ptr);
+    eger per_layer_tokens == 0 or per_layer_model == 0 or per_layer_model_norm == 0 or
+       rope_freqs == 0 or rope_freqs->dim_0 != profile->full_key_length / 2 or
+       rope_freqs->ggml_type != GGML_TYPE_F32 or
+       per_layer_tokens->dim_0 != profile->per_layer_input_length * durum->katman_sayisi or
+       per_layer_tokens->dim_1 != durum->vocab_boyutu or
+       per_layer_model->dim_0 != durum->gizli_boyut or
+       per_layer_model->dim_1 != profile->per_layer_input_length * durum->katman_sayisi or
+       per_layer_model_norm->dim_0 != profile->per_layer_input_length {
+        ekrana_yaz("GEMMA4_PROFILE_FAIL global PLE tokens=".ptr); sayi_yaz(per_layer_tokens != 0);
+        ekrana_yaz(" model=".ptr); sayi_yaz(per_layer_model != 0);
+        ekrana_yaz(" norm=".ptr); sayi_yaz(per_layer_model_norm != 0);
+        eger per_layer_tokens != 0 { ekrana_yaz(" td=".ptr); sayi_yaz(per_layer_tokens->dim_0); ekrana_yaz("x".ptr); sayi_yaz(per_layer_tokens->dim_1); }
+        eger per_layer_model != 0 { ekrana_yaz(" md=".ptr); sayi_yaz(per_layer_model->dim_0); ekrana_yaz("x".ptr); sayi_yaz(per_layer_model->dim_1); }
+        eger per_layer_model_norm != 0 { ekrana_yaz(" nd=".ptr); sayi_yaz(per_layer_model_norm->dim_0); }
+        ekrana_yaz("\n".ptr); ExitProcess(8);
+    }
+    degisken swa_count: tamsayi = 0;
+    degisken full_count: tamsayi = 0;
+    degisken kv_writer_count: tamsayi = 0;
+    degisken kv_reuse_count: tamsayi = 0;
+    degisken layer: tamsayi = 0;
+    degisken q_width: [1]tamsayi;
+    degisken kv_width: [1]tamsayi;
+    degisken head_width: [1]tamsayi;
+    dongu layer < durum->katman_sayisi {
+        degisken swa: tamsayi = gguf_gemma4_katman_swa_mi(durum, layer);
+        degisken writes_kv: tamsayi = gguf_gemma4_kv_yazan_katman_mi(durum, layer);
+        degisken kv_source: tamsayi = gguf_gemma4_kv_kaynak_katman(durum, layer);
+        eger swa < 0 or writes_kv < 0 or kv_source < 0 or
+           gguf_gemma4_katman_swa_mi(durum, kv_source) != swa or
+           gguf_gemma4_katman_geometrisi(durum, layer, q_width, kv_width, head_width) != 1 {
+            ekrana_yaz("GEMMA4_PROFILE_FAIL layer=".ptr); sayi_yaz(layer);
+            ekrana_yaz(" invalid geometry/mode\n".ptr); ExitProcess(4);
+        }
+        eger q_width[0] != durum->kafa_sayisi * head_width[0] or
+           kv_width[0] != durum->kv_kafa_sayisi * head_width[0] or
+           (swa == 1 and head_width[0] != profile->swa_key_length) or
+           (swa == 0 and head_width[0] != profile->full_key_length) {
+            ekrana_yaz("GEMMA4_PROFILE_FAIL layer=".ptr); sayi_yaz(layer);
+            ekrana_yaz(" inconsistent width\n".ptr); ExitProcess(5);
+        }
+        degisken q_name: [128]u8;
+        degisken k_name: [128]u8;
+        degisken v_name: [128]u8;
+        degisken out_name: [128]u8;
+        degisken qnorm_name: [128]u8;
+        degisken attn_norm_name: [128]u8;
+        degisken attn_post_name: [128]u8;
+        degisken ffn_post_name: [128]u8;
+        degisken per_layer_gate_name: [128]u8;
+        degisken per_layer_proj_name: [128]u8;
+        degisken per_layer_norm_name: [128]u8;
+
+        katman_tensor_adi_yaz(layer, ".attn_q.weight".ptr, q_name);
+        katman_tensor_adi_yaz(layer, ".attn_k.weight".ptr, k_name);
+        katman_tensor_adi_yaz(layer, ".attn_v.weight".ptr, v_name);
+        katman_tensor_adi_yaz(layer, ".attn_output.weight".ptr, out_name);
+        katman_tensor_adi_yaz(layer, ".attn_q_norm.weight".ptr, qnorm_name);
+        katman_tensor_adi_yaz(layer, ".attn_norm.weight".ptr, attn_norm_name);
+        katman_tensor_adi_yaz(layer, ".post_attention_norm.weight".ptr, attn_post_name);
+        katman_tensor_adi_yaz(layer, ".post_ffw_norm.weight".ptr, ffn_post_name);
+        katman_tensor_adi_yaz(layer, ".inp_gate.weight".ptr, per_layer_gate_name);
+        katman_tensor_adi_yaz(layer, ".proj.weight".ptr, per_layer_proj_name);
+        katman_tensor_adi_yaz(layer, ".post_norm.weight".ptr, per_layer_norm_name);
+
+        degisken q_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, q_name);
+        degisken k_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, k_name);
+        degisken v_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, v_name);
+        degisken out_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, out_name);
+        degisken qnorm_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, qnorm_name);
+        degisken attn_norm_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, attn_norm_name);
+        degisken attn_post_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, attn_post_name);
+        degisken ffn_post_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, ffn_post_name);
+        degisken per_layer_gate_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, per_layer_gate_name);
+        degisken per_layer_proj_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, per_layer_proj_name);
+        degisken per_layer_norm_tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, per_layer_norm_name);
+
+        eger q_tensor == 0 or k_tensor == 0 or out_tensor == 0 or qnorm_tensor == 0 or attn_norm_tensor == 0 or
+           q_tensor->dim_0 != durum->gizli_boyut or q_tensor->dim_1 != q_width[0] or
+           k_tensor->dim_0 != durum->gizli_boyut or k_tensor->dim_1 != kv_width[0] or
+           out_tensor->dim_0 != q_width[0] or out_tensor->dim_1 != durum->gizli_boyut or
+           qnorm_tensor->dim_0 != head_width[0] or
+           attn_norm_tensor->dim_0 != durum->gizli_boyut or
+           attn_post_tensor == 0 or attn_post_tensor->dim_0 != durum->gizli_boyut or
+           ffn_post_tensor == 0 or ffn_post_tensor->dim_0 != durum->gizli_boyut or
+           per_layer_gate_tensor == 0 or per_layer_proj_tensor == 0 or
+           per_layer_norm_tensor == 0 or per_layer_norm_tensor->dim_0 != durum->gizli_boyut or
+
+           (v_tensor != 0 and (v_tensor->dim_0 != durum->gizli_boyut or
+                               v_tensor->dim_1 != kv_width[0])) {
+            ekrana_yaz("GEMMA4_PROFILE_FAIL tensor layout layer=".ptr); sayi_yaz(layer);
+            ekrana_yaz(" q=".ptr); sayi_yaz(q_tensor != 0);
+            ekrana_yaz("/".ptr); eger q_tensor != 0 { sayi_yaz(q_tensor->dim_0); ekrana_yaz("x".ptr); sayi_yaz(q_tensor->dim_1); }
+            ekrana_yaz(" k=".ptr); sayi_yaz(k_tensor != 0);
+            ekrana_yaz(" o=".ptr); sayi_yaz(out_tensor != 0);
+            ekrana_yaz("/".ptr); eger out_tensor != 0 { sayi_yaz(out_tensor->dim_0); ekrana_yaz("x".ptr); sayi_yaz(out_tensor->dim_1); }
+            ekrana_yaz(" qn=".ptr); sayi_yaz(qnorm_tensor != 0);
+            ekrana_yaz("/".ptr); eger qnorm_tensor != 0 { sayi_yaz(qnorm_tensor->dim_0); }
+            ekrana_yaz(" norm=".ptr); sayi_yaz(attn_norm_tensor != 0);
+            ekrana_yaz(" ap=".ptr); sayi_yaz(attn_post_tensor != 0);
+            ekrana_yaz(" fp=".ptr); sayi_yaz(ffn_post_tensor != 0);
+            ekrana_yaz(" plg=".ptr); sayi_yaz(per_layer_gate_tensor != 0);
+            ekrana_yaz(" plp=".ptr); sayi_yaz(per_layer_proj_tensor != 0);
+            ekrana_yaz(" pln=".ptr); sayi_yaz(per_layer_norm_tensor != 0);
+
+            ekrana_yaz("\n".ptr); ExitProcess(7);
+        }
+        eger swa == 1 { swa_count = swa_count + 1; }
+        yoksa { full_count = full_count + 1; }
+        eger writes_kv == 1 { kv_writer_count = kv_writer_count + 1; }
+        yoksa { kv_reuse_count = kv_reuse_count + 1; }
+        layer = layer + 1;
+    }
+    eger swa_count == 0 or full_count == 0 or
+       kv_writer_count != durum->katman_sayisi - profile->shared_kv_layers {
+        ekrana_yaz("GEMMA4_PROFILE_FAIL layer counts\n".ptr); ExitProcess(6);
+    }
+    ekrana_yaz("GEMMA4_PROFILE_PASS layers=".ptr); sayi_yaz(durum->katman_sayisi);
+    ekrana_yaz(" swa=".ptr); sayi_yaz(swa_count);
+    ekrana_yaz(" global=".ptr); sayi_yaz(full_count);
+    ekrana_yaz(" kv_writers=".ptr); sayi_yaz(kv_writer_count);
+    ekrana_yaz(" kv_reuse=".ptr); sayi_yaz(kv_reuse_count);
+    ekrana_yaz(" shared_kv=".ptr); sayi_yaz(profile->shared_kv_layers);
+    ekrana_yaz(" softcap_q16=".ptr); sayi_yaz(profile->logit_softcap_q16);
+    ekrana_yaz(" per_layer_input=".ptr); sayi_yaz(profile->per_layer_input_length);
+    ekrana_yaz(" swa_window=".ptr); sayi_yaz(profile->swa_window);
+    ekrana_yaz(" experts=".ptr); sayi_yaz(durum->expert_sayisi);
+    ekrana_yaz(" PLE=verified\n".ptr);
+    ekrana_yaz("\nPROFILE_PREFLIGHT_ONLY; NO_INFERENCE\n".ptr);
+    dondu 0;
+}

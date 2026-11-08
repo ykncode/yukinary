@@ -1,0 +1,34 @@
+﻿ice_aktar "lexer.ykn";
+ice_aktar "ast.ykn";
+ice_aktar "parser.ykn";
+ice_aktar "macros.ykn";
+ice_aktar "typechecker.ykn";
+ice_aktar "generics.ykn";
+ice_aktar "optimizer.ykn";
+ice_aktar "codegen.ykn";
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) {}
+
+isv yukinary_derle(kaynak_kod: *u8, kod_uzunlugu: tamsayi, cikti_dosyasi: *u8) {
+    ekrana_yaz("Derleyici\n".ptr);
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger arguman_sayisi < 2 ise {
+        ekrana_yaz("Kullanim\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("Arguman kontrolu basarili.\n".ptr);
+    degisken kaynak_dosya: *u8 = argumanlar[1];
+    ekrana_yaz("Bellek tahsis ediliyor...\n".ptr);
+    degisken kod_buffer: *u8 = bellek_tahsis_et(2097152);
+    eger kod_buffer == 0 ise {
+        ekrana_yaz("HATA: VirtualAlloc null!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("Bellek OK\n".ptr);
+    dondu 0;
+}

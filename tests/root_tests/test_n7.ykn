@@ -1,0 +1,26 @@
+﻿yapi T {
+    f0: tamsayi;
+    f1: tamsayi;
+    f2: tamsayi;
+    f3: tamsayi;
+    f4: tamsayi;
+    f5: tamsayi;
+    f6: tamsayi;
+}
+isv doldur(s: *T) {
+    s.f0 = 10;
+    s.f1 = 20;
+    s.f2 = 30;
+    s.f3 = 40;
+    s.f4 = 50;
+    s.f5 = 60;
+    s.f6 = 70;
+}
+isv topla(s: *T) -> tamsayi {
+    dondu s.f0 + s.f1 + s.f2 + s.f3 + s.f4 + s.f5 + s.f6;
+}
+isv ana() -> tamsayi {
+    degisken st: T;
+    doldur(&st);
+    dondu topla(&st);
+}

@@ -1,0 +1,50 @@
+# ============================================================
+# tests/codegen/test_dynamic_frame.ykn
+# FAZ 8 Dogrulama: Kucuk fonksiyonlarda dinamik stack frame
+# ============================================================
+
+harici isv ExitProcess(uExitCode: tamsayi);
+harici isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi;
+harici isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToWrite: tamsayi, lpNumberOfBytesWritten: *tamsayi, lpOverlapped: tamsayi) -> tamsayi;
+
+isv konsol_yaz(metin: *u8, uzunluk: tamsayi) {
+    degisken stdout_handle: tamsayi = GetStdHandle(0 - 11);
+    degisken yazilan: tamsayi = 0;
+    WriteFile(stdout_handle, metin, uzunluk, &yazilan, 0);
+}
+
+isv kucuk_fonk(x: tamsayi, y: tamsayi) -> tamsayi {
+    degisken a: tamsayi = x + 10;
+    degisken b: tamsayi = y * 2;
+    dondu a + b;
+}
+
+isv derin_ozyineleme(n: tamsayi) -> tamsayi {
+    eger n <= 0 ise { dondu 0; }
+    dondu 1 + derin_ozyineleme(n - 1);
+}
+
+isv ana() -> tamsayi {
+    konsol_yaz("=== TEST DINAMIK STACK FRAME ===\n".ptr, 33);
+    degisken r: tamsayi = kucuk_fonk(5, 7);
+    eger r == 29 {
+        konsol_yaz("[OK] Kucuk fonksiyon calisti: 29\n".ptr, 33);
+    } yoksa {
+        konsol_yaz("[HATA] Kucuk fonksiyon hatali!\n".ptr, 31);
+        ExitProcess(1);
+    }
+
+    # 10,000 derinlikte ozyineleme - 8KB sabit frame ile 80MB stack ister ve patlardi!
+    # Kucuk dinamik frame ile guvenle calisir.
+    degisken ozy: tamsayi = derin_ozyineleme(5000);
+    eger ozy == 5000 {
+        konsol_yaz("[OK] Derin ozyineleme (5000 cagri) dinamik frame ile basarili\n".ptr, 62);
+    } yoksa {
+        konsol_yaz("[HATA] Derin ozyineleme hatali!\n".ptr, 31);
+        ExitProcess(2);
+    }
+
+    konsol_yaz("TEST DINAMIK FRAME: BASARILI\n".ptr, 29);
+    ExitProcess(0);
+    dondu 0;
+}

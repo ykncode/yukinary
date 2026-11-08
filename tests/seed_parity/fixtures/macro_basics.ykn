@@ -1,0 +1,22 @@
+# Seed Parity Fixture: macro_basics.ykn
+# Test: macro tanımlama ve çağrısı
+makro ikikat(x) { x + x }
+makro maks(a, b) { eger a > b ise { a } yoksa { b } }
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken r: tamsayi = ikikat(21);
+    eger r == 42 ise {
+        ekrana_yaz("MACRO_BASICS: ikikat OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("MACRO_BASICS: ikikat FAILED\n".ptr);
+        dondu 1;
+    }
+    degisken m: tamsayi = maks(10, 20);
+    eger m == 20 ise {
+        ekrana_yaz("MACRO_BASICS: maks OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("MACRO_BASICS: maks FAILED\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
+}

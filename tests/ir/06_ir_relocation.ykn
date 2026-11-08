@@ -1,0 +1,82 @@
+# IR x86-64 CALL rel32 relocation fixture.
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+ice_aktar "../../src/mir.ykn";
+ice_aktar "../../src/ir.ykn";
+ice_aktar "../../src/codegen/x86_emit.ykn";
+ice_aktar "../../src/ir_codegen_x64.ykn";
+
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+isv ana() -> tamsayi {
+    degisken motor: *IrMotoru = ir_motoru_olustur(1048576);
+    degisken kod: *MakineKoduArenasi = bellek_tahsis_et(64);
+    eger motor == 0 veya kod == 0 ise { ekrana_yaz("FAIL: alloc\n".ptr); dondu 1; }
+    kod.bellek = bellek_tahsis_et(4096);
+    kod.kapasite = 4096;
+    kod.kullanilan = 0;
+    eger kod.bellek == 0 ise { ekrana_yaz("FAIL: code arena\n".ptr); dondu 1; }
+
+    # İlk fonksiyon ikinciyi ileri referansla çağırır.
+    degisken ilk: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 1001);
+    degisken ret_reg: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CALL, ret_reg, 2002, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_RET, 0, ret_reg, 0, YKN_IR_TID_INT);
+
+    degisken ikinci: *IrFonksiyonu = ir_fonksiyon_baslat(motor, 2002);
+    degisken sabit_reg: tamsayi = ir_yeni_reg(motor);
+    ir_komut_ekle(motor, YKN_IR_CONST, sabit_reg, 7, 0, YKN_IR_TID_INT);
+    ir_komut_ekle(motor, YKN_IR_RET, 0, sabit_reg, 0, YKN_IR_TID_INT);
+
+    eger ir_codegen_tum_fonksiyonlar(motor, kod) != 1 veya
+       motor.relocation_sayisi != 1 veya motor.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: relocation cozumlenmedi\n".ptr);
+        dondu 1;
+    }
+    eger ilk.kod_baslangici < 0 veya ikinci.kod_baslangici <= ilk.kod_baslangici ise {
+        ekrana_yaz("FAIL: fonksiyon adresleri uretilmedi\n".ptr);
+        dondu 1;
+    }
+
+    degisken call_pos: tamsayi = 0 - 1;
+    degisken tarama: tamsayi = ilk.kod_baslangici;
+    dongu tarama < kod.kullanilan {
+        eger kod.bellek[tarama] == 232 ise { call_pos = tarama; tarama = kod.kullanilan; }
+        yoksa { tarama = tarama + 1; }
+    }
+    eger call_pos < 0 ise { ekrana_yaz("FAIL: CALL opcode bulunamadi\n".ptr); dondu 1; }
+
+    degisken rel: tamsayi = kod.bellek[call_pos + 1] +
+        kod.bellek[call_pos + 2] * 256 +
+        kod.bellek[call_pos + 3] * 65536 +
+        kod.bellek[call_pos + 4] * 16777216;
+    eger rel > 2147483647 ise { rel = rel - 4294967296; }
+    degisken beklenen: tamsayi = ikinci.kod_baslangici - (call_pos + 5);
+    eger rel != beklenen ise {
+        ekrana_yaz("FAIL: rel32 byte patch yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # Çözülmemiş sembol güvenli hata vermeli; başarı numarası döndürmemeli.
+    degisken eksik_motor: *IrMotoru = ir_motoru_olustur(65536);
+    degisken eksik_kod: *MakineKoduArenasi = bellek_tahsis_et(64);
+    eger eksik_motor == 0 veya eksik_kod == 0 ise { ekrana_yaz("FAIL: unresolved alloc\n".ptr); dondu 1; }
+    eksik_kod.bellek = bellek_tahsis_et(1024);
+    eksik_kod.kapasite = 1024;
+    eksik_kod.kullanilan = 0;
+    ir_fonksiyon_baslat(eksik_motor, 3003);
+    degisken eksik_ret: tamsayi = ir_yeni_reg(eksik_motor);
+    ir_komut_ekle(eksik_motor, YKN_IR_CALL, eksik_ret, 9999, 0, YKN_IR_TID_INT);
+    eger ir_codegen_tum_fonksiyonlar(eksik_motor, eksik_kod) != 0 veya eksik_motor.hata_sayisi == 0 ise {
+        ekrana_yaz("FAIL: unresolved sembol kabul edildi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("IR_RELOCATION_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,1016 @@
+# ============================================================
+# Yukinary (YKN) LLM Engine - BitNet 1.58b & Compile-Time AI
+# FAZ 8: Native Gömülü Yapay Zeka & GGUF v3 Model / BPE Tokenizer Entegrasyonu
+# ============================================================
+
+# Compiler-owned allocation contract is kept in this module as well as the
+# compiler entrypoint imports it. This makes direct `src/llm.ykn` consumers
+# self-contained without relying on a nested import path.
+degisken g_allocasyon_sayisi: tamsayi = 0;
+degisken g_allocasyon_fail_after: tamsayi = 0 - 1;
+degisken g_allocasyon_politikasi_aktif: tamsayi = 0;
+degisken g_llm_cli_model_yolu: *u8 = 0;
+
+isv compiler_allocasyon_kontrol() -> tamsayi {
+    eger g_allocasyon_politikasi_aktif == 1 ve
+        g_allocasyon_sayisi >= g_allocasyon_fail_after ise {
+        ekrana_yaz("HATA [E014] [ERR_OOM] [class=compiler]: Kontrollu allocation failure; derleme durduruldu.\n".ptr);
+        os_sureci_sonlandir(1);
+    }
+    g_allocasyon_sayisi = g_allocasyon_sayisi + 1;
+    dondu 1;
+}
+
+isv llm_bayt_kopyala(hedef: *u8, kaynak: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger hedef == 0 veya kaynak == 0 veya uzunluk < 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    dondu uzunluk;
+}
+
+isv compiler_tahsis_et(boyut: tamsayi) -> *u8 {
+    compiler_allocasyon_kontrol();
+    degisken ptr: *u8 = bellek_tahsis_et(boyut);
+    eger ptr == 0 ise {
+        ekrana_yaz("HATA [E014] [ERR_OOM] [class=compiler]: Bellek tahsisi basarisiz; derleme durduruldu.\n".ptr);
+        os_sureci_sonlandir(1);
+    }
+    dondu ptr;
+}
+
+ice_aktar "../std/os/common.ykn";
+ice_aktar "../std/ai/gguf_types.ykn";
+ice_aktar "../std/ai/gguf_reader.ykn";
+ice_aktar "../std/ai/gguf_loader.ykn";
+ice_aktar "../std/ai/iq2s_grid.ykn";
+ice_aktar "../std/ai/bitnet_iq2s.ykn";
+ice_aktar "../std/ai/tokenizer.ykn";
+ice_aktar "../std/ai/runtime.ykn";
+ice_aktar "../std/ai/model_loader.ykn";
+ice_aktar "../std/ai/bitnet_backend.ykn";
+ice_aktar "../std/ai/architecture_adapter.ykn";
+ice_aktar "../std/ai/attention.ykn";
+ice_aktar "../std/ai/sampler.ykn";
+ice_aktar "../std/ai/inference.ykn";
+ice_aktar "../std/ai/transformer_forward.ykn";
+ice_aktar "../std/ai/embedded_weights.ykn";
+ice_aktar "../std/ai/micro_llm.ykn";
+
+# Global model yapılandırması
+degisken g_llm_model_yolu: *u8 = 0;
+degisken g_llm_model_yuklendi: tamsayi = 0;
+degisken g_llm_model_mimarisi: tamsayi = LLM_MIMARI_BILINMIYOR;
+degisken g_llm_model_backend: tamsayi = LLM_BACKEND_BILINMIYOR;
+degisken g_llm_model_spec: LLMModelSpec;
+degisken g_llm_runtime: LLMRuntimeState;
+degisken g_llm_runtime_hazir: tamsayi = 0;
+degisken g_llm_model_loader: LLMModelLoader;
+degisken g_llm_arch_adapter: LLMArchitectureAdapter;
+degisken g_llm_transformer_icra: LLMTransformerExecution;
+
+degisken g_llm_transformer_aktif: tamsayi = 0;
+degisken g_llm_transformer_isim: [64]u8;
+degisken g_llm_forward_plan: *LLMForwardPlan = 0;
+degisken g_llm_forward_aktif: tamsayi = 0;
+# Gerçek #prompt zincirinin hangi aşamada durduğunu dışarıya taşır.
+# 1=executor/vocab hazır değil, 2=tokenizer, 3=forward, 4=decode.
+degisken g_llm_prompt_hatasi: tamsayi = 0;
+# Harici RAG context'i --llm-rag-context ile yüklenir.
+degisken g_llm_rag_context: *u8 = 0;
+degisken g_llm_rag_context_uzunlugu: tamsayi = 0;
+degisken g_llm_vocab_buffer: *u8 = 0;
+degisken g_llm_vocab_ofsetleri: *tamsayi = 0;
+degisken g_llm_vocab_uzunluklari: *tamsayi = 0;
+degisken g_llm_vocab_sayisi: tamsayi = 0;
+degisken g_llm_uretim_tokenleri: [2048]tamsayi;
+degisken g_llm_uretim_metni: [16384]u8;
+degisken g_llm_uretim_ptr: *u8 = 0;
+degisken g_llm_uretim_adedi: tamsayi = 0;
+# Gerçek model üretim üst sınırı. CLI verilmezse kullanılabilir kod
+# üretebilmek için güvenli 2048 token varsayılanı kullanılır; CLI bunu 1..2048
+# aralığında açıkça daraltabilir.
+degisken g_llm_uretim_limiti: tamsayi = 2048;
+
+# Gerçek prompt telemetry: fazlar native monotonic clock ile ölçülür.
+degisken g_llm_prompt_tokenize_ns: tamsayi = 0;
+degisken g_llm_prompt_prefill_ns: tamsayi = 0;
+degisken g_llm_prompt_decode_ns: tamsayi = 0;
+degisken g_llm_prompt_total_ns: tamsayi = 0;
+degisken g_llm_prompt_peak_rss: tamsayi = 0;
+degisken g_llm_prompt_input_tokens: tamsayi = 0;
+# 1 ise geçerli çıktı güvenli deterministik fallback'ten geldi.
+degisken g_llm_prompt_fallback: tamsayi = 0;
+# Son aktif logits buffer'ının teşhis özeti. Bu alanlar model çıktısının
+# gerçekten ayrışıp ayrışmadığını, argmax'ın yalnızca varsayılan 0'a mı
+# düştüğünü ayırmak için tutulur.
+degisken g_llm_son_logit_min: tamsayi = 0;
+degisken g_llm_son_logit_max: tamsayi = 0;
+degisken g_llm_son_logit_ilk: tamsayi = 0;
+degisken g_llm_son_logit_son: tamsayi = 0;
+degisken g_llm_son_logit_argmax: tamsayi = 0 - 1;
+degisken g_llm_prompt_ilk_token: tamsayi = 0 - 1;
+degisken g_llm_prompt_son_token: tamsayi = 0 - 1;
+
+isv llm_prompt_tokenize_ns_al() -> tamsayi { dondu g_llm_prompt_tokenize_ns; }
+isv llm_prompt_prefill_ns_al() -> tamsayi { dondu g_llm_prompt_prefill_ns; }
+isv llm_prompt_decode_ns_al() -> tamsayi { dondu g_llm_prompt_decode_ns; }
+isv llm_prompt_total_ns_al() -> tamsayi { dondu g_llm_prompt_total_ns; }
+isv llm_prompt_peak_rss_al() -> tamsayi { dondu g_llm_prompt_peak_rss; }
+isv llm_prompt_input_tokens_al() -> tamsayi { dondu g_llm_prompt_input_tokens; }
+isv llm_prompt_fallback_al() -> tamsayi { dondu g_llm_prompt_fallback; }
+isv llm_prompt_logit_min_al() -> tamsayi { dondu g_llm_son_logit_min; }
+isv llm_prompt_logit_max_al() -> tamsayi { dondu g_llm_son_logit_max; }
+isv llm_prompt_logit_ilk_al() -> tamsayi { dondu g_llm_son_logit_ilk; }
+isv llm_prompt_logit_son_al() -> tamsayi { dondu g_llm_son_logit_son; }
+isv llm_prompt_logit_argmax_al() -> tamsayi { dondu g_llm_son_logit_argmax; }
+isv llm_prompt_ilk_token_al() -> tamsayi { dondu g_llm_prompt_ilk_token; }
+isv llm_prompt_son_token_al() -> tamsayi { dondu g_llm_prompt_son_token; }
+
+degisken g_llm_token_ofsetleri: *tamsayi = 0;
+degisken g_llm_token_uzunluklari: *tamsayi = 0;
+degisken g_llm_merge_ofsetleri: *tamsayi = 0;
+degisken g_llm_merge_uzunluklari: *tamsayi = 0;
+degisken g_llm_merge_sayisi: tamsayi = 0;
+degisken g_llm_prompt_tokenleri: [4096]tamsayi;
+degisken g_llm_prompt_token_adedi: tamsayi = 0;
+degisken g_llm_prompt_girdi: [4096]u8;
+# Autoregressive üretimde bir sonraki forward'ın embedding girdisi.
+degisken g_llm_son_token_id: tamsayi = 0 - 1;
+
+# Model etiketi/path'i üzerinden backend planı. Gerçek GGUF metadata'sı
+# okunduğunda aynı değer LLMModelSpec ile doğrulanır.
+isv llm_model_profili_belirle(model_adi: *u8, model_adi_uzunlugu: tamsayi) -> tamsayi {
+    g_llm_model_mimarisi = llm_runtime_mimari_bul(model_adi, model_adi_uzunlugu);
+    g_llm_model_backend = llm_runtime_backend_bul(g_llm_model_mimarisi);
+    eger g_llm_model_mimarisi == LLM_MIMARI_BILINMIYOR ise { dondu 0; }
+    dondu 1;
+}
+
+isv llm_model_mimarisi() -> tamsayi {
+    dondu g_llm_model_mimarisi;
+}
+
+isv llm_model_backendi() -> tamsayi {
+    dondu g_llm_model_backend;
+}
+
+# Prompt zincirinin son hata kodunu fonksiyon dönüşüyle taşır. Stage-1
+# global-slot ABI'sinde doğrudan global alan okumaya güvenilmez.
+isv llm_prompt_hatasi_al() -> tamsayi {
+    dondu g_llm_prompt_hatasi;
+}
+
+isv llm_rag_context_yukle(yol: *u8) -> tamsayi {
+    g_llm_rag_context = 0;
+    g_llm_rag_context_uzunlugu = 0;
+    eger yol == 0 veya yol[0] == 0 ise { dondu 1; }
+    degisken buffer: *u8 = compiler_tahsis_et(8192);
+    eger buffer == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(yol, buffer, 8191);
+    eger okunan <= 0 ise { dondu 0; }
+    # UTF-8 bayt dizileri dogrudan korunur
+    buffer[okunan] = 0;
+    g_llm_rag_context = buffer;
+    g_llm_rag_context_uzunlugu = okunan;
+    dondu 1;
+}
+
+isv llm_prompt_uretim_adedi_al() -> tamsayi {
+    dondu g_llm_uretim_adedi;
+}
+
+# Alt dize arama yardımcısı (basit case-insensitive strstr)
+isv llm_alt_metin_var_mi(kaynak: *u8, kaynak_uzn: tamsayi, aranan: *u8, aranan_uzn: tamsayi) -> tamsayi {
+    eger aranan_uzn <= 0 veya kaynak_uzn < aranan_uzn ise { dondu 0; }
+    degisken limit: tamsayi = kaynak_uzn - aranan_uzn;
+    degisken i: tamsayi = 0;
+    dongu i <= limit {
+        degisken j: tamsayi = 0;
+        degisken eslesti: tamsayi = 1;
+        dongu j < aranan_uzn {
+            degisken kc: u8 = kaynak[i + j];
+            degisken ac: u8 = aranan[j];
+            # Case-insensitive kucuk harf donusumu (ASCII A-Z)
+            eger kc >= 65 ve kc <= 90 ise { kc = kc + 32; }
+            eger ac >= 65 ve ac <= 90 ise { ac = ac + 32; }
+            eger kc != ac ise {
+                eslesti = 0;
+                durdur;
+            }
+            j = j + 1;
+        }
+        eger eslesti == 1 ise {
+            dondu 1;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Aşama 8.1: GGUF Model ve Tokenizer Yükleme Yardımcısı
+# ============================================================
+isv llm_metin_uzunlugu(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken uzunluk: tamsayi = 0;
+    dongu metin[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    dondu uzunluk;
+}
+
+# GGUF metadata'sını ortak runtime spec'ine çevirir. Dosya adı yalnızca
+# metadata eksik olduğunda ön keşif için kullanılabilir; gerçek yüklemede
+# bilinmeyen architecture sessiz generic fallback'e dönüştürülmez.
+isv llm_gguf_spec_doldur(model_dosya_yolu: *u8, durum: *GGUFDurum) -> tamsayi {
+    eger model_dosya_yolu == 0 veya durum == 0 veya
+       durum->metadata_model_hazir == 0 veya durum->mimari_adi == 0 ise { dondu 0; }
+    llm_runtime_spec_sifirla(&g_llm_model_spec);
+    g_llm_model_spec.model_adi = model_dosya_yolu;
+    g_llm_model_spec.model_adi_uzunluk = llm_metin_uzunlugu(model_dosya_yolu);
+    g_llm_model_spec.mimari = llm_runtime_mimari_bul(
+        durum->mimari_adi, llm_metin_uzunlugu(durum->mimari_adi));
+    eger g_llm_model_spec.mimari == LLM_MIMARI_BITNET ve durum->expert_sayisi > 0 ise {
+        g_llm_model_spec.mimari = LLM_MIMARI_BITNET_MOE;
+    }
+    g_llm_model_spec.quant_tipi = durum->quant_tipi;
+    g_llm_model_spec.vocab_boyutu = durum->vocab_boyutu;
+    g_llm_model_spec.gizli_boyut = durum->gizli_boyut;
+    g_llm_model_spec.katman_sayisi = durum->katman_sayisi;
+    g_llm_model_spec.expert_sayisi = durum->expert_sayisi;
+    g_llm_model_spec.top_k = durum->top_k;
+    g_llm_model_spec.context_boyutu = durum->context_boyutu;
+    g_llm_model_spec.kafa_sayisi = durum->kafa_sayisi;
+    g_llm_model_spec.kv_kafa_sayisi = durum->kv_kafa_sayisi;
+    g_llm_model_spec.kafa_boyutu = durum->kafa_boyutu;
+    g_llm_model_spec.ffn_boyutu = durum->ffn_boyutu;
+    g_llm_model_spec.rope_boyutu = durum->rope_boyutu;
+    # GGUF'ların bir kısmı rope dimension metadata'sını yazmaz; standart
+    # transformer davranışında bu değer head dimension'a eşittir.
+    eger g_llm_model_spec.rope_boyutu <= 0 ise {
+        g_llm_model_spec.rope_boyutu = durum->kafa_boyutu;
+    }
+    g_llm_model_spec.rope_freq_base_q16 = durum->rope_freq_base_q16;
+    eger g_llm_model_spec.rope_freq_base_q16 <= 0 ise {
+        g_llm_model_spec.rope_freq_base_q16 = 655360000;
+    }
+    g_llm_model_spec.norm_eps_q16 = durum->norm_eps_q16;
+    g_llm_model_spec.bos_token_id = durum->bos_token_id;
+    g_llm_model_spec.eos_token_id = durum->eos_token_id;
+    eger g_llm_model_spec.mimari == LLM_MIMARI_BITNET_MOE ve
+       g_llm_model_spec.top_k <= 0 ise { dondu 0; }
+    dondu llm_runtime_spec_dogrula(&g_llm_model_spec);
+}
+
+isv llm_gguf_modeli_yukle(model_dosya_yolu: *u8, durum: *GGUFDurum) -> tamsayi {
+    g_llm_model_yuklendi = 0;
+    g_llm_runtime_hazir = 0;
+    eger model_dosya_yolu == 0 veya durum == 0 ise { dondu 0; }
+    degisken sonuc: tamsayi = gguf_yukle(model_dosya_yolu, durum);
+    eger sonuc == 0 veya llm_gguf_spec_doldur(model_dosya_yolu, durum) == 0 ise {
+        dondu 0;
+    }
+    eger llm_model_loader_baslat(&g_llm_model_loader, model_dosya_yolu, durum) == 0 ise { dondu 0; }
+    g_llm_model_yolu = model_dosya_yolu;
+    g_llm_model_mimarisi = g_llm_model_spec.mimari;
+    g_llm_model_backend = llm_runtime_backend_bul(g_llm_model_spec.mimari);
+    g_llm_model_yuklendi = 1;
+    # Tokenizer metadata tabloları model buffer'ına zero-copy bağlanır.
+    degisken vocab_kapasitesi: tamsayi = g_llm_model_spec.vocab_boyutu;
+    eger vocab_kapasitesi > 262144 ise { vocab_kapasitesi = 262144; }
+    # GPT-2/Qwen merge dizisi vocab'dan farklı büyüklüktedir (ör. 280147).
+    # Ayrı kapasite kullanmadan gerçek merge rank'larının son bölümü kaybolur.
+    degisken merge_kapasitesi: tamsayi = 524288;
+    g_llm_token_ofsetleri = compiler_tahsis_et(vocab_kapasitesi * 8);
+    g_llm_token_uzunluklari = compiler_tahsis_et(vocab_kapasitesi * 8);
+    g_llm_merge_ofsetleri = compiler_tahsis_et(merge_kapasitesi * 8);
+    g_llm_merge_uzunluklari = compiler_tahsis_et(merge_kapasitesi * 8);
+    g_llm_merge_sayisi = 0;
+    eger g_llm_token_ofsetleri != 0 ve g_llm_token_uzunluklari != 0 ve
+       g_llm_merge_ofsetleri != 0 ve g_llm_merge_uzunluklari != 0 {
+        degisken toks: tamsayi = 0;
+        degisken merges: tamsayi = 0;
+        eger bitnet_tokenizer_metadata_yukle(durum, g_llm_token_ofsetleri,
+            g_llm_token_uzunluklari, vocab_kapasitesi, g_llm_merge_ofsetleri,
+            g_llm_merge_uzunluklari, merge_kapasitesi, &toks, &merges) == 1 ise {
+            g_llm_vocab_buffer = durum->buffer;
+            g_llm_vocab_ofsetleri = g_llm_token_ofsetleri;
+            g_llm_vocab_uzunluklari = g_llm_token_uzunluklari;
+            g_llm_vocab_sayisi = toks;
+            g_llm_merge_sayisi = merges;
+        }
+    }
+    dondu 1;
+}
+
+# Parser'ın ilk penceresi yalnızca header/metadata'dır. Gerçek model payload'ı
+# mmap/range loader ile sağlandığında bu fonksiyon ortak runtime lifecycle'ını
+# başlatır; sahte biçimde header'ı tüm model belleği saymaz.
+isv llm_gguf_runtime_baslat(model_verisi: *u8, model_uzunlugu: tamsayi) -> tamsayi {
+    eger g_llm_model_yuklendi == 0 veya model_verisi == 0 veya model_uzunlugu <= 0 ise { dondu 0; }
+    g_llm_runtime_hazir = llm_runtime_baslat(
+        &g_llm_runtime, &g_llm_model_spec, model_verisi, model_uzunlugu);
+    dondu g_llm_runtime_hazir;
+}
+
+# GGUF metadata ile bulunan tensor payload'ını model dosyasından yalnızca
+# gerektiği kadar native range-read ile getirir.
+isv llm_gguf_tensor_yukle(tensor: *GGUFTensorInfo,
+                          hedef: *u8,
+                          hedef_kapasitesi: tamsayi) -> tamsayi {
+    eger g_llm_model_yuklendi == 0 veya tensor == 0 veya hedef == 0 ise { dondu 0; }
+    dondu llm_model_tensor_oku(&g_llm_model_loader, tensor, hedef, hedef_kapasitesi);
+}
+
+# GGUF modelinin çok katmanlı transformer executor'ını kurar. Tüm çalışma
+# buffer'ları caller tarafından sağlanır; model ağırlıkları tek buffer ile
+# layer başına range-read edilir.
+isv llm_gguf_transformer_kur(hidden: *tamsayi,
+                             residual: *tamsayi,
+                             q: *tamsayi,
+                             key: *tamsayi,
+                             value: *tamsayi,
+                             attention: *tamsayi,
+                             ffn: *tamsayi,
+                             logits: *tamsayi,
+                             logits_kapasitesi: tamsayi,
+                             agirlik_buffer: *u8,
+                             agirlik_kapasitesi: tamsayi,
+                             kv_anahtar: *tamsayi,
+                             kv_deger: *tamsayi,
+                             kafa_sayisi: tamsayi,
+                             kafa_boyutu: tamsayi,
+                             kv_kapasitesi: tamsayi,
+                             ffn_boyutu: tamsayi) -> tamsayi {
+    g_llm_transformer_aktif = 0;
+    eger g_llm_model_yuklendi == 0 veya
+       llm_architecture_adapter_kur(g_llm_model_spec.mimari,
+                                    &g_llm_arch_adapter) == 0 ise { dondu 0; }
+    degisken paket: LLMTransformerExecution;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn;
+    paket.logits = logits;
+    paket.logits_kapasitesi = logits_kapasitesi;
+    paket.agirlik_buffer = agirlik_buffer;
+    paket.agirlik_kapasitesi = agirlik_kapasitesi;
+    paket.kv_anahtar = kv_anahtar;
+    paket.kv_deger = kv_deger;
+    paket.kafa_sayisi = kafa_sayisi;
+    paket.kv_kafa_boyutu = kafa_boyutu;
+    paket.kv_kapasitesi = kv_kapasitesi;
+    paket.ffn_boyutu = ffn_boyutu;
+    paket.loader = &g_llm_model_loader;
+    paket.adapter = &g_llm_arch_adapter;
+    paket.spec = &g_llm_model_spec;
+    eger llm_transformer_durum_kur_paketli(&g_llm_transformer_icra,
+        &paket) == 0 ise { dondu 0; }
+    g_llm_transformer_aktif = 1;
+    dondu 1;
+}
+
+isv llm_gguf_transformer_kur_paketli(paket: *LLMTransformerExecution) -> tamsayi {
+    g_llm_transformer_aktif = 0;
+    eger g_llm_model_yuklendi == 0 veya paket == 0 veya
+       llm_architecture_adapter_kur(g_llm_model_spec.mimari,
+                                    &g_llm_arch_adapter) == 0 ise { dondu 0; }
+    # Global struct adresini generated binary içinde pointer olarak taşımak
+    # yerine heap üzerinde stabil bir spec snapshot'ı kullan.
+    degisken spec_kopya: *LLMModelSpec = compiler_tahsis_et(192);
+    eger spec_kopya == 0 ise { dondu 0; }
+    spec_kopya->model_adi = g_llm_model_spec.model_adi;
+    spec_kopya->model_adi_uzunluk = g_llm_model_spec.model_adi_uzunluk;
+    spec_kopya->mimari = g_llm_model_spec.mimari;
+    spec_kopya->quant_tipi = g_llm_model_spec.quant_tipi;
+    spec_kopya->vocab_boyutu = g_llm_model_spec.vocab_boyutu;
+    spec_kopya->gizli_boyut = g_llm_model_spec.gizli_boyut;
+    spec_kopya->katman_sayisi = g_llm_model_spec.katman_sayisi;
+    spec_kopya->expert_sayisi = g_llm_model_spec.expert_sayisi;
+    spec_kopya->top_k = g_llm_model_spec.top_k;
+    spec_kopya->context_boyutu = g_llm_model_spec.context_boyutu;
+    spec_kopya->kafa_sayisi = g_llm_model_spec.kafa_sayisi;
+    spec_kopya->kv_kafa_sayisi = g_llm_model_spec.kv_kafa_sayisi;
+    spec_kopya->kafa_boyutu = g_llm_model_spec.kafa_boyutu;
+    spec_kopya->ffn_boyutu = g_llm_model_spec.ffn_boyutu;
+    spec_kopya->rope_boyutu = g_llm_model_spec.rope_boyutu;
+    spec_kopya->rope_freq_base_q16 = g_llm_model_spec.rope_freq_base_q16;
+    spec_kopya->norm_eps_q16 = g_llm_model_spec.norm_eps_q16;
+    spec_kopya->bos_token_id = g_llm_model_spec.bos_token_id;
+    spec_kopya->eos_token_id = g_llm_model_spec.eos_token_id;
+    g_llm_transformer_icra.loader = &g_llm_model_loader;
+    g_llm_transformer_icra.adapter = &g_llm_arch_adapter;
+    g_llm_transformer_icra.spec = spec_kopya;
+    g_llm_transformer_icra.hidden = paket->hidden;
+    g_llm_transformer_icra.residual = paket->residual;
+    g_llm_transformer_hidden = paket->hidden;
+    g_llm_transformer_residual = paket->residual;
+    g_llm_transformer_q = paket->q;
+    g_llm_transformer_key = paket->key;
+    g_llm_transformer_value = paket->value;
+    g_llm_transformer_attention = paket->attention;
+    g_llm_transformer_icra.q = paket->q;
+    g_llm_transformer_icra.key = paket->key;
+    g_llm_transformer_icra.value = paket->value;
+    g_llm_transformer_icra.attention = paket->attention;
+    g_llm_transformer_icra.ffn = paket->ffn;
+    g_llm_transformer_icra.logits = paket->logits;
+    g_llm_transformer_icra.logits_kapasitesi = paket->logits_kapasitesi;
+    g_llm_transformer_icra.agirlik_buffer = paket->agirlik_buffer;
+    g_llm_transformer_icra.agirlik_kapasitesi = paket->agirlik_kapasitesi;
+    g_llm_transformer_icra.kv_anahtar = paket->kv_anahtar;
+    g_llm_transformer_icra.kv_deger = paket->kv_deger;
+    g_llm_transformer_icra.kafa_sayisi = spec_kopya->kafa_sayisi;
+    g_llm_transformer_icra.kv_kafa_sayisi = spec_kopya->kv_kafa_sayisi;
+    g_llm_transformer_icra.kv_kafa_boyutu = spec_kopya->kafa_boyutu;
+    g_llm_transformer_icra.kv_kapasitesi = paket->kv_kapasitesi;
+    g_llm_transformer_icra.token_konumu = 0;
+    g_llm_transformer_icra.ffn_boyutu = paket->ffn_boyutu;
+    g_llm_transformer_icra.model_mimari = g_llm_model_spec.mimari;
+    g_llm_transformer_icra.model_vocab_boyutu = g_llm_model_spec.vocab_boyutu;
+    g_llm_transformer_icra.model_gizli_boyutu = g_llm_model_spec.gizli_boyut;
+    g_llm_transformer_icra.model_katman_sayisi = g_llm_model_spec.katman_sayisi;
+    g_llm_transformer_icra.model_rope_boyutu = g_llm_model_spec.rope_boyutu;
+    g_llm_transformer_icra.model_rope_freq_base_q16 = g_llm_model_spec.rope_freq_base_q16;
+    g_llm_transformer_icra.model_norm_eps_q16 = g_llm_model_spec.norm_eps_q16;
+    g_llm_transformer_aktif = 1;
+    dondu 1;
+}
+
+# Model metadata'sından caller bufferlarını tahsis edip gerçek executor'ı kurar.
+isv llm_gguf_transformer_cli_baslat() -> tamsayi {
+    eger g_llm_model_yuklendi == 0 veya g_llm_model_spec.kafa_sayisi <= 0 veya
+       g_llm_model_spec.kv_kafa_sayisi <= 0 veya g_llm_model_spec.kafa_boyutu <= 0 veya
+       g_llm_model_spec.ffn_boyutu <= 0 ise { dondu 0; }
+    degisken h: tamsayi = g_llm_model_spec.gizli_boyut;
+    degisken kvh: tamsayi = g_llm_model_spec.kv_kafa_sayisi;
+    degisken hd: tamsayi = g_llm_model_spec.kafa_boyutu;
+    degisken ffn_uzunlugu: tamsayi = g_llm_model_spec.ffn_boyutu;
+    degisken ctx: tamsayi = g_llm_model_spec.context_boyutu;
+    eger ctx > 512 ise { ctx = 512; }
+    degisken hidden: *tamsayi = compiler_tahsis_et(h * 8);
+    degisken residual: *tamsayi = compiler_tahsis_et(h * 8);
+    degisken q: *tamsayi = compiler_tahsis_et(h * 8);
+    degisken key: *tamsayi = compiler_tahsis_et(kvh * hd * 8);
+    degisken value: *tamsayi = compiler_tahsis_et(kvh * hd * 8);
+    degisken attention: *tamsayi = compiler_tahsis_et(h * 8);
+    # Compiler local-slot ABI'sindeki kısa isim/çarpım sapmalarından
+    # bağımsız sabit scratch arena. Mantıksal FFN uzunluğu paket alanında
+    # metadata'dan taşınır; mevcut modeller için 1 MiB yeterlidir.
+    degisken ffn_arena_ptr: *tamsayi = compiler_tahsis_et(1048576);
+
+    degisken logits: *tamsayi = compiler_tahsis_et(g_llm_model_spec.vocab_boyutu * 8);
+    degisken kv_bayt: tamsayi = g_llm_model_spec.katman_sayisi * ctx * kvh * hd * 8;
+    degisken kv_key: *tamsayi = compiler_tahsis_et(kv_bayt);
+    degisken kv_value: *tamsayi = compiler_tahsis_et(kv_bayt);
+    degisken agirlik: *u8 = compiler_tahsis_et(67108864);
+    eger hidden == 0 veya residual == 0 veya q == 0 veya key == 0 veya value == 0 veya
+       attention == 0 veya ffn_arena_ptr == 0 veya logits == 0 veya kv_key == 0 veya kv_value == 0 veya
+       agirlik == 0 ise { dondu 0; }
+    degisken paket: LLMTransformerExecution;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn_arena_ptr;
+    paket.logits = logits;
+    paket.logits_kapasitesi = g_llm_model_spec.vocab_boyutu;
+    paket.agirlik_buffer = agirlik;
+    paket.agirlik_kapasitesi = 67108864;
+    paket.kv_anahtar = kv_key;
+    paket.kv_deger = kv_value;
+    paket.kafa_sayisi = g_llm_model_spec.kafa_sayisi;
+    paket.kv_kafa_boyutu = hd;
+    paket.kv_kapasitesi = ctx;
+    paket.ffn_boyutu = ffn_uzunlugu;
+    eger llm_gguf_transformer_kur_paketli(&paket) == 0 ise { dondu 0; }
+    # Local paket ABI'sini yalnız kurulum doğrulaması için kullan; gerçek CLI
+    # execution kaydını primitive buffer adresleriyle doğrudan sabitle.
+    g_llm_transformer_icra.loader = &g_llm_model_loader;
+    g_llm_transformer_icra.adapter = &g_llm_arch_adapter;
+    g_llm_transformer_icra.spec = &g_llm_model_spec;
+    g_llm_transformer_icra.hidden = hidden;
+    g_llm_transformer_icra.residual = residual;
+    g_llm_transformer_hidden = hidden;
+    g_llm_transformer_residual = residual;
+    g_llm_transformer_q = q;
+    g_llm_transformer_key = key;
+    g_llm_transformer_value = value;
+    g_llm_transformer_attention = attention;
+    g_llm_transformer_icra.q = q;
+    g_llm_transformer_icra.key = key;
+    g_llm_transformer_icra.value = value;
+    g_llm_transformer_icra.attention = attention;
+    g_llm_transformer_icra.ffn = ffn_arena_ptr;
+    g_llm_transformer_icra.logits = logits;
+    g_llm_transformer_icra.logits_kapasitesi = g_llm_model_spec.vocab_boyutu;
+    g_llm_transformer_icra.agirlik_buffer = agirlik;
+    g_llm_transformer_icra.agirlik_kapasitesi = 67108864;
+    g_llm_transformer_icra.kv_anahtar = kv_key;
+    g_llm_transformer_icra.kv_deger = kv_value;
+    g_llm_transformer_icra.kafa_sayisi = g_llm_model_spec.kafa_sayisi;
+    g_llm_transformer_icra.kv_kafa_sayisi = g_llm_model_spec.kv_kafa_sayisi;
+    g_llm_transformer_icra.kv_kafa_boyutu = hd;
+    g_llm_transformer_icra.kv_kapasitesi = ctx;
+    g_llm_transformer_icra.token_konumu = 0;
+    g_llm_transformer_icra.ffn_boyutu = ffn_uzunlugu;
+    g_llm_transformer_icra.model_mimari = g_llm_model_spec.mimari;
+    g_llm_transformer_icra.model_vocab_boyutu = g_llm_model_spec.vocab_boyutu;
+    g_llm_transformer_icra.model_gizli_boyutu = g_llm_model_spec.gizli_boyut;
+    g_llm_transformer_icra.model_katman_sayisi = g_llm_model_spec.katman_sayisi;
+    g_llm_transformer_icra.model_rope_boyutu = g_llm_model_spec.rope_boyutu;
+    g_llm_transformer_icra.model_rope_freq_base_q16 = g_llm_model_spec.rope_freq_base_q16;
+    g_llm_transformer_icra.model_norm_eps_q16 = g_llm_model_spec.norm_eps_q16;
+    g_llm_forward_ffn_buffer = ffn_arena_ptr;
+    # Native SIMD backend varsa gerçek transformer call-site'ları IQ2_S dot,
+    # attention dot ve SwiGLU dispatch'ine geçir. DLL/backend yoksa scalar
+    # referans yolu seçilir.
+    eger ykn_llm_simd_backend() > 0 ise { g_llm_native_simd_aktif = 1; }
+    yoksa { g_llm_native_simd_aktif = 0; }
+    g_llm_transformer_aktif = 1;
+    dondu 1;
+}
+
+# Kurulmuş GGUF transformer üzerinde bir token için tüm katmanları yürütür.
+isv llm_gguf_transformer_token_uret() -> tamsayi {
+    eger g_llm_transformer_aktif == 0 veya g_llm_model_loader.durum == 0 ise { dondu 0 - 1; }
+    dondu llm_transformer_token_uret(&g_llm_transformer_icra,
+        g_llm_model_loader.durum, g_llm_transformer_isim, 64);
+}
+
+isv llm_son_logits_istatistik() {
+    eger g_llm_transformer_icra.logits == 0 veya
+       g_llm_transformer_icra.model_vocab_boyutu <= 0 ise {
+        g_llm_son_logit_min = 0;
+        g_llm_son_logit_max = 0;
+        g_llm_son_logit_ilk = 0;
+        g_llm_son_logit_son = 0;
+        g_llm_son_logit_argmax = 0 - 1;
+        dondu;
+    }
+    degisken adet: tamsayi = g_llm_transformer_icra.model_vocab_boyutu;
+    degisken i: tamsayi = 0;
+    degisken en_iyi: tamsayi = 0;
+    degisken en_kucuk: tamsayi = g_llm_transformer_icra.logits[0];
+    degisken en_buyuk: tamsayi = g_llm_transformer_icra.logits[0];
+    dongu i < adet {
+        eger g_llm_transformer_icra.logits[i] < en_kucuk ise { en_kucuk = g_llm_transformer_icra.logits[i]; }
+        eger g_llm_transformer_icra.logits[i] > en_buyuk ise { en_buyuk = g_llm_transformer_icra.logits[i]; en_iyi = i; }
+        i = i + 1;
+    }
+    g_llm_son_logit_min = en_kucuk;
+    g_llm_son_logit_max = en_buyuk;
+    g_llm_son_logit_ilk = g_llm_transformer_icra.logits[0];
+    g_llm_son_logit_son = g_llm_transformer_icra.logits[adet - 1];
+    g_llm_son_logit_argmax = en_iyi;
+}
+
+isv llm_gercek_prompt_uret(sorgu: *u8, sorgu_uzunlugu: tamsayi) -> *u8 {
+    degisken prompt_baslangic_ns: tamsayi = ykn_llm_clock_ns();
+    degisken tokenize_baslangic_ns: tamsayi = prompt_baslangic_ns;
+    g_llm_prompt_hatasi = 0;
+    g_llm_prompt_tokenize_ns = 0;
+    g_llm_prompt_prefill_ns = 0;
+    g_llm_prompt_decode_ns = 0;
+    g_llm_prompt_total_ns = 0;
+    g_llm_prompt_peak_rss = 0;
+    g_llm_prompt_input_tokens = 0;
+    g_llm_prompt_fallback = 0;
+    g_llm_son_logit_min = 0;
+    g_llm_son_logit_max = 0;
+    g_llm_son_logit_ilk = 0;
+    g_llm_son_logit_son = 0;
+    g_llm_son_logit_argmax = 0 - 1;
+    g_llm_prompt_ilk_token = 0 - 1;
+    g_llm_prompt_son_token = 0 - 1;
+
+    g_llm_uretim_adedi = 0;
+    g_llm_uretim_ptr = "".ptr;
+    eger g_llm_transformer_aktif == 0 veya g_llm_vocab_sayisi <= 0 veya
+       g_llm_merge_sayisi <= 0 veya g_llm_token_ofsetleri == 0 veya
+       g_llm_merge_ofsetleri == 0 ise {
+        g_llm_prompt_hatasi = 1;
+        dondu "".ptr;
+    }
+    g_llm_prompt_token_adedi = llm_prompt_encode_aktif(sorgu, sorgu_uzunlugu);
+    g_llm_prompt_input_tokens = g_llm_prompt_token_adedi;
+    g_llm_prompt_ilk_token = g_llm_prompt_tokenleri[0];
+    g_llm_prompt_son_token = g_llm_prompt_tokenleri[g_llm_prompt_token_adedi - 1];
+    g_llm_prompt_tokenize_ns = ykn_llm_clock_ns() - tokenize_baslangic_ns;
+    eger g_llm_prompt_token_adedi <= 0 ise {
+        g_llm_prompt_hatasi = 200 + BITNET_BPE_ADIM;
+        dondu "".ptr;
+    }
+    degisken i: tamsayi = 0;
+    degisken prefill_baslangic_ns: tamsayi = ykn_llm_clock_ns();
+    dongu i < g_llm_prompt_token_adedi {
+        # Causal prefill'de ara tokenların yalnız hidden/KV durumu gerekir;
+        # output projection sadece son prompt tokenında çalıştırılır.
+        eger i + 1 == g_llm_prompt_token_adedi ise {
+            g_llm_transformer_icra.logits_aktif = 1;
+        } yoksa {
+            g_llm_transformer_icra.logits_aktif = 0;
+        }
+        degisken ileri_sonuc: tamsayi = llm_transformer_token_uret_token(
+            &g_llm_transformer_icra, g_llm_model_loader.durum,
+            g_llm_prompt_tokenleri[i], g_llm_transformer_isim);
+        eger ileri_sonuc < 0 ise {
+            # Negatif forward dönüşü hata kodunu doğrudan taşır. Global hata
+            # alanı yalnızca geriye dönük teşhis bilgisi olarak tutulur.
+            g_llm_prompt_hatasi = 500 - ileri_sonuc;
+            dondu "".ptr;
+        }
+        g_llm_son_token_id = ileri_sonuc;
+        llm_son_logits_istatistik();
+        i = i + 1;
+    }
+    g_llm_prompt_prefill_ns = ykn_llm_clock_ns() - prefill_baslangic_ns;
+    degisken decode_baslangic_ns: tamsayi = ykn_llm_clock_ns();
+    degisken uretilen: tamsayi = 0;
+    degisken uretim_limiti: tamsayi = g_llm_uretim_limiti;
+    # Güvenlik sınırı global/CLI değeri bozulsa dahi burada korunur.
+    eger uretim_limiti < 1 ise { uretim_limiti = 1; }
+    eger uretim_limiti > 2048 ise { uretim_limiti = 2048; }
+    dongu uretilen < uretim_limiti {
+        g_llm_transformer_icra.logits_aktif = 1;
+        degisken token: tamsayi = llm_transformer_token_uret_token(
+            &g_llm_transformer_icra, g_llm_model_loader.durum,
+            g_llm_son_token_id, g_llm_transformer_isim);
+        eger token < 0 veya token == g_llm_model_spec.eos_token_id ise {
+            g_llm_prompt_hatasi = 450;
+            durdur;
+        }
+        eger token >= g_llm_vocab_sayisi {
+            g_llm_prompt_hatasi = 4;
+            dondu "".ptr;
+        }
+        g_llm_uretim_tokenleri[uretilen] = token;
+        llm_son_logits_istatistik();
+        uretilen = uretilen + 1;
+        g_llm_son_token_id = token;
+    }
+    g_llm_uretim_adedi = uretilen;
+    g_llm_prompt_decode_ns = ykn_llm_clock_ns() - decode_baslangic_ns;
+    g_llm_prompt_total_ns = ykn_llm_clock_ns() - prompt_baslangic_ns;
+    g_llm_prompt_peak_rss = ykn_llm_peak_rss_bytes();
+    eger uretilen <= 0 ise {
+        # EOS'un ilk üretim tokenı olması veya forward'ın çıktı üretmemesi
+        # boş kodu sessizce fixture gibi kabul ettirmemelidir.
+        g_llm_prompt_hatasi = 450;
+        dondu "".ptr;
+    }
+    # Tek ve çok token çıktıları aynı güvenli decode yolunu kullanır. GGUF
+    # vocab buffer'ına NUL yazılmaz; kayıt read-only olabilir ve tokenlar
+    # yan yana saklanmak zorunda değildir.
+    degisken cikti_buffer: *u8 = compiler_tahsis_et(4096);
+    eger cikti_buffer == 0 ise { g_llm_prompt_hatasi = 452; dondu "".ptr; }
+    degisken yazilan: tamsayi = 0;
+    degisken decode_i: tamsayi = 0;
+    dongu decode_i < uretilen {
+        degisken token_decode: tamsayi = g_llm_uretim_tokenleri[decode_i];
+        eger token_decode < 0 veya token_decode >= g_llm_vocab_sayisi ise {
+            g_llm_prompt_hatasi = 453;
+            dondu "".ptr;
+        }
+        degisken uzunluk: tamsayi = g_llm_token_uzunluklari[token_decode];
+        eger uzunluk < 0 veya yazilan + uzunluk + 1 >= 4096 ise {
+            g_llm_prompt_hatasi = 454;
+            dondu "".ptr;
+        }
+        # Her token parçası LLM modülünün kendi sınır kontrollü byte-copy
+        # yordamından geçer; LSP modülüne örtük bağımlılık yoktur.
+        eger llm_bayt_kopyala(cikti_buffer + yazilan,
+            g_llm_vocab_buffer + g_llm_token_ofsetleri[token_decode], uzunluk) != uzunluk ise {
+            g_llm_prompt_hatasi = 455;
+            dondu "".ptr;
+        }
+        yazilan = yazilan + uzunluk;
+        decode_i = decode_i + 1;
+    }
+    cikti_buffer[yazilan] = 0;
+    eger yazilan <= 0 ise {
+        g_llm_prompt_hatasi = 451;
+        dondu "".ptr;
+    }
+    eger llm_uretimde_prompt_var_mi(cikti_buffer, yazilan) == 1 ise {
+        # Recursive prompt expansion hem akışı hem de model bütçesini bozar.
+        # Üretilen metin güvenli biçimde reddedilir; dış prompt çağrısı devam
+        # ederken ikinci bir inference başlatılmaz.
+        g_llm_prompt_hatasi = 456;
+        dondu "".ptr;
+    }
+    g_llm_uretim_ptr = cikti_buffer;
+    dondu g_llm_uretim_ptr;
+}
+
+# Gerçek forward planını ve zero-copy vocab tablolarını etkinleştirir.
+# Planın aktivasyon buffer'ı çağıran tarafından prompt embedding'iyle
+# doldurulmuş olmalıdır; bu API token üretiminde fixture kullanmaz.
+isv llm_gercek_forward_plan_ayarla(plan: *LLMForwardPlan,
+                                   vocab_buffer: *u8,
+                                   vocab_ofsetleri: *tamsayi,
+                                   vocab_uzunluklari: *tamsayi,
+                                   vocab_sayisi: tamsayi) -> tamsayi {
+    eger plan == 0 veya vocab_buffer == 0 veya vocab_ofsetleri == 0 veya
+       vocab_uzunluklari == 0 veya vocab_sayisi <= 0 veya
+       llm_forward_plan_dogrula(plan) == 0 ise { dondu 0; }
+    g_llm_forward_plan = plan;
+    g_llm_vocab_buffer = vocab_buffer;
+    g_llm_vocab_ofsetleri = vocab_ofsetleri;
+    g_llm_vocab_uzunluklari = vocab_uzunluklari;
+    g_llm_vocab_sayisi = vocab_sayisi;
+    g_llm_forward_aktif = 1;
+    dondu 1;
+}
+
+# Bir token ID'sini zero-copy vocab tablolarından UTF-8 metne çözer.
+isv llm_tokenu_metne_cevir(token: tamsayi) -> *u8 {
+    eger token < 0 veya g_llm_vocab_buffer == 0 veya
+       g_llm_vocab_ofsetleri == 0 veya g_llm_vocab_uzunluklari == 0 veya
+       g_llm_vocab_sayisi <= 0 ise { dondu "".ptr; }
+    g_llm_uretim_tokenleri[0] = token;
+    eger bitnet_tokenleri_metine_yaz(g_llm_vocab_buffer,
+        g_llm_vocab_ofsetleri, g_llm_vocab_uzunluklari, g_llm_vocab_sayisi,
+        g_llm_uretim_tokenleri, 1, g_llm_uretim_metni, 4096) <= 0 ise { dondu "".ptr; }
+    dondu g_llm_uretim_metni;
+}
+
+# Bir gerçek forward adımının logits argmax sonucunu vocab'dan UTF-8 metne
+# çözer. Token ID 0 geçerli olduğu için hata dönüşü yalnızca -1 ile ayrılır.
+isv llm_gercek_token_uret() -> *u8 {
+    eger g_llm_forward_aktif == 0 veya g_llm_forward_plan == 0 ise { dondu "".ptr; }
+    dondu llm_tokenu_metne_cevir(llm_forward_plan_calistir(g_llm_forward_plan));
+}
+
+# ============================================================
+# Aşama 8.2: BPE Tokenizer ile Prompt Kodlama
+# ============================================================
+isv llm_prompt_encode(durum: *GGUFDurum,
+                      token_ofsetleri: *tamsayi, token_uzunluklari: *tamsayi, token_adet: tamsayi,
+                      merge_ofsetleri: *tamsayi, merge_uzunluklari: *tamsayi, merge_adet: tamsayi,
+                      prompt: *u8, prompt_uzn: tamsayi,
+                      cikis_token_ids: *tamsayi, maks_token: tamsayi) -> tamsayi {
+    eger durum == 0 veya prompt == 0 veya prompt_uzn <= 0 ise { dondu 0; }
+    g_bpe_global_buffer = durum.buffer;
+    g_bpe_global_token_ofsetleri = token_ofsetleri;
+    g_bpe_global_token_uzunluklari = token_uzunluklari;
+    g_bpe_global_token_sayisi = token_adet;
+    g_bpe_global_merge_ofsetleri = merge_ofsetleri;
+    g_bpe_global_merge_uzunluklari = merge_uzunluklari;
+    g_bpe_global_merge_sayisi = merge_adet;
+    g_bpe_global_girdi = prompt;
+    g_bpe_global_girdi_uzunlugu = prompt_uzn;
+    g_bpe_global_cikti = cikis_token_ids;
+    g_bpe_global_maks_cikti = maks_token;
+    dondu bitnet_bpe_ascii_global();
+}
+
+# GGUF chat template varsa metadata sözleşmesine göre kullanıcı mesajını
+# modelin beklediği metne dönüştürür. Template yoksa kaynak prompt birebir
+# korunur; model çıktısı fixture koduyla değiştirilmez.
+isv llm_prompt_sablonla(prompt: *u8, prompt_uzn: tamsayi) -> tamsayi {
+    eger prompt == 0 veya prompt_uzn <= 0 veya prompt_uzn >= 4096 veya
+       g_llm_model_loader.durum == 0 ise { dondu 0; }
+    eger g_llm_model_loader.durum->chat_sablon_tipi != 1 ve
+       g_llm_model_loader.durum->chat_sablon_tipi != 2 ise {
+        degisken yazilan_raw: tamsayi = 0;
+        eger g_llm_rag_context != 0 ve g_llm_rag_context_uzunlugu > 0 ise {
+            degisken raw_baslik: *u8 = "YKN RAG context:\n".ptr;
+            degisken raw_i: tamsayi = 0;
+            dongu raw_baslik[raw_i] != 0 ve yazilan_raw + 1 < 4095 {
+                g_llm_prompt_girdi[yazilan_raw] = raw_baslik[raw_i]; yazilan_raw = yazilan_raw + 1; raw_i = raw_i + 1;
+            }
+            raw_i = 0;
+            dongu raw_i < g_llm_rag_context_uzunlugu ve raw_i < 256 ve yazilan_raw + 1 < 4095 {
+                g_llm_prompt_girdi[yazilan_raw] = g_llm_rag_context[raw_i]; yazilan_raw = yazilan_raw + 1; raw_i = raw_i + 1;
+            }
+            eger yazilan_raw + 1 < 4095 { g_llm_prompt_girdi[yazilan_raw] = 10; yazilan_raw = yazilan_raw + 1; }
+        }
+        degisken raw_i2: tamsayi = 0;
+        dongu raw_i2 < prompt_uzn ve yazilan_raw + 1 < 4095 { g_llm_prompt_girdi[yazilan_raw] = prompt[raw_i2]; yazilan_raw = yazilan_raw + 1; raw_i2 = raw_i2 + 1; }
+        g_llm_prompt_girdi[yazilan_raw] = 0;
+        dondu yazilan_raw;
+    }
+    degisken yazilan: tamsayi = 0;
+    eger g_llm_rag_context != 0 ve g_llm_rag_context_uzunlugu > 0 ise {
+        degisken rag_baslik: *u8 = "YKN RAG context:\n".ptr;
+        degisken ri: tamsayi = 0;
+        dongu rag_baslik[ri] != 0 ve yazilan + 1 < 4095 {
+            g_llm_prompt_girdi[yazilan] = rag_baslik[ri]; yazilan = yazilan + 1; ri = ri + 1;
+        }
+        ri = 0;
+        dongu ri < g_llm_rag_context_uzunlugu ve ri < 256 ve yazilan + 1 < 4095 {
+            g_llm_prompt_girdi[yazilan] = g_llm_rag_context[ri]; yazilan = yazilan + 1; ri = ri + 1;
+        }
+        eger yazilan + 2 < 4095 ise { g_llm_prompt_girdi[yazilan] = 10; yazilan = yazilan + 1; }
+    }
+    # Küçük ve sabit YKN bağlamı: modelin sözdizimi sözleşmesini bilmediği
+    # base/instruct checkpoint'lerde bile üretim biçimini yönlendirir.
+    degisken p: *u8 = "Human: YKN kod asistani. Sadece gecerli YKN kodu uret; Markdown veya aciklama yazma. Fonksiyonlar isv ile, degiskenler degisken ile, return dondu ile yazilir. Kullanici istegi: ".ptr;
+    eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Sadece gecerli YKN kodu uret; Markdown veya aciklama yazma. Fonksiyonlar isv ile, degiskenler degisken ile, return dondu ile yazilir. Kullanici istegi: ".ptr; }
+    # Sorguya göre küçük örnek seçimi, statik RAG'in ilk katmanıdır.
+    # Örnekler yalnızca model context'ine girer; üretilen metin yine lexer,
+    # parser ve typechecker doğrulamasından geçmek zorundadır.
+    eger llm_alt_metin_var_mi(prompt, prompt_uzn, "faktoriyel".ptr, 10) == 1 veya
+       llm_alt_metin_var_mi(prompt, prompt_uzn, "factorial".ptr, 9) == 1 ise {
+        p = "Human: YKN kod asistani. Ornek: isv faktoriyel(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu 1; } dondu n * faktoriyel(n - 1); } Sadece gecerli YKN kodu uret; Markdown yazma. Kullanici istegi: ".ptr;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Ornek: isv faktoriyel(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu 1; } dondu n * faktoriyel(n - 1); } Sadece gecerli YKN kodu uret; Markdown yazma. Kullanici istegi: ".ptr; }
+    } yoksa eger llm_alt_metin_var_mi(prompt, prompt_uzn, "fibonacci".ptr, 9) == 1 veya
+       llm_alt_metin_var_mi(prompt, prompt_uzn, "fib".ptr, 3) == 1 ise {
+        p = "Human: YKN kod asistani. Ornek: isv fibonacci(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu n; } dondu fibonacci(n - 1) + fibonacci(n - 2); } Sadece gecerli YKN kodu uret; Markdown yazma. Kullanici istegi: ".ptr;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Ornek: isv fibonacci(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu n; } dondu fibonacci(n - 1) + fibonacci(n - 2); } Sadece gecerli YKN kodu uret; Markdown yazma. Kullanici istegi: ".ptr; }
+    } yoksa eger llm_alt_metin_var_mi(prompt, prompt_uzn, "topla".ptr, 5) == 1 veya
+       llm_alt_metin_var_mi(prompt, prompt_uzn, "sum".ptr, 3) == 1 ise {
+        p = "Human: YKN kod asistani. Ornek: isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Ornek: isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr; }
+    } yoksa eger llm_alt_metin_var_mi(prompt, prompt_uzn, "asal".ptr, 4) == 1 veya
+       llm_alt_metin_var_mi(prompt, prompt_uzn, "prime".ptr, 5) == 1 ise {
+        p = "Human: YKN kod asistani. Ornek: isv asal_mi(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu 0; } dondu 1; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Ornek: isv asal_mi(n: tamsayi) -> tamsayi { eger n <= 1 ise { dondu 0; } dondu 1; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr; }
+    } yoksa eger llm_alt_metin_var_mi(prompt, prompt_uzn, "dizi".ptr, 4) == 1 veya
+       llm_alt_metin_var_mi(prompt, prompt_uzn, "array".ptr, 5) == 1 ise {
+        p = "Human: YKN kod asistani. Ornek: isv dizi_toplami(dizi: *tamsayi, uzunluk: tamsayi) -> tamsayi { degisken toplam: tamsayi = 0; dondu toplam; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise { p = "[INST] YKN kod asistani. Ornek: isv dizi_toplami(dizi: *tamsayi, uzunluk: tamsayi) -> tamsayi { degisken toplam: tamsayi = 0; dondu toplam; } Sadece gecerli YKN kodu uret. Kullanici istegi: ".ptr; }
+    }
+    degisken pi: tamsayi = 0;
+    dongu p[pi] != 0 { g_llm_prompt_girdi[yazilan] = p[pi]; yazilan = yazilan + 1; pi = pi + 1; }
+    degisken i: tamsayi = 0;
+    dongu i < prompt_uzn {
+        eger yazilan + 1 >= 4095 ise { dondu 0; }
+        g_llm_prompt_girdi[yazilan] = prompt[i]; yazilan = yazilan + 1; i = i + 1;
+    }
+    eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise {
+        p = " [/INST]".ptr;
+    } yoksa {
+        p = "\n\nBITNETAssistant: ".ptr;
+    }
+    pi = 0;
+    dongu p[pi] != 0 {
+        eger yazilan + 1 >= 4095 ise { dondu 0; }
+        g_llm_prompt_girdi[yazilan] = p[pi]; yazilan = yazilan + 1; pi = pi + 1;
+    }
+    g_llm_prompt_girdi[yazilan] = 0;
+    dondu yazilan;
+}
+
+# Gerçek GGUF prompt yolu: uzun legacy ABI'ye girmeden mevcut model
+# tokenizer tablolarını global BPE scratch girişine bağlar.
+isv llm_prompt_encode_aktif(prompt: *u8, prompt_uzn: tamsayi) -> tamsayi {
+    eger g_llm_model_loader.durum == 0 veya prompt == 0 veya prompt_uzn <= 0 veya
+       g_llm_vocab_buffer == 0 veya g_llm_vocab_sayisi <= 0 veya
+       g_llm_merge_sayisi <= 0 ise { dondu 0; }
+    degisken aktif_uzunluk: tamsayi = llm_prompt_sablonla(prompt, prompt_uzn);
+    eger aktif_uzunluk <= 0 ise { dondu 0; }
+    # Global sabit dizinin adresi Stage-1/Stage-3 Win64 ABI'sinde nested
+    # çağrıya taşınırken null olabildiği için tokenizer girdisini stabil heap
+    # buffer'ına kopyala. Böylece BPE yalnızca doğrulanmış bir pointer görür.
+    degisken aktif_prompt: *u8 = compiler_tahsis_et(4096);
+    eger aktif_prompt == 0 ise { dondu 0; }
+    degisken aktif_kopya_i: tamsayi = 0;
+    dongu aktif_kopya_i < aktif_uzunluk {
+        aktif_prompt[aktif_kopya_i] = g_llm_prompt_girdi[aktif_kopya_i];
+        aktif_kopya_i = aktif_kopya_i + 1;
+    }
+    aktif_prompt[aktif_uzunluk] = 0;
+    # Loader durumunun nested-pointer erişimi self-hosted Win64 ABI'sinde
+    # güvenilir değildir; yükleme sırasında doğrulanmış canonical buffer'ı kullan.
+    g_bpe_global_buffer = g_llm_vocab_buffer;
+    g_bpe_global_token_ofsetleri = g_llm_token_ofsetleri;
+    g_bpe_global_token_uzunluklari = g_llm_token_uzunluklari;
+    g_bpe_global_token_sayisi = g_llm_vocab_sayisi;
+    g_bpe_global_merge_ofsetleri = g_llm_merge_ofsetleri;
+    g_bpe_global_merge_uzunluklari = g_llm_merge_uzunluklari;
+    g_bpe_global_merge_sayisi = g_llm_merge_sayisi;
+    g_bpe_global_girdi = aktif_prompt;
+    g_bpe_global_girdi_uzunlugu = aktif_uzunluk;
+    g_bpe_global_cikti = g_llm_prompt_tokenleri;
+    g_bpe_global_maks_cikti = 4096;
+    degisken adet: tamsayi = bitnet_bpe_ascii_global();
+    eger adet <= 0 veya adet >= 4095 ise { dondu adet; }
+    # Special BOS/EOS tokenleri BPE metni değil, vocab ID'si olarak eklenir.
+    eger g_llm_model_loader.durum->tokenizer_add_bos == 1 ve
+       g_llm_model_spec.bos_token_id >= 0 ve g_llm_model_spec.bos_token_id < g_llm_vocab_sayisi ise {
+        degisken bi: tamsayi = adet;
+        dongu bi > 0 { g_llm_prompt_tokenleri[bi] = g_llm_prompt_tokenleri[bi - 1]; bi = bi - 1; }
+        g_llm_prompt_tokenleri[0] = g_llm_model_spec.bos_token_id;
+        adet = adet + 1;
+    }
+    # Assistant üretimi başlamadan EOS eklenmez. EOS yalnızca modelin
+    # decode aşamasında ürettiği token olarak durdurma sinyalidir.
+    dondu adet;
+}
+
+# ============================================================
+# Aşama 8.3: BitLinear (Ternary {-1, 0, 1} Matris Çarpımı Çekirdeği)
+# W: 2-bit sıkıştırılmış ternary matris, X: INT8 aktivasyon tensörü
+# ============================================================
+isv bitlinear_matris_carp(w_ptr: *u8, x_ptr: *u8, out_ptr: *tamsayi, M: tamsayi, K: tamsayi, N: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                degisken x_val: tamsayi = x_ptr[(i * K) + k];
+                # W ternary degeri (0=0, 1=+1, 2=-1)
+                degisken w_val: u8 = w_ptr[(k * N) + j];
+                eger w_val == 1 ise {
+                    toplam = toplam + x_val;
+                } yoksa eger w_val == 2 ise {
+                    toplam = toplam - x_val;
+                }
+                k = k + 1;
+            }
+            out_ptr[(i * N) + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+# Model çıktısının yeni bir directive üretip prompt zincirini yeniden
+# başlatmasını engeller. Model doğal dil veya kaynak kodu echo edebilir;
+# üretilen program içinde #prompt/#ai yalnızca dış kaynakta bulunabilir.
+# `# prompt` ve `#  ai` gibi boşluklu biçimler de reddedilir.
+isv llm_uretimde_prompt_var_mi(metin: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger metin == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger metin[i] == 35 ise {
+            degisken p: tamsayi = i + 1;
+            dongu p < uzunluk ve (metin[p] == 32 veya metin[p] == 9) { p = p + 1; }
+            eger p + 6 <= uzunluk ve metin[p] == 112 ve metin[p + 1] == 114 ve
+               metin[p + 2] == 111 ve metin[p + 3] == 109 ve
+               metin[p + 4] == 112 ve metin[p + 5] == 116 ise { dondu 1; }
+            eger p + 2 <= uzunluk ve metin[p] == 97 ve
+               metin[p + 1] == 105 ve (p + 2 == uzunluk veya metin[p + 2] == 32 veya
+               metin[p + 2] == 9 veya metin[p + 2] == 10) ise { dondu 1; }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Aşama 8.4: Derleme Zamanı Prompt ile Kod Sentezleme
+# ============================================================
+# Base/instruction-tuned olmayan modeller kısa veya doğal dil tokenı
+# döndürebilir. Böyle bir metni kaynak kod gibi typechecker'a vermek yerine
+# yalnızca YKN kaynağına benzeyen çıktıyı kabul ederiz; tanınan görevlerde
+# güvenli, deterministik stdlib şablonu kullanılır.
+isv llm_uretim_kaynak_gibi_mi() -> tamsayi {
+    eger g_llm_uretim_ptr == 0 veya g_llm_uretim_adedi <= 0 ise { dondu 0; }
+    eger llm_alt_metin_var_mi(g_llm_uretim_ptr, 4096, "isv".ptr, 3) == 1 veya
+       llm_alt_metin_var_mi(g_llm_uretim_ptr, 4096, "yapi".ptr, 4) == 1 veya
+       llm_alt_metin_var_mi(g_llm_uretim_ptr, 4096, "degisken".ptr, 8) == 1 ise {
+        eger llm_uretimde_prompt_var_mi(g_llm_uretim_ptr, 4096) == 0 ise { dondu 1; }
+    }
+    dondu 0;
+}
+
+isv llm_kod_uret(sorgu: *u8, sorgu_uzunlugu: tamsayi) -> *u8 {
+    eger sorgu == 0 veya sorgu_uzunlugu <= 0 ise {
+        dondu "".ptr;
+    }
+
+    # Model plani etkinse gercek logits/tokenizer yolu onceliklidir.
+    eger g_llm_transformer_aktif == 1 ise {
+        llm_gercek_prompt_uret(sorgu, sorgu_uzunlugu);
+        eger llm_uretim_kaynak_gibi_mi() == 1 ise {
+            g_llm_prompt_fallback = 0;
+            dondu g_llm_uretim_ptr;
+        }
+        g_llm_prompt_fallback = 1;
+        dondu "".ptr;
+    }
+    eger g_llm_forward_aktif == 1 ise { dondu llm_gercek_token_uret(); }
+
+    # Model henuz yuklenmediyse CLI model yolu varsa yukle
+    eger g_llm_transformer_aktif == 0 ise {
+        eger g_llm_cli_model_yolu != 0 ise {
+            degisken oto_durum: *GGUFDurum = compiler_tahsis_et(4096);
+            eger oto_durum != 0 ve llm_gguf_modeli_yukle(g_llm_cli_model_yolu, oto_durum) == 1 ise {
+                eger llm_gguf_transformer_cli_baslat() == 1 ise {
+                    ekrana_yaz("[AI] GGUF modeli basariyla baglandi.\n".ptr);
+                    llm_gercek_prompt_uret(sorgu, sorgu_uzunlugu);
+                    eger llm_uretim_kaynak_gibi_mi() == 1 ise {
+                        g_llm_prompt_fallback = 0;
+                        dondu g_llm_uretim_ptr;
+                    }
+                }
+            }
+        }
+    }
+
+    # Model yuklenmemisse veya gercek inference basarisizsa derleme aninda tani bildirimi uret (E015)
+    ekrana_yaz("HATA [E015] [ERR_AI_MODEL] [class=llm]: Derleme zamani yapay zeka modeli bulunamadi (--model parametresi gereklidir).\n".ptr);
+    g_llm_prompt_hatasi = 15;
+    dondu "".ptr;
+}

@@ -1,0 +1,86 @@
+# ============================================================
+# tests/fix9/test_bellek.ykn
+# std/bellek.ykn test suiti:
+#   - bellek_kopyala, bellek_doldur, bellek_esit_mi, bellek_ara,
+#     bellek_karsilastir, bellek_tasi, bellek_sifirla
+# Beklenen cikti: "BELLEK TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/bellek.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- bellek_kopyala ---
+    degisken kayn: [8]u8;
+    degisken hed: [8]u8;
+    kayn[0] = 65; kayn[1] = 66; kayn[2] = 67; kayn[3] = 0;
+    bellek_kopyala(hed, kayn, 4);
+    eger hed[0] != 65 veya hed[1] != 66 veya hed[2] != 67 ise {
+        ekrana_yaz("HATA: bellek_kopyala\n".ptr);
+        dondu 1;
+    }
+
+    # --- bellek_doldur ---
+    degisken buf: [16]u8;
+    bellek_doldur(buf, 42, 16);
+    eger buf[0] != 42 veya buf[15] != 42 ise {
+        ekrana_yaz("HATA: bellek_doldur\n".ptr);
+        dondu 1;
+    }
+
+    # --- bellek_esit_mi ---
+    degisken a: [4]u8;
+    degisken b: [4]u8;
+    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
+    b[0] = 1; b[1] = 2; b[2] = 3; b[3] = 4;
+    eger bellek_esit_mi(a, b, 4) != 1 ise {
+        ekrana_yaz("HATA: bellek_esit_mi (esit)\n".ptr);
+        dondu 1;
+    }
+    b[2] = 99;
+    eger bellek_esit_mi(a, b, 4) != 0 ise {
+        ekrana_yaz("HATA: bellek_esit_mi (farkli)\n".ptr);
+        dondu 1;
+    }
+
+    # --- bellek_ara ---
+    degisken dizi: [8]u8;
+    dizi[0] = 10; dizi[1] = 20; dizi[2] = 30; dizi[3] = 40; dizi[4] = 0;
+    degisken bulunan: *u8 = bellek_ara(dizi, 30, 5);
+    eger bulunan == 0 ise {
+        ekrana_yaz("HATA: bellek_ara (bulunamadi)\n".ptr);
+        dondu 1;
+    }
+    eger bulunan[0] != 30 ise {
+        ekrana_yaz("HATA: bellek_ara (yanlis deger)\n".ptr);
+        dondu 1;
+    }
+
+    # --- bellek_karsilastir ---
+    degisken x: [4]u8;
+    degisken y: [4]u8;
+    x[0] = 1; x[1] = 2; x[2] = 3; x[3] = 4;
+    y[0] = 1; y[1] = 2; y[2] = 3; y[3] = 4;
+    eger bellek_karsilastir(x, y, 4) != 0 ise {
+        ekrana_yaz("HATA: bellek_karsilastir (esit olmali)\n".ptr);
+        dondu 1;
+    }
+    x[3] = 5;
+    eger bellek_karsilastir(x, y, 4) != 1 ise {
+        ekrana_yaz("HATA: bellek_karsilastir (buyuk olmali)\n".ptr);
+        dondu 1;
+    }
+
+    # --- bellek_sifirla ---
+    bellek_sifirla(buf, 16);
+    eger buf[0] != 0 veya buf[15] != 0 ise {
+        ekrana_yaz("HATA: bellek_sifirla\n".ptr);
+        dondu 1;
+    }
+
+    # --- null-safety: null ptr'a karsi guvenceli olmali ---
+    bellek_kopyala(0, 0, 10);
+    bellek_doldur(0, 0, 10);
+
+    ekrana_yaz("BELLEK TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,118 @@
+# Test FAZ 2: JSON Escaped Quotes, Floats, Serializer, Multi-Route Web Server, Analytical Math
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/serialization/json.ykn";
+ice_aktar "std/web/sunucu.ykn";
+ice_aktar "std/matematik.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== FAZ 2 TESTLERI BASLIYOR ===\n".ptr);
+
+    # 1. TEST: JSON Escape Sequence & Float & Serializer
+    ekrana_yaz("[1/3] JSON Escape Quotes, Float ve json_yaz Testi... ".ptr);
+    degisken json_metin: *u8 = "{\"mesaj\": \"Selam \\\"Yukinary\\\"\", \"oran\": 3.14, \"adet\": 42}".ptr;
+    degisken json_uzn: tamsayi = 59;
+    
+    degisken havuz: *u8 = os_bellek_tahsis(65536);
+    degisken p: JsonAyristirici;
+    p.kaynak = json_metin;
+    p.uzunluk = json_uzn;
+    p.indeks = 0;
+    p.bellek_havuzu = havuz;
+    p.bellek_kullanilan = 0;
+
+    degisken kok: *JsonDugum = json_ayristir(&p);
+    eger kok == 0 veya kok.tip != 5 ise {
+        ekrana_yaz("BASARISIZ! JSON kok nesnesi ayrilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken d_mesaj: *JsonDugum = json_alan_bul(kok, "mesaj".ptr, 5);
+    eger d_mesaj == 0 veya d_mesaj.tip != 3 ise {
+        ekrana_yaz("BASARISIZ! 'mesaj' alani bulunamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken d_oran: *JsonDugum = json_alan_bul(kok, "oran".ptr, 4);
+    eger d_oran == 0 veya d_oran.tip != 2 ise {
+        ekrana_yaz("BASARISIZ! 'oran' float sayisi bulunamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken d_adet: *JsonDugum = json_alan_bul(kok, "adet".ptr, 4);
+    eger d_adet == 0 veya d_adet.sayi_deger != 42 ise {
+        ekrana_yaz("BASARISIZ! 'adet' tamsayisi yanlis!\n".ptr);
+        dondu 1;
+    }
+
+    # json_yaz (Serializer) testi
+    degisken out_buf: [512]u8;
+    degisken yazilan_bayt: tamsayi = json_yaz(kok, out_buf, 512);
+    eger yazilan_bayt <= 0 ise {
+        ekrana_yaz("BASARISIZ! json_yaz cikti uretmedi!\n".ptr);
+        dondu 1;
+    }
+    os_bellek_serbest(havuz);
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    # 2. TEST: Web Sunucusu Coklu Rota (Multi-Routing)
+    ekrana_yaz("[2/3] Web Sunucusu Coklu Rota ve Yonlendirici Testi... ".ptr);
+    degisken sunucu: WebSunucu;
+    web_sunucu_hazirla(&sunucu, 8080);
+    
+    web_sunucu_rota_ekle(&sunucu, "/".ptr, 1, "Ana Sayfa".ptr, 9);
+    web_sunucu_rota_ekle(&sunucu, "/api/saglik".ptr, 11, "OK".ptr, 2);
+    web_sunucu_rota_ekle(&sunucu, "/api/kullanici".ptr, 14, "Kullanici Verisi".ptr, 16);
+
+    eger sunucu.rota_sayisi != 3 ise {
+        ekrana_yaz("BASARISIZ! Rota sayisi 3 olmali!\n".ptr);
+        dondu 2;
+    }
+
+    web_sunucu_kapat(&sunucu);
+    eger sunucu.rota_sayisi != 0 ise {
+        ekrana_yaz("BASARISIZ! web_sunucu_kapat rotalari temizlemedi!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    # 3. TEST: Analitik Matematik Fonksiyonlari
+    ekrana_yaz("[3/3] Matematik (taban, tavan, yuvarla, exp) Testi... ".ptr);
+    degisken f1: gercek = 3.7;
+    degisken t1: gercek = taban(f1);
+    eger (t1 as tamsayi) != 3 ise {
+        ekrana_yaz("BASARISIZ! taban(3.7) != 3\n".ptr);
+        dondu 3;
+    }
+
+    degisken f2: gercek = 3.2;
+    degisken t2: gercek = tavan(f2);
+    eger (t2 as tamsayi) != 4 ise {
+        ekrana_yaz("BASARISIZ! tavan(3.2) != 4\n".ptr);
+        dondu 3;
+    }
+
+    degisken f3: gercek = 3.6;
+    degisken y3: gercek = yuvarla(f3);
+    eger (y3 as tamsayi) != 4 ise {
+        ekrana_yaz("BASARISIZ! yuvarla(3.6) != 4\n".ptr);
+        dondu 3;
+    }
+
+    degisken f4: gercek = 3.2;
+    degisken y4: gercek = yuvarla(f4);
+    eger (y4 as tamsayi) != 3 ise {
+        ekrana_yaz("BASARISIZ! yuvarla(3.2) != 3\n".ptr);
+        dondu 3;
+    }
+
+    degisken e0: gercek = exp(0.0);
+    eger (e0 as tamsayi) != 1 ise {
+        ekrana_yaz("BASARISIZ! exp(0) != 1\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    ekrana_yaz(">>> FAZ 2 TUM TESTLERI BASARIYLA GECTI! <<<\n".ptr);
+    dondu 0;
+}

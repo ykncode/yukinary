@@ -1,0 +1,16 @@
+# FAZ 5 Test 3: Multiple specializations with different types
+isv ozdeslik<T>(x: T) -> T {
+    dondu x;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken num: tamsayi = ozdeslik<tamsayi>(100);
+    degisken flag: tamsayi = ozdeslik<mantik>(1);
+    
+    eger num == 100 ve flag == 1 ise {
+        ekrana_yaz("TEST 03 GENERICS: MULTI-SPECIALIZATION OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 03 GENERICS: FAILED\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,37 @@
+# ============================================================
+# tests/stdlib/14_her_dongusu.ykn
+# YKN her / for Dongusu Sozdizimi ve Calisma Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+isv ana() -> tamsayi {
+    degisken toplam: tamsayi = 0;
+
+    # 1. Klasik her (for) döngüsü
+    her (degisken i: tamsayi = 1; i <= 10; i = i + 1) {
+        toplam = toplam + i;
+    }
+
+    # 1'den 10'a kadar toplam = 55 olmalı
+    eger toplam != 55 ise {
+        ekrana_yaz("FAIL: her toplam != 55\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Önceden tanımlı sayaç ile her döngüsü
+    degisken carpim: tamsayi = 1;
+    degisken k: tamsayi = 1;
+    her (; k <= 5; k = k + 1) {
+        carpim = carpim * k;
+    }
+
+    # 5! = 120 olmalı
+    eger carpim != 120 ise {
+        ekrana_yaz("FAIL: her carpim != 120\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("HER-DONGUSU-PASS\n".ptr);
+    dondu 0;
+}

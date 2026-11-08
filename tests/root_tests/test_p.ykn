@@ -1,0 +1,14 @@
+yapi TestStruct {
+    f0: tamsayi;
+    f1: tamsayi;
+}
+isv topla(s: *TestStruct) -> tamsayi {
+    dondu s.f0 + s.f1;
+}
+isv ana() -> tamsayi {
+    degisken st: TestStruct;
+    degisken p: *TestStruct = &st;
+    st.f0 = 10;
+    st.f1 = 20;
+    dondu topla(p);
+}

@@ -1,0 +1,39 @@
+# ============================================================
+# std/ai/bitlinear.ykn
+# 1.58b Ternary Matris Carpim Modulu (BitNet Q16.16)
+# ============================================================
+
+ice_aktar "std/ai/tensor.ykn";
+
+# Girdi aktivasyonlarinin mutlak maksimumunu (absmax) Q16.16 formatinda hesaplar.
+isv bitlinear_absmax_hesapla(girdi: *Tensor) -> tamsayi {
+    eger tensor_gecerli_mi(girdi) == 0 ise { dondu 0; }
+    degisken maks: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < girdi.eleman_sayisi {
+        degisken v: tamsayi = girdi.veri_adresi[i];
+        eger v < 0 ise { v = 0 - v; }
+        eger v > maks ise { maks = v; }
+        i = i + 1;
+    }
+    dondu maks;
+}
+
+# BitLinear katmani: Cikti = (Girdi * Agirlik) + Bias
+isv bitlinear_katmani(girdi: *Tensor, agirlik: *Tensor, bias: *Tensor, cikti: *Tensor) -> tamsayi {
+    eger tensor_carp_bitlinear(girdi, agirlik, cikti) == 0 ise {
+        dondu 0;
+    }
+    eger bias != 0 ve tensor_gecerli_mi(bias) == 1 ise {
+        degisken n: tamsayi = cikti.eleman_sayisi;
+        degisken b_len: tamsayi = bias.eleman_sayisi;
+        eger b_len > 0 ise {
+            degisken i: tamsayi = 0;
+            dongu i < n {
+                cikti.veri_adresi[i] = cikti.veri_adresi[i] + bias.veri_adresi[i % b_len];
+                i = i + 1;
+            }
+        }
+    }
+    dondu 1;
+}

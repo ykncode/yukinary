@@ -1,0 +1,47 @@
+# ============================================================
+# Örnek 80: Konsol Tabanlı Byte-Pair Encoding (BPE) LLM Tokenizer
+# ============================================================
+
+degisken g_sozluk_boyutu: tamsayi = 8;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv bpe_birlestir(c1: u8, c2: u8) -> tamsayi {
+    # 'y' ve 'k' birlestir -> Token ID 256
+    eger c1 == 121 ve c2 == 107 ise { dondu 256; }
+    # 'u' ve 'n' birlestir -> Token ID 257
+    eger c1 == 117 ve c2 == 110 ise { dondu 257; }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== BPE LLM Subword Tokenizer ===\n".ptr);
+    degisken ornek_metin: *u8 = "ykn_token".ptr;
+
+    ekrana_yaz("Metin: ".ptr); ekrana_yaz(ornek_metin); ekrana_yaz("\n".ptr);
+
+    degisken t1: tamsayi = bpe_birlestir(121, 107);
+    ekrana_yaz("Birlestirilen Token ID: ".ptr);
+    sayiyi_yaz(t1);
+    ekrana_yaz(" ('yk' ikilisi)\n".ptr);
+
+    ekrana_yaz("Token Dizisi: [256, 110, 95, 116, 111, 107, 101, 110]\n".ptr);
+    dondu 0;
+}

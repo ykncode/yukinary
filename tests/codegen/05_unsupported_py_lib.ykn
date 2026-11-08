@@ -1,0 +1,6 @@
+# Harici Python library directive codegen'e ulasirsa fail-closed olmali.
+#py-lib "unsupported.py";
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

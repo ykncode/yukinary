@@ -1,0 +1,47 @@
+# ============================================================
+# Örnek 49: Win32 Arayüzlü Geri Sayım Zamanlayıcı ve Alarm
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_kalan_dakika: tamsayi = 25;
+degisken g_kalan_saniye: tamsayi = 0;
+degisken g_alarm_aktif: tamsayi = 0;
+
+isv zamanlayici_tetikle() {
+    eger g_kalan_saniye > 0 ise {
+        g_kalan_saniye = g_kalan_saniye - 1;
+    } yoksa {
+        eger g_kalan_dakika > 0 ise {
+            g_kalan_dakika = g_kalan_dakika - 1;
+            g_kalan_saniye = 59;
+        } yoksa {
+            ekrana_yaz("ALARM! Sure doldu!\n".ptr);
+            g_alarm_aktif = 0;
+        }
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Zamanlayici & Alarm".ptr, 550, 400);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Buyuk Sayac Ekrani (25:00)
+    metin_kutusu_olustur(p_h, 100, 30, 30, 480, 100);
+
+    # Hizli Ayar Butonlari (+1dk, +5dk, Pomodoro 25dk)
+    buton_olustur(p_h, "+1 Dakika".ptr, 201, 30, 150, 140, 40);
+    buton_olustur(p_h, "+5 Dakika".ptr, 202, 190, 150, 140, 40);
+    buton_olustur(p_h, "Pomodoro (25dk)".ptr, 203, 350, 150, 160, 40);
+
+    # Baslat / Durdur
+    buton_olustur(p_h, "Baslat".ptr, 301, 30, 210, 220, 45);
+    buton_olustur(p_h, "Sifirla".ptr, 302, 290, 210, 220, 45);
+
+    ekrana_yaz("Zamanlayici baslatildi (Hedef: 25:00 Pomodoro).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

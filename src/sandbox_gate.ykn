@@ -1,0 +1,178 @@
+# ============================================================
+# YKNLLM compiler AST capability gate.
+#
+# Bu gate model metnini tekrar taramaz; parser'in olusturdugu AST ve
+# sembol adlari uzerinde calisir. Text prefilter bypass edilse bile
+# asm/FFI/process/network/dynamic-loader yuzeyi codegen'e ulasamaz.
+# ============================================================
+
+degisken g_yknllm_sandbox_gate_hatasi: tamsayi = 0;
+
+yapi YKNLLMSandboxGatePolicy {
+    izinli_import_kok: *u8;
+    harici_izinli: tamsayi;
+}
+
+isv sandbox_gate_icerir(metin: *u8, aranan: *u8) -> tamsayi {
+    eger metin == 0 veya aranan == 0 ise { dondu 0; }
+    degisken m: tamsayi = 0;
+    dongu metin[m] != 0 { m = m + 1; }
+    degisken a: tamsayi = 0;
+    dongu aranan[a] != 0 { a = a + 1; }
+    eger a <= 0 veya m < a ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i <= m - a {
+        degisken esit: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < a {
+            degisken x: tamsayi = metin[i + j];
+            degisken y: tamsayi = aranan[j];
+            eger x >= 65 ve x <= 90 ise { x = x + 32; }
+            eger y >= 65 ve y <= 90 ise { y = y + 32; }
+            eger x != y ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv sandbox_gate_adi_esit(jeton: *Jeton, ad: *u8) -> tamsayi {
+    eger jeton == 0 veya ad == 0 veya jeton.baslangic == 0 ise { dondu 0; }
+    degisken uzn: tamsayi = 0;
+    dongu ad[uzn] != 0 { uzn = uzn + 1; }
+    eger jeton.uzunluk != uzn ise { dondu 0; }
+    dondu bellek_esit_mi(jeton.baslangic, ad, uzn);
+}
+
+isv sandbox_gate_tehlikeli_adi(jeton: *Jeton) -> tamsayi {
+    eger jeton == 0 veya jeton.baslangic == 0 ise { dondu 0; }
+    eger sandbox_gate_adi_esit(jeton, "diske_bas_ve_kapat".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "dosya_oku".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "dosya_oku_aralik".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "CreateFileA".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ReadFile".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "WriteFile".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "CloseHandle".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "CreateProcessW".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "CreateProcessA".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "LoadLibraryA".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "GetProcAddress".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "FreeLibrary".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "dlopen".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "dlsym".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "dlclose".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "socket".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "connect".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "bind".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "listen".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "accept".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "send".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "recv".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_dyn_call_ptr_i64".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_dyn_call_ptr_4".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_dyn_call_ptr_6".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_cpu_has_avx2".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_popcnt64".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_simd_vec_add_i64".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_simd_vec_sub_i64".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "ykn_simd_dot_q16".ptr) == 1 veya
+       sandbox_gate_adi_esit(jeton, "yknllm_audit_append".ptr) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv sandbox_gate_reddet(dugum: *AstDugum, neden: *u8) -> tamsayi {
+    g_yknllm_sandbox_gate_hatasi = 1;
+    degisken hk: HataKaydi;
+    degisken satir: tamsayi = 1;
+    degisken sutun: tamsayi = 1;
+    eger dugum != 0 ve dugum.ilk_jeton != 0 ise {
+        satir = dugum.ilk_jeton.satir;
+        sutun = dugum.ilk_jeton.sutun;
+    }
+    tani_olustur(&hk, 42, satir, sutun, neden, 0);
+    hata_kaydi_yazdir(&hk);
+    dondu 0;
+}
+
+isv sandbox_gate_prefix_mi(metin: *u8, kok: *u8) -> tamsayi {
+    eger metin == 0 veya kok == 0 ise { dondu 0; }
+    degisken m: tamsayi = 0;
+    degisken k: tamsayi = 0;
+    dongu metin[m] != 0 { m = m + 1; }
+    dongu kok[k] != 0 { k = k + 1; }
+    eger k <= 0 veya m < k ise { dondu 0; }
+    dondu bellek_esit_mi(metin, kok, k);
+}
+
+isv sandbox_gate_import_guvenli_mi(dugum: *AstDugum, politika: *YKNLLMSandboxGatePolicy) -> tamsayi {
+    eger dugum == 0 veya politika == 0 veya dugum.ilk_jeton == 0 veya dugum.ilk_jeton.baslangic == 0 ise { dondu 0; }
+    degisken yol: *u8 = dugum.ilk_jeton.baslangic;
+    # Model yalnız allowlist kökündeki standart YKN modüllerini alabilir.
+    # Prefix karşılaştırması exact root kontrolüdür; "stdx/" gibi adlar geçmez.
+    eger sandbox_gate_prefix_mi(yol, politika.izinli_import_kok) == 0 veya
+       sandbox_gate_icerir(yol, "..".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "\\".ptr) == 1 veya
+       sandbox_gate_icerir(yol, ":".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "std/os".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "std/ag".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "fallback".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "convert".ptr) == 1 veya
+       sandbox_gate_icerir(yol, "yknllm_audit".ptr) == 1 ise { dondu 0; }
+    dondu 1;
+}
+
+isv sandbox_gate_node(dugum: *AstDugum, politika: *YKNLLMSandboxGatePolicy) -> tamsayi {
+    eger dugum == 0 veya g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger dugum.tip == AST_DIREKTIF_C_LIB veya
+       dugum.tip == AST_DIREKTIF_CPP_LIB veya
+       dugum.tip == AST_DIREKTIF_PY_LIB veya
+       dugum.tip == AST_DIREKTIF_RS_LIB veya
+       dugum.tip == AST_DIREKTIF_CONVERT ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: harici direktif reddedildi".ptr);
+    }
+    eger dugum.tip == AST_DIREKTIF_PROMPT ve dugum.son_jeton != 0 ve
+       dugum.son_jeton.tip == TIP_ASM ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: inline asm reddedildi".ptr);
+    }
+    eger dugum.tip == AST_ICE_AKTAR ise {
+        eger sandbox_gate_import_guvenli_mi(dugum, politika) == 0 ise {
+            dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: import yolu veya capability reddedildi".ptr);
+        }
+    }
+    eger dugum.tip == AST_ISLEV ve dugum.govde == 0 ve politika.harici_izinli == 0 ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: harici fonksiyon bildirimi reddedildi".ptr);
+    }
+    eger dugum.tip == AST_ISLEV_CAGRISI ve dugum.sol != 0 ve
+       dugum.sol.ilk_jeton != 0 ve sandbox_gate_tehlikeli_adi(dugum.sol.ilk_jeton) == 1 ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: capability fonksiyonu cagrisi reddedildi".ptr);
+    }
+    # Metod/alan çağrılarında çağrılan isim sag tarafında tutulur
+    # (ör. nesne.socket()). Sol tarafı kontrol etmek tek başına bypass olurdu.
+    eger dugum.tip == AST_ISLEV_CAGRISI ve dugum.sag != 0 ve
+       dugum.sag.ilk_jeton != 0 ve sandbox_gate_tehlikeli_adi(dugum.sag.ilk_jeton) == 1 ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: capability metodu cagrisi reddedildi".ptr);
+    }
+    eger dugum.ilk_jeton != 0 ve sandbox_gate_tehlikeli_adi(dugum.ilk_jeton) == 1 ise {
+        dondu sandbox_gate_reddet(dugum, "YKNLLM sandbox: tehlikeli sembol reddedildi".ptr);
+    }
+    eger sandbox_gate_node(dugum.sol, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger sandbox_gate_node(dugum.sag, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger sandbox_gate_node(dugum.govde, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger sandbox_gate_node(dugum.yoksa_govde, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger sandbox_gate_node(dugum.parametreler, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    eger sandbox_gate_node(dugum.sonraki, politika) == 0 ve g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_sandbox_ast_dogrula(kok: *AstDugum) -> tamsayi {
+    degisken politika: YKNLLMSandboxGatePolicy;
+    politika.izinli_import_kok = "std".ptr;
+    politika.harici_izinli = 0;
+    g_yknllm_sandbox_gate_hatasi = 0;
+    eger kok == 0 ise { dondu 0; }
+    eger sandbox_gate_node(kok, &politika) == 0 veya
+       g_yknllm_sandbox_gate_hatasi != 0 ise { dondu 0; }
+    dondu 1;
+}

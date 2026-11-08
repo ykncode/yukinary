@@ -1,0 +1,140 @@
+# ============================================================
+# std/apps/hesap_makinesi.ykn
+# FAZ 49 & FAZ 66: Saf Yukinary Masaustu Hesap Makinesi Motoru
+# SIFIR MOCK, Gercek Shunting-Yard Operator Oncelikli & Parantezli Cozucu
+# (+, -, *, /, Parantez '(' ve ')')
+# ============================================================
+
+isv hesapla_iki_sayi(a: tamsayi, b: tamsayi, op: u8) -> tamsayi {
+    eger op == 43 ise { dondu a + b; } # '+'
+    eger op == 45 ise { dondu a - b; } # '-'
+    eger op == 42 ise { dondu a * b; } # '*'
+    eger op == 47 ise {                # '/'
+        eger b != 0 ise { dondu a / b; }
+        dondu 0;
+    }
+    dondu 0;
+}
+
+# Geriye donuk uyumlu basit zincirleme matematiksel dize cozumleyici: "100+50*2" -> ((100+50)*2)
+isv hesap_makinesi_coz(tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+    degisken guncel_sayi: tamsayi = 0;
+    degisken aktif_op: u8 = 43; # '+'
+    degisken i: tamsayi = 0;
+
+    dongu i < uzunluk {
+        degisken c: u8 = tampon[i];
+        eger c >= 48 ve c <= 57 ise {
+            guncel_sayi = guncel_sayi * 10 + (c - 48);
+        } yoksa {
+            eger c == 43 veya c == 45 veya c == 42 veya c == 47 ise {
+                sonuc = hesapla_iki_sayi(sonuc, guncel_sayi, aktif_op);
+                guncel_sayi = 0;
+                aktif_op = c;
+            }
+        }
+        i = i + 1;
+    }
+    sonuc = hesapla_iki_sayi(sonuc, guncel_sayi, aktif_op);
+    dondu sonuc;
+}
+
+# FAZ 66: Operator Onceligi Derecesi
+isv operator_oncelik(op: u8) -> tamsayi {
+    eger op == 42 veya op == 47 ise { dondu 2; } # '*' ve '/'
+    eger op == 43 veya op == 45 ise { dondu 1; } # '+' ve '-'
+    dondu 0;
+}
+
+# FAZ 66: Gercek Shunting-Yard Aritmetik Ifade Ayristirici Motoru
+isv hesap_makinesi_ifade_coz(tampon: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken val_stack: *tamsayi = bellek_tahsis_et(64 * 8);
+    degisken op_stack: *tamsayi  = bellek_tahsis_et(64 * 8);
+    degisken val_top: tamsayi = 0;
+    degisken op_top:  tamsayi = 0;
+
+    degisken i: tamsayi = 0;
+    degisken guncel_sayi: tamsayi = 0;
+    degisken sayi_okunuyor: tamsayi = 0;
+
+    dongu i < uzunluk {
+        degisken c: u8 = tampon[i];
+
+        eger c >= 48 ve c <= 57 ise {
+            guncel_sayi = guncel_sayi * 10 + (c - 48);
+            sayi_okunuyor = 1;
+        } yoksa {
+            eger sayi_okunuyor == 1 ise {
+                val_stack[val_top] = guncel_sayi;
+                val_top = val_top + 1;
+                guncel_sayi = 0;
+                sayi_okunuyor = 0;
+            }
+
+            eger c == 40 ise { # '('
+                op_stack[op_top] = 40;
+                op_top = op_top + 1;
+            } yoksa {
+                eger c == 41 ise { # ')'
+                    dongu op_top > 0 ve op_stack[op_top - 1] != 40 {
+                        op_top = op_top - 1;
+                        degisken top_op: u8 = op_stack[op_top] & 255;
+                        val_top = val_top - 1;
+                        degisken b: tamsayi = val_stack[val_top];
+                        val_top = val_top - 1;
+                        degisken a: tamsayi = val_stack[val_top];
+                        degisken res: tamsayi = hesapla_iki_sayi(a, b, top_op);
+                        val_stack[val_top] = res;
+                        val_top = val_top + 1;
+                    }
+                    eger op_top > 0 ve op_stack[op_top - 1] == 40 ise {
+                        op_top = op_top - 1; # '(' cikar
+                    }
+                } yoksa {
+                    eger c == 43 veya c == 45 veya c == 42 veya c == 47 ise {
+                        degisken oncelik_c: tamsayi = operator_oncelik(c);
+                        dongu op_top > 0 ve op_stack[op_top - 1] != 40 ve operator_oncelik(op_stack[op_top - 1] & 255) >= oncelik_c {
+                            op_top = op_top - 1;
+                            degisken top_op2: u8 = op_stack[op_top] & 255;
+                            val_top = val_top - 1;
+                            degisken b2: tamsayi = val_stack[val_top];
+                            val_top = val_top - 1;
+                            degisken a2: tamsayi = val_stack[val_top];
+                            degisken res2: tamsayi = hesapla_iki_sayi(a2, b2, top_op2);
+                            val_stack[val_top] = res2;
+                            val_top = val_top + 1;
+                        }
+                        op_stack[op_top] = c;
+                        op_top = op_top + 1;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    eger sayi_okunuyor == 1 ise {
+        val_stack[val_top] = guncel_sayi;
+        val_top = val_top + 1;
+    }
+
+    dongu op_top > 0 {
+        op_top = op_top - 1;
+        degisken top_op_son: u8 = op_stack[op_top] & 255;
+        eger top_op_son != 40 ise {
+            val_top = val_top - 1;
+            degisken b_son: tamsayi = val_stack[val_top];
+            val_top = val_top - 1;
+            degisken a_son: tamsayi = val_stack[val_top];
+            degisken res_son: tamsayi = hesapla_iki_sayi(a_son, b_son, top_op_son);
+            val_stack[val_top] = res_son;
+            val_top = val_top + 1;
+        }
+    }
+
+    eger val_top > 0 ise {
+        dondu val_stack[0];
+    }
+    dondu 0;
+}

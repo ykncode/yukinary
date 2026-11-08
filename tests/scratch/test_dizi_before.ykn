@@ -1,0 +1,12 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv test_num<T>(x: tamsayi) -> tamsayi {
+    dondu x;
+}
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken a: tamsayi = 999;
+    degisken ret: tamsayi = test_num<tamsayi>(a);
+    dondu ret;
+}

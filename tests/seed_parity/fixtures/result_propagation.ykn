@@ -1,0 +1,29 @@
+# Seed Parity Fixture: result_propagation.ykn
+# Test: Sonuc tipi ve ? operatörü propagasyonu
+ice_aktar "std/sonuc.ykn";
+
+isv bolme_yap(a: tamsayi, b: tamsayi) -> *Sonuc {
+    eger b == 0 ise {
+        dondu sonuc_hata(1);
+    }
+    dondu sonuc_tamam(a / b);
+}
+
+isv hesapla(x: tamsayi) -> *Sonuc {
+    degisken r: *Sonuc = bolme_yap(100, x);
+    eger r == 0 ise { dondu sonuc_hata(99); }
+    eger r.basarili == 0 ise { dondu r; }
+    dondu sonuc_tamam(r.deger + 1);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken ok: *Sonuc = hesapla(5);
+    eger ok != 0 veya ok.basarili == 1 ise {
+        ekrana_yaz("RESULT_PROPAGATION: tamam OK\n".ptr);
+    }
+    degisken err: *Sonuc = hesapla(0);
+    eger err != 0 veya err.basarili == 0 ise {
+        ekrana_yaz("RESULT_PROPAGATION: hata OK\n".ptr);
+    }
+    dondu 0;
+}

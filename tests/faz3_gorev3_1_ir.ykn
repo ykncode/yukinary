@@ -1,0 +1,41 @@
+# FAZ 3.1 POZITIF TEST: HIR, MIR, IR Lowering ve IR Codegen x64 Dogrulamasi
+
+isv hesapla(a: tamsayi, b: tamsayi) -> tamsayi {
+    degisken m: tamsayi = a % b;      # MOD
+    degisken neg: tamsayi = -m;       # NEG
+    degisken bit_and: tamsayi = a & b; # AND
+    degisken bit_or: tamsayi = a | b;  # OR
+    degisken bit_xor: tamsayi = a ^ b; # XOR
+    degisken shl_val: tamsayi = m << 2; # SHL
+    degisken shr_val: tamsayi = m >> 1; # SHR
+
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 5 {
+        toplam = toplam + i;
+        i = i + 1;
+    }
+
+    eger toplam == 10 ise {
+        dondu bit_xor + shl_val + toplam;
+    }
+
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = hesapla(27, 8);
+    # 27 % 8 = 3
+    # 27 ^ 8 = 19
+    # 3 << 2 = 12
+    # toplam = 0 + 1 + 2 + 3 + 4 = 10
+    # beklenen: 19 + 12 + 10 = 41
+
+    eger sonuc == 41 ise {
+        ekrana_yaz("FAZ 3.1 HIR/IR DOGRULANDI: Basarili!\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz("FAZ 3.1 HATA: Beklenen 41, alinan deger farkli!\n".ptr);
+    dondu 1;
+}

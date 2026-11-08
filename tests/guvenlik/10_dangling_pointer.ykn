@@ -1,0 +1,45 @@
+# ============================================================
+# tests/guvenlik/10_dangling_pointer.ykn
+# Faz 3.2 & 14 - Dangling Pointer Tespiti ve Guvenlik Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Bolge olustur
+    degisken b: *Bolge = bolge_olustur(2048);
+    eger b == 0 veya b.aktif != 1 ise {
+        ekrana_yaz("FAIL: bolge olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Bolgeye bagli tahsis olustur
+    degisken t: *GuvenliTahsis = guvenli_tahsis_et(32);
+    t.bolge_id = 1; # Bolgeye bagla
+
+    # 3. Bolge aktifken dangling olmamali
+    degisken c1: tamsayi = guvenli_dangling_kontrol(t, b.aktif);
+    eger c1 != 1 ise {
+        ekrana_yaz("FAIL: aktif bolgede dangling olmamali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Bolge kapatilsin
+    bolge_kapat(b);
+    eger b.aktif != 0 ise {
+        ekrana_yaz("FAIL: bolge kapanmadi\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Kapanmis bolgeye ait pointer artik dangling'dir
+    degisken c2: tamsayi = guvenli_dangling_kontrol(t, b.aktif);
+    eger c2 != 0 ise {
+        ekrana_yaz("FAIL: kapanmis bolgede dangling tespit edilmeli\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-DANGLING-PASS\n".ptr);
+    dondu 0;
+}

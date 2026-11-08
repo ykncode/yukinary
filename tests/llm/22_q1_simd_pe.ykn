@@ -1,0 +1,20 @@
+# Generated PE -> native Q1_0 kernel fixture
+harici isv ykn_llm_q1_0_dot_q16(packed: *u8, activation: *tamsayi, k: tamsayi) -> tamsayi;
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken packed: [18]u8;
+    degisken activation: [128]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 18 { packed[i] = 0; i = i + 1; }
+    # Q1_0 d = 1.0 (half 0x3c00), all sign bits positive.
+    packed[0] = 0;
+    packed[1] = 60;
+    i = 2;
+    dongu i < 18 { packed[i] = 255; i = i + 1; }
+    i = 0;
+    dongu i < 128 { activation[i] = 65536; i = i + 1; }
+    degisken result: tamsayi = ykn_llm_q1_0_dot_q16(packed, activation, 128);
+    eger result == 8388608 ise { ekrana_yaz("Q1-PE-PASS".ptr); }
+    yoksa { ekrana_yaz("Q1-PE-FAIL".ptr); }
+    dondu result;
+}

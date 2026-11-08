@@ -1,0 +1,152 @@
+# ============================================================
+# FAZ 7 - Standart Kutuphane Kabul Kriter Testi
+# std/matematik, std/bellek, std/metin, std/dosya testleri
+# Calisma dizini: d:\YukiLLM\yukinary_vanilla
+# ============================================================
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    eger sayi == 0 ise {
+        buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu;
+    }
+    degisken n: tamsayi = sayi;
+    eger n < 0 ise {
+        ekrana_yaz("-".ptr);
+        n = 0 - n;
+    }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    degisken j: tamsayi = 0;
+    dongu j < i / 2 {
+        degisken tmp: u8 = buf[j];
+        buf[j] = buf[i - 1 - j];
+        buf[i - 1 - j] = tmp;
+        j = j + 1;
+    }
+    buf[i] = 0;
+    ekrana_yaz(buf);
+}
+
+# --- Standart Kutuphane ice aktarimlari ---
+# Not: Dosya tests/stdlib/ altinda oldugu icin relative path ../../std/
+ice_aktar "../../std/matematik.ykn";
+ice_aktar "../../std/bellek.ykn";
+ice_aktar "../../std/metin.ykn";
+ice_aktar "../../std/dosya.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== FAZ 7 - std/matematik ===\n".ptr);
+    # mutlak_deger
+    sayiyi_yazdir(mutlak_deger(-42));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(mutlak_deger(7));
+    ekrana_yaz(" ".ptr);
+    # min / max
+    sayiyi_yazdir(minimum(-10, 5));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(maksimum(-10, 5));
+    ekrana_yaz(" ".ptr);
+    # clamp
+    sayiyi_yazdir(sinirla(150, 0, 100));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(sinirla(-3, 0, 100));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(sinirla(50, 0, 100));
+    ekrana_yaz(" ".ptr);
+    # us_al 2^10 = 1024
+    sayiyi_yazdir(us_al(2, 10));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(us_al(3, 4));
+    ekrana_yaz(" ".ptr);
+    # isaret
+    sayiyi_yazdir(isaret(-5));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(isaret(0));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(isaret(5));
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("=== FAZ 7 - std/bellek ===\n".ptr);
+    # bellek_kopyala testi
+    degisken a1: *u8 = bellek_tahsis_et(32);
+    degisken b1: *u8 = bellek_tahsis_et(32);
+    a1[0] = 72; a1[1] = 105; a1[2] = 33; a1[3] = 0;     # "Hi!"
+    bellek_kopyala(b1, a1, 4);
+    ekrana_yaz(b1);
+    ekrana_yaz(" esit=".ptr);
+    sayiyi_yazdir(bellek_esit_mi(a1, b1, 4));
+    ekrana_yaz(" ".ptr);
+    # bellek_doldur test
+    bellek_doldur(a1, 65, 5);   # "AAAAA"
+    a1[5] = 0;
+    ekrana_yaz(a1);
+    ekrana_yaz(" ".ptr);
+    # bellek_karsilastir
+    degisken s1: *u8 = bellek_tahsis_et(16);
+    s1[0] = 97; s1[1] = 98; s1[2] = 99; s1[3] = 0;   # "abc"
+    degisken s2: *u8 = bellek_tahsis_et(16);
+    s2[0] = 97; s2[1] = 98; s2[2] = 100; s2[3] = 0;  # "abd"
+    sayiyi_yazdir(bellek_karsilastir(s1, s2, 3));     # -1
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(bellek_karsilastir(s1, s1, 3));     # 0
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(bellek_karsilastir(s2, s1, 3));     # 1
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("=== FAZ 7 - std/metin ===\n".ptr);
+    # metin_uzunluk
+    degisken m1: *u8 = "Yukinary".ptr;
+    sayiyi_yazdir(metin_uzunluk(m1));
+    ekrana_yaz(" ".ptr);
+    # metin_karsilastir
+    sayiyi_yazdir(metin_karsilastir("elma".ptr, "armut".ptr));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(metin_karsilastir("ayni".ptr, "ayni".ptr));
+    ekrana_yaz(" ".ptr);
+    # alt_dize
+    degisken alt: *u8 = alt_dize("Merhaba Dunya".ptr, 8, 5);
+    ekrana_yaz(alt);
+    ekrana_yaz(" ".ptr);
+    # tamsayiya_cevir
+    sayiyi_yazdir(tamsayiya_cevir("1234".ptr));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(tamsayiya_cevir("-7".ptr));
+    ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(tamsayiya_cevir("  +42abc".ptr));
+    ekrana_yaz(" ".ptr);
+    # metin_iki_birlestir_yeni (concat)
+    degisken bb: *u8 = concat("Hello, ".ptr, "YKN!".ptr);
+    ekrana_yaz(bb);
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("=== FAZ 7 - std/dosya ===\n".ptr);
+    # Dosya yaz
+    degisken yaz_mesaj: *u8 = "Faz7-Test-Olusturuldu\n".ptr;
+    # yazinin uzunlugunu bul
+    degisken yuz: tamsayi = 0;
+    dongu yaz_mesaj[yuz] != 0 { yuz = yuz + 1; }
+    degisken yazildi_bayt: tamsayi = dosya_yaz_tamami("tests_stdlib_temp.txt".ptr, yaz_mesaj, yuz);
+    sayiyi_yazdir(yazildi_bayt);
+    ekrana_yaz("B (yazildi) var_mi=".ptr);
+    sayiyi_yazdir(dosya_var_mi("tests_stdlib_temp.txt".ptr));
+    ekrana_yaz(" satir=".ptr);
+    sayiyi_yazdir(dosya_satir_sayisi("tests_stdlib_temp.txt".ptr));
+    ekrana_yaz("\n".ptr);
+    # Dosyayi tekrar oku
+    degisken okun_uz: tamsayi = 0;
+    degisken okun_icerik: *u8 = dosya_oku_tamami("tests_stdlib_temp.txt".ptr, okun_uz);
+    if okun_icerik != 0 ise {
+        ekrana_yaz("Okunan: ".ptr);
+        ekrana_yaz(okun_icerik);
+        sayiyi_yazdir(okun_uz);
+        ekrana_yaz(" bayt.\n".ptr);
+    }
+
+    ekrana_yaz("=== FAZ 7 - Tum testler bitti ===\n".ptr);
+    ekrana_yaz("01_STDLIB_TUM_PASS\n".ptr);
+    dondu 0;
+}

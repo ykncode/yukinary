@@ -1,0 +1,14 @@
+# AST_MANTIK native acceptance: true/false parser, typechecker and codegen.
+# Exit 0 only when both literal values and conditional lowering are correct.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken dogru_deger: mantik = dogru;
+    degisken yanlis_deger: mantik = yanlis;
+
+    eger dogru_deger ise {
+        eger yanlis_deger ise {
+            dondu 1;
+        }
+        dondu 0;
+    }
+    dondu 1;
+}

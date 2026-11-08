@@ -1,0 +1,311 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/async.ykn
+# Tek is parcacikli olay dongusu ve gorev zamanlayici (Async/Await Event Loop Core)
+#
+# ASYNC SOZLESMESI (Async Contract):
+#   - Asenkron gorevleri (Gorev / Task) bir oncelik ve calisma kuyrugunda toplar.
+#   - Her Gorev bir poll fonksiyonuna (islev_ptr) ve calisma cercevesine (baglam) sahiptir.
+#   - olay_dongusu_calistir: tum gorevler tamamlanana kadar (run_until_complete)
+#     donguyu calistirir.
+#   - Future entegrasyonu: Derleyicinin AST_ASYNC_ISLEV ile urettigi Future nesnelerini
+#     otomatik olarak Gorev olarak sarmalar ve yurutur.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/zaman.ykn";
+
+# Gorev Durum Sabitleri
+degisken GOREV_BEKLIYOR    = 0;
+degisken GOREV_CALISIYOR   = 1;
+degisken GOREV_TAMAMLANDI  = 2;
+degisken GOREV_HATA        = 3;
+
+# Asenkron Gorev Yapisi
+yapi Gorev {
+    id: tamsayi;
+    durum: tamsayi;
+    islev_ptr: tamsayi;
+    baglam: tamsayi;
+    sonuc: tamsayi;
+    sonraki: *Gorev;
+}
+
+# Gorev Yoneticisi / Olay Dongusu Yapisi
+yapi GorevYoneticisi {
+    kuyruk_bas: *Gorev;
+    kuyruk_son: *Gorev;
+    toplam_gorev: tamsayi;
+    tamamlanan_gorev: tamsayi;
+    calisiyor_mu: tamsayi;
+    sayac_id: tamsayi;
+}
+
+# Yeni bir GorevYoneticisi olusturur.
+isv gorev_yoneticisi_olustur() -> *GorevYoneticisi {
+    degisken gy: *GorevYoneticisi = os_bellek_tahsis(48);
+    eger gy == 0 ise { dondu 0; }
+    
+    gy.kuyruk_bas = 0;
+    gy.kuyruk_son = 0;
+    gy.toplam_gorev = 0;
+    gy.tamamlanan_gorev = 0;
+    gy.calisiyor_mu = 0;
+    gy.sayac_id = 1;
+    
+    dondu gy;
+}
+isv create_task_manager() -> *GorevYoneticisi { dondu gorev_yoneticisi_olustur(); }
+
+# Tekil bir Gorev dugumu olusturur.
+isv gorev_olustur(id: tamsayi, islev_ptr: tamsayi, baglam: tamsayi) -> *Gorev {
+    degisken g: *Gorev = os_bellek_tahsis(48);
+    eger g == 0 ise { dondu 0; }
+    
+    g.id = id;
+    g.durum = GOREV_BEKLIYOR;
+    g.islev_ptr = islev_ptr;
+    g.baglam = baglam;
+    g.sonuc = 0;
+    g.sonraki = 0;
+    
+    dondu g;
+}
+
+# Olay dongusune yeni bir islev ve baglam gorevi ekler.
+isv gorev_ekle(gy: *GorevYoneticisi, islev_ptr: tamsayi, baglam: tamsayi) -> *Gorev {
+    eger gy == 0 ise { dondu 0; }
+    
+    degisken yeni_id: tamsayi = gy.sayac_id;
+    gy.sayac_id = gy.sayac_id + 1;
+    
+    degisken g: *Gorev = gorev_olustur(yeni_id, islev_ptr, baglam);
+    eger g == 0 ise { dondu 0; }
+    
+    eger gy.kuyruk_bas == 0 ise {
+        gy.kuyruk_bas = g;
+        gy.kuyruk_son = g;
+    } yoksa {
+        gy.kuyruk_son.sonraki = g;
+        gy.kuyruk_son = g;
+    }
+    
+    gy.toplam_gorev = gy.toplam_gorev + 1;
+    dondu g;
+}
+isv spawn_task(gy: *GorevYoneticisi, fn_ptr: tamsayi, ctx: tamsayi) -> *Gorev {
+    dondu gorev_ekle(gy, fn_ptr, ctx);
+}
+
+# Bir Future nesnesini (derleyici emit_async_future_wrap ciktisi) Gorev kuyruguna baglar.
+# Future bellek yerlesimi:
+#   offset 0  : Trampoline poll pointer (islev_ptr)
+#   offset 8  : AsyncFrame / Context pointer (baglam)
+#   offset 16 : durum (0: bekliyor, 1: tamamlandi)
+#   offset 24 : sonuc
+isv future_gorev_ekle(gy: *GorevYoneticisi, future_ptr: *u8) -> *Gorev {
+    eger gy == 0 veya future_ptr == 0 ise { dondu 0; }
+    
+    degisken f_words: *tamsayi = future_ptr;
+    degisken f_poll: tamsayi = f_words[0];
+    degisken f_ctx: tamsayi = f_words[1];
+    
+    dondu gorev_ekle(gy, f_poll, f_ctx);
+}
+isv spawn_future(gy: *GorevYoneticisi, future_ptr: *u8) -> *Gorev {
+    dondu future_gorev_ekle(gy, future_ptr);
+}
+
+# Belirtilen gorevi bir kez sorgular (poll).
+# Dondurulen deger:
+#   0: Gorev henuz bitmedi, bekliyor (GOREV_BEKLIYOR)
+#   1: Gorev basariyla bitti (GOREV_TAMAMLANDI)
+#   2: Gorev hata verdi (GOREV_HATA)
+isv gorev_poll(g: *Gorev) -> tamsayi {
+    eger g == 0 ise { dondu GOREV_HATA; }
+    eger g.durum == GOREV_TAMAMLANDI veya g.durum == GOREV_HATA ise {
+        dondu g.durum;
+    }
+    
+    g.durum = GOREV_CALISIYOR;
+    
+    # Eger islev_ptr varsa, dynamic call ile cagir: poll(baglam)
+    degisken res: tamsayi = 1;
+    eger g.islev_ptr != 0 ise {
+        res = ykn_dyn_call_ptr_3(g.islev_ptr, g.baglam, 0, 0);
+    }
+    
+    eger res == 1 ise {
+        g.durum = GOREV_TAMAMLANDI;
+        g.sonuc = res;
+        dondu 1;
+    } yoksa eger res == 0 ise {
+        g.durum = GOREV_BEKLIYOR;
+        dondu 0;
+    } yoksa {
+        g.durum = GOREV_HATA;
+        dondu 2;
+    }
+}
+isv poll_task(t: *Gorev) -> tamsayi { dondu gorev_poll(t); }
+
+# Olay dongusunun tek bir adimini yurutur. Kuyruktaki her bekleyen goreve
+# sirayla bir kez poll cagirir. Tamamlanan gorev sayisini dondurur.
+isv gorev_dongusu_adim(gy: *GorevYoneticisi) -> tamsayi {
+    eger gy == 0 veya gy.kuyruk_bas == 0 ise { dondu 0; }
+    
+    degisken adimda_tamamlanan: tamsayi = 0;
+    degisken g: *Gorev = gy.kuyruk_bas;
+    
+    dongu g != 0 {
+        eger g.durum == GOREV_BEKLIYOR veya g.durum == GOREV_CALISIYOR ise {
+            degisken durum: tamsayi = gorev_poll(g);
+            eger durum == 1 veya durum == 2 ise {
+                gy.tamamlanan_gorev = gy.tamamlanan_gorev + 1;
+                adimda_tamamlanan = adimda_tamamlanan + 1;
+            }
+        }
+        g = g.sonraki;
+    }
+    
+    dondu adimda_tamamlanan;
+}
+isv event_loop_step(gy: *GorevYoneticisi) -> tamsayi { dondu gorev_dongusu_adim(gy); }
+
+# Tum gorevler tamamlanana kadar olay dongusunu calistirir (Run Until Complete).
+# Tamamlanan toplam gorev sayisini doner.
+isv gorev_dongusu_calistir(gy: *GorevYoneticisi) -> tamsayi {
+    eger gy == 0 ise { dondu 0; }
+    gy.calisiyor_mu = 1;
+    
+    dongu gy.tamamlanan_gorev < gy.toplam_gorev {
+        degisken t: tamsayi = gorev_dongusu_adim(gy);
+        eger t == 0 ve gy.tamamlanan_gorev < gy.toplam_gorev ise {
+            # CPU'yu rahatlatmak icin kisa bir bekleme (1 ms yield)
+            islem_beklet_ms(1);
+        }
+    }
+    
+    gy.calisiyor_mu = 0;
+    dondu gy.tamamlanan_gorev;
+}
+isv event_loop_run(gy: *GorevYoneticisi) -> tamsayi { dondu gorev_dongusu_calistir(gy); }
+
+# Kuyruktaki tum gorevleri serbest birakir.
+isv gorev_yoneticisi_temizle(gy: *GorevYoneticisi) {
+    eger gy == 0 ise { dondu; }
+    
+    degisken g: *Gorev = gy.kuyruk_bas;
+    dongu g != 0 {
+        degisken sonraki: *Gorev = g.sonraki;
+        os_bellek_serbest(g);
+        g = sonraki;
+    }
+    
+    gy.kuyruk_bas = 0;
+    gy.kuyruk_son = 0;
+    gy.toplam_gorev = 0;
+    gy.tamamlanan_gorev = 0;
+    gy.calisiyor_mu = 0;
+}
+
+# Gorev yoneticisini ve tum bagli gorevleri bellekten temizler.
+isv gorev_yoneticisi_serbest_birak(gy: *GorevYoneticisi) {
+    eger gy == 0 ise { dondu; }
+    gorev_yoneticisi_temizle(gy);
+    os_bellek_serbest(gy);
+}
+isv task_manager_destroy(gy: *GorevYoneticisi) { gorev_yoneticisi_serbest_birak(gy); }
+
+# ============================================================
+# FAZ 4: GorevHavuzu (Atomic Multi-Task / Worker Pool)
+# ============================================================
+
+yapi GorevHavuzu {
+    isci_sayisi: tamsayi;
+    kuyruk_kapasite: tamsayi;
+    gorev_sayisi: tamsayi;
+    tamamlanan: tamsayi;
+    kilit: tamsayi;
+    gorevler: [256]tamsayi;
+    baglamlar: [256]tamsayi;
+    sonuclar: [256]tamsayi;
+    durumlar: [256]tamsayi;
+}
+
+isv gorev_havuzu_olustur(isci_sayisi: tamsayi) -> *GorevHavuzu {
+    degisken gh: *GorevHavuzu = os_bellek_tahsis(8240);
+    eger gh == 0 ise { dondu 0; }
+    gh.isci_sayisi = isci_sayisi;
+    gh.kuyruk_kapasite = 256;
+    gh.gorev_sayisi = 0;
+    gh.tamamlanan = 0;
+    gh.kilit = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 256 {
+        gh.durumlar[i] = 0;
+        gh.sonuclar[i] = 0;
+        i = i + 1;
+    }
+    dondu gh;
+}
+
+isv gorev_havuzu_ekle(gh: *GorevHavuzu, fn_ptr: tamsayi, ctx: tamsayi) -> tamsayi {
+    eger gh == 0 veya gh.gorev_sayisi >= gh.kuyruk_kapasite ise { dondu -1; }
+    
+    dongu ykn_atomic_cas_i64(&(gh.kilit), 0, 1) == 0 {
+        # spin
+    }
+    
+    degisken idx: tamsayi = gh.gorev_sayisi;
+    gh.gorevler[idx] = fn_ptr;
+    gh.baglamlar[idx] = ctx;
+    gh.durumlar[idx] = 1;
+    gh.gorev_sayisi = gh.gorev_sayisi + 1;
+    
+    ykn_atomic_store_i64(&(gh.kilit), 0);
+    dondu idx;
+}
+
+isv gorev_havuzu_calistir_adim(gh: *GorevHavuzu) -> tamsayi {
+    eger gh == 0 ise { dondu 0; }
+    degisken islenen: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < gh.gorev_sayisi {
+        eger ykn_atomic_cas_i64(&(gh.durumlar[i]), 1, 2) == 1 ise {
+            degisken fn_p: tamsayi = gh.gorevler[i];
+            degisken ctx: tamsayi = gh.baglamlar[i];
+            degisken res: tamsayi = 0;
+            eger fn_p != 0 ise {
+                res = ykn_dyn_call_ptr_i64(fn_p, ctx, 0);
+            }
+            gh.sonuclar[i] = res;
+            ykn_atomic_store_i64(&(gh.durumlar[i]), 3);
+            ykn_atomic_inc_i64(&(gh.tamamlanan));
+            islenen = islenen + 1;
+        }
+        i = i + 1;
+    }
+    dondu islenen;
+}
+
+isv gorev_havuzu_bekle(gh: *GorevHavuzu) -> tamsayi {
+    eger gh == 0 ise { dondu 0; }
+    dongu ykn_atomic_load_i64(&(gh.tamamlanan)) < gh.gorev_sayisi {
+        gorev_havuzu_calistir_adim(gh);
+    }
+    dondu gh.tamamlanan;
+}
+
+isv gorev_havuzu_sonuc_al(gh: *GorevHavuzu, gorev_id: tamsayi) -> tamsayi {
+    eger gh == 0 veya gorev_id < 0 veya gorev_id >= gh.gorev_sayisi ise { dondu 0; }
+    dondu gh.sonuclar[gorev_id];
+}
+
+isv gorev_havuzu_serbest_birak(gh: *GorevHavuzu) {
+    eger gh != 0 ise {
+        os_bellek_serbest(gh);
+    }
+}
+
+

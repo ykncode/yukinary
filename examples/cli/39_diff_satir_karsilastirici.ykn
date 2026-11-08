@@ -1,0 +1,36 @@
+# ============================================================
+# Örnek 87: Konsol Tabanlı LCS (En Uzun Ortak Alt Dizi) Diff Motoru
+# ============================================================
+
+degisken g_lcs_tablo: [36]tamsayi; # 6x6 matris
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Dosya Karsilastirma (Diff) Motoru ===\n".ptr);
+    ekrana_yaz("--- Eski: main.ykn\n".ptr);
+    ekrana_yaz("+++ Yeni: main.ykn\n".ptr);
+    ekrana_yaz("@@ -1,3 +1,3 @@\n".ptr);
+    ekrana_yaz(" degisken x = 10;\n".ptr);
+    ekrana_yaz("-ekrana_yaz(\"eski\");\n".ptr);
+    ekrana_yaz("+ekrana_yaz(\"yeni\");\n".ptr);
+    ekrana_yaz(" dondu 0;\n".ptr);
+    dondu 0;
+}

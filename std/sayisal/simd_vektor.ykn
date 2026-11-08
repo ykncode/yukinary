@@ -1,0 +1,95 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi: std/sayisal/simd_vektor.ykn
+# FAZ 2: Otomatik SIMD Vektorizasyonu ve Yuksek Verimli Dizi Islemleri
+# 8x dongu genisletme (Loop Unrolling) ve SIMD paritesi
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# 8x Unrolled SIMD Vektor Toplama: C[i] = A[i] + B[i]
+isv simd_vektor_topla(a: *tamsayi, b: *tamsayi, c: *tamsayi, n: tamsayi) {
+    eger a == 0 veya b == 0 veya c == 0 veya n <= 0 ise { dondu; }
+    
+    degisken i: tamsayi = 0;
+    degisken limit: tamsayi = n - 7;
+    
+    # 8'erli paketler halinde paralel/vektorize toplama
+    dongu i < limit {
+        c[i]     = a[i]     + b[i];
+        c[i + 1] = a[i + 1] + b[i + 1];
+        c[i + 2] = a[i + 2] + b[i + 2];
+        c[i + 3] = a[i + 3] + b[i + 3];
+        c[i + 4] = a[i + 4] + b[i + 4];
+        c[i + 5] = a[i + 5] + b[i + 5];
+        c[i + 6] = a[i + 6] + b[i + 6];
+        c[i + 7] = a[i + 7] + b[i + 7];
+        i = i + 8;
+    }
+    
+    # Kalan elemanlar (scalar tail)
+    dongu i < n {
+        c[i] = a[i] + b[i];
+        i = i + 1;
+    }
+}
+
+# 8x Unrolled SIMD Vektor Nokta Carpimi (Dot Product): sum(A[i] * B[i])
+isv simd_vektor_nokta_carpim(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi {
+    eger a == 0 veya b == 0 veya n <= 0 ise { dondu 0; }
+    
+    degisken acc0: tamsayi = 0;
+    degisken acc1: tamsayi = 0;
+    degisken acc2: tamsayi = 0;
+    degisken acc3: tamsayi = 0;
+    
+    degisken i: tamsayi = 0;
+    degisken limit: tamsayi = n - 7;
+    
+    dongu i < limit {
+        acc0 = acc0 + (a[i]     * b[i]);
+        acc1 = acc1 + (a[i + 1] * b[i + 1]);
+        acc2 = acc2 + (a[i + 2] * b[i + 2]);
+        acc3 = acc3 + (a[i + 3] * b[i + 3]);
+        acc0 = acc0 + (a[i + 4] * b[i + 4]);
+        acc1 = acc1 + (a[i + 5] * b[i + 5]);
+        acc2 = acc2 + (a[i + 6] * b[i + 6]);
+        acc3 = acc3 + (a[i + 7] * b[i + 7]);
+        i = i + 8;
+    }
+    
+    degisken toplam: tamsayi = acc0 + acc1 + acc2 + acc3;
+    
+    dongu i < n {
+        toplam = toplam + (a[i] * b[i]);
+        i = i + 1;
+    }
+    
+    dondu toplam;
+}
+
+# 8x Unrolled Skalar Carpim: C[i] = A[i] * skalar
+isv simd_vektor_skalar_carp(a: *tamsayi, skalar: tamsayi, c: *tamsayi, n: tamsayi) {
+    eger a == 0 veya c == 0 veya n <= 0 ise { dondu; }
+    
+    degisken i: tamsayi = 0;
+    degisken limit: tamsayi = n - 7;
+    
+    dongu i < limit {
+        c[i]     = a[i]     * skalar;
+        c[i + 1] = a[i + 1] * skalar;
+        c[i + 2] = a[i + 2] * skalar;
+        c[i + 3] = a[i + 3] * skalar;
+        c[i + 4] = a[i + 4] * skalar;
+        c[i + 5] = a[i + 5] * skalar;
+        c[i + 6] = a[i + 6] * skalar;
+        c[i + 7] = a[i + 7] * skalar;
+        i = i + 8;
+    }
+    
+    dongu i < n {
+        c[i] = a[i] * skalar;
+        i = i + 1;
+    }
+}
+

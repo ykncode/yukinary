@@ -1,0 +1,13 @@
+{
+  "schema": "yukinary.diagnostic-oracle.v1",
+  "exit_code": 1,
+  "diagnostic_code": "TC_UNDEFINED_SYMBOL",
+  "error_class": "typechecker",
+  "message_pattern": "TC HATA: Tanimsiz sembol kullanildi",
+  "error_count": 1,
+  "location": {
+    "line": 6,
+    "column": 27
+  },
+  "hint_pattern": "Bunu mu demek istediniz"
+}

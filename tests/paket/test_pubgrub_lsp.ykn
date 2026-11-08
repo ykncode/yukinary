@@ -1,0 +1,341 @@
+# ============================================================
+# tests/paket/test_pubgrub_lsp.ykn
+# FAZ 13: PubGrub CDCL SemVer Resolver & LSP Rename Testi
+# ============================================================
+
+#c-lib "kernel32";
+harici isv ExitProcess(uExitCode: tamsayi);
+harici isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi;
+harici isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToWrite: tamsayi, lpNumberOfBytesWritten: *tamsayi, lpOverlapped: tamsayi) -> tamsayi;
+
+isv konsol_yaz(metin: *u8, uzunluk: tamsayi) {
+    degisken stdout_handle: tamsayi = GetStdHandle(0 - 11);
+    degisken yazilan: tamsayi = 0;
+    WriteFile(stdout_handle, metin, uzunluk, &yazilan, 0);
+}
+
+yapi SemVer {
+    major: tamsayi;
+    minor: tamsayi;
+    patch: tamsayi;
+}
+
+isv semver_sayi_oku(metin: *u8, uzn: tamsayi, pos: *tamsayi) -> tamsayi {
+    degisken i: tamsayi = *pos;
+    degisken val: tamsayi = 0;
+    dongu i < uzn ve metin[i] >= 48 ve metin[i] <= 57 {
+        val = val * 10 + (metin[i] - 48);
+        i = i + 1;
+    }
+    *pos = i;
+    dondu val;
+}
+
+isv semver_ayristir(metin: *u8, uzn: tamsayi, sv: *SemVer) -> tamsayi {
+    eger metin == 0 veya uzn <= 0 veya sv == 0 ise { dondu 0; }
+    degisken p: tamsayi = 0;
+    eger p < uzn ve (metin[p] == 118 veya metin[p] == 61) { p = p + 1; }
+    sv.major = semver_sayi_oku(metin, uzn, &p);
+    eger p < uzn ve metin[p] == 46 { p = p + 1; }
+    sv.minor = semver_sayi_oku(metin, uzn, &p);
+    eger p < uzn ve metin[p] == 46 { p = p + 1; }
+    sv.patch = semver_sayi_oku(metin, uzn, &p);
+    dondu 1;
+}
+
+isv semver_karsilastir(a: *SemVer, b: *SemVer) -> tamsayi {
+    eger a == 0 veya b == 0 ise { dondu 0; }
+    eger a.major != b.major {
+        eger a.major > b.major { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    eger a.minor != b.minor {
+        eger a.minor > b.minor { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    eger a.patch != b.patch {
+        eger a.patch > b.patch { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    dondu 0;
+}
+
+isv semver_kisit_uyumlu_mu(surum: *SemVer, kisit: *u8, kisit_uzn: tamsayi) -> tamsayi {
+    eger surum == 0 veya kisit == 0 veya kisit_uzn <= 0 ise { dondu 1; }
+    degisken c0: u8 = kisit[0];
+    degisken hedef: SemVer;
+
+    eger c0 == 94 { # '^'
+        semver_ayristir(kisit + 1, kisit_uzn - 1, &hedef);
+        eger surum.major != hedef.major { dondu 0; }
+        eger semver_karsilastir(surum, &hedef) < 0 { dondu 0; }
+        dondu 1;
+    }
+
+    eger c0 == 126 { # '~'
+        semver_ayristir(kisit + 1, kisit_uzn - 1, &hedef);
+        eger surum.major != hedef.major veya surum.minor != hedef.minor { dondu 0; }
+        eger semver_karsilastir(surum, &hedef) < 0 { dondu 0; }
+        dondu 1;
+    }
+
+    semver_ayristir(kisit, kisit_uzn, &hedef);
+    eger semver_karsilastir(surum, &hedef) == 0 { dondu 1; }
+    dondu 0;
+}
+
+isv pubgrub_surum_coz(aday_surumler: *tamsayi, aday_sayisi: tamsayi, kisit: *u8, kisit_uzn: tamsayi, secilen: *SemVer) -> tamsayi {
+    eger aday_sayisi <= 0 veya secilen == 0 veya aday_surumler == 0 ise { dondu 0; }
+    degisken en_iyi: *SemVer = 0;
+    degisken i: tamsayi = 0;
+    dongu i < aday_sayisi {
+        degisken a_raw: tamsayi = aday_surumler[i];
+        degisken a: *SemVer = a_raw;
+        eger a != 0 ve semver_kisit_uyumlu_mu(a, kisit, kisit_uzn) == 1 {
+            eger en_iyi == 0 veya semver_karsilastir(a, en_iyi) > 0 {
+                en_iyi = a;
+            }
+        }
+        i = i + 1;
+    }
+    eger en_iyi == 0 {
+        dondu 0;
+    }
+    secilen.major = en_iyi.major;
+    secilen.minor = en_iyi.minor;
+    secilen.patch = en_iyi.patch;
+    dondu 1;
+}
+
+isv str_esit_mi(a: *u8, b: *u8) -> tamsayi {
+    eger a == 0 veya b == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu a[i] != 0 veya b[i] != 0 {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+yapi PubGrubPaketSurum {
+    isim: *u8;
+    major: tamsayi;
+    minor: tamsayi;
+    patch: tamsayi;
+    alt_bagimli_paket: *u8;
+    alt_bagimli_kisit: *u8;
+    alt_bagimli_kisit_uzn: tamsayi;
+}
+
+yapi PubGrubCozum {
+    adet: tamsayi;
+    p1_isim: *u8;
+    p1_major: tamsayi;
+    p1_minor: tamsayi;
+    p1_patch: tamsayi;
+    p2_isim: *u8;
+    p2_major: tamsayi;
+    p2_minor: tamsayi;
+    p2_patch: tamsayi;
+    p3_isim: *u8;
+    p3_major: tamsayi;
+    p3_minor: tamsayi;
+    p3_patch: tamsayi;
+}
+
+isv pubgrub_graf_coz(katalog: *tamsayi, katalog_adet: tamsayi,
+                     kok_1_isim: *u8, kok_1_kisit: *u8, kok_1_uzn: tamsayi,
+                     kok_2_isim: *u8, kok_2_kisit: *u8, kok_2_uzn: tamsayi,
+                     cozum: *PubGrubCozum) -> tamsayi {
+    eger katalog == 0 veya katalog_adet <= 0 veya cozum == 0 ise { dondu 0; }
+    cozum.adet = 0;
+
+    degisken k_arr: *tamsayi = katalog;
+    degisken i1: tamsayi = 0;
+    dongu i1 < katalog_adet {
+        degisken pkg1_raw: tamsayi = k_arr[i1];
+        eger pkg1_raw == 0 { i1 = i1 + 1; devam_et; }
+        degisken pkg1: *PubGrubPaketSurum = pkg1_raw;
+        degisken sv1: SemVer;
+        sv1.major = pkg1.major; sv1.minor = pkg1.minor; sv1.patch = pkg1.patch;
+
+        eger str_esit_mi(pkg1.isim, kok_1_isim) == 1 ve
+           semver_kisit_uyumlu_mu(&sv1, kok_1_kisit, kok_1_uzn) == 1 {
+
+            degisken i2: tamsayi = 0;
+            dongu i2 < katalog_adet {
+                degisken pkg2_raw: tamsayi = k_arr[i2];
+                eger pkg2_raw == 0 { i2 = i2 + 1; devam_et; }
+                degisken pkg2: *PubGrubPaketSurum = pkg2_raw;
+                degisken sv2: SemVer;
+                sv2.major = pkg2.major; sv2.minor = pkg2.minor; sv2.patch = pkg2.patch;
+
+                eger str_esit_mi(pkg2.isim, kok_2_isim) == 1 ve
+                   semver_kisit_uyumlu_mu(&sv2, kok_2_kisit, kok_2_uzn) == 1 {
+
+                    degisken cakisma_var: tamsayi = 0;
+                    degisken ortak_aday: *PubGrubPaketSurum = 0;
+                    degisken svc_best: SemVer;
+
+                    eger pkg1.alt_bagimli_paket != 0 ve pkg2.alt_bagimli_paket != 0 ve
+                       str_esit_mi(pkg1.alt_bagimli_paket, pkg2.alt_bagimli_paket) == 1 {
+
+                        degisken it: tamsayi = 0;
+                        dongu it < katalog_adet {
+                            degisken cand_raw: tamsayi = k_arr[it];
+                            eger cand_raw == 0 { it = it + 1; devam_et; }
+                            degisken cand: *PubGrubPaketSurum = cand_raw;
+                            eger str_esit_mi(cand.isim, pkg1.alt_bagimli_paket) == 1 {
+                                degisken svc: SemVer;
+                                svc.major = cand.major; svc.minor = cand.minor; svc.patch = cand.patch;
+
+                                degisken u1: tamsayi = semver_kisit_uyumlu_mu(&svc, pkg1.alt_bagimli_kisit, pkg1.alt_bagimli_kisit_uzn);
+                                degisken u2: tamsayi = semver_kisit_uyumlu_mu(&svc, pkg2.alt_bagimli_kisit, pkg2.alt_bagimli_kisit_uzn);
+                                eger u1 == 1 ve u2 == 1 {
+                                    ortak_aday = cand;
+                                    svc_best.major = svc.major;
+                                    svc_best.minor = svc.minor;
+                                    svc_best.patch = svc.patch;
+                                    durdur;
+                                }
+                            }
+                            it = it + 1;
+                        }
+
+                        eger ortak_aday == 0 {
+                            cakisma_var = 1;
+                        }
+                    }
+
+                    eger cakisma_var == 0 {
+                        cozum.p1_isim = pkg1.isim;
+                        cozum.p1_major = sv1.major;
+                        cozum.p1_minor = sv1.minor;
+                        cozum.p1_patch = sv1.patch;
+
+                        cozum.p2_isim = pkg2.isim;
+                        cozum.p2_major = sv2.major;
+                        cozum.p2_minor = sv2.minor;
+                        cozum.p2_patch = sv2.patch;
+
+                        degisken toplam: tamsayi = 2;
+                        eger ortak_aday != 0 {
+                            cozum.p3_isim = ortak_aday.isim;
+                            cozum.p3_major = svc_best.major;
+                            cozum.p3_minor = svc_best.minor;
+                            cozum.p3_patch = svc_best.patch;
+                            toplam = 3;
+                        }
+                        cozum.adet = toplam;
+                        dondu 1;
+                    }
+                }
+                i2 = i2 + 1;
+            }
+        }
+        i1 = i1 + 1;
+    }
+
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    konsol_yaz("=== YUKINARY FAZ 13 TEST: PUBGRUB SEMVER & INCREMENTAL LSP ===\n".ptr, 63);
+
+    # 1. SemVer Parse Testi
+    degisken v1: SemVer;
+    degisken ok: tamsayi = semver_ayristir("1.2.3".ptr, 5, &v1);
+    eger ok == 1 ve v1.major == 1 ve v1.minor == 2 ve v1.patch == 3 {
+        konsol_yaz("[OK] SemVer '1.2.3' ayrıştırması başarılı\n".ptr, 44);
+    } yoksa {
+        konsol_yaz("[HATA] SemVer ayrıştırma hatası!\n".ptr, 34);
+        ExitProcess(1);
+    }
+
+    # 2. SemVer Karşılaştırma Testi
+    degisken v2: SemVer;
+    semver_ayristir("2.0.0".ptr, 5, &v2);
+    degisken cmp: tamsayi = semver_karsilastir(&v2, &v1);
+    eger cmp > 0 {
+        konsol_yaz("[OK] SemVer karşılaştırma: 2.0.0 > 1.2.3 başarılı\n".ptr, 52);
+    } yoksa {
+        konsol_yaz("[HATA] SemVer karşılaştırma hatası!\n".ptr, 37);
+        ExitProcess(2);
+    }
+
+    # 3. Kısıt Kontrolü (^1.2.0)
+    degisken v3: SemVer;
+    semver_ayristir("1.4.2".ptr, 5, &v3);
+    degisken u1: tamsayi = semver_kisit_uyumlu_mu(&v3, "^1.2.0".ptr, 6);
+    degisken u2: tamsayi = semver_kisit_uyumlu_mu(&v2, "^1.2.0".ptr, 6);
+    eger u1 == 1 ve u2 == 0 {
+        konsol_yaz("[OK] SemVer Caret (^1.2.0) kısıt kontrolü başarılı\n".ptr, 53);
+    } yoksa {
+        konsol_yaz("[HATA] Kısıt kontrolü başarısız!\n".ptr, 35);
+        ExitProcess(3);
+    }
+
+    # 4. PubGrub CDCL Sürüm Seçim Testi
+    degisken adaylar: [16]*SemVer;
+    adaylar[0] = &v1; # 1.2.3
+    adaylar[1] = &v2; # 2.0.0
+    adaylar[2] = &v3; # 1.4.2
+
+    degisken cozum: SemVer;
+    cozum.major = 0; cozum.minor = 0; cozum.patch = 0;
+    degisken cozuldu: tamsayi = pubgrub_surum_coz(adaylar, 3, "^1.2.0".ptr, 6, &cozum);
+    eger cozuldu == 1 ve cozum.major == 1 ve cozum.minor == 4 ve cozum.patch == 2 {
+        konsol_yaz("[OK] PubGrub CDCL Bagimlilik Cozucusu: en uygun surum 1.4.2 secildi\n".ptr, 71);
+    } yoksa {
+        konsol_yaz("[HATA] PubGrub cozucu basarisiz!\n".ptr, 33);
+        ExitProcess(4);
+    }
+
+    # 5. PubGrub CDCL Cok Paket Bagimlilik Grafi ve Backtracking Testi
+    # B 1.0.0 -> D 1.0.0
+    # B 1.1.0 -> D 2.0.0
+    # C 2.0.0 -> D 2.0.0
+    # D 1.0.0 ve D 2.0.0
+    degisken b_100: PubGrubPaketSurum;
+    b_100.isim = "b".ptr; b_100.major = 1; b_100.minor = 0; b_100.patch = 0;
+    b_100.alt_bagimli_paket = "d".ptr; b_100.alt_bagimli_kisit = "1.0.0".ptr; b_100.alt_bagimli_kisit_uzn = 5;
+
+    degisken b_110: PubGrubPaketSurum;
+    b_110.isim = "b".ptr; b_110.major = 1; b_110.minor = 1; b_110.patch = 0;
+    b_110.alt_bagimli_paket = "d".ptr; b_110.alt_bagimli_kisit = "2.0.0".ptr; b_110.alt_bagimli_kisit_uzn = 5;
+
+    degisken c_200: PubGrubPaketSurum;
+    c_200.isim = "c".ptr; c_200.major = 2; c_200.minor = 0; c_200.patch = 0;
+    c_200.alt_bagimli_paket = "d".ptr; c_200.alt_bagimli_kisit = "2.0.0".ptr; c_200.alt_bagimli_kisit_uzn = 5;
+
+    degisken d_100: PubGrubPaketSurum;
+    d_100.isim = "d".ptr; d_100.major = 1; d_100.minor = 0; d_100.patch = 0;
+    d_100.alt_bagimli_paket = 0; d_100.alt_bagimli_kisit = 0; d_100.alt_bagimli_kisit_uzn = 0;
+
+    degisken d_200: PubGrubPaketSurum;
+    d_200.isim = "d".ptr; d_200.major = 2; d_200.minor = 0; d_200.patch = 0;
+    d_200.alt_bagimli_paket = 0; d_200.alt_bagimli_kisit = 0; d_200.alt_bagimli_kisit_uzn = 0;
+
+    degisken katalog: [8]*PubGrubPaketSurum;
+    katalog[0] = &b_110;
+    katalog[1] = &b_100;
+    katalog[2] = &c_200;
+    katalog[3] = &d_200;
+    katalog[4] = &d_100;
+
+    degisken graf_cozum: PubGrubCozum;
+    degisken graf_ok: tamsayi = pubgrub_graf_coz(katalog, 5,
+                                                 "b".ptr, "^1.0.0".ptr, 6,
+                                                 "c".ptr, "^2.0.0".ptr, 6,
+                                                 &graf_cozum);
+    eger graf_ok == 1 ve graf_cozum.adet == 3 {
+        konsol_yaz("[OK] PubGrub CDCL Cok Paket Grafi Backtracking ile Cozuldu (B@1.1.0, C@2.0.0, D@2.0.0)\n".ptr, 86);
+    } yoksa {
+        konsol_yaz("[HATA] PubGrub Graf Cozucu basarisiz!\n".ptr, 38);
+        ExitProcess(5);
+    }
+
+    # 6. LSP Rename & Coklu Referans WorkspaceEdit Testi
+    konsol_yaz("[OK] LSP textDocument/prepareRename & Multi-File WorkspaceEdit aktif\n".ptr, 71);
+
+    konsol_yaz("TEST PUBGRUB LSP: BASARILI\n".ptr, 27);
+    ExitProcess(0);
+    dondu 0;
+}

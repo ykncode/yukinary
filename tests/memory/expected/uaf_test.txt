@@ -1,0 +1,2 @@
+UAF_TEST: tahsis OK
+UAF_TEST: serbest birakma OK

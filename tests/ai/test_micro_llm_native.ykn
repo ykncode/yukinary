@@ -1,0 +1,20 @@
+ice_aktar "std/ai/micro_llm.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("=== Yukinary Yerlesik Micro-LLM Testi ===\n".ptr);
+
+    degisken prompt1: *u8 = "ykn".ptr;
+    ekrana_yaz("Girdi Prompt: 'ykn'\n".ptr);
+    ekrana_yaz("Model Yaniti : ".ptr);
+    micro_llm_uret(prompt1, 10);
+    ekrana_yaz("\n\n".ptr);
+
+    degisken prompt2: *u8 = "merhaba".ptr;
+    ekrana_yaz("Girdi Prompt: 'merhaba'\n".ptr);
+    ekrana_yaz("Model Yaniti : ".ptr);
+    micro_llm_uret(prompt2, 12);
+    ekrana_yaz("\n\n".ptr);
+
+    ekrana_yaz("=== Test Basariyla Tamamlandi: LLM Native Inference PASS ===\n".ptr);
+    dondu 0;
+}

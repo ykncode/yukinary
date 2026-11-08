@@ -1,0 +1,34 @@
+# Exercises real CUDA Driver API discovery from YKN.
+# A machine without NVIDIA hardware passes as UNAVAILABLE, never as GPU-ready.
+ice_aktar "std/ai/cuda_driver.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken ctx: CudaDriverContext;
+    degisken result: tamsayi = cuda_driver_init(&ctx);
+    eger result != CUDA_SUCCESS ise {
+        ekrana_yaz("CUDA_UNAVAILABLE (no usable CUDA device)\n".ptr);
+        dondu 0;
+    }
+    degisken ordinal: tamsayi = 0;
+    dongu ordinal < ctx.device_count {
+        degisken name: [256]u8;
+        degisken memory: tamsayi = 0;
+        result = cuda_device_query(&ctx, ordinal, name, &memory);
+        eger result != CUDA_SUCCESS ise { cuda_driver_close(&ctx); ExitProcess(2); }
+        ekrana_yaz("CUDA_DEVICE ".ptr);
+        ekrana_yaz(name);
+        ekrana_yaz(" VRAM_BYTES=".ptr);
+        degisken digits2: [32]u8;
+        degisken m: tamsayi = memory;
+        degisken j: tamsayi = 0;
+        dongu m > 0 { digits2[j] = 48 + m % 10; m = m / 10; j = j + 1; }
+        dongu j > 0 { j = j - 1; degisken ch2: [2]u8; ch2[0] = digits2[j]; ch2[1] = 0; ekrana_yaz(ch2.ptr); }
+        ekrana_yaz("\n".ptr);
+        ordinal = ordinal + 1;
+    }
+    cuda_driver_close(&ctx);
+    ekrana_yaz("CUDA_DRIVER_DEVICE_QUERY_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,52 @@
+# ============================================================
+# HIR AST_ISLEV Lowering Dogrulama Testi
+# hir.ykn uzerinde ast_tip == 10 (AST_ISLEV) eslesmesiyle
+# HIR_ISLEV dugumunun dogru olusturuldugunu dogrular.
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+
+isv ana() -> tamsayi {
+    degisken m: *HirMotoru = hir_motoru_olustur(65536);
+    eger m == 0 ise { ekrana_yaz("FAIL: motor\n".ptr); dondu 1; }
+
+    # Jeton: "topla"
+    degisken j: *Jeton = compiler_tahsis_et(40);
+    j.tip = TIP_KIMLIK;
+    j.baslangic = "topla".ptr;
+    j.uzunluk = 5;
+
+    # AstDugum: AST_ISLEV (10)
+    degisken ast: *AstDugum = compiler_tahsis_et(128);
+    ast.tip = AST_ISLEV; # 10
+    ast.ilk_jeton = j;
+    ast.sol = 0; # govde
+
+    # HIR'a cevir
+    degisken h: *HirDugum = ast_to_hir_ifade(m, ast);
+    eger h == 0 ise {
+        ekrana_yaz("FAIL: AST_ISLEV HIR dugumune donusmedi (h == 0)!\n".ptr);
+        dondu 1;
+    }
+
+    eger h.tip != HIR_ISLEV ise {
+        ekrana_yaz("FAIL: h.tip HIR_ISLEV degil!\n".ptr);
+        dondu 1;
+    }
+
+    eger h.deger == 0 ise {
+        ekrana_yaz("FAIL: h.deger SIFIR!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("HIR_ISLEV_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,88 @@
+# ============================================================
+# std/ai/model_llama.ykn
+#
+# Llama facade'i. Bu dosya ağırlıkları veya yalnızca ilk katmanı saklamaz;
+# gerçek GGUF loader, architecture adapter, model spec ve çok katmanlı
+# transformer execution state'ini taşır. Forward hesabının tek sahibi
+# transformer_forward.ykn'dir.
+#
+# Gerekli modüller: gguf_types, model_loader, runtime, architecture_adapter,
+# transformer_forward.
+# ============================================================
+
+yapi LlamaModeli {
+    loader: *LLMModelLoader;
+    durum: *GGUFDurum;
+    adapter: *LLMArchitectureAdapter;
+    spec: *LLMModelSpec;
+    icra: *LLMTransformerExecution;
+    katman_sayisi: tamsayi;
+    hazir: tamsayi;
+}
+
+degisken LLAMA_MODEL_HATASI = 0;
+
+# Gerçek transformer state'i ile facade kurulur. Buffer tahsisi burada
+# yapılmaz; caller'ın verdiği execution kayıtları yaşam döngüsünü yönetir.
+isv llama_modeli_bagla(loader: *LLMModelLoader,
+                       durum: *GGUFDurum,
+                       adapter: *LLMArchitectureAdapter,
+                       spec: *LLMModelSpec,
+                       icra: *LLMTransformerExecution) -> LlamaModeli {
+    degisken model: LlamaModeli;
+    LLAMA_MODEL_HATASI = 0;
+    model.loader = loader;
+    model.durum = durum;
+    model.adapter = adapter;
+    model.spec = spec;
+    model.icra = icra;
+    model.katman_sayisi = 0;
+    model.hazir = 0;
+    eger loader == 0 veya durum == 0 veya adapter == 0 veya spec == 0 veya icra == 0 ise {
+        LLAMA_MODEL_HATASI = 1;
+        dondu model;
+    }
+    eger durum->katman_sayisi <= 0 veya spec->katman_sayisi != durum->katman_sayisi ise {
+        LLAMA_MODEL_HATASI = 2;
+        dondu model;
+    }
+    eger llm_runtime_spec_dogrula(spec) == 0 ise {
+        LLAMA_MODEL_HATASI = 3;
+        dondu model;
+    }
+    model.katman_sayisi = durum->katman_sayisi;
+    model.hazir = 1;
+    dondu model;
+}
+
+# Bir token'i gerçek çok katmanlı forward yolundan geçirir. transformer_forward
+# içinde embedding, her katmanın Q/K/V-RoPE-attention-residual-RMSNorm-FFN/KV
+# cache akışı ve final logits/argmax yürütülür.
+isv llama_ileri_besleme(model: *LlamaModeli, token_id: tamsayi) -> tamsayi {
+    eger model == 0 veya model->hazir == 0 veya model->icra == 0 veya
+       model->durum == 0 veya model->katman_sayisi <= 0 ise {
+        LLAMA_MODEL_HATASI = 4;
+        dondu 0 - 1;
+    }
+    eger model->icra->model_katman_sayisi != model->katman_sayisi veya
+       model->icra->spec != model->spec ise {
+        LLAMA_MODEL_HATASI = 5;
+        dondu 0 - 1;
+    }
+    degisken isim_tamponu: [64]u8;
+    degisken sonuc: tamsayi = llm_transformer_token_uret_token(
+        model->icra, model->durum, token_id, isim_tamponu);
+    eger sonuc < 0 ve TRANSFORMER_FORWARD_HATASI != 0 ise {
+        LLAMA_MODEL_HATASI = 7;
+        dondu sonuc;
+    }
+    LLAMA_MODEL_HATASI = 0;
+    dondu sonuc;
+}
+
+isv llama_model_hazir_mi(model: *LlamaModeli) -> tamsayi {
+    eger model == 0 veya model->hazir == 0 ise { dondu 0; }
+    eger model->katman_sayisi <= 0 veya model->icra == 0 veya
+       model->icra->model_katman_sayisi != model->katman_sayisi ise { dondu 0; }
+    dondu 1;
+}

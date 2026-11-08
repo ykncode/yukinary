@@ -1,0 +1,39 @@
+isv hesapla_cok_degiskenli() -> tamsayi {
+    degisken a0: tamsayi = 1;
+    degisken a1: tamsayi = 2;
+    degisken a2: tamsayi = 3;
+    degisken a3: tamsayi = 4;
+    degisken a4: tamsayi = 5;
+    degisken a5: tamsayi = 6;
+    degisken a6: tamsayi = 7;
+    degisken a7: tamsayi = 8;
+    degisken a8: tamsayi = 9;
+    degisken a9: tamsayi = 10;
+    degisken a10: tamsayi = 11;
+    degisken a11: tamsayi = 12;
+    degisken a12: tamsayi = 13;
+    degisken a13: tamsayi = 14;
+    degisken a14: tamsayi = 15;
+    degisken a15: tamsayi = 16;
+    degisken a16: tamsayi = 17;
+    degisken a17: tamsayi = 18;
+    degisken a18: tamsayi = 19;
+    degisken a19: tamsayi = 20;
+
+    degisken toplam: tamsayi = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14 + a15 + a16 + a17 + a18 + a19;
+    dondu toplam;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Spill-to-stack ve coklu degisken testi basliyor...\n");
+    degisken res: tamsayi = hesapla_cok_degiskenli();
+    eger res == 210 ise {
+        ekrana_yaz("TOPLAM DOGRU: 210\n");
+        ekrana_yaz("TEST BASARILI: PASS\n");
+        dondu 0;
+    } yoksa {
+        ekrana_yaz("HATA: Toplam hatali!\n");
+        dondu 1;
+    }
+}
+

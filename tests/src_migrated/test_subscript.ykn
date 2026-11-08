@@ -1,0 +1,8 @@
+﻿isv ekrana_yaz(m: *u8) {}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("A\n".ptr);
+    degisken p: *u8 = argumanlar[1];
+    ekrana_yaz("B\n".ptr);
+    dondu 0;
+}

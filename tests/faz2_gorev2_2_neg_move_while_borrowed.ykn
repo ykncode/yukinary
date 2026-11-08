@@ -1,0 +1,18 @@
+# Faz 2 Görev 2.2 Negatif Test 4: Cannot Move Out of Borrowed Context
+
+yapi Kutu {
+    deger: tamsayi;
+}
+
+isv tuket(k: Kutu) {
+}
+
+isv main() -> tamsayi {
+    degisken k: Kutu;
+    k.deger = 10;
+    degisken r: *Kutu = &k;
+
+    tuket(k); # HATA [E041]: Odunc alinmis degisken tasinamaz!
+    dondu 0;
+}
+

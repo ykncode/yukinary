@@ -1,0 +1,39 @@
+# ============================================================
+# Faz 8.3 — Resmi type=36 I2_S interleaved block testi
+# 128 eleman = 32 quant byte + 32 byte scale trailer.
+# ============================================================
+
+
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken blok: [64]u8;
+    degisken cikti: [128]u8;
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        blok[i] = 0;
+        i = i + 1;
+    }
+
+    # Grup 0'da ilk uc eleman: raw 00, 01, 10 => -1, 0, +1.
+    blok[1] = 64;
+    blok[2] = 128;
+    # Decoder quant payload'dan sonra gelen scale trailer'i okumamalidir.
+    blok[32] = 255;
+    blok[63] = 255;
+
+    degisken adet: tamsayi = i2s_tensor_real_coz(blok, 64, cikti, 128, 128);
+    eger adet != 128 veya I2S_SON_HATA != 0 ise {
+        ekrana_yaz("TEST 05 FAZ 8: FAILED (block decode)\n".ptr);
+        dondu 1;
+    }
+    eger cikti[0] != 2 veya cikti[1] != 0 veya cikti[2] != 1 veya
+       cikti[3] != 2 veya cikti[32] != 2 veya cikti[64] != 2 veya
+       cikti[96] != 2 ise {
+        ekrana_yaz("TEST 05 FAZ 8: FAILED (interleaved mapping)\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("TEST 05 FAZ 8: GERCEK I2_S BLOCK DECODE OK\n".ptr);
+    dondu 0;
+}

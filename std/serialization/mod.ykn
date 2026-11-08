@@ -1,0 +1,44 @@
+# ============================================================
+# Yukinary Standart Serilestirme Modulu (std/serialization/mod.ykn)
+# ============================================================
+
+ice_aktar "std/metin.ykn";
+ice_aktar "std/dosya.ykn";
+
+# DJB2 32-bit Hash
+isv hash_djb2(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken h: tamsayi = 5381;
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        h = ((h << 5) + h) + s[i];
+        i = i + 1;
+    }
+    dondu h & 4294967295;
+}
+
+# Hex string'i tamsayiya cevir
+isv hex_tamsayiya(hex_str: *u8) -> tamsayi {
+    eger hex_str == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    eger hex_str[0] == 48 ve (hex_str[1] == 120 veya hex_str[1] == 88) ise {
+        i = 2; # "0x" veya "0X" atla
+    }
+    degisken sonuc: tamsayi = 0;
+    dongu hex_str[i] != 0 {
+        degisken c: tamsayi = hex_str[i];
+        degisken deger: tamsayi = 0;
+        eger c >= 48 ve c <= 57 ise {
+            deger = c - 48;
+        } yoksa eger c >= 65 ve c <= 70 ise {
+            deger = c - 55;
+        } yoksa eger c >= 97 ve c <= 102 ise {
+            deger = c - 87;
+        } yoksa {
+            dondu sonuc;
+        }
+        sonuc = (sonuc << 4) | deger;
+        i = i + 1;
+    }
+    dondu sonuc;
+}

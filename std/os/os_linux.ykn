@@ -1,0 +1,81 @@
+# ============================================================
+# Yukinary (YKN) Standart Kutuphanesi - Linux ELF64 & Syscall Sabitleri
+# Modul: std/os_linux.ykn
+# ============================================================
+
+# Standart Dosya Tanimlayicilari (File Descriptors)
+degisken LINUX_STDIN_FILENO        = 0;
+degisken LINUX_STDOUT_FILENO       = 1;
+degisken LINUX_STDERR_FILENO       = 2;
+
+# Linux x86_64 Syscall Numaralari
+degisken SYS_X86_64_READ           = 0;
+degisken SYS_X86_64_WRITE          = 1;
+degisken SYS_X86_64_OPEN           = 2;
+degisken SYS_X86_64_CLOSE          = 3;
+degisken SYS_X86_64_LSEEK          = 8;
+degisken SYS_X86_64_MMAP           = 9;
+degisken SYS_X86_64_MPROTECT       = 10;
+degisken SYS_X86_64_MUNMAP         = 11;
+degisken SYS_X86_64_EXIT           = 60;
+degisken SYS_X86_64_OPENAT         = 257;
+
+# Linux ARM64 (AArch64) Syscall Numaralari
+degisken SYS_ARM64_OPENAT          = 56;
+degisken SYS_ARM64_CLOSE           = 57;
+degisken SYS_ARM64_LSEEK           = 62;
+degisken SYS_ARM64_READ            = 63;
+degisken SYS_ARM64_WRITE           = 64;
+degisken SYS_ARM64_EXIT            = 93;
+degisken SYS_ARM64_MMAP            = 222;
+degisken SYS_ARM64_MPROTECT        = 226;
+degisken SYS_ARM64_MUNMAP          = 215;
+
+# Dosya Acilis Bayraklari (open / openat flags)
+degisken POSIX_O_RDONLY            = 0;
+degisken POSIX_O_WRONLY            = 1;
+degisken POSIX_O_RDWR              = 2;
+degisken POSIX_O_CREAT             = 64;   # 0x40 (0100 octal)
+degisken POSIX_O_EXCL              = 128;  # 0x80 (0200 octal)
+degisken POSIX_O_TRUNC             = 512;  # 0x200 (01000 octal)
+degisken POSIX_O_APPEND            = 1024; # 0x400 (02000 octal)
+degisken POSIX_O_NONBLOCK          = 2048; # 0x800
+
+# Sik Kullanilan Bayrak Kombinasyonlari
+degisken POSIX_O_WRONLY_CREAT_TRUNC = 577; # O_WRONLY(1) | O_CREAT(64) | O_TRUNC(512) = 577
+
+# Dosya Konumlandirma (lseek whence)
+degisken POSIX_SEEK_SET            = 0;
+degisken POSIX_SEEK_CUR            = 1;
+degisken POSIX_SEEK_END            = 2;
+
+# Dosya Izin Modlari (mode_t)
+degisken POSIX_MODE_644            = 420;  # 0644 octal = rw-r--r--
+degisken POSIX_MODE_755            = 493;  # 0755 octal = rwxr-xr-x
+
+# Bellek Sayfa Koruma Bayraklari (mmap / mprotect prot)
+degisken POSIX_PROT_NONE           = 0;
+degisken POSIX_PROT_READ           = 1;
+degisken POSIX_PROT_WRITE          = 2;
+degisken POSIX_PROT_EXEC           = 4;
+degisken POSIX_PROT_READ_WRITE     = 3;   # PROT_READ | PROT_WRITE
+degisken POSIX_PROT_READ_EXEC      = 5;   # PROT_READ | PROT_EXEC
+
+# mmap Bayraklari (flags)
+degisken POSIX_MAP_SHARED          = 1;
+degisken POSIX_MAP_PRIVATE         = 2;
+degisken POSIX_MAP_ANONYMOUS       = 32;   # 0x20 (MAP_ANON)
+degisken POSIX_MAP_PRIVATE_ANON    = 34;   # MAP_PRIVATE(2) | MAP_ANONYMOUS(32)
+
+# mmap fd degeri (MAP_ANONYMOUS icin -1)
+degisken POSIX_MMAP_FD_NONE        = 0xFFFFFFFF; # MAP_ANONYMOUS ile -1 kullanilir
+
+# ELF64 Sabitleri
+degisken ELF_CLASS64               = 2;
+degisken ELF_DATA2LSB              = 1;
+degisken ELF_EM_X86_64             = 62;   # 0x3E
+degisken ELF_EM_AARCH64            = 183;  # 0xB7
+degisken ELF_PT_LOAD               = 1;
+degisken ELF_PF_X                  = 1;
+degisken ELF_PF_W                  = 2;
+degisken ELF_PF_R                  = 4;

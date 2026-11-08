@@ -1,0 +1,9 @@
+isv ekrana_yaz(mesaj: *u8) {}
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+isv diske_bas_ve_kapat(dosya_adi: *u8, buffer: *u8, boyut: tamsayi) -> tamsayi { dondu 0; }
+
+isv ana(argc: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("merhaba\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,44 @@
+ice_aktar "std/matematik.ykn";
+
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv ana() -> tamsayi {
+    degisken a: [8]tamsayi;
+    degisken b: [8]tamsayi;
+    degisken top_dst: [8]tamsayi;
+    degisken cik_dst: [8]tamsayi;
+
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        a[i] = (i + 1) * 100;
+        b[i] = (i + 1) * 30;
+        top_dst[i] = 0;
+        cik_dst[i] = 0;
+        i = i + 1;
+    }
+
+    # 1. AVX2 256-bit Vektörel Toplama (VPADDQ)
+    vektor_topla(top_dst, a, b, 8);
+
+    # 2. AVX2 256-bit Vektörel Çıkarma (VPSUBQ)
+    vektor_cikar(cik_dst, a, b, 8);
+
+    i = 0;
+    dongu i < 8 {
+        degisken beklenen_top: tamsayi = (i + 1) * 130;
+        degisken beklenen_cik: tamsayi = (i + 1) * 70;
+        eger top_dst[i] != beklenen_top {
+            ekrana_yaz("HATA: Vektorel toplama hatasi!\n".ptr);
+            dondu 1;
+        }
+        eger cik_dst[i] != beklenen_cik {
+            ekrana_yaz("HATA: Vektorel cikarma hatasi!\n".ptr);
+            dondu 2;
+        }
+        i = i + 1;
+    }
+
+    ekrana_yaz("AVX2 SIMD MATEMATIK TEST PASS: vektor_topla ve vektor_cikar dogrulandi!\n".ptr);
+    dondu 0;
+}
+

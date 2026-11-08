@@ -1,0 +1,35 @@
+# ============================================================
+# Yukinary Faz 4: Donanimsal Optimizasyon ve Register Allocation Testi
+# %100 Gercek Kod, Zero Mocks, Windows PE32+ ve Linux ELF64 Uyumlu
+# ============================================================
+
+#config {
+    opt: 1,
+    yigin_boyutu: "16MB"
+}
+
+isv hesapla_dongu(sinir: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken carpim: tamsayi = 1;
+    degisken fark: tamsayi = 1000;
+    degisken adim: tamsayi = 2;
+    degisken i: tamsayi = 0;
+
+    dongu i < sinir {
+        toplam = toplam + i;
+        fark = fark - adim;
+        carpim = (carpim + i * 3) % 997;
+        i = i + 1;
+    }
+
+    dondu toplam + fark + carpim;
+}
+
+isv main() -> tamsayi {
+    degisken sonuc: tamsayi = hesapla_dongu(100);
+    eger sonuc == 6643 ise {
+        dondu 0; # Basarili - Exit Code 0
+    }
+    dondu 1; # Hata
+}
+

@@ -1,0 +1,11 @@
+# Gerçek nonblocking acceptance sunucusu: bağlantıyı kabul eder, veri göndermez.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken sunucu: tamsayi = sunucu_olustur(18085);
+    eger sunucu < 0 ise { dondu 84; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { soket_kapat(sunucu); dondu 85; }
+    dongu 1 { }
+    dondu 0;
+}

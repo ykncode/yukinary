@@ -1,0 +1,4 @@
+isv fixture() -> tamsayi {
+    degisken metin: *u8 = "mock stub placeholder dummy";
+    dondu 42;
+}

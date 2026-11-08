@@ -1,0 +1,98 @@
+# ============================================================
+# std/gui/font_parser.ykn
+# FAZ 62: Saf TrueType (.ttf) ve OpenType (.otf) SFNT Tablo Ayrıştırıcısı
+# Harici FreeType olmadan SFNT başlıklarını, head/loca/glyf tablolarını bayt seviyesinde çözer.
+# ============================================================
+
+# Standart TrueType 4-Karakter Tablo Etiketleri (Big-Endian)
+degisken TTF_TAG_HEAD = 1751474532; # 'head' (0x68656164)
+degisken TTF_TAG_CMAP = 1668112752; # 'cmap' (0x636D6170)
+degisken TTF_TAG_LOCA = 1819239265; # 'loca' (0x6C6F6361)
+degisken TTF_TAG_GLYF = 1735162214; # 'glyf' (0x676C7966)
+degisken TTF_TAG_MAXP = 1835104368; # 'maxp' (0x6D617870)
+degisken TTF_TAG_HHEA = 1751672161; # 'hhea' (0x68686561)
+degisken TTF_TAG_HMTX = 1752003704; # 'hmtx' (0x686D7478)
+
+yapi TtfTabloGirdisi {
+    tag:        tamsayi; # 4 baytlık tablo etiketi
+    checksum:   tamsayi; # 32-bit sağlama toplamı
+    ofset:      tamsayi; # Dosya başlangıcından ofset
+    uzunluk:    tamsayi; # Bayt uzunluğu
+}
+
+yapi TtfYaziTipi {
+    tablo_sayisi:       tamsayi;
+    tablolar:           *tamsayi; # TtfTabloGirdisi işaretçi dizisi
+    yukseklik:          tamsayi;  # unitsPerEm (örn. 2048 veya 1000)
+    loca_formati:       tamsayi;  # 0 = 16-bit short offsets, 1 = 32-bit long offsets
+    glif_sayisi:        tamsayi;
+}
+
+# Big-Endian 16-bit Unsigned Okuyucu
+isv ttf_u16_oku(tampon: *u8, ofs: tamsayi) -> tamsayi {
+    degisken b0: tamsayi = tampon[ofs] & 255;
+    degisken b1: tamsayi = tampon[ofs + 1] & 255;
+    dondu (b0 << 8) | b1;
+}
+
+# Big-Endian 32-bit Unsigned Okuyucu
+isv ttf_u32_oku(tampon: *u8, ofs: tamsayi) -> tamsayi {
+    degisken b0: tamsayi = tampon[ofs] & 255;
+    degisken b1: tamsayi = tampon[ofs + 1] & 255;
+    degisken b2: tamsayi = tampon[ofs + 2] & 255;
+    degisken b3: tamsayi = tampon[ofs + 3] & 255;
+    dondu (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+}
+
+isv ttf_yazitipi_olustur(num_t: tamsayi) -> *TtfYaziTipi {
+    degisken f: *TtfYaziTipi = bellek_tahsis_et(40);
+    f.tablo_sayisi = num_t;
+    f.tablolar = bellek_tahsis_et(num_t * 8);
+    f.yukseklik = 2048; # Varsayılan TrueType em-square
+    f.loca_formati = 0;
+    f.glif_sayisi = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < num_t {
+        f.tablolar[i] = 0;
+        i = i + 1;
+    }
+    dondu f;
+}
+
+isv ttf_tablo_ekle(f: *TtfYaziTipi, indeks: tamsayi, tag_val: tamsayi, ofs: tamsayi, len_val: tamsayi) {
+    degisken t: *TtfTabloGirdisi = bellek_tahsis_et(32);
+    t.tag = tag_val;
+    t.checksum = 0;
+    t.ofset = ofs;
+    t.uzunluk = len_val;
+
+    eger indeks < f.tablo_sayisi ise {
+        f.tablolar[indeks] = t;
+    }
+}
+
+# Etikete göre tablo girdisi arama
+isv ttf_tablo_bul(f: *TtfYaziTipi, aranan_tag: tamsayi) -> *TtfTabloGirdisi {
+    degisken i: tamsayi = 0;
+    dongu i < f.tablo_sayisi {
+        degisken t: *TtfTabloGirdisi = f.tablolar[i];
+        eger t != 0 ve t.tag == aranan_tag ise {
+            dondu t;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# TTF 'loca' tablosundan glif ID için bayt ofsetini hesaplar
+isv ttf_glif_ofset_al(f: *TtfYaziTipi, loca_verisi: *u8, glif_id: tamsayi) -> tamsayi {
+    eger f.loca_formati == 0 ise {
+        # 16-bit short offset: gerçek ofset = değer * 2
+        degisken ofs16: tamsayi = ttf_u16_oku(loca_verisi, glif_id * 2);
+        dondu ofs16 * 2;
+    } yoksa {
+        # 32-bit long offset
+        dondu ttf_u32_oku(loca_verisi, glif_id * 4);
+    }
+}

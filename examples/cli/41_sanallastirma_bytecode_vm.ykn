@@ -1,0 +1,55 @@
+# ============================================================
+# Örnek 89: Konsol Tabanlı Yığın (Stack) Tabanlı Bytecode VM
+# ============================================================
+
+degisken g_yigin: [32]tamsayi;
+degisken g_sp: tamsayi = 0; # Stack Pointer
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv vm_push(val: tamsayi) {
+    g_yigin[g_sp] = val;
+    g_sp = g_sp + 1;
+}
+
+isv vm_pop() -> tamsayi {
+    g_sp = g_sp - 1;
+    dondu g_yigin[g_sp];
+}
+
+isv vm_topla() {
+    degisken b: tamsayi = vm_pop();
+    degisken a: tamsayi = vm_pop();
+    vm_push(a + b);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Bytecode Yigin Sanal Makinesi ===\n".ptr);
+    # Program: PUSH 10, PUSH 25, ADD
+    vm_push(10);
+    vm_push(25);
+    vm_topla();
+
+    degisken sonuc: tamsayi = vm_pop();
+    ekrana_yaz("VM Calisma Sonucu: ".ptr);
+    sayiyi_yaz(sonuc);
+    ekrana_yaz(" (Beklenen: 35)\n".ptr);
+    dondu 0;
+}

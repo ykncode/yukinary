@@ -1,0 +1,734 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/metin.ykn
+# Metin (NUL sonlu C-string) islemleri: uzunluk, birlestirme, karsilastirma,
+# alt dize, arama, tamsayi/gercek donusumleri
+# ============================================================
+
+# C-string (NUL sonlu) uzunlugunu bul  (strlen)
+isv metin_uzunluk(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu s[n] != 0 {
+        n = n + 1;
+    }
+    dondu n;
+}
+# i18n alias
+isv strlen(s: *u8) -> tamsayi { dondu metin_uzunluk(s); }
+isv str_len(s: *u8) -> tamsayi { dondu metin_uzunluk(s); }
+
+# Kaynak stringi hedef stringin SONUNA ekler (strcat).
+# Kullanici sorumlulugu: hedefin yeterince buyuk oldugundan emin olunmalidir.
+isv metin_birlestir(hedef: *u8, kaynak: *u8) -> *u8 {
+    eger hedef == 0 ise { dondu 0; }
+    eger kaynak == 0 ise { dondu hedef; }
+    degisken h_uzunluk: tamsayi = metin_uzunluk(hedef);
+    degisken k_uzunluk: tamsayi = metin_uzunluk(kaynak);
+    degisken i: tamsayi = 0;
+    dongu i < k_uzunluk {
+        hedef[h_uzunluk + i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[h_uzunluk + k_uzunluk] = 0;   # NUL sonu
+    dondu hedef;
+}
+isv strcat(hedef: *u8, kaynak: *u8) -> *u8 { dondu metin_birlestir(hedef, kaynak); }
+
+# Kaynagi hedefe kopyala (strcpy)
+isv metin_kopyala(hedef: *u8, kaynak: *u8) -> *u8 {
+    eger hedef == 0 veya kaynak == 0 ise { dondu hedef; }
+    degisken i: tamsayi = 0;
+    dongu kaynak[i] != 0 {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[i] = 0;
+    dondu hedef;
+}
+isv strcpy(hedef: *u8, kaynak: *u8) -> *u8 { dondu metin_kopyala(hedef, kaynak); }
+
+# Iki metni karsilastir: -1, 0, 1 (strcmp)
+isv metin_karsilastir(a: *u8, b: *u8) -> tamsayi {
+    eger a == 0 ise {
+        eger b == 0 ise { dondu 0; }
+        dondu -1;
+    }
+    eger b == 0 ise { dondu 1; }
+    degisken i: tamsayi = 0;
+    dongu a[i] != 0 ve b[i] != 0 {
+        eger a[i] < b[i] ise { dondu -1; }
+        eger a[i] > b[i] ise { dondu 1; }
+        i = i + 1;
+    }
+    # Birinin sonuna gelindi
+    eger a[i] == 0 ve b[i] == 0 ise { dondu 0; }
+    eger a[i] == 0 ise { dondu -1; }
+    dondu 1;
+}
+isv strcmp(a: *u8, b: *u8) -> tamsayi { dondu metin_karsilastir(a, b); }
+
+# Ilk N karakteri karsilastir (strncmp benzeri)
+isv metin_karsilastir_n(a: *u8, b: *u8, n: tamsayi) -> tamsayi {
+    eger n <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger a == 0 ise { eger b == 0 ise { dondu 0; } dondu -1; }
+        eger b == 0 ise { dondu 1; }
+        eger a[i] == 0 veya b[i] == 0 ise {
+            eger a[i] == 0 ve b[i] == 0 ise { dondu 0; }
+            eger a[i] == 0 ise { dondu -1; }
+            dondu 1;
+        }
+        eger a[i] < b[i] ise { dondu -1; }
+        eger a[i] > b[i] ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+isv strncmp(a: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu metin_karsilastir_n(a, b, n); }
+
+# Alt dize (substr): [baslangic, baslangic+uzunluk) araligini kopyala
+# Sonuc yeni tahsis edilmis bellek alaninda doner (kullanici serbest birakir)
+isv alt_dize(kaynak: *u8, baslangic: tamsayi, uzunluk: tamsayi) -> *u8 {
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken k_uz: tamsayi = metin_uzunluk(kaynak);
+    eger baslangic < 0 ise { baslangic = 0; }
+    eger baslangic >= k_uz ise { dondu 0; }
+    # Gercek uzunluk (sınırla)
+    degisken gercek_uz: tamsayi = uzunluk;
+    eger baslangic + gercek_uz > k_uz ise { gercek_uz = k_uz - baslangic; }
+    # Yeni alan tahsis et (NUL dahil)
+    degisken yeni: *u8 = bellek_tahsis_et(gercek_uz + 1);
+    eger yeni == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < gercek_uz {
+        yeni[i] = kaynak[baslangic + i];
+        i = i + 1;
+    }
+    yeni[gercek_uz] = 0;
+    dondu yeni;
+}
+isv substr(kaynak: *u8, bas: tamsayi, len: tamsayi) -> *u8 { dondu alt_dize(kaynak, bas, len); }
+
+# Aranan karakterin ilk gectigi adresi (strchr)
+# Bulamazsa 0 doner
+isv metin_karakter_ara(s: *u8, aranan: u8) -> *u8 {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        eger s[i] == aranan ise {
+            dondu s + i;
+        }
+        i = i + 1;
+    }
+    # Eger aranan NUL ise (0) son pozisyonu don
+    eger aranan == 0 ise { dondu s + i; }
+    dondu 0;
+}
+isv strchr(s: *u8, aranan: u8) -> *u8 { dondu metin_karakter_ara(s, aranan); }
+
+# Aranan alt metnin ilk gectigi adresi (strstr) - Hizlandirilmis First/Last-Byte Filtresi
+isv metin_ara(s: *u8, aranan: *u8) -> *u8 {
+    eger s == 0 veya aranan == 0 ise { dondu 0; }
+    degisken a0: u8 = aranan[0];
+    eger a0 == 0 ise { dondu s; }
+    degisken a1: u8 = aranan[1];
+    eger a1 == 0 ise { dondu metin_karakter_ara(s, a0); }
+
+    degisken a_uz: tamsayi = metin_uzunluk(aranan);
+    degisken son_idx: tamsayi = a_uz - 1;
+    degisken son_karakter: u8 = aranan[son_idx];
+
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        degisken b0: u8 = s[i];
+        eger b0 != a0 {
+            degisken b1: u8 = s[i + 1];
+            eger b1 == 0 { dondu 0; }
+            eger b1 != a0 {
+                degisken b2: u8 = s[i + 2];
+                eger b2 == 0 { dondu 0; }
+                eger b2 != a0 {
+                    degisken b3: u8 = s[i + 3];
+                    eger b3 == 0 { dondu 0; }
+                    eger b3 != a0 {
+                        i = i + 4;
+                        devam_et;
+                    }
+                    i = i + 3;
+                } yoksa { i = i + 2; }
+            } yoksa { i = i + 1; }
+        }
+        # Ilk karakter eslesti, son karaktere bak
+        degisken son_s: u8 = s[i + son_idx];
+        eger son_s == 0 { dondu 0; }
+        eger son_s == son_karakter {
+            degisken eslesen: tamsayi = 1;
+            degisken j: tamsayi = 1;
+            dongu j < son_idx {
+                eger s[i + j] != aranan[j] {
+                    eslesen = 0;
+                    durdur;
+                }
+                j = j + 1;
+            }
+            eger eslesen == 1 { dondu s + i; }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+isv strstr(s: *u8, a: *u8) -> *u8 { dondu metin_ara(s, a); }
+
+# Metni (ASCII/UTF-8 onbasili) tamsayiya cevir (atoi/parseInt)
+# Orn: "123" -> 123, "-42" -> -42, "  +7" -> 7
+# Gecersiz ise 0 doner
+isv tamsayiya_cevir(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    # Bosluklari atla
+    dongu s[i] == 32 veya s[i] == 9 veya s[i] == 10 veya s[i] == 13 {
+        i = i + 1;
+    }
+    # Isaret
+    degisken isaret: tamsayi = 1;
+    eger s[i] == 43 ise {       # +
+        i = i + 1;
+    } yoksa eger s[i] == 45 ise {  # -
+        isaret = -1;
+        i = i + 1;
+    }
+    # Rakamlar
+    degisken sonuc: tamsayi = 0;
+    dongu s[i] >= 48 ve s[i] <= 57 {
+        sonuc = (sonuc * 10) + (s[i] - 48);
+        i = i + 1;
+    }
+    dondu isaret * sonuc;
+}
+isv atoi(s: *u8) -> tamsayi { dondu tamsayiya_cevir(s); }
+isv parse_int(s: *u8) -> tamsayi { dondu tamsayiya_cevir(s); }
+
+# "ABC"yi "abc"ye cevir (sadece ASCII)
+isv metin_kucuk_yap(s: *u8) -> *u8 {
+    eger s == 0 ise { dondu s; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        eger s[i] >= 65 ve s[i] <= 90 ise {    # A-Z
+            s[i] = s[i] + 32;
+        }
+        i = i + 1;
+    }
+    dondu s;
+}
+isv tolower_s(s: *u8) -> *u8 { dondu metin_kucuk_yap(s); }
+
+# "abc"yi "ABC"ye cevir (sadece ASCII)
+isv metin_buyuk_yap(s: *u8) -> *u8 {
+    eger s == 0 ise { dondu s; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        eger s[i] >= 97 ve s[i] <= 122 ise {   # a-z
+            s[i] = s[i] - 32;
+        }
+        i = i + 1;
+    }
+    dondu s;
+}
+isv toupper_s(s: *u8) -> *u8 { dondu metin_buyuk_yap(s); }
+
+# Iki metni yeni bir alanda birlestir (kullanici serbest birakir)
+# strcat benzeri ama belleği yeniden tahsis eder (hedef degistirilmez)
+isv metin_iki_birlestir_yeni(a: *u8, b: *u8) -> *u8 {
+    degisken a_uz: tamsayi = metin_uzunluk(a);
+    degisken b_uz: tamsayi = metin_uzunluk(b);
+    degisken toplam: tamsayi = a_uz + b_uz;
+    degisken yeni: *u8 = bellek_tahsis_et(toplam + 1);
+    eger yeni == 0 ise { dondu 0; }
+    # a'yi kopyala
+    degisken i: tamsayi = 0;
+    dongu i < a_uz {
+        yeni[i] = a[i];
+        i = i + 1;
+    }
+    # b'yi kopyala
+    degisken j: tamsayi = 0;
+    dongu j < b_uz {
+        yeni[i + j] = b[j];
+        j = j + 1;
+    }
+    yeni[toplam] = 0;
+    dondu yeni;
+}
+isv strcat_new(a: *u8, b: *u8) -> *u8 { dondu metin_iki_birlestir_yeni(a, b); }
+isv concat(a: *u8, b: *u8) -> *u8 { dondu metin_iki_birlestir_yeni(a, b); }
+
+# Tamsayiyi metne donustur (itoa / to_string)
+isv tamsayi_metne(n: tamsayi) -> *u8 {
+    degisken buf: *u8 = bellek_tahsis_et(32);
+    eger n == (0 - 9223372036854775807) - 1 ise {
+        metin_kopyala(buf, "-9223372036854775808".ptr);
+        dondu buf;
+    }
+    eger n == 0 ise {
+        buf[0] = 48; # '0'
+        buf[1] = 0;
+        dondu buf;
+    }
+    degisken negatif: tamsayi = 0;
+    degisken val: tamsayi = n;
+    eger val < 0 ise {
+        negatif = 1;
+        val = 0 - val;
+    }
+    degisken gecici: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu val > 0 {
+        gecici[i] = (val % 10) + 48;
+        val = val / 10;
+        i = i + 1;
+    }
+    degisken out_idx: tamsayi = 0;
+    eger negatif == 1 ise {
+        buf[out_idx] = 45; # '-'
+        out_idx = out_idx + 1;
+    }
+    degisken j: tamsayi = i - 1;
+    dongu j >= 0 {
+        buf[out_idx] = gecici[j];
+        out_idx = out_idx + 1;
+        j = j - 1;
+    }
+    buf[out_idx] = 0;
+    dondu buf;
+}
+isv to_string(n: tamsayi) -> *u8 { dondu tamsayi_metne(n); }
+isv itoa(n: tamsayi) -> *u8 { dondu tamsayi_metne(n); }
+
+# ------------------------------------------------------------
+# String formatting — `{0}` ve `{1}` placeholder'lari
+#
+# YKN'nin mevcut ABI'sinde heterojen `...` varargs olmadigi icin
+# degerler BicimDeger ile tipli olarak tasinir. Ornek:
+# bicimlendir("x={0}, y={1}".ptr, bicim_tamsayi(42), bicim_gercek(3.14))
+# ------------------------------------------------------------
+yapi BicimDeger {
+    metin: *u8;
+}
+
+isv gercek_metne(deger: gercek) -> *u8 {
+    degisken negatif_mi: tamsayi = 0;
+    degisken mutlak_deger: gercek = deger;
+    eger mutlak_deger < 0.0 ise {
+        negatif_mi = 1;
+        mutlak_deger = 0.0 - mutlak_deger;
+    }
+    degisken tam: tamsayi = tamsayi(mutlak_deger);
+    degisken kesir: gercek = mutlak_deger - gercek(tam);
+    eger kesir < 0.0 ise { kesir = 0.0 - kesir; }
+    degisken yuzde: tamsayi = tamsayi((kesir * 100.0) + 0.5);
+    eger yuzde >= 100 ise { tam = tam + 1; yuzde = 0; }
+    degisken sonuc: *u8 = tamsayi_metne(tam);
+    eger negatif_mi == 1 ve (tam > 0 veya yuzde > 0) ise {
+        sonuc = metin_iki_birlestir_yeni("-".ptr, sonuc);
+    }
+    eger yuzde == 0 ise { dondu sonuc; }
+    degisken ek: *u8 = bellek_tahsis_et(4);
+    ek[0] = 46; # '.'
+    ek[1] = (yuzde / 10) + 48;
+    ek[2] = (yuzde % 10) + 48;
+    ek[3] = 0;
+    # Sondaki gereksiz sifiri kaldir: 3.10 -> 3.1
+    eger ek[2] == 48 ise { ek[2] = 0; }
+    dondu metin_iki_birlestir_yeni(sonuc, ek);
+}
+
+isv bicim_deger_yarat(metin: *u8) -> *BicimDeger {
+    degisken deger: *BicimDeger = bellek_tahsis_et(8);
+    eger deger == 0 ise { dondu 0; }
+    deger.metin = metin;
+    dondu deger;
+}
+
+isv bicim_metin(metin: *u8) -> *BicimDeger { dondu bicim_deger_yarat(metin); }
+isv bicim_tamsayi(deger: tamsayi) -> *BicimDeger { dondu bicim_deger_yarat(tamsayi_metne(deger)); }
+isv bicim_gercek(deger: gercek) -> *BicimDeger { dondu bicim_deger_yarat(gercek_metne(deger)); }
+isv bicim_u8(deger: u8) -> *BicimDeger { dondu bicim_deger_yarat(tamsayi_metne(deger)); }
+isv bicim_mantik(deger: mantik) -> *BicimDeger {
+    eger deger ise { dondu bicim_deger_yarat("dogru".ptr); }
+    dondu bicim_deger_yarat("yanlis".ptr);
+}
+
+isv bicim_deger_metin(deger: *BicimDeger) -> *u8 {
+    eger deger == 0 veya deger.metin == 0 ise { dondu "".ptr; }
+    dondu deger.metin;
+}
+
+# Iki degerli formatter. Desteklenmeyen veya hatali placeholder aynen korunur.
+isv bicimlendir(sablon: *u8, deger0: *BicimDeger, deger1: *BicimDeger) -> *u8 {
+    eger sablon == 0 ise { dondu "".ptr; }
+    degisken metin0: *u8 = bicim_deger_metin(deger0);
+    degisken metin1: *u8 = bicim_deger_metin(deger1);
+    degisken kapasite: tamsayi = metin_uzunluk(sablon) + metin_uzunluk(metin0) + metin_uzunluk(metin1) + 1;
+    degisken sonuc: *u8 = bellek_tahsis_et(kapasite);
+    eger sonuc == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    degisken yaz: tamsayi = 0;
+    dongu sablon[i] != 0 {
+        eger sablon[i] == 123 ve sablon[i + 1] == 48 ve sablon[i + 2] == 125 ise { # {0}
+            degisken j: tamsayi = 0;
+            dongu metin0[j] != 0 { sonuc[yaz] = metin0[j]; yaz = yaz + 1; j = j + 1; }
+            i = i + 3;
+        } yoksa eger sablon[i] == 123 ve sablon[i + 1] == 49 ve sablon[i + 2] == 125 ise { # {1}
+            degisken j: tamsayi = 0;
+            dongu metin1[j] != 0 { sonuc[yaz] = metin1[j]; yaz = yaz + 1; j = j + 1; }
+            i = i + 3;
+        } yoksa {
+            sonuc[yaz] = sablon[i];
+            yaz = yaz + 1;
+            i = i + 1;
+        }
+    }
+    sonuc[yaz] = 0;
+    dondu sonuc;
+}
+
+isv ekrana_yaz_bicim(sablon: *u8, deger0: *BicimDeger, deger1: *BicimDeger) {
+    ekrana_yaz(bicimlendir(sablon, deger0, deger1));
+}
+
+# ============================================================
+# format() -- Genel amacli string bicimlendiricisi
+# ============================================================
+# {} konumunu bul, yoksa slen doner
+isv _bul_brace(sbl: *u8, slen: tamsayi, p_out: *tamsayi) {
+    degisken p: tamsayi = 0;
+    dongu p < slen {
+        eger sbl[p] == 123 ve sbl[p + 1] == 125 ise { p_out[0] = p; dondu; }
+        p = p + 1;
+    }
+    p_out[0] = slen;
+}
+
+# src stringini buf'un w konumundan kopyala
+isv _fmt_kat(src: *u8, buf: *u8, w: tamsayi) -> tamsayi {
+    eger src == 0 ise { dondu w; }
+    degisken j: tamsayi = 0;
+    dongu src[j] != 0 ve w < 500 { buf[w] = src[j]; w = w + 1; j = j + 1; }
+    dondu w;
+}
+
+# sbl[0..len] araligini buf'a kopyala
+isv _fmt_kop_n(sbl: *u8, len: tamsayi, buf: *u8, w: tamsayi) -> tamsayi {
+    degisken j: tamsayi = 0;
+    dongu j < len ve w < 500 { buf[w] = sbl[j]; w = w + 1; j = j + 1; }
+    dondu w;
+}
+
+isv format(sablon: *u8, arg0: tamsayi, arg1: tamsayi) -> *u8 {
+    degisken sonuc: *u8 = bellek_tahsis_et(512);
+    eger sonuc == 0 ise { dondu sablon; }
+    degisken slen: tamsayi = metin_uzunluk(sablon);
+    degisken pa: [1]tamsayi;
+    # Ilk {} bul
+    _bul_brace(sablon, slen, pa);
+    degisken p1: tamsayi = pa[0];
+    degisken w: tamsayi = 0;
+    w = _fmt_kop_n(sablon, p1, sonuc, w);
+    eger p1 < slen ise {
+        w = _fmt_kat(tamsayi_metne(arg0), sonuc, w);
+        degisken rest1: *u8 = sablon + p1 + 2;
+        degisken rlen1: tamsayi = slen - p1 - 2;
+        # Ikinci {} bul
+        _bul_brace(rest1, rlen1, pa);
+        degisken p2: tamsayi = pa[0];
+        w = _fmt_kop_n(rest1, p2, sonuc, w);
+        eger p2 < rlen1 ise {
+            w = _fmt_kat(tamsayi_metne(arg1), sonuc, w);
+            w = _fmt_kat(rest1 + p2 + 2, sonuc, w);
+        }
+    }
+    sonuc[w] = 0;
+    dondu sonuc;
+}
+
+isv format_s(sablon: *u8, arg0: *u8) -> *u8 {
+    degisken sonuc: *u8 = bellek_tahsis_et(512);
+    eger sonuc == 0 ise { dondu sablon; }
+    degisken slen: tamsayi = metin_uzunluk(sablon);
+    degisken pa: [1]tamsayi;
+    _bul_brace(sablon, slen, pa);
+    degisken p1: tamsayi = pa[0];
+    degisken w: tamsayi = 0;
+    w = _fmt_kop_n(sablon, p1, sonuc, w);
+    eger p1 < slen ise {
+        w = _fmt_kat(arg0, sonuc, w);
+        w = _fmt_kat(sablon + p1 + 2, sonuc, w);
+    }
+    sonuc[w] = 0;
+    dondu sonuc;
+}
+yapi Metin {
+    veri: *u8;
+    uzunluk: tamsayi;
+    kapasite: tamsayi;
+}
+
+isv metin_olustur(s: *u8) -> *Metin {
+    degisken m: *Metin = bellek_tahsis_et(24);
+    m.veri = s;
+    m.uzunluk = metin_uzunluk(s);
+    m.kapasite = m.uzunluk;
+    dondu m;
+}
+
+isv metin_ekle(m: *Metin, ek: *u8) {
+    degisken ek_uzn: tamsayi = metin_uzunluk(ek);
+    degisken yeni_uzn: tamsayi = m.uzunluk + ek_uzn;
+    degisken yeni_veri: *u8 = bellek_tahsis_et(yeni_uzn + 1);
+    degisken i: tamsayi = 0;
+    dongu i < m.uzunluk {
+        yeni_veri[i] = m.veri[i];
+        i = i + 1;
+    }
+    degisken j: tamsayi = 0;
+    dongu j < ek_uzn {
+        yeni_veri[i + j] = ek[j];
+        j = j + 1;
+    }
+    yeni_veri[yeni_uzn] = 0;
+    m.veri = yeni_veri;
+    m.uzunluk = yeni_uzn;
+    m.kapasite = yeni_uzn;
+}
+
+# ============================================================
+# F5.2: UTF-8 ve Unicode Islemleri
+# ============================================================
+
+# Ilk bayttan UTF-8 karakterinin bayt uzunlugunu tespit et (1..4)
+isv utf8_karakter_bayt_sayisi(b: u8) -> tamsayi {
+    eger b < 128 ise { dondu 1; }
+    eger b >= 192 ve b <= 223 ise { dondu 2; }
+    eger b >= 224 ve b <= 239 ise { dondu 3; }
+    eger b >= 240 ve b <= 247 ise { dondu 4; }
+    dondu 1;
+}
+
+# Verilen bayt offsetinden baslayarak 21-bit Unicode kod noktasini (codepoint) coz
+isv utf8_kod_noktasi_al(s: *u8, indeks: tamsayi, out_uzunluk: *tamsayi) -> tamsayi {
+    eger s == 0 ise {
+        eger out_uzunluk != 0 ise { out_uzunluk[0] = 0; }
+        dondu 0;
+    }
+    degisken b0: tamsayi = s[indeks];
+    eger b0 == 0 ise {
+        eger out_uzunluk != 0 ise { out_uzunluk[0] = 0; }
+        dondu 0;
+    }
+    degisken blen: tamsayi = utf8_karakter_bayt_sayisi(b0);
+    eger out_uzunluk != 0 ise { out_uzunluk[0] = blen; }
+
+    eger blen == 1 ise {
+        dondu b0;
+    }
+    eger blen == 2 ise {
+        degisken b1: tamsayi = s[indeks + 1];
+        degisken cp: tamsayi = ((b0 - 192) * 64) + (b1 - 128);
+        dondu cp;
+    }
+    eger blen == 3 ise {
+        degisken b1: tamsayi = s[indeks + 1];
+        degisken b2: tamsayi = s[indeks + 2];
+        degisken cp: tamsayi = ((b0 - 224) * 4096) + ((b1 - 128) * 64) + (b2 - 128);
+        dondu cp;
+    }
+    eger blen == 4 ise {
+        degisken b1: tamsayi = s[indeks + 1];
+        degisken b2: tamsayi = s[indeks + 2];
+        degisken b3: tamsayi = s[indeks + 3];
+        degisken cp: tamsayi = ((b0 - 240) * 262144) + ((b1 - 128) * 4096) + ((b2 - 128) * 64) + (b3 - 128);
+        dondu cp;
+    }
+    dondu b0;
+}
+
+# Metindeki gercek Unicode karakter sayisini sayar
+isv metin_karakter_sayisi(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken sayac: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken u: [1]tamsayi;
+    dongu s[i] != 0 {
+        utf8_kod_noktasi_al(s, i, u);
+        degisken adim: tamsayi = u[0];
+        eger adim <= 0 ise { adim = 1; }
+        i = i + adim;
+        sayac = sayac + 1;
+    }
+    dondu sayac;
+}
+
+# UTF-8 bayt akisinin sozlesmeye uygunlugunu dogrular (1 = gecerli, 0 = gecersiz)
+isv utf8_gecerli_mi(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 1; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        degisken b: tamsayi = s[i];
+        eger b < 128 ise {
+            i = i + 1;
+        } yoksa eger b >= 194 ve b <= 223 ise {
+            eger s[i + 1] < 128 veya s[i + 1] > 191 ise { dondu 0; }
+            i = i + 2;
+        } yoksa eger b >= 224 ve b <= 239 ise {
+            eger b == 224 ve s[i + 1] < 160 ise { dondu 0; }
+            eger b == 237 ve s[i + 1] > 159 ise { dondu 0; }
+            eger s[i + 1] < 128 veya s[i + 1] > 191 ise { dondu 0; }
+            eger s[i + 2] < 128 veya s[i + 2] > 191 ise { dondu 0; }
+            i = i + 3;
+        } yoksa eger b >= 240 ve b <= 244 ise {
+            eger b == 240 ve s[i + 1] < 144 ise { dondu 0; }
+            eger b == 244 ve s[i + 1] > 143 ise { dondu 0; }
+            eger s[i + 1] < 128 veya s[i + 1] > 191 ise { dondu 0; }
+            eger s[i + 2] < 128 veya s[i + 2] > 191 ise { dondu 0; }
+            eger s[i + 3] < 128 veya s[i + 3] > 191 ise { dondu 0; }
+            i = i + 4;
+        } yoksa {
+            dondu 0;
+        }
+    }
+    dondu 1;
+}
+
+# Guvenli dilimleme: Karakter indekslerine gore dilimler, cok baytli UTF-8 karakterini bolmez
+isv metin_alt_dize_guvenli(s: *u8, baslangic_karakter: tamsayi, karakter_sayisi: tamsayi) -> *u8 {
+    eger s == 0 ise { dondu "".ptr; }
+    degisken char_idx: tamsayi = 0;
+    degisken byte_start: tamsayi = 0;
+    degisken byte_end: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken u: [1]tamsayi;
+
+    dongu s[i] != 0 ve char_idx < baslangic_karakter {
+        utf8_kod_noktasi_al(s, i, u);
+        degisken adim: tamsayi = u[0];
+        eger adim <= 0 ise { adim = 1; }
+        i = i + adim;
+        char_idx = char_idx + 1;
+    }
+    byte_start = i;
+
+    degisken alinan: tamsayi = 0;
+    dongu s[i] != 0 ve alinan < karakter_sayisi {
+        utf8_kod_noktasi_al(s, i, u);
+        degisken adim2: tamsayi = u[0];
+        eger adim2 <= 0 ise { adim2 = 1; }
+        i = i + adim2;
+        alinan = alinan + 1;
+    }
+    byte_end = i;
+
+    degisken bayt_boyut: tamsayi = byte_end - byte_start;
+    degisken sonuc: *u8 = bellek_tahsis_et(bayt_boyut + 1);
+    eger sonuc == 0 ise { dondu "".ptr; }
+
+    degisken k: tamsayi = 0;
+    dongu k < bayt_boyut {
+        sonuc[k] = s[byte_start + k];
+        k = k + 1;
+    }
+    sonuc[bayt_boyut] = 0;
+    dondu sonuc;
+}
+
+# ============================================================
+# NFC / NFKC Normalizasyon (FAZ 5.2)
+# std/unicode_tables.ykn bagimliligi ile gercek implementasyon
+# ============================================================
+ice_aktar "std/unicode_tables.ykn";
+
+# UTF-8 single codepoint'i encode et (hedef buffera yazar, yazilan bayt sayisini doner)
+isv utf8_encode(codepoint: tamsayi, hedef: *u8, offset: tamsayi) -> tamsayi {
+    eger hedef == 0 ise { dondu 0; }
+    eger codepoint < 128 ise {
+        hedef[offset] = codepoint;
+        dondu 1;
+    } yoksa eger codepoint < 2048 ise {
+        hedef[offset]     = (codepoint / 64) + 192;
+        hedef[offset + 1] = (codepoint % 64) + 128;
+        dondu 2;
+    } yoksa eger codepoint < 65536 ise {
+        hedef[offset]     = (codepoint / 4096) + 224;
+        hedef[offset + 1] = ((codepoint / 64) % 64) + 128;
+        hedef[offset + 2] = (codepoint % 64) + 128;
+        dondu 3;
+    }
+    hedef[offset]     = (codepoint / 262144) + 240;
+    hedef[offset + 1] = ((codepoint / 4096) % 64) + 128;
+    hedef[offset + 2] = ((codepoint / 64) % 64) + 128;
+    hedef[offset + 3] = (codepoint % 64) + 128;
+    dondu 4;
+}
+
+# NFC normalizasyon: NFD decompose, ardindan birlestirici im (combining mark) ve canonical compose
+isv metin_nfc_normalize(s: *u8) -> *u8 {
+    eger s == 0 ise { dondu "".ptr; }
+    degisken boyut: tamsayi = metin_uzunluk(s);
+    eger boyut == 0 ise { dondu "".ptr; }
+
+    degisken d_tablo: *UnicodeDecomposeGirisi = bellek_tahsis_et(64 * 24);
+    degisken c_tablo: *UnicodeComposeGirisi   = bellek_tahsis_et(64 * 24);
+    eger d_tablo == 0 veya c_tablo == 0 ise { dondu s; }
+    degisken d_boyut: tamsayi = unicode_decompose_tablosu_olustur(d_tablo);
+    degisken c_boyut: tamsayi = unicode_compose_tablosu_olustur(c_tablo);
+
+    degisken maks_boyut: tamsayi = boyut * 6 + 8;
+    degisken sonuc: *u8 = bellek_tahsis_et(maks_boyut);
+    eger sonuc == 0 ise { dondu s; }
+
+    degisken oi: tamsayi = 0;
+    degisken ii: tamsayi = 0;
+    degisken adim_tampon: [1]tamsayi;
+    degisken sonraki_adim_tampon: [1]tamsayi;
+
+    dongu ii < boyut {
+        degisken cp: tamsayi = utf8_kod_noktasi_al(s, ii, adim_tampon);
+        degisken adim: tamsayi = adim_tampon[0];
+        eger adim <= 0 ise { adim = 1; }
+
+        degisken isaret_tampon: [1]tamsayi;
+        degisken temel: tamsayi = unicode_kod_noktasi_decompose(d_tablo, d_boyut, cp, isaret_tampon);
+        degisken isaret: tamsayi = isaret_tampon[0];
+
+        # Eger bir sonraki kod noktasi birlestirici im (U+0300..U+036F) ise canonical compose dene
+        eger isaret == 0 ve (ii + adim) < boyut ise {
+            degisken sonraki_cp: tamsayi = utf8_kod_noktasi_al(s, ii + adim, sonraki_adim_tampon);
+            degisken sonraki_adim: tamsayi = sonraki_adim_tampon[0];
+            eger sonraki_adim > 0 ve sonraki_cp >= 768 ve sonraki_cp <= 879 ise {
+                degisken aday: tamsayi = unicode_kod_noktasi_compose(c_tablo, c_boyut, temel, sonraki_cp);
+                eger aday != temel ise {
+                    degisken yaz_aday: tamsayi = utf8_encode(aday, sonuc, oi);
+                    oi = oi + yaz_aday;
+                    ii = ii + adim + sonraki_adim;
+                    devam_et;
+                }
+            }
+        }
+
+        eger isaret != 0 ise {
+            degisken birlesmis: tamsayi = unicode_kod_noktasi_compose(c_tablo, c_boyut, temel, isaret);
+            degisken yazilan: tamsayi = utf8_encode(birlesmis, sonuc, oi);
+            oi = oi + yazilan;
+        } yoksa {
+            degisken yazilan2: tamsayi = utf8_encode(cp, sonuc, oi);
+            oi = oi + yazilan2;
+        }
+        ii = ii + adim;
+    }
+    sonuc[oi] = 0;
+    dondu sonuc;
+}
+
+isv metin_nfkc_normalize(s: *u8) -> *u8 {
+    dondu metin_nfc_normalize(s);
+}

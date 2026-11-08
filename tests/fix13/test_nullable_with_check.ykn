@@ -1,0 +1,12 @@
+# FIX 13 — Test 2: bos literal kullanimi (olumlu)
+# bos ve nil ve null literalleri 0 degerine karsilik gelir
+ice_aktar "std/os/common.ykn";
+isv principal(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        imprimer("pointer gecerli\n".ptr);
+    } yoksa {
+        imprimer("pointer bos\n".ptr);
+    }
+    dondu 0;
+}

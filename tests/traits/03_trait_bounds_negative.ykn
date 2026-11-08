@@ -1,0 +1,16 @@
+# YUKINARY Test: Trait Kisiti Ihlali Negatif Testi (F11.13)
+# Bu dosya derlenirken tamsayi tipi OzelKisit trait'ini uygulamadigi icin
+# [E020] [ERR_TRAIT_BOUND] hatasi firlatmali ve derleme basarisiz olmalidir.
+
+ozellik OzelKisit {
+    isv ozel_metod(a: tamsayi) -> tamsayi;
+}
+
+isv test_fonk<T: OzelKisit>(x: T) -> T {
+    dondu x;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken r: tamsayi = test_fonk<tamsayi>(42);
+    dondu r;
+}

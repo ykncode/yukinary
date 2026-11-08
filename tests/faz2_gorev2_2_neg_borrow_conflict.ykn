@@ -1,0 +1,9 @@
+# Faz 2 Görev 2.2 Negatif Test 1: Borrow Conflict (&mut varken & alma)
+
+isv main() -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken r_mut: *tamsayi = &mut x;
+    degisken r_shared: *tamsayi = &x; # HATA [E041]: Borrow conflict!
+    dondu 0;
+}
+

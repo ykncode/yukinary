@@ -1,0 +1,12 @@
+# FIX-13 NEGATIF: fonksiyon cagrisi sonrasi narrowing gecersiz — E033 beklenir.
+isv dokun(p: ?*u8) -> tamsayi {
+    dondu 0;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos ise {
+        dokun(p);
+        dondu p[0];
+    }
+    dondu 0;
+}

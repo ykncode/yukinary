@@ -1,0 +1,4 @@
+isv ana() -> tamsayi {
+    eger 42 == 42 ise { dondu 1; }
+    dondu 0;
+}

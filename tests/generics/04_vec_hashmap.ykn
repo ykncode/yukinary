@@ -1,0 +1,96 @@
+# ============================================================
+# tests/generics/04_vec_hashmap.ykn
+# Vec ve HashMap Standart Koleksiyon Test Paketi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/collection/vec.ykn";
+ice_aktar "../../std/collection/hashmap.ykn";
+
+isv ana() -> tamsayi {
+    # --------------------------------------------------------
+    # 1. Vec Testi
+    # --------------------------------------------------------
+    degisken v: *Vec = vec_tamsayi_olustur();
+    
+    vec_push_tamsayi(v, 10);
+    vec_push_tamsayi(v, 20);
+    vec_push_tamsayi(v, 30);
+    vec_push_tamsayi(v, 40);
+    vec_push_tamsayi(v, 50);
+
+    eger vec_uzunluk(v) != 5 ise {
+        ekrana_yaz("FAIL: vec uzunluk != 5\n".ptr);
+        dondu 1;
+    }
+    eger vec_get_tamsayi(v, 0) != 10 ise {
+        ekrana_yaz("FAIL: vec[0] != 10\n".ptr);
+        dondu 1;
+    }
+    eger vec_get_tamsayi(v, 4) != 50 ise {
+        ekrana_yaz("FAIL: vec[4] != 50\n".ptr);
+        dondu 1;
+    }
+
+    # Set ve Pop testi
+    vec_set_tamsayi(v, 1, 999);
+    eger vec_get_tamsayi(v, 1) != 999 ise {
+        ekrana_yaz("FAIL: vec set yanlis\n".ptr);
+        dondu 1;
+    }
+
+    degisken son: tamsayi = vec_pop_tamsayi(v);
+    eger son != 50 ise {
+        ekrana_yaz("FAIL: vec pop yanlis\n".ptr);
+        dondu 1;
+    }
+    eger vec_uzunluk(v) != 4 ise {
+        ekrana_yaz("FAIL: vec pop sonrasi uzunluk != 4\n".ptr);
+        dondu 1;
+    }
+
+    # --------------------------------------------------------
+    # 2. HashMap Testi
+    # --------------------------------------------------------
+    degisken hm: *HashMap = hashmap_olustur(16);
+
+    hashmap_ekle(hm, "elma".ptr, 100);
+    hashmap_ekle(hm, "armut".ptr, 200);
+    hashmap_ekle(hm, "muz".ptr, 300);
+
+    eger hashmap_uzunluk(hm) != 3 ise {
+        ekrana_yaz("FAIL: hm uzunluk != 3\n".ptr);
+        dondu 1;
+    }
+    eger hashmap_al(hm, "elma".ptr) != 100 ise {
+        ekrana_yaz("FAIL: hm['elma'] != 100\n".ptr);
+        dondu 1;
+    }
+    eger hashmap_al(hm, "armut".ptr) != 200 ise {
+        ekrana_yaz("FAIL: hm['armut'] != 200\n".ptr);
+        dondu 1;
+    }
+    eger hashmap_al(hm, "muz".ptr) != 300 ise {
+        ekrana_yaz("FAIL: hm['muz'] != 300\n".ptr);
+        dondu 1;
+    }
+    eger hashmap_var_mi(hm, "kavun".ptr) != 0 ise {
+        ekrana_yaz("FAIL: hm['kavun'] olmamali\n".ptr);
+        dondu 1;
+    }
+
+    # Silme testi
+    hashmap_sil(hm, "armut".ptr);
+    eger hashmap_al(hm, "armut".ptr) != -1 ise {
+        ekrana_yaz("FAIL: silinen armut bulunmamali\n".ptr);
+        dondu 1;
+    }
+    eger hashmap_uzunluk(hm) != 2 ise {
+        ekrana_yaz("FAIL: silme sonrasi uzunluk != 2\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("COLLECTIONS-VEC-HASHMAP-PASS\n".ptr);
+    dondu 0;
+}

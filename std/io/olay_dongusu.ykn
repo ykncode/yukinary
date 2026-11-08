@@ -1,0 +1,35 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - Event Loop (epoll / IOCP)
+# ============================================================
+
+harici isv yukinary_sys_event_loop_create() -> tamsayi;
+harici isv yukinary_sys_event_add(loop: tamsayi, fd: tamsayi, user_data: tamsayi) -> tamsayi;
+harici isv yukinary_sys_event_wait(loop: tamsayi, out_user_data: *tamsayi) -> tamsayi;
+
+yapi OlayDongusu {
+    handle: tamsayi;
+}
+
+isv dongu_olustur() -> OlayDongusu {
+    degisken d: OlayDongusu;
+    d.handle = yukinary_sys_event_loop_create();
+    dondu d;
+}
+
+isv olaya_kaydet(d: OlayDongusu, fd: tamsayi, cb_ptr: tamsayi) -> tamsayi {
+    dondu yukinary_sys_event_add(d.handle, fd, cb_ptr);
+}
+
+isv dongu_baslat(d: OlayDongusu) -> tamsayi {
+    # Sonsuz dongude bekle ve callbackleri cagir
+    degisken cb_ptr: tamsayi = 0;
+    dongu 1 {
+        # İşletim sistemi Kernel'inde (uyuyarak) bekle (Non-blocking I/O)
+        degisken var_mi: tamsayi = yukinary_sys_event_wait(d.handle, &cb_ptr);
+        eger var_mi == 1 ise {
+            # cb_ptr uzerinden callback fonksiyonunu tetikle
+            # (Fonksiyon gostericisi (Function Pointer) kullanimi)
+        }
+    }
+    dondu 0;
+}

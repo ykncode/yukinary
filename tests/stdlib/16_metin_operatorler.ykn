@@ -1,0 +1,54 @@
+# ============================================================
+# tests/stdlib/16_metin_operatorler.ykn
+# Birinci Sinif Metin Tipi, + Birlestirme ve Formatlama Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/metin.ykn";
+
+isv ana() -> tamsayi {
+    # 1. String literal + String literal
+    degisken s_birlesik: *u8 = "Merhaba " + "Dunya!";
+    eger metin_uzunluk(s_birlesik) != 14 ise {
+        ekrana_yaz("FAIL: s_birlesik uzunlugu 14 olmali\n".ptr);
+        dondu 1;
+    }
+    eger metin_karsilastir(s_birlesik, "Merhaba Dunya!".ptr) != 0 ise {
+        ekrana_yaz("FAIL: s_birlesik icerigi eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    # 2. String degisken + String degisken
+    degisken ad: *u8 = "Yuki";
+    degisken soyad: *u8 = "nary";
+    degisken tam_ad: *u8 = ad + soyad;
+    eger metin_karsilastir(tam_ad, "Yukinary".ptr) != 0 ise {
+        ekrana_yaz("FAIL: tam_ad 'Yukinary' olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Formatlama: tamsayi_metne + string
+    degisken yil: tamsayi = 2026;
+    degisken yil_metin: *u8 = tamsayi_metne(yil);
+    degisken mesaj: *u8 = "Yil: " + yil_metin;
+    eger metin_karsilastir(mesaj, "Yil: 2026".ptr) != 0 ise {
+        ekrana_yaz("FAIL: mesaj 'Yil: 2026' olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Metin struct nesnesi ve metin_ekle
+    degisken m_obj: *Metin = metin_olustur("Versiyon: ".ptr);
+    metin_ekle(m_obj, "1.0.0".ptr);
+    eger m_obj.uzunluk != 15 ise {
+        ekrana_yaz("FAIL: m_obj.uzunluk 15 olmali\n".ptr);
+        dondu 1;
+    }
+    eger metin_karsilastir(m_obj.veri, "Versiyon: 1.0.0".ptr) != 0 ise {
+        ekrana_yaz("FAIL: m_obj.veri 'Versiyon: 1.0.0' olmali\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("METIN-OPERATORLER-PASS\n".ptr);
+    dondu 0;
+}

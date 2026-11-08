@@ -1,0 +1,18 @@
+# ============================================================
+# YukiOS daemon API boundary
+#
+# Scheduler/process supervisor/freestanding IPC altyapısı olmadan daemon
+# başlatılmış gibi başarı dönülmez. Bu modül release userspace'e dahil edilmez;
+# çağıran açıkça desteklenmediğini alır.
+# ============================================================
+
+# Negative result is deliberate: no daemon was started.
+degisken YUKI_DAEMON_DESTEKLENMIYOR = -1;
+
+isv yuki_daemon_baslat() -> tamsayi {
+    dondu YUKI_DAEMON_DESTEKLENMIYOR;
+}
+
+isv yuki_daemon_destekleniyor() -> tamsayi { # reality-audit: allow class=constant_success_body reason=explicit-capability-query-false
+    dondu 0;
+}

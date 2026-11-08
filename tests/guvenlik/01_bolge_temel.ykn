@@ -1,0 +1,61 @@
+# ============================================================
+# tests/guvenlik/01_bolge_temel.ykn
+# Faz 14.1 - Bolge (Region) Tabanli Arena Guvenligi Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Bolge olustur (4096 bayt)
+    degisken b: *Bolge = bolge_olustur(4096);
+    eger b == 0 veya b.aktif != 1 ise {
+        ekrana_yaz("FAIL: bolge olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Bolgeden tahsis yap
+    degisken p1: *u8 = bolge_tahsis(b, 64);
+    degisken p2: *u8 = bolge_tahsis(b, 128);
+
+    eger p1 == 0 veya p2 == 0 ise {
+        ekrana_yaz("FAIL: bolgeden tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Kapsam denetimi (p1 ve p2 bolge icinde mi?)
+    eger bolge_kapsaminda_mi(b, p1) != 1 ise {
+        ekrana_yaz("FAIL: p1 bolge kapsaminda olmali\n".ptr);
+        dondu 1;
+    }
+    eger bolge_kapsaminda_mi(b, p2) != 1 ise {
+        ekrana_yaz("FAIL: p2 bolge kapsaminda olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Bolge disi bellek kapsamda olmamali
+    degisken yabanci_bellek: *u8 = bellek_tahsis_et(64);
+    eger bolge_kapsaminda_mi(b, yabanci_bellek) != 0 ise {
+        ekrana_yaz("FAIL: yabanci bellek bolge disinda olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Bolgeyi sifirla
+    bolge_sifirla(b);
+    eger b.kullanilan != 0 ise {
+        ekrana_yaz("FAIL: bolge kullanimi sifirlanmali\n".ptr);
+        dondu 1;
+    }
+
+    # 6. Bolgeyi kapat
+    bolge_kapat(b);
+    degisken p_kapali: *u8 = bolge_tahsis(b, 32);
+    eger p_kapali != 0 ise {
+        ekrana_yaz("FAIL: kapali bolgeden tahsis yapilamaz\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-BOLGE-PASS\n".ptr);
+    dondu 0;
+}

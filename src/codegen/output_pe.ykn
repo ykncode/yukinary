@@ -1,0 +1,753 @@
+# ============================================================
+# Yukinary Codegen - Windows PE32+ Executable & Import Table Uretici
+# Modul: src/codegen/output_pe.ykn
+# ============================================================
+
+isv int32_patch(a: *MakineKoduArenasi, pos: tamsayi, val: tamsayi) {
+    degisken u: tamsayi = val;
+    dongu u < 0 {
+        u = u + 4294967296;
+    }
+    degisken b0: u8 = u % 256;
+    degisken b1: u8 = (u / 256) % 256;
+    degisken b2: u8 = (u / 65536) % 256;
+    degisken b3: u8 = (u / 16777216) % 256;
+    a.bellek[pos] = b0;
+    a.bellek[pos + 1] = b1;
+    a.bellek[pos + 2] = b2;
+    a.bellek[pos + 3] = b3;
+}
+
+isv u16_patch(a: *MakineKoduArenasi, pos: tamsayi, val: tamsayi) {
+    degisken u: tamsayi = val;
+    dongu u < 0 { u = u + 65536; }
+    a.bellek[pos]     = u % 256;
+    a.bellek[pos + 1] = (u / 256) % 256;
+}
+
+degisken g_cozulmeyen_harici_cagri_sayisi: tamsayi = 0;
+
+isv yamalari_uygula(a: *MakineKoduArenasi) {
+    g_cozulmeyen_harici_cagri_sayisi = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < g_yama_adet {
+        degisken call_end: tamsayi = g_yama_cagri_pos[i] + 4;
+        degisken j: tamsayi = 0;
+        degisken bulundu: tamsayi = 0;
+
+        dongu j < g_fonk_adet ve bulundu == 0 {
+
+            # Namespace metadata: g_yama_adres modul pointer'i,
+            # g_yama_tip modul uzunlugunu tasir. Inline fonksiyonlar kisa
+            # uye metadata'siyle; import edilmis fonksiyonlar modul__uye
+            # tam adi üzerinden ayni ABI'ye baglanir.
+            eger g_yama_tip[i] > 0 ve g_yama_tip[i] != 99 ve
+                g_yama_adres[i] != 0 ise {
+                eger g_fonk_modul_isim[j] != 0 ise {
+                    eger g_yama_tip[i] == g_fonk_modul_uzunluk[j] ve
+                        g_yama_uzunluk[i] == g_fonk_uzunluk[j] ve
+                        bellek_esit_mi(g_yama_adres[i], g_fonk_modul_isim[j], g_yama_tip[i]) == 1 ve
+                        bellek_esit_mi(g_yama_isim[i], g_fonk_isim[j], g_yama_uzunluk[i]) == 1 ise {
+                        int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
+                        bulundu = 1;
+                    }
+                } yoksa eger g_fonk_uzunluk[j] == g_yama_tip[i] + 2 + g_yama_uzunluk[i] ve
+                    bellek_esit_mi(g_fonk_isim[j], g_yama_adres[i], g_yama_tip[i]) == 1 ve
+                    bellek_esit_mi(g_fonk_isim[j] + g_yama_tip[i], "__".ptr, 2) == 1 ve
+                    bellek_esit_mi(g_fonk_isim[j] + g_yama_tip[i] + 2, g_yama_isim[i], g_yama_uzunluk[i]) == 1 ise {
+                    int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
+                    bulundu = 1;
+                }
+            }
+            eger bulundu == 0 ve g_yama_tip[i] == 0 ve
+                g_fonk_isim[j] != 0 ve g_yama_isim[i] != 0 ise {
+                eger g_fonk_uzunluk[j] == g_yama_uzunluk[i] ise {
+                    eger bellek_esit_mi(g_fonk_isim[j], g_yama_isim[i], g_fonk_uzunluk[j]) == 1 ise {
+                        int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
+                        bulundu = 1;
+                    }
+                }
+            }
+            j = j + 1;
+        }
+        # Inline modul fonksiyonlari kisa isimle kaydedilir; cagri adi ise
+        # modul__uye seklindedir. Module metadata ile ikinci, ABI-guvenli
+        # eslestirme yapilir.
+        eger bulundu == 0 ve g_yama_tip[i] == 0 ise {
+            j = 0;
+            dongu j < g_fonk_adet ve bulundu == 0 {
+                eger g_fonk_modul_isim[j] != 0 ve g_fonk_isim[j] != 0 ise {
+                    eger g_yama_uzunluk[i] == g_fonk_modul_uzunluk[j] + 2 + g_fonk_uzunluk[j] ise {
+                        eger bellek_esit_mi(g_yama_isim[i], g_fonk_modul_isim[j], g_fonk_modul_uzunluk[j]) == 1 ise {
+                            eger bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[j], "__".ptr, 2) == 1 ise {
+                                eger bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[j] + 2, g_fonk_isim[j], g_fonk_uzunluk[j]) == 1 ise {
+                                    int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
+                                    bulundu = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                j = j + 1;
+            }
+        }
+
+        eger bulundu == 0 ve g_yama_tip[i] != 99 ise {
+            eger g_yama_uzunluk[i] == 10 ve bellek_esit_mi(g_yama_isim[i], "ekrana_yaz".ptr, 10) == 1 ise {
+                degisken cpos: tamsayi = g_yama_cagri_pos[i];
+                eger cpos > 0 ise {
+                    a.bellek[cpos - 1] = 0x90;
+                    a.bellek[cpos + 0] = 0x90;
+                    a.bellek[cpos + 1] = 0x90;
+                    a.bellek[cpos + 2] = 0x90;
+                    a.bellek[cpos + 3] = 0x90;
+                }
+            } yoksa {
+                ekrana_yaz("UYARI: Fonksiyon cagrisi yamalanamadi: '".ptr);
+                ekrana_yaz_boyut(g_yama_isim[i], g_yama_uzunluk[i]);
+                ekrana_yaz("'\n".ptr);
+                g_cozulmeyen_harici_cagri_sayisi = g_cozulmeyen_harici_cagri_sayisi + 1;
+            }
+        }
+
+        i = i + 1;
+    }
+}
+
+isv bul_ana_adres() -> tamsayi {
+
+    # Iterate backwards so user's program entry point (registered last) wins over compiler internals
+    degisken j: tamsayi = g_fonk_adet;
+    dongu j > 0 {
+        j = j - 1;
+        degisken f_uzn: tamsayi = g_fonk_uzunluk[j];
+        degisken f_ptr: *u8 = g_fonk_isim[j];
+        eger f_ptr != 0 ise {
+            # Uzunluk 3: "ana" (TR), "本" (JA), "主" (ZH)
+            eger f_uzn == 3 ise {
+                eger bellek_esit_mi(f_ptr, "ana".ptr, 3) == 1 veya bellek_esit_mi(f_ptr, "本".ptr, 3) == 1 veya bellek_esit_mi(f_ptr, "主".ptr, 3) == 1 ise {
+                    eger g_target_platform == 0 ise { dondu 0x1000 + g_fonk_adres[j]; }
+                    dondu g_fonk_adres[j];
+                }
+            }
+            # Uzunluk 4: "main" (EN)
+            eger f_uzn == 4 ise {
+                eger bellek_esit_mi(f_ptr, "main".ptr, 4) == 1 ise {
+                    eger g_target_platform == 0 ise { dondu 0x1000 + g_fonk_adres[j]; }
+                    dondu g_fonk_adres[j];
+                }
+            }
+            # Uzunluk 6: "메인" (KO)
+            eger f_uzn == 6 ise {
+                eger bellek_esit_mi(f_ptr, "메인".ptr, 6) == 1 ise {
+                    eger g_target_platform == 0 ise { dondu 0x1000 + g_fonk_adres[j]; }
+                    dondu g_fonk_adres[j];
+                }
+            }
+            # Uzunluk 9: "principal" (FR), "メイン" (JA), "主函数" (ZH)
+            eger f_uzn == 9 ise {
+                eger bellek_esit_mi(f_ptr, "principal".ptr, 9) == 1 veya bellek_esit_mi(f_ptr, "メイン".ptr, 9) == 1 veya bellek_esit_mi(f_ptr, "主函数".ptr, 9) == 1 ise {
+                    eger g_target_platform == 0 ise { dondu 0x1000 + g_fonk_adres[j]; }
+                    dondu g_fonk_adres[j];
+                }
+            }
+            # Uzunluk 14: "главная" (RU)
+            eger f_uzn == 14 ise {
+                eger bellek_esit_mi(f_ptr, "главная".ptr, 14) == 1 ise {
+                    eger g_target_platform == 0 ise { dondu 0x1000 + g_fonk_adres[j]; }
+                    dondu g_fonk_adres[j];
+                }
+            }
+        }
+    }
+    eger g_target_platform == 0 ise { dondu 0x1000; }
+    dondu 0;
+}
+
+isv int32_yaz_konum(a: *MakineKoduArenasi, konum: tamsayi, v: tamsayi) {
+    degisken u: tamsayi = v;
+    dongu u < 0 {
+        u = u + 4294967296;
+    }
+    a.bellek[konum]     = u % 256;
+    a.bellek[konum + 1] = (u / 256) % 256;
+    a.bellek[konum + 2] = (u / 65536) % 256;
+    a.bellek[konum + 3] = (u / 16777216) % 256;
+}
+
+isv baslangic_thunk_uret(a: *MakineKoduArenasi, ana_rva: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    
+    # 1. Stack hizalama: SUB RSP, 2216 (shadow space 32 + argv[0..15] 128 + cmdline_buf 2048 + 8 alignment = 2216)
+    # Entry point RSP % 16 == 8 => (8 - 2216) % 16 == 0 (16-byte aligned before CALLs)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xEC); int32_yaz(a, 2216);
+    
+    # 2. GetCommandLineA() cagir
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu 0; }
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat_idx: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat_idx] = a.kullanilan;
+    g_iat_yama_slot[iat_idx] = 7; # GetCommandLineA
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    
+    # 3. Command line stringini stack bufferina (RSP + 160) kopyala (GetCommandLineA salt-okunur bellek dondurur)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC6); # MOV RSI, RAX
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0xBC); byte_yaz(a, 0x24); int32_yaz(a, 160); # LEA RDI, [RSP+160]
+    byte_yaz(a, 0xB9); int32_yaz(a, 2040); # MOV ECX, 2040 (maksimum kopyalama bayti)
+    
+    # copy_loop:
+    degisken cp_loop_pos: tamsayi = a.kullanilan;
+    byte_yaz(a, 0x8A); byte_yaz(a, 0x06); # MOV AL, [RSI]
+    byte_yaz(a, 0x88); byte_yaz(a, 0x07); # MOV [RDI], AL
+    byte_yaz(a, 0x84); byte_yaz(a, 0xC0); # TEST AL, AL
+    byte_yaz(a, 0x74); byte_yaz(a, 0x0D); # JE cp_done (+13)
+    byte_yaz(a, 0x48); byte_yaz(a, 0xFF); byte_yaz(a, 0xC6); # INC RSI
+    byte_yaz(a, 0x48); byte_yaz(a, 0xFF); byte_yaz(a, 0xC7); # INC RDI
+    byte_yaz(a, 0xFF); byte_yaz(a, 0xC9); # DEC ECX
+    byte_yaz(a, 0x75); byte_yaz(a, 0xEE); # JNZ cp_loop (-18)
+    byte_yaz(a, 0xC6); byte_yaz(a, 0x07); byte_yaz(a, 0x00); # MOV BYTE PTR [RDI], 0
+    # cp_done:
+    
+    # 4. R8 = RSP + 160 (yazilabilir stack buffer'daki cmdline)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x84); byte_yaz(a, 0x24); int32_yaz(a, 160);
+    
+    # 5. R9 = RSP + 32 (address of argv array)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x4C); byte_yaz(a, 0x24); byte_yaz(a, 0x20);
+    
+    # 6. R10 = 0 (argc)
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xD2);
+    
+    # skip_ws loop:
+    degisken skip_ws_pos: tamsayi = a.kullanilan;
+    byte_yaz(a, 0x41); byte_yaz(a, 0x8A); byte_yaz(a, 0x00); # MOV AL, [R8]
+    byte_yaz(a, 0x84); byte_yaz(a, 0xC0); # TEST AL, AL
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE done_parsing
+    degisken je_done_1: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x20); # CMP AL, ' '
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE is_space
+    degisken je_space_1: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x09); # CMP AL, '\t'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE is_space
+    degisken je_space_2: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x0D); # CMP AL, '\r'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE is_space
+    degisken je_space_3: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x0A); # CMP AL, '\n'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x85); # JNE found_arg
+    degisken jne_found: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # is_space:
+    degisken is_space_pos: tamsayi = a.kullanilan;
+    int32_yaz_konum(a, je_space_1, is_space_pos - (je_space_1 + 4));
+    int32_yaz_konum(a, je_space_2, is_space_pos - (je_space_2 + 4));
+    int32_yaz_konum(a, je_space_3, is_space_pos - (je_space_3 + 4));
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0); # INC R8
+    byte_yaz(a, 0xE9); # JMP skip_ws
+    degisken jmp_skip_1: tamsayi = a.kullanilan;
+    int32_yaz(a, skip_ws_pos - (jmp_skip_1 + 4));
+    
+    # found_arg:
+    degisken found_arg_pos: tamsayi = a.kullanilan;
+    int32_yaz_konum(a, jne_found, found_arg_pos - (jne_found + 4));
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x22); # CMP AL, '"'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE is_quoted
+    degisken je_quoted: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # --- Unquoted ---
+    # MOV [R9 + R10*8], R8 (argv[argc] = R8)
+    byte_yaz(a, 0x4F); byte_yaz(a, 0x89); byte_yaz(a, 0x04); byte_yaz(a, 0xD1);
+    # INC R10 (argc++)
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC2);
+    # CMP R10, 15
+    byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xFA); byte_yaz(a, 0x0F);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x8D); # JGE done_parsing
+    degisken jge_done_unq: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # scan_unquoted loop:
+    degisken scan_unq_pos: tamsayi = a.kullanilan;
+    byte_yaz(a, 0x41); byte_yaz(a, 0x8A); byte_yaz(a, 0x00); # MOV AL, [R8]
+    byte_yaz(a, 0x84); byte_yaz(a, 0xC0); # TEST AL, AL
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE done_parsing
+    degisken je_done_2: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x20); # CMP AL, ' '
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE term_arg
+    degisken je_term_1: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x09); # CMP AL, '\t'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE term_arg
+    degisken je_term_2: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x0D); # CMP AL, '\r'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE term_arg
+    degisken je_term_3: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x0A); # CMP AL, '\n'
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE term_arg
+    degisken je_term_4: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # unq_char:
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0); # INC R8
+    byte_yaz(a, 0xE9); # JMP scan_unquoted
+    degisken jmp_scan_unq: tamsayi = a.kullanilan;
+    int32_yaz(a, scan_unq_pos - (jmp_scan_unq + 4));
+    
+    # --- is_quoted ---
+    degisken is_quoted_pos: tamsayi = a.kullanilan;
+    int32_yaz_konum(a, je_quoted, is_quoted_pos - (je_quoted + 4));
+    # INC R8 (skip opening quote)
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0);
+    # MOV [R9 + R10*8], R8 (argv[argc] = R8)
+    byte_yaz(a, 0x4F); byte_yaz(a, 0x89); byte_yaz(a, 0x04); byte_yaz(a, 0xD1);
+    # INC R10 (argc++)
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC2);
+    # CMP R10, 15
+    byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xFA); byte_yaz(a, 0x0F);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x8D); # JGE done_parsing
+    degisken jge_done_q: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # scan_quoted loop:
+    degisken scan_q_pos: tamsayi = a.kullanilan;
+    byte_yaz(a, 0x41); byte_yaz(a, 0x8A); byte_yaz(a, 0x00); # MOV AL, [R8]
+    byte_yaz(a, 0x84); byte_yaz(a, 0xC0); # TEST AL, AL
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE done_parsing
+    degisken je_done_3: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    byte_yaz(a, 0x3C); byte_yaz(a, 0x22); # CMP AL, '"' (closing quote)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x84); # JE term_arg
+    degisken je_term_5: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    
+    # q_char:
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0); # INC R8
+    byte_yaz(a, 0xE9); # JMP scan_quoted
+    degisken jmp_scan_q: tamsayi = a.kullanilan;
+    int32_yaz(a, scan_q_pos - (jmp_scan_q + 4));
+    
+    # term_arg:
+    degisken term_arg_pos: tamsayi = a.kullanilan;
+    int32_yaz_konum(a, je_term_1, term_arg_pos - (je_term_1 + 4));
+    int32_yaz_konum(a, je_term_2, term_arg_pos - (je_term_2 + 4));
+    int32_yaz_konum(a, je_term_3, term_arg_pos - (je_term_3 + 4));
+    int32_yaz_konum(a, je_term_4, term_arg_pos - (je_term_4 + 4));
+    int32_yaz_konum(a, je_term_5, term_arg_pos - (je_term_5 + 4));
+    byte_yaz(a, 0x41); byte_yaz(a, 0xC6); byte_yaz(a, 0x00); byte_yaz(a, 0x00); # MOV byte [R8], 0
+    byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0); # INC R8
+    byte_yaz(a, 0xE9); # JMP skip_ws
+    degisken jmp_skip_2: tamsayi = a.kullanilan;
+    int32_yaz(a, skip_ws_pos - (jmp_skip_2 + 4));
+    
+    # done_parsing:
+    degisken done_pos: tamsayi = a.kullanilan;
+    int32_yaz_konum(a, je_done_1, done_pos - (je_done_1 + 4));
+    int32_yaz_konum(a, jge_done_unq, done_pos - (jge_done_unq + 4));
+    int32_yaz_konum(a, je_done_2, done_pos - (je_done_2 + 4));
+    int32_yaz_konum(a, jge_done_q, done_pos - (jge_done_q + 4));
+    int32_yaz_konum(a, je_done_3, done_pos - (je_done_3 + 4));
+    
+    # Null-terminate argv: MOV qword ptr [R9 + R10*8], 0
+    byte_yaz(a, 0x4B); byte_yaz(a, 0xC7); byte_yaz(a, 0x04); byte_yaz(a, 0xD1); int32_yaz(a, 0);
+    
+    # Call ana(argc, argv) -> RCX = R10 (argc), RDX = R9 (argv)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xD1); # MOV RCX, R10
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xCA); # MOV RDX, R9
+    byte_yaz(a, 0xE8); # CALL ana
+    degisken call_pos: tamsayi = a.kullanilan;
+    int32_yaz(a, ana_rva - (0x1000 + call_pos + 4));
+    
+    # ExitProcess(RAX) -> RCX = RAX
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); # MOV RCX, RAX
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu 0; }
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken exit_iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[exit_iat] = a.kullanilan;
+    g_iat_yama_slot[exit_iat] = 0; # ExitProcess
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    
+    dondu 0x1000 + bas;
+}
+
+isv hint_isim_yaz(a: *MakineKoduArenasi, isim: *u8, uzunluk: tamsayi) {
+    u16_yaz(a, 0);
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk { byte_yaz(a, isim[i]); i = i + 1; }
+    byte_yaz(a, 0);
+    eger uzunluk % 2 == 0 ise { byte_yaz(a, 0); }
+}
+
+# SIMD ve Standart PE32+ uretici artik 48 yuvali birlesik duzen (unified layout) kullanir.
+isv pe32plus_simd_uret(kod_arenasi: *MakineKoduArenasi, cikti: *MakineKoduArenasi, ep_rva: tamsayi) {
+    pe32plus_native_uret(kod_arenasi, cikti, ep_rva);
+}
+
+# Birlesik PE32+ uretici (Unified 48-slot IAT/INT, 4 IDT descriptors)
+# Layout:
+#   IDT: RDATA_RVA + 0x00
+#   IAT: RDATA_RVA + 0x80 (48 yuva = 384 bayt)
+#   INT: RDATA_RVA + 0x200 (48 yuva = 384 bayt)
+#   Hint/Name: RDATA_RVA + 0x380
+#   IDT Descriptors: KERNEL32 core (0..16), ws2_32 (18..28),
+#                    ykn_llm_simd (30..37), KERNEL32 extra (39..46)
+isv pe32plus_native_uret(kod_arenasi: *MakineKoduArenasi, cikti: *MakineKoduArenasi, ep_rva: tamsayi) {
+    yamalari_uygula(kod_arenasi);
+    degisken IMAGE_BASE: tamsayi = 0x400000;
+    degisken SEC_ALIGN: tamsayi = 0x1000;
+    degisken FILE_ALIGN: tamsayi = 0x200;
+    degisken TEXT_RVA: tamsayi = 0x1000;
+    degisken text_raw: tamsayi = kod_arenasi.kullanilan;
+    degisken text_file: tamsayi = hizala_yukari(text_raw, FILE_ALIGN);
+    degisken RDATA_RVA: tamsayi = hizala_yukari(TEXT_RVA + text_raw, SEC_ALIGN);
+    degisken size_rdata: tamsayi = 0x1000;
+    degisken size_rdata_file: tamsayi = hizala_yukari(size_rdata, FILE_ALIGN);
+    degisken rdata_file: tamsayi = FILE_ALIGN + text_file;
+    degisken rva_idt: tamsayi = RDATA_RVA;
+    degisken rva_iat: tamsayi = RDATA_RVA + 0x80;
+    degisken rva_int: tamsayi = RDATA_RVA + 0x200;
+
+    degisken hn_tablo: *tamsayi = compiler_tahsis_et(48 * 8);
+    degisken cur_hn_rva: tamsayi = RDATA_RVA + 0x380;
+
+    hn_tablo[0] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # ExitProcess (11)
+    hn_tablo[1] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 12; # WriteFile (9)
+    hn_tablo[2] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 16; # GetStdHandle (12)
+    hn_tablo[3] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 16; # VirtualAlloc (12)
+    hn_tablo[4] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # CreateFileA (11)
+    hn_tablo[5] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 12; # ReadFile (8)
+    hn_tablo[6] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # CloseHandle (11)
+    hn_tablo[7] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 18; # GetCommandLineA (15)
+    hn_tablo[8] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 20; # SetFilePointerEx (16)
+    hn_tablo[9] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # VirtualFree (11)
+    hn_tablo[10] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # CreatePipe (10)
+    hn_tablo[11] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 18; # CreateProcessA (14)
+    hn_tablo[12] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 22; # WaitForSingleObject (19)
+    hn_tablo[13] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 22; # GetExitCodeProcess (18)
+    hn_tablo[14] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 16; # LoadLibraryA (12)
+    hn_tablo[15] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 18; # GetProcAddress (14)
+    hn_tablo[16] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # FreeLibrary (11)
+    hn_tablo[17] = 0; # null terminator
+
+    hn_tablo[18] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # WSAStartup (10)
+    hn_tablo[19] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 10; # socket (6)
+    hn_tablo[20] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 8;  # bind (4)
+    hn_tablo[21] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 10; # listen (6)
+    hn_tablo[22] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 10; # accept (6)
+    hn_tablo[23] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # closesocket (11)
+    hn_tablo[24] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 8;  # send (4)
+    hn_tablo[25] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 8;  # recv (4)
+    hn_tablo[26] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 10; # connect (7)
+    hn_tablo[27] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # setsockopt (10)
+    hn_tablo[28] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 14; # ioctlsocket (11)
+    hn_tablo[29] = 0; # null terminator
+
+    hn_tablo[30] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 18; # ykn_llm_dot_q16 (15)
+    hn_tablo[31] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 20; # ykn_llm_silu_q16 (16)
+    hn_tablo[32] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 24; # ykn_llm_simd_backend (20)
+    hn_tablo[33] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 24; # ykn_llm_iq2s_dot_q16 (20)
+    hn_tablo[34] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 20; # ykn_llm_clock_ns (16)
+    hn_tablo[35] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 26; # ykn_llm_peak_rss_bytes (22)
+    hn_tablo[36] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 22; # ykn_llm_f16_dot_q16 (19)
+    hn_tablo[37] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 24; # ykn_llm_q1_0_dot_q16 (20)
+    hn_tablo[38] = 0; # null terminator
+
+    hn_tablo[39] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 16; # CreateThread (12)
+    hn_tablo[40] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 28; # InitializeCriticalSection (25)
+    hn_tablo[41] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 24; # EnterCriticalSection (20)
+    hn_tablo[42] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 24; # LeaveCriticalSection (20)
+    hn_tablo[43] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 26; # CreateIoCompletionPort (22)
+    hn_tablo[44] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 28; # GetQueuedCompletionStatus (25)
+    hn_tablo[45] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 8;  # Sleep (5)
+    hn_tablo[46] = cur_hn_rva; cur_hn_rva = cur_hn_rva + 18; # GetTickCount64 (14)
+    hn_tablo[47] = 0; # null terminator
+
+    degisken rva_dll_k32: tamsayi = cur_hn_rva; cur_hn_rva = cur_hn_rva + 13;
+    degisken rva_dll_ws2: tamsayi = cur_hn_rva; cur_hn_rva = cur_hn_rva + 11;
+    degisken rva_dll_simd: tamsayi = cur_hn_rva; cur_hn_rva = cur_hn_rva + 17;
+
+    degisken image_size: tamsayi = hizala_yukari(RDATA_RVA + size_rdata, SEC_ALIGN);
+
+    # DOS header ve PE imzasi
+    byte_yaz(cikti, 0x4D); byte_yaz(cikti, 0x5A); u16_yaz(cikti, 0x90); u16_yaz(cikti, 3);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 4); u16_yaz(cikti, 0); u16_yaz(cikti, 0xFFFF);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0xB8); u16_yaz(cikti, 0); u16_yaz(cikti, 0);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0x40); u16_yaz(cikti, 0); sifir_doldur(cikti, 8);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0); sifir_doldur(cikti, 20); int32_yaz(cikti, 0x40);
+    byte_yaz(cikti, 0x50); byte_yaz(cikti, 0x45); byte_yaz(cikti, 0); byte_yaz(cikti, 0);
+
+    # COFF + PE32+ optional header
+    u16_yaz(cikti, 0x8664); u16_yaz(cikti, 2); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, 0);
+    u16_yaz(cikti, 0xF0); u16_yaz(cikti, 0x22); u16_yaz(cikti, 0x20B); byte_yaz(cikti, 14); byte_yaz(cikti, 0);
+    int32_yaz(cikti, text_file); int32_yaz(cikti, size_rdata_file); int32_yaz(cikti, 0);
+    int32_yaz(cikti, ep_rva); int32_yaz(cikti, TEXT_RVA); int64_yaz(cikti, IMAGE_BASE);
+    int32_yaz(cikti, SEC_ALIGN); int32_yaz(cikti, FILE_ALIGN);
+    u16_yaz(cikti, 6); u16_yaz(cikti, 0); u16_yaz(cikti, 0); u16_yaz(cikti, 0); u16_yaz(cikti, 6); u16_yaz(cikti, 0);
+    int32_yaz(cikti, 0); int32_yaz(cikti, image_size); int32_yaz(cikti, FILE_ALIGN); int32_yaz(cikti, 0);
+    degisken pe_stack_res: tamsayi = 0x2000000;
+    eger g_cfg_stack_size > 0 ise { pe_stack_res = g_cfg_stack_size; }
+    u16_yaz(cikti, 3); u16_yaz(cikti, 0x8100); int64_yaz(cikti, pe_stack_res); int64_yaz(cikti, 0x100000);
+    int64_yaz(cikti, 0x1000000); int64_yaz(cikti, 0x10000); int32_yaz(cikti, 0); int32_yaz(cikti, 16);
+    int32_yaz(cikti, 0); int32_yaz(cikti, 0);
+    int32_yaz(cikti, rva_idt);
+    eger g_iat_simd_kullanildi == 1 ise {
+        int32_yaz(cikti, 100);
+    } yoksa {
+        int32_yaz(cikti, 80);
+    }
+    sifir_doldur(cikti, 80);
+    int32_yaz(cikti, rva_iat);
+    int32_yaz(cikti, 48 * 8); # 384 bayt
+    sifir_doldur(cikti, 24);
+
+    # Kesit basliklari (.text ve .rdata)
+    byte_yaz(cikti, 0x2E); byte_yaz(cikti, 0x74); byte_yaz(cikti, 0x65); byte_yaz(cikti, 0x78); byte_yaz(cikti, 0x74); byte_yaz(cikti, 0); byte_yaz(cikti, 0); byte_yaz(cikti, 0);
+    int32_yaz(cikti, text_raw); int32_yaz(cikti, TEXT_RVA); int32_yaz(cikti, text_file); int32_yaz(cikti, FILE_ALIGN); int32_yaz(cikti, 0); int32_yaz(cikti, 0); u16_yaz(cikti, 0); u16_yaz(cikti, 0); int32_yaz(cikti, 0xE0000020);
+    byte_yaz(cikti, 0x2E); byte_yaz(cikti, 0x72); byte_yaz(cikti, 0x64); byte_yaz(cikti, 0x61); byte_yaz(cikti, 0x74); byte_yaz(cikti, 0x61); byte_yaz(cikti, 0); byte_yaz(cikti, 0);
+    int32_yaz(cikti, size_rdata); int32_yaz(cikti, RDATA_RVA); int32_yaz(cikti, size_rdata_file); int32_yaz(cikti, rdata_file); int32_yaz(cikti, 0); int32_yaz(cikti, 0); u16_yaz(cikti, 0); u16_yaz(cikti, 0); int32_yaz(cikti, 0x40000040);
+    sifir_doldur(cikti, FILE_ALIGN - cikti.kullanilan);
+
+    degisken i: tamsayi = 0;
+    dongu i < kod_arenasi.kullanilan { byte_yaz(cikti, kod_arenasi.bellek[i]); i = i + 1; }
+    sifir_doldur(cikti, text_file - text_raw);
+
+    # CALL [RIP+rel32] referanslarini yamala
+    degisken pi: tamsayi = 0;
+    dongu pi < g_iat_yama_adet {
+        degisken text_off: tamsayi = g_iat_yama_text_offset[pi];
+        degisken slot: tamsayi = g_iat_yama_slot[pi];
+        degisken iat_rva: tamsayi = rva_iat + slot * 8;
+        degisken rip_after: tamsayi = TEXT_RVA + text_off + 4;
+        degisken rel32: tamsayi = iat_rva - rip_after;
+        eger rel32 < 0 ise { rel32 = rel32 + 4294967296; }
+        degisken out_pos: tamsayi = FILE_ALIGN + text_off;
+        cikti.bellek[out_pos] = rel32 % 256; rel32 = rel32 / 256;
+        cikti.bellek[out_pos + 1] = rel32 % 256; rel32 = rel32 / 256;
+        cikti.bellek[out_pos + 2] = rel32 % 256; rel32 = rel32 / 256;
+        cikti.bellek[out_pos + 3] = rel32 % 256;
+        pi = pi + 1;
+    }
+
+    # IDT Descriptors
+    # IDT[0]: KERNEL32.dll
+    int32_yaz(cikti, rva_int); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, rva_dll_k32); int32_yaz(cikti, rva_iat);
+    # IDT[1]: ws2_32.dll
+    int32_yaz(cikti, rva_int + 18 * 8); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, rva_dll_ws2); int32_yaz(cikti, rva_iat + 18 * 8);
+    eger g_iat_simd_kullanildi == 1 ise {
+        # IDT[2]: ykn_llm_simd.dll
+        int32_yaz(cikti, rva_int + 30 * 8); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, rva_dll_simd); int32_yaz(cikti, rva_iat + 30 * 8);
+        # IDT[3]: KERNEL32.dll (extra threading/IOCP)
+        int32_yaz(cikti, rva_int + 39 * 8); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, rva_dll_k32); int32_yaz(cikti, rva_iat + 39 * 8);
+        # IDT[4]: null descriptor
+        sifir_doldur(cikti, 20);
+    } yoksa {
+        # IDT[2]: KERNEL32.dll (extra threading/IOCP)
+        int32_yaz(cikti, rva_int + 39 * 8); int32_yaz(cikti, 0); int32_yaz(cikti, 0); int32_yaz(cikti, rva_dll_k32); int32_yaz(cikti, rva_iat + 39 * 8);
+        # IDT[3]: null descriptor
+        sifir_doldur(cikti, 20);
+        sifir_doldur(cikti, 20);
+    }
+
+    # IDT'yi rva_iat'a kadar (offset 0x80) sifirla doldur
+    sifir_doldur(cikti, (rdata_file + 0x80) - cikti.kullanilan);
+
+    # IAT: 48 yuva
+    degisken s: tamsayi = 0;
+    dongu s < 48 {
+        int64_yaz(cikti, hn_tablo[s]);
+        s = s + 1;
+    }
+
+    # rva_int'e kadar (offset 0x200) sifirla doldur
+    sifir_doldur(cikti, (rdata_file + 0x200) - cikti.kullanilan);
+
+    # INT: 48 yuva (IAT aynasi)
+    s = 0;
+    dongu s < 48 {
+        int64_yaz(cikti, hn_tablo[s]);
+        s = s + 1;
+    }
+
+    # Hint/Name tablosuna kadar (offset 0x380) sifirla doldur
+    sifir_doldur(cikti, (rdata_file + 0x380) - cikti.kullanilan);
+
+    # Hint/Name girisleri
+    hint_isim_yaz(cikti, "ExitProcess".ptr, 11);
+    hint_isim_yaz(cikti, "WriteFile".ptr, 9);
+    hint_isim_yaz(cikti, "GetStdHandle".ptr, 12);
+    hint_isim_yaz(cikti, "VirtualAlloc".ptr, 12);
+    hint_isim_yaz(cikti, "CreateFileA".ptr, 11);
+    hint_isim_yaz(cikti, "ReadFile".ptr, 8);
+    hint_isim_yaz(cikti, "CloseHandle".ptr, 11);
+    hint_isim_yaz(cikti, "GetCommandLineA".ptr, 15);
+    hint_isim_yaz(cikti, "SetFilePointerEx".ptr, 16);
+    hint_isim_yaz(cikti, "VirtualFree".ptr, 11);
+    hint_isim_yaz(cikti, "CreatePipe".ptr, 10);
+    hint_isim_yaz(cikti, "CreateProcessA".ptr, 14);
+    hint_isim_yaz(cikti, "WaitForSingleObject".ptr, 19);
+    hint_isim_yaz(cikti, "GetExitCodeProcess".ptr, 18);
+    hint_isim_yaz(cikti, "LoadLibraryA".ptr, 12);
+    hint_isim_yaz(cikti, "GetProcAddress".ptr, 14);
+    hint_isim_yaz(cikti, "FreeLibrary".ptr, 11);
+
+    hint_isim_yaz(cikti, "WSAStartup".ptr, 10);
+    hint_isim_yaz(cikti, "socket".ptr, 6);
+    hint_isim_yaz(cikti, "bind".ptr, 4);
+    hint_isim_yaz(cikti, "listen".ptr, 6);
+    hint_isim_yaz(cikti, "accept".ptr, 6);
+    hint_isim_yaz(cikti, "closesocket".ptr, 11);
+    hint_isim_yaz(cikti, "send".ptr, 4);
+    hint_isim_yaz(cikti, "recv".ptr, 4);
+    hint_isim_yaz(cikti, "connect".ptr, 7);
+    hint_isim_yaz(cikti, "setsockopt".ptr, 10);
+    hint_isim_yaz(cikti, "ioctlsocket".ptr, 11);
+
+    hint_isim_yaz(cikti, "ykn_llm_dot_q16".ptr, 15);
+    hint_isim_yaz(cikti, "ykn_llm_silu_q16".ptr, 16);
+    hint_isim_yaz(cikti, "ykn_llm_simd_backend".ptr, 20);
+    hint_isim_yaz(cikti, "ykn_llm_iq2s_dot_q16".ptr, 20);
+    hint_isim_yaz(cikti, "ykn_llm_clock_ns".ptr, 16);
+    hint_isim_yaz(cikti, "ykn_llm_peak_rss_bytes".ptr, 22);
+    hint_isim_yaz(cikti, "ykn_llm_f16_dot_q16".ptr, 19);
+    hint_isim_yaz(cikti, "ykn_llm_q1_0_dot_q16".ptr, 20);
+
+    hint_isim_yaz(cikti, "CreateThread".ptr, 12);
+    hint_isim_yaz(cikti, "InitializeCriticalSection".ptr, 25);
+    hint_isim_yaz(cikti, "EnterCriticalSection".ptr, 20);
+    hint_isim_yaz(cikti, "LeaveCriticalSection".ptr, 20);
+    hint_isim_yaz(cikti, "CreateIoCompletionPort".ptr, 22);
+    hint_isim_yaz(cikti, "GetQueuedCompletionStatus".ptr, 25);
+    hint_isim_yaz(cikti, "Sleep".ptr, 5);
+    hint_isim_yaz(cikti, "GetTickCount64".ptr, 14);
+
+    # DLL adlari
+    # KERNEL32.dll
+    byte_yaz(cikti, 75); byte_yaz(cikti, 69); byte_yaz(cikti, 82); byte_yaz(cikti, 78); byte_yaz(cikti, 69); byte_yaz(cikti, 76); byte_yaz(cikti, 51); byte_yaz(cikti, 50); byte_yaz(cikti, 46); byte_yaz(cikti, 100); byte_yaz(cikti, 108); byte_yaz(cikti, 108); byte_yaz(cikti, 0);
+    # ws2_32.dll
+    byte_yaz(cikti, 119); byte_yaz(cikti, 115); byte_yaz(cikti, 50); byte_yaz(cikti, 95); byte_yaz(cikti, 51); byte_yaz(cikti, 50); byte_yaz(cikti, 46); byte_yaz(cikti, 100); byte_yaz(cikti, 108); byte_yaz(cikti, 108); byte_yaz(cikti, 0);
+    # ykn_llm_simd.dll
+    byte_yaz(cikti, 121); byte_yaz(cikti, 107); byte_yaz(cikti, 110); byte_yaz(cikti, 95); byte_yaz(cikti, 108); byte_yaz(cikti, 108); byte_yaz(cikti, 109); byte_yaz(cikti, 95); byte_yaz(cikti, 115); byte_yaz(cikti, 105); byte_yaz(cikti, 109); byte_yaz(cikti, 100); byte_yaz(cikti, 46); byte_yaz(cikti, 100); byte_yaz(cikti, 108); byte_yaz(cikti, 108); byte_yaz(cikti, 0);
+
+    degisken rdata_kullanilan: tamsayi = cikti.kullanilan - rdata_file;
+    sifir_doldur(cikti, size_rdata_file - rdata_kullanilan);
+    coff_sembol_tablosu_yaz(cikti);
+}
+
+# FAZ 12.1: Windows CodeView / COFF Sembol Tablosu Uretici
+# Her derlenen fonksiyonun sembol adini, adresini ve tipini PE dosyasinin
+# sonuna COFF sembol tablosu ve String Tablosu olarak yazar.
+# FAZ 12.1: Windows CodeView / COFF Sembol ve Satir Numarasi Tablosu Uretici
+# GDB, LLDB, WinDbg ve dumpbin/objdump tarafindan dogrudan okunabilir.
+isv coff_sembol_tablosu_yaz(cikti: *MakineKoduArenasi) {
+    degisken sym_adet: tamsayi = g_fonk_adet;
+    eger sym_adet <= 0 ise { dondu; }
+
+    # 1. COFF Line Number Table (IMAGE_LINENUMBER: 6 bayt / kayit)
+    degisken line_tab_offset: tamsayi = cikti.kullanilan;
+    degisken total_lines: tamsayi = 0;
+    degisken li: tamsayi = 0;
+    dongu li < sym_adet {
+        # Fonksiyon basi sembol kaydi (Linenumber = 0, SymbolTableIndex = li)
+        int32_yaz(cikti, li);
+        u16_yaz(cikti, 0);
+        # Fonksiyon giris ofseti ve satir numarasi (Linenumber = li + 1, VirtualAddress = g_fonk_adres[li])
+        int32_yaz(cikti, g_fonk_adres[li]);
+        u16_yaz(cikti, li + 1);
+        total_lines = total_lines + 2;
+        li = li + 1;
+    }
+
+    # 2. String tablosu boyutu hesapla (4 byte boyut basligi + >8 char stringler)
+    degisken sym_tab_offset: tamsayi = cikti.kullanilan;
+    degisken str_tab_boyut: tamsayi = 4;
+    degisken j: tamsayi = 0;
+    dongu j < sym_adet {
+        eger g_fonk_uzunluk[j] > 8 ise {
+            str_tab_boyut = str_tab_boyut + g_fonk_uzunluk[j] + 1;
+        }
+        j = j + 1;
+    }
+
+    # 3. Her fonksiyon icin 18-byte IMAGE_SYMBOL kaydi yaz
+    degisken curr_str_off: tamsayi = 4;
+    j = 0;
+    dongu j < sym_adet {
+        degisken uzn: tamsayi = g_fonk_uzunluk[j];
+        degisken f_adi: *u8 = g_fonk_isim[j];
+        eger uzn <= 8 ise {
+            degisken b: tamsayi = 0;
+            dongu b < 8 {
+                eger b < uzn ve f_adi != 0 ise { byte_yaz(cikti, f_adi[b]); }
+                yoksa { byte_yaz(cikti, 0); }
+                b = b + 1;
+            }
+        } yoksa {
+            # Offset into string table
+            int32_yaz(cikti, 0);
+            int32_yaz(cikti, curr_str_off);
+            curr_str_off = curr_str_off + uzn + 1;
+        }
+        # Value: .text icindeki fonksiyon ofseti
+        int32_yaz(cikti, g_fonk_adres[j]);
+        # SectionNumber = 1 (.text)
+        u16_yaz(cikti, 1);
+        # Type = 0x20 (IMAGE_SYM_TYPE_FUNCTION)
+        u16_yaz(cikti, 0x20);
+        # StorageClass = 2 (IMAGE_SYM_CLASS_EXTERNAL)
+        byte_yaz(cikti, 2);
+        # NumberOfAuxSymbols = 0
+        byte_yaz(cikti, 0);
+
+        j = j + 1;
+    }
+
+    # 4. String Tablosunu yaz
+    int32_yaz(cikti, str_tab_boyut);
+    j = 0;
+    dongu j < sym_adet {
+        degisken uzn: tamsayi = g_fonk_uzunluk[j];
+        degisken f_adi: *u8 = g_fonk_isim[j];
+        eger uzn > 8 ve f_adi != 0 {
+            degisken b: tamsayi = 0;
+            dongu b < uzn {
+                byte_yaz(cikti, f_adi[b]);
+                b = b + 1;
+            }
+            byte_yaz(cikti, 0); # null terminator
+        }
+        j = j + 1;
+    }
+
+    # 5. PE COFF File Header'daki PointerToSymbolTable (0x4C) ve
+    # NumberOfSymbols (0x50) alanlarini yamala
+    int32_patch(cikti, 0x4C, sym_tab_offset);
+    int32_patch(cikti, 0x50, sym_adet);
+    # .text Section Header: PointerToLinenumbers (0x164) ve NumberOfLinenumbers (0x16A)
+    int32_patch(cikti, 0x164, line_tab_offset);
+    u16_patch(cikti, 0x16A, total_lines);
+}
+
+isv pe32plus_uret(kod_arenasi: *MakineKoduArenasi, cikti: *MakineKoduArenasi, ep_rva: tamsayi) {
+    eger g_iat_simd_kullanildi == 1 ise { pe32plus_simd_uret(kod_arenasi, cikti, ep_rva); dondu; }
+    pe32plus_native_uret(kod_arenasi, cikti, ep_rva);
+    dondu;
+}

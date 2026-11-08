@@ -1,0 +1,4 @@
+TEST MACRO: ikikat OK
+TEST MACRO: topla3 OK
+TEST MACRO: ifade icinde OK
+MACRO-CODEGEN-PASS

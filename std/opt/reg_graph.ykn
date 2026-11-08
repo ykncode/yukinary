@@ -1,0 +1,187 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi: std/opt/reg_graph.ykn
+# FAZ 4: Chaitin-Briggs Graf Renklendirmeli Yazmac Tahsisati
+#
+# Kempe / Chaitin-Briggs K-renklendirme algoritmasi:
+# 1. Girisim Grafi (Interference Graph) kurma.
+# 2. Sadeleme (Simplification): Derecesi < K olan dugumleri yigina it.
+# 3. Renk Secimi (Color Selection): Yigindan cekip komsu renkleriyle
+#    cakismayan en kucuk rengi ata.
+# 4. Spill Tespiti: K renge sigmazsa stack'e dokulme yap.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+yapi GirisimGrafi {
+    dugum_sayisi: tamsayi;
+    komsuluk:     *u8;      # N * N komsuluk matrisi
+    dereceler:    *tamsayi; # Dugum dereceleri
+    renkler:      *tamsayi; # Atanan fiziksel yazmac renkleri (1..K, -1: spill)
+    yigin:        *tamsayi; # Sadeleme yigini
+    yigin_sayaci: tamsayi;
+    elenmis:      *tamsayi; # 1: yigina atildi, 0: aktif
+}
+
+# Yeni bir girisim grafi olusturur
+isv girisim_grafi_olustur(n: tamsayi) -> *GirisimGrafi {
+    degisken g: *GirisimGrafi = bellek_tahsis_et(56);
+    eger g == 0 ise { dondu 0; }
+    degisken adet: tamsayi = n;
+    eger adet <= 0 ise { adet = 16; }
+    
+    g.dugum_sayisi = adet;
+    g.komsuluk = bellek_tahsis_et(adet * adet);
+    g.dereceler = bellek_tahsis_et(adet * 8);
+    g.renkler = bellek_tahsis_et(adet * 8);
+    g.yigin = bellek_tahsis_et(adet * 8);
+    g.elenmis = bellek_tahsis_et(adet * 8);
+    g.yigin_sayaci = 0;
+    
+    degisken degs: *tamsayi = g.dereceler;
+    degisken rnks: *tamsayi = g.renkler;
+    degisken elns: *tamsayi = g.elenmis;
+    
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        degs[i] = 0;
+        rnks[i] = 0 - 1; # Atanmamis
+        elns[i] = 0;
+        i = i + 1;
+    }
+    dondu g;
+}
+
+# Iki canli aralik arasina girisim kenari ekle (u <-> v)
+isv girisim_kenari_ekle(g: *GirisimGrafi, u: tamsayi, v: tamsayi) {
+    eger g == 0 veya u == v ise { dondu; }
+    degisken n: tamsayi = g.dugum_sayisi;
+    eger u < 0 veya u >= n veya v < 0 veya v >= n ise { dondu; }
+    
+    degisken matris: *u8 = g.komsuluk;
+    degisken degs: *tamsayi = g.dereceler;
+    degisken idx1: tamsayi = (u * n) + v;
+    degisken idx2: tamsayi = (v * n) + u;
+    
+    eger matris[idx1] == 0 {
+        matris[idx1] = 1 as u8;
+        matris[idx2] = 1 as u8;
+        degs[u] = degs[u] + 1;
+        degs[v] = degs[v] + 1;
+    }
+}
+
+# Kempe / Chaitin-Briggs K-Renklendirme Yurutumu
+# Donus degeri: Dokulen (spill) dugum sayisi (0 = kusursuz renklendi)
+isv girisim_grafi_renklendir(g: *GirisimGrafi, k_renk: tamsayi) -> tamsayi {
+    eger g == 0 veya k_renk <= 0 ise { dondu 0 - 1; }
+    degisken n: tamsayi = g.dugum_sayisi;
+    degisken kalan: tamsayi = n;
+    g.yigin_sayaci = 0;
+    
+    degisken matris: *u8    = g.komsuluk;
+    degisken degs: *tamsayi   = g.dereceler;
+    degisken rnks: *tamsayi   = g.renkler;
+    degisken ygn: *tamsayi    = g.yigin;
+    degisken elns: *tamsayi   = g.elenmis;
+    
+    # 1. Asama: Sadeleme (Simplification)
+    dongu kalan > 0 {
+        degisken secilen: tamsayi = 0 - 1;
+        degisken i: tamsayi = 0;
+        
+        # Derecesi < K olan elenmemis bir dugum ara
+        dongu i < n {
+            eger elns[i] == 0 ve degs[i] < k_renk ise {
+                secilen = i;
+                i = n; # Bulundu, donguden cik
+            }
+            i = i + 1;
+        }
+        
+        # Derecesi < K dugum yoksa (Spill adayi sec)
+        eger secilen == (0 - 1) ise {
+            degisken maks_deg: tamsayi = 0 - 1;
+            i = 0;
+            dongu i < n {
+                eger elns[i] == 0 ve degs[i] > maks_deg ise {
+                    maks_deg = degs[i];
+                    secilen = i;
+                }
+                i = i + 1;
+            }
+        }
+        
+        # Dugumu yigina it ve komsularinin derecesini azalt
+        elns[secilen] = 1;
+        ygn[g.yigin_sayaci] = secilen;
+        g.yigin_sayaci = g.yigin_sayaci + 1;
+        kalan = kalan - 1;
+        
+        i = 0;
+        dongu i < n {
+            degisken idx: tamsayi = (secilen * n) + i;
+            eger elns[i] == 0 ve matris[idx] == 1 ise {
+                degs[i] = degs[i] - 1;
+            }
+            i = i + 1;
+        }
+    }
+    
+    # 2. Asama: Renk Secimi (Color Selection / Reconstruction)
+    degisken spill_sayisi: tamsayi = 0;
+    degisken kullanilan_renkler: *u8 = bellek_tahsis_et(k_renk + 1);
+    
+    dongu g.yigin_sayaci > 0 {
+        g.yigin_sayaci = g.yigin_sayaci - 1;
+        degisken u: tamsayi = ygn[g.yigin_sayaci];
+        
+        # Komsularin kullandigi renkleri sifirla
+        bellek_doldur(kullanilan_renkler, 0 as u8, k_renk + 1);
+        
+        degisken v: tamsayi = 0;
+        dongu v < n {
+            degisken idx: tamsayi = (u * n) + v;
+            eger matris[idx] == 1 ve rnks[v] > 0 ise {
+                degisken r: tamsayi = rnks[v];
+                eger r <= k_renk ise {
+                    kullanilan_renkler[r] = 1 as u8;
+                }
+            }
+            v = v + 1;
+        }
+        
+        # Kullanilmayan en kucuk rengi ata (1..K)
+        degisken atanan: tamsayi = 0 - 1;
+        degisken c: tamsayi = 1;
+        dongu c <= k_renk {
+            eger kullanilan_renkler[c] == 0 ise {
+                atanan = c;
+                c = k_renk + 1; # Atandi, cik
+            }
+            c = c + 1;
+        }
+        
+        eger atanan != (0 - 1) ise {
+            rnks[u] = atanan;
+        } yoksa {
+            # Spill: K renge sigmaz
+            rnks[u] = 0 - 1;
+            spill_sayisi = spill_sayisi + 1;
+        }
+    }
+    
+    os_bellek_serbest(kullanilan_renkler);
+    dondu spill_sayisi;
+}
+
+# Girisim grafini serbest birakir
+isv girisim_grafi_serbest_birak(g: *GirisimGrafi) {
+    eger g == 0 ise { dondu; }
+    eger g.komsuluk != 0 ise { os_bellek_serbest(g.komsuluk); }
+    eger g.dereceler != 0 ise { os_bellek_serbest(g.dereceler as *u8); }
+    eger g.renkler != 0 ise { os_bellek_serbest(g.renkler as *u8); }
+    eger g.yigin != 0 ise { os_bellek_serbest(g.yigin as *u8); }
+    eger g.elenmis != 0 ise { os_bellek_serbest(g.elenmis as *u8); }
+    os_bellek_serbest(g as *u8);
+}

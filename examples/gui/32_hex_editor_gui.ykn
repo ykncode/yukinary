@@ -1,0 +1,35 @@
+# ============================================================
+# Örnek 32: Win32 Arayüzlü İkili Dosya Hex Düzenleyici
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_secili_offset: tamsayi = 0;
+degisken g_bayt_sayisi: tamsayi = 256;
+
+isv hex_karakter_cevir(val: tamsayi) -> tamsayi {
+    val = val & 15;
+    eger val < 10 ise { dondu 48 + val; }
+    dondu 65 + (val - 10);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Hex Editor".ptr, 720, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Hex Döküm Metin Kutusu (Ofset | Hex Baytlar | ASCII)
+    metin_kutusu_olustur(p_h, 101, 20, 20, 670, 380);
+
+    # Fonksiyon Butonlari
+    buton_olustur(p_h, "Dosya Ac".ptr, 201, 20, 420, 120, 40);
+    buton_olustur(p_h, "Kaydet".ptr, 202, 160, 420, 120, 40);
+    buton_olustur(p_h, "Ofsete Git".ptr, 203, 300, 420, 130, 40);
+    buton_olustur(p_h, "Arama Yap (Pattern)".ptr, 204, 450, 420, 180, 40);
+
+    ekrana_yaz("Hex Editor baslatildi. PE32 / ELF / Ham bayt analizi hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

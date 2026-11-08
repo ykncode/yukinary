@@ -1,0 +1,88 @@
+# ============================================================
+# Faz 8.4 — RMSNorm + RoPE + KV cache + sampler kabul testi
+# Tum degerler Q16.16 fixed-point formatindadir.
+# ============================================================
+
+
+ice_aktar "../../std/ai/attention.ykn";
+ice_aktar "../../std/ai/sampler.ykn";
+ice_aktar "../../std/ai/transformer.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    degisken girdi: [2]tamsayi;
+    degisken agirlik: [2]tamsayi;
+    degisken norm_cikti: [2]tamsayi;
+    girdi[0] = 65536;
+    girdi[1] = 65536;
+    agirlik[0] = 65536;
+    agirlik[1] = 65536;
+    eger bitnet_rmsnorm_q16(girdi, agirlik, norm_cikti, 2, 0) == 0 veya
+       norm_cikti[0] != 65536 veya norm_cikti[1] != 65536 ise {
+        ekrana_yaz("TEST 08 FAZ 8: FAILED (RMSNorm)\n".ptr);
+        dondu 1;
+    }
+
+
+    degisken rope: [2]tamsayi;
+    rope[0] = 65536;
+    rope[1] = 0;
+    eger bitnet_rope_cift_q16(rope, 0, 65536) == 0 veya
+       rope[0] != 0 veya rope[1] != 65536 ise {
+        ekrana_yaz("TEST 08 FAZ 8: FAILED (RoPE)\n".ptr);
+        dondu 2;
+    }
+
+
+    degisken anahtar_bellek: [16]tamsayi;
+    degisken deger_bellek: [16]tamsayi;
+    degisken anahtar_girdi: [2]tamsayi;
+    degisken deger_girdi: [2]tamsayi;
+    degisken anahtar_cikti: [2]tamsayi;
+    degisken deger_cikti: [2]tamsayi;
+    anahtar_girdi[0] = 11;
+    anahtar_girdi[1] = 12;
+    deger_girdi[0] = 21;
+    deger_girdi[1] = 22;
+
+    degisken kv_basari: tamsayi = bitnet_kv_cache_baslat(anahtar_bellek, deger_bellek, 2, 2, 4);
+    eger kv_basari == 0 ise { ekrana_yaz("TEST 08 FAZ 8: FAILED (KV init)\n".ptr); dondu 3; }
+
+    degisken kv_yaz_basari: tamsayi = bitnet_kv_cache_yaz(anahtar_bellek, deger_bellek, 2, 2, 4, 1, 1, anahtar_girdi, deger_girdi);
+    eger kv_yaz_basari == 0 ise { ekrana_yaz("TEST 08 FAZ 8: FAILED (KV write)\n".ptr); dondu 3; }
+
+    degisken kv_oku_basari: tamsayi = bitnet_kv_cache_oku(anahtar_bellek, deger_bellek, 2, 2, 4, 1, 1, anahtar_cikti, deger_cikti);
+    eger kv_oku_basari == 0 veya anahtar_cikti[0] != 11 veya anahtar_cikti[1] != 12 veya
+       deger_cikti[0] != 21 veya deger_cikti[1] != 22 ise {
+        ekrana_yaz("TEST 08 FAZ 8: FAILED (KV cache)\n".ptr);
+        dondu 3;
+    }
+
+
+
+    degisken logits: [3]tamsayi;
+    logits[0] = 10;
+    logits[1] = 20;
+    logits[2] = 15;
+    eger bitnet_greedy_ornekle(logits, 3, 65536) != 1 veya
+       bitnet_argmax(logits, 3) != 1 ise {
+        ekrana_yaz("TEST 08 FAZ 8: FAILED (sampler)\n".ptr);
+        dondu 4;
+    }
+
+
+    degisken katman: BitNetTransformerKatmani;
+    katman.model_boyutu = 0;
+    katman.kafa_sayisi = 0;
+    katman.kafa_boyutu = 0;
+    katman.kv_kapasitesi = 0;
+    eger bitnet_transformer_katmani_kur(&katman, 2560, 20, 128, 4096) == 0 veya
+       katman.model_boyutu != 2560 veya katman.kafa_sayisi != 20 veya
+       katman.kv_kapasitesi != 4096 ise {
+        ekrana_yaz("TEST 08 FAZ 8: FAILED (transformer config)\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("TEST 08 FAZ 8: RMSNORM+ROPE+KV+SAMPLER OK\n".ptr);
+    dondu 0;
+}

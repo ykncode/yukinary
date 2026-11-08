@@ -1,0 +1,31 @@
+# ============================================================
+# Optimizer: Function Inlining & Loop Unrolling Verification
+# ============================================================
+
+isv topla_iki(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv kare(x: tamsayi) -> tamsayi {
+    dondu x * x;
+}
+
+isv ana() -> tamsayi {
+    # 1. Inlined çağrılar
+    degisken x: tamsayi = topla_iki(20, 22); # 42
+    degisken y: tamsayi = kare(4);          # 16
+    
+    # 2. Döngü açma adayı (Loop unrolling candidate)
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 4 {
+        toplam = toplam + 10;
+        i = i + 1;
+    }
+    
+    # Doğrulama: x == 42, y == 16, toplam == 40
+    eger x == 42 ve y == 16 ve toplam == 40 ise {
+        dondu 0;
+    }
+    dondu 1;
+}

@@ -1,0 +1,22 @@
+isv faktoriyel(n: tamsayi) -> tamsayi {
+    eger n <= 1 ise {
+        dondu 1;
+    }
+    dondu n * faktoriyel(n - 1);
+}
+
+isv topla_dort(a: tamsayi, b: tamsayi, c: tamsayi, d: tamsayi) -> tamsayi {
+    dondu a + b + c + d;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken f5: tamsayi = faktoriyel(5); # 120
+    degisken t: tamsayi = topla_dort(10, 20, 30, 40); # 100
+    
+    eger f5 == 120 ve t == 100 ise {
+        ekrana_yaz("TEST 07: FUNCTIONS OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 07: FUNCTIONS FAILED\n".ptr);
+    }
+    dondu 0;
+}

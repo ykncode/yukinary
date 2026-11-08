@@ -1,0 +1,35 @@
+# ============================================================
+# Örnek 24: Konsol Tabanlı Sayı Tabanı Dönüştürücü (Dec, Bin, Hex)
+# ============================================================
+
+isv ikili_tabana_cevir(sayi: tamsayi) {
+    degisken bitler: [32]u8;
+    degisken idx: tamsayi = 0;
+    degisken temp: tamsayi = sayi;
+
+    eger temp == 0 ise {
+        ekrana_yaz("0");
+        dondu;
+    }
+
+    dongu (temp > 0) {
+        bitler[idx] = 48 + (temp % 2); # '0' veya '1'
+        temp = temp / 2;
+        idx = idx + 1;
+    }
+
+    # Tersten yazdir
+    degisken k: tamsayi = idx - 1;
+    dongu (k >= 0) {
+        degisken b: [2]u8; b[0] = bitler[k]; b[1] = 0;
+        ekrana_yaz(b);
+        k = k - 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken s: tamsayi = 42;
+    ekrana_yaz("Ondalik (Dec) : "); sayiyi_ekrana_yaz(s); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Ikili (Bin)   : "); ikili_tabana_cevir(s); ekrana_yaz("\n".ptr);
+    dondu 0;
+}

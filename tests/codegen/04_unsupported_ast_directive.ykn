@@ -1,0 +1,7 @@
+# Codegen'e ulasan ama orada desteklenmeyen direktif fail-closed reddedilmelidir.
+# Bu fixture, sessiz no-op veya sahte artifact uretilmesini test eder.
+#cpp-lib "unsupported.hpp";
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

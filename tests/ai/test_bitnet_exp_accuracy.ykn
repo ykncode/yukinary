@@ -1,0 +1,18 @@
+# Numerical guardrails for the Q16.16 exp approximation used by softmax/SiLU.
+ice_aktar "std/ai/attention.ykn";
+
+isv ana() -> tamsayi {
+    degisken exp1: tamsayi = bitnet_q16_exp_neg(0 - 65536);
+    degisken exp4: tamsayi = bitnet_q16_exp_neg(0 - 4 * 65536);
+    degisken exp6: tamsayi = bitnet_q16_exp_neg(0 - 6 * 65536);
+    degisken exp8: tamsayi = bitnet_q16_exp_neg(0 - 8 * 65536);
+
+    # Values are checked against exp(-x) * 65536 with a small allowance for
+    # deterministic fixed-point truncation and repeated-squaring rounding.
+    eger exp1 < 24100 veya exp1 > 24118 { dondu 1; }
+    eger exp4 < 1190 veya exp4 > 1210 { dondu 2; }
+    eger exp6 < 158 veya exp6 > 166 { dondu 3; }
+    eger exp8 < 19 veya exp8 > 24 { dondu 4; }
+    eger exp1 <= exp4 veya exp4 <= exp6 veya exp6 <= exp8 veya exp8 <= 0 { dondu 5; }
+    dondu 0;
+}

@@ -1,0 +1,245 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/ag.ykn
+# Capraz platform Ag / TCP Soket modulu (Networking & Sockets)
+#
+# SOKET SOZLESMESI (Socket Contract):
+#   - IPv4 TCP destegi: AF_INET (2), SOCK_STREAM (1), IPPROTO_TCP (6).
+#   - Platform bagimsiz: Windows'ta ws2_32 (WSAStartup/socket/connect/send/recv),
+#     Linux'ta dogrudan sistem cagrilari (SYS_socket, SYS_connect, SYS_bind vb.).
+#   - soket_tcp_baglan: baglanti saglanamazsa 0 (NULL) doner.
+#   - soket_tcp_dinle: sunucu soketi olusturur; basarisiz olursa 0 doner.
+#   - soket_kabul_et: istemci baglantisini kabul eder ve yeni Soket nesnesi doner.
+#   - soket_gonder: iletilen gercek bayt sayisini doner; hata ise negatif deger.
+#   - soket_al: okunan bayt sayisi; baglanti karsi tarafca kapandiysa 0, hata ise negatif deger.
+#   - soket_kapat: soketi kapatir ve heap bellegini OS'e iade eder.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# Ag Sabitleri
+degisken AF_INET         = 2;
+degisken SOCK_STREAM     = 1;
+degisken SOCK_DGRAM      = 2;
+degisken IPPROTO_TCP     = 6;
+degisken IPPROTO_UDP     = 17;
+
+degisken SOKET_HATA      = 0 - 1;
+degisken SOKET_GECERSIZ  = 0 - 1;
+
+# Derleyici cekirdeginde gomulu sistem ag intrinsics imzalar
+isv yukinary_sys_net_init() -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_create(aile: tamsayi, tip: tamsayi, proto: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_bind(fd: tamsayi, ip_int: tamsayi, port: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_connect(fd: tamsayi, ip_int: tamsayi, port: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_listen(fd: tamsayi, backlog: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_accept(fd: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_close(fd: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_send(fd: tamsayi, veri: *u8, boyut: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_recv(fd: tamsayi, tampon: *u8, maks: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_set_reuseaddr(fd: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_set_timeout(fd: tamsayi, ms: tamsayi) -> tamsayi { dondu 0; }
+isv yukinary_sys_socket_set_nonblocking(fd: tamsayi) -> tamsayi { dondu 0; }
+
+# Soket Nesne Yapisi
+yapi Soket {
+    fd: tamsayi;
+    adres_ailesi: tamsayi;
+    tip: tamsayi;
+    protokol: tamsayi;
+    bagli_mi: tamsayi;
+    dinliyor_mu: tamsayi;
+}
+
+degisken g_ag_baslatildi: tamsayi = 0;
+
+# Ag altyapisini ilklendirir (Windows WSAStartup vb.)
+isv ag_sistemini_baslat() {
+    eger g_ag_baslatildi == 0 ise {
+        yukinary_sys_net_init();
+        g_ag_baslatildi = 1;
+    }
+}
+
+# "127.0.0.1" formatindaki IPv4 metnini 32-bit sayisal aga uygun formata (network byte order) cevirir.
+isv ip_metnini_sayiya(ip: *u8) -> tamsayi {
+    eger ip == 0 ise { dondu 0; }
+    
+    degisken oktetler: [4]tamsayi;
+    oktetler[0] = 0; oktetler[1] = 0; oktetler[2] = 0; oktetler[3] = 0;
+    
+    degisken aktif_oktet: tamsayi = 0;
+    degisken deger: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    
+    dongu ip[i] != 0 ve aktif_oktet < 4 {
+        degisken c: u8 = ip[i];
+        eger c >= 48 ve c <= 57 ise {
+            # '0'..'9'
+            deger = (deger * 10) + (c - 48);
+        } yoksa eger c == 46 ise {
+            # '.'
+            oktetler[aktif_oktet] = deger;
+            aktif_oktet = aktif_oktet + 1;
+            deger = 0;
+        } yoksa {
+            durdur;
+        }
+        i = i + 1;
+    }
+    
+    eger aktif_oktet < 4 ise {
+        oktetler[aktif_oktet] = deger;
+    }
+    
+    # Little-endian host uzerinde network order: b0 | (b1<<8) | (b2<<16) | (b3<<24)
+    degisken sonuc: tamsayi = oktetler[0] + (oktetler[1] * 256) + (oktetler[2] * 65536) + (oktetler[3] * 16777216);
+    dondu sonuc;
+}
+
+# TCP Istemcisi: Belirtilen IP ve Port adresine baglanir.
+# Basarisiz olursa 0 (NULL) doner.
+isv soket_tcp_baglan(ip: *u8, port: tamsayi) -> *Soket {
+    eger ip == 0 veya port <= 0 ise { dondu 0; }
+    ag_sistemini_baslat();
+    
+    degisken fd: tamsayi = yukinary_sys_socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    eger fd < 0 ise { dondu 0; }
+    
+    degisken ip_sayi: tamsayi = ip_metnini_sayiya(ip);
+    degisken sonuc: tamsayi = yukinary_sys_socket_connect(fd, ip_sayi, port);
+    eger sonuc < 0 ise {
+        yukinary_sys_socket_close(fd);
+        dondu 0;
+    }
+    
+    degisken s: *Soket = os_bellek_tahsis(48);
+    eger s == 0 ise {
+        yukinary_sys_socket_close(fd);
+        dondu 0;
+    }
+    
+    s.fd = fd;
+    s.adres_ailesi = AF_INET;
+    s.tip = SOCK_STREAM;
+    s.protokol = IPPROTO_TCP;
+    s.bagli_mi = 1;
+    s.dinliyor_mu = 0;
+    
+    dondu s;
+}
+isv tcp_connect(ip: *u8, port: tamsayi) -> *Soket { dondu soket_tcp_baglan(ip, port); }
+
+# TCP Sunucusu: Belirtilen IP ve Port adresinde dinlemeye baslar.
+isv soket_tcp_dinle(ip: *u8, port: tamsayi, backlog: tamsayi) -> *Soket {
+    ag_sistemini_baslat();
+    
+    degisken fd: tamsayi = yukinary_sys_socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    eger fd < 0 ise { dondu 0; }
+    
+    yukinary_sys_socket_set_reuseaddr(fd);
+    
+    degisken ip_sayi: tamsayi = 0;
+    eger ip != 0 ise {
+        ip_sayi = ip_metnini_sayiya(ip);
+    }
+    
+    degisken b_res: tamsayi = yukinary_sys_socket_bind(fd, ip_sayi, port);
+    eger b_res < 0 ise {
+        yukinary_sys_socket_close(fd);
+        dondu 0;
+    }
+    
+    degisken kuyruk: tamsayi = backlog;
+    eger kuyruk <= 0 ise { kuyruk = 128; }
+    
+    degisken l_res: tamsayi = yukinary_sys_socket_listen(fd, kuyruk);
+    eger l_res < 0 ise {
+        yukinary_sys_socket_close(fd);
+        dondu 0;
+    }
+    
+    degisken s: *Soket = os_bellek_tahsis(48);
+    eger s == 0 ise {
+        yukinary_sys_socket_close(fd);
+        dondu 0;
+    }
+    
+    s.fd = fd;
+    s.adres_ailesi = AF_INET;
+    s.tip = SOCK_STREAM;
+    s.protokol = IPPROTO_TCP;
+    s.bagli_mi = 0;
+    s.dinliyor_mu = 1;
+    
+    dondu s;
+}
+isv tcp_listen(ip: *u8, port: tamsayi, backlog: tamsayi) -> *Soket { dondu soket_tcp_dinle(ip, port, backlog); }
+
+# Gelen yeni bir istemci baglantisini kabul eder.
+# Baglanti olusmazsa 0 (NULL) doner.
+isv soket_kabul_et(sunucu: *Soket) -> *Soket {
+    eger sunucu == 0 veya sunucu.fd < 0 veya sunucu.dinliyor_mu == 0 ise { dondu 0; }
+    
+    degisken istemci_fd: tamsayi = yukinary_sys_socket_accept(sunucu.fd);
+    eger istemci_fd < 0 ise { dondu 0; }
+    
+    degisken istemci: *Soket = os_bellek_tahsis(48);
+    eger istemci == 0 ise {
+        yukinary_sys_socket_close(istemci_fd);
+        dondu 0;
+    }
+    
+    istemci.fd = istemci_fd;
+    istemci.adres_ailesi = sunucu.adres_ailesi;
+    istemci.tip = sunucu.tip;
+    istemci.protokol = sunucu.protokol;
+    istemci.bagli_mi = 1;
+    istemci.dinliyor_mu = 0;
+    
+    dondu istemci;
+}
+isv socket_accept(server: *Soket) -> *Soket { dondu soket_kabul_et(server); }
+
+# Soket uzerinden veri gonderir. Gonderilen gercek bayt sayisini doner.
+isv soket_gonder(s: *Soket, veri: *u8, boyut: tamsayi) -> tamsayi {
+    eger s == 0 veya s.fd < 0 veya veri == 0 veya boyut <= 0 ise { dondu 0; }
+    dondu yukinary_sys_socket_send(s.fd, veri, boyut);
+}
+isv socket_send(s: *Soket, data: *u8, size: tamsayi) -> tamsayi { dondu soket_gonder(s, data, size); }
+
+# Soketten gelen veriyi okur. Okunan gercek bayt sayisini doner.
+# Baglanti kapandiysa 0, hata olursa -1 doner.
+isv soket_al(s: *Soket, tampon: *u8, maks: tamsayi) -> tamsayi {
+    eger s == 0 veya s.fd < 0 veya tampon == 0 veya maks <= 0 ise { dondu 0 - 1; }
+    dondu yukinary_sys_socket_recv(s.fd, tampon, maks);
+}
+isv socket_recv(s: *Soket, buffer: *u8, max_size: tamsayi) -> tamsayi { dondu soket_al(s, buffer, max_size); }
+
+# Soket icin zaman asimi suresi (milisaniye) ayarlar.
+isv soket_zaman_asimi_ayarla(s: *Soket, ms: tamsayi) -> tamsayi {
+    eger s == 0 veya s.fd < 0 ise { dondu 0 - 1; }
+    dondu yukinary_sys_socket_set_timeout(s.fd, ms);
+}
+isv socket_set_timeout(s: *Soket, ms: tamsayi) -> tamsayi { dondu soket_zaman_asimi_ayarla(s, ms); }
+
+# Soketi engellemesiz (non-blocking) moda gecirir.
+isv soket_engellemesiz_yap(s: *Soket) -> tamsayi {
+    eger s == 0 veya s.fd < 0 ise { dondu 0 - 1; }
+    dondu yukinary_sys_socket_set_nonblocking(s.fd);
+}
+isv socket_set_nonblocking(s: *Soket) -> tamsayi { dondu soket_engellemesiz_yap(s); }
+
+# Soketi kapatir ve bellegini serbest birakir.
+isv soket_kapat(s: *Soket) {
+    eger s == 0 ise { dondu; }
+    eger s.fd >= 0 ise {
+        yukinary_sys_socket_close(s.fd);
+        s.fd = 0 - 1;
+    }
+    s.bagli_mi = 0;
+    s.dinliyor_mu = 0;
+    os_bellek_serbest(s);
+}
+isv socket_close(s: *Soket) { soket_kapat(s); }
+

@@ -1,0 +1,125 @@
+# ============================================================
+# std/veritabani/sql_parser.ykn
+# FAZ C: Saf Yukinary SQL Sözdizim Ağacı (SQL AST) ve İfade Tanımları
+# SELECT, INSERT, UPDATE, DELETE, WHERE (AND / OR) koşulları, JOIN ve Volcano Yürütme Ağacı
+# ============================================================
+
+degisken SQL_KOMUT_SELECT: tamsayi = 1;
+degisken SQL_KOMUT_INSERT: tamsayi = 2;
+degisken SQL_KOMUT_UPDATE: tamsayi = 3;
+degisken SQL_KOMUT_DELETE: tamsayi = 4;
+
+# SQL Karşılaştırma İşleçleri (Comparison Operators)
+degisken SQL_OP_ESIT:       tamsayi = 1; # = veya ==
+degisken SQL_OP_BUYUK:      tamsayi = 2; # >
+degisken SQL_OP_KUCUK:      tamsayi = 3; # <
+degisken SQL_OP_ESIT_DEGIL: tamsayi = 4; # != veya <>
+degisken SQL_OP_BUYUK_ESIT: tamsayi = 5; # >=
+degisken SQL_OP_KUCUK_ESIT: tamsayi = 6; # <=
+
+# SQL Mantıksal Bağlaçlar (Logical Connectives)
+degisken SQL_BAGLAC_YOK:    tamsayi = 0;
+degisken SQL_BAGLAC_AND:    tamsayi = 1; # AND
+degisken SQL_BAGLAC_OR:     tamsayi = 2; # OR
+
+# SQL Join Türleri
+degisken SQL_JOIN_YOK:      tamsayi = 0;
+degisken SQL_JOIN_INNER:    tamsayi = 1; # INNER JOIN
+
+yapi SqlKosul {
+    sutun_ad:      *u8;
+    sutun_uzn:     tamsayi;
+    sutun_indis:   tamsayi; # 0: id, 1: deger, 2: deger2
+    op:            tamsayi; # SQL_OP_*
+    deger:         tamsayi; # Karsilastirilacak sayisal deger
+    baglac:        tamsayi; # SQL_BAGLAC_* (Sonraki kosulla baglanti)
+}
+
+yapi SqlJoin {
+    tablo_ad:        *u8;
+    tablo_uzn:       tamsayi;
+    sol_sutun_indis: tamsayi; # Ana tablodaki sutun (orn: 0=id veya 1=val)
+    sag_sutun_indis: tamsayi; # Join yapilan tablodaki sutun (orn: 0=id)
+    join_turu:       tamsayi; # SQL_JOIN_*
+}
+
+yapi SqlSorgusu {
+    komut_turu:              tamsayi; # SQL_KOMUT_*
+    tablo_id:                tamsayi; # Hedef tablo kimligi (Geriye donuk uyum)
+    filtre_degeri:           tamsayi; # WHERE id == filtre_degeri (Geriye donuk uyum)
+    atanan_deger:            tamsayi; # INSERT / UPDATE degeri (Geriye donuk uyum)
+    kosul_op:                tamsayi; # SQL_OP_* (Geriye donuk uyum)
+    limit:                   tamsayi; # Limit kısıtı
+
+    # FAZ C: Genişletilmiş AST Alanları
+    tablo_ad:                *u8;
+    tablo_uzn:               tamsayi;
+    kosullar:                *SqlKosul;
+    kosul_sayisi:            tamsayi;
+    join_bilgisi:            *SqlJoin;
+    eklenen_id:              tamsayi;
+    eklenen_deger:           tamsayi;
+    eklenen_deger2:          tamsayi;
+    guncellenen_sutun_indis: tamsayi;
+}
+
+isv sql_kosul_olustur(sutun_indis: tamsayi, op: tamsayi, deger: tamsayi, baglac: tamsayi) -> *SqlKosul {
+    degisken k: *SqlKosul = bellek_tahsis_et(48);
+    k.sutun_ad = 0;
+    k.sutun_uzn = 0;
+    k.sutun_indis = sutun_indis;
+    k.op = op;
+    k.deger = deger;
+    k.baglac = baglac;
+    dondu k;
+}
+
+isv sql_join_olustur(tablo_ad: *u8, tablo_uzn: tamsayi, sol_indis: tamsayi, sag_indis: tamsayi) -> *SqlJoin {
+    degisken j: *SqlJoin = bellek_tahsis_et(40);
+    j.tablo_ad = tablo_ad;
+    j.tablo_uzn = tablo_uzn;
+    j.sol_sutun_indis = sol_indis;
+    j.sag_sutun_indis = sag_indis;
+    j.join_turu = SQL_JOIN_INNER;
+    dondu j;
+}
+
+isv sql_sorgu_olustur(komut: tamsayi, tbl: tamsayi, filtre: tamsayi, deger: tamsayi) -> *SqlSorgusu {
+    degisken s: *SqlSorgusu = bellek_tahsis_et(128);
+    s.komut_turu = komut;
+    s.tablo_id = tbl;
+    s.filtre_degeri = filtre;
+    s.atanan_deger = deger;
+    s.kosul_op = SQL_OP_ESIT;
+    s.limit = 0;
+    s.tablo_ad = 0;
+    s.tablo_uzn = 0;
+    s.kosullar = 0;
+    s.kosul_sayisi = 0;
+    s.join_bilgisi = 0;
+    s.eklenen_id = filtre;
+    s.eklenen_deger = deger;
+    s.eklenen_deger2 = 0;
+    s.guncellenen_sutun_indis = 1;
+    dondu s;
+}
+
+isv sql_sorgu_gelismis_olustur(komut: tamsayi, tbl: tamsayi, filtre: tamsayi, op: tamsayi, deger: tamsayi, lim: tamsayi) -> *SqlSorgusu {
+    degisken s: *SqlSorgusu = bellek_tahsis_et(128);
+    s.komut_turu = komut;
+    s.tablo_id = tbl;
+    s.filtre_degeri = filtre;
+    s.atanan_deger = deger;
+    s.kosul_op = op;
+    s.limit = lim;
+    s.tablo_ad = 0;
+    s.tablo_uzn = 0;
+    s.kosullar = 0;
+    s.kosul_sayisi = 0;
+    s.join_bilgisi = 0;
+    s.eklenen_id = filtre;
+    s.eklenen_deger = deger;
+    s.eklenen_deger2 = 0;
+    s.guncellenen_sutun_indis = 1;
+    dondu s;
+}

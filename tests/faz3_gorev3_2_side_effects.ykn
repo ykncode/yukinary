@@ -1,0 +1,49 @@
+# ============================================================
+# Faz 3 Gorev 3.2: Yan Etki Duyarli Optimizasyon Testi
+# ============================================================
+
+degisken g_yan_etki_sayaci: tamsayi = 0;
+
+isv yan_etkili_islev() -> tamsayi {
+    g_yan_etki_sayaci = g_yan_etki_sayaci + 1;
+    dondu 42;
+}
+
+isv ana() -> tamsayi {
+    # 1. yan_etkili_islev() * 0: Yan etki asla atilmamalidir!
+    degisken sonuc1: tamsayi = yan_etkili_islev() * 0;
+    eger g_yan_etki_sayaci != 1 ise {
+        ekrana_yaz("HATA: f() * 0 yan etkiyi yuttu!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. 0 * yan_etkili_islev(): Sol taraftaki 0 da yan etkiyi yutmamalidir!
+    degisken sonuc2: tamsayi = 0 * yan_etkili_islev();
+    eger g_yan_etki_sayaci != 2 ise {
+        ekrana_yaz("HATA: 0 * f() yan etkiyi yuttu!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. yan_etkili_islev() * 2: Yan etki cogaltilmamalidir! (f() + f() olmamali)
+    degisken sonuc3: tamsayi = yan_etkili_islev() * 2;
+    eger g_yan_etki_sayaci != 3 ise {
+        ekrana_yaz("HATA: f() * 2 yan etkiyi iki kez cagirdi!\n".ptr);
+        dondu 3;
+    }
+    eger sonuc3 != 84 ise {
+        ekrana_yaz("HATA: f() * 2 degeri hatali!\n".ptr);
+        dondu 4;
+    }
+
+    # 4. Saf sabit katlama (yan etki yoksa): 10 * 0 -> 0, 5 * 2 -> 10
+    degisken saf1: tamsayi = 10 * 0;
+    degisken saf2: tamsayi = 5 * 2;
+    eger saf1 != 0 veya saf2 != 10 ise {
+        ekrana_yaz("HATA: Saf sabit katlama bozuldu!\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("FAZ 3.2 YAN ETKI GUVENLIGI DOGRULANDI: Basarili!\n".ptr);
+    dondu 0;
+}
+

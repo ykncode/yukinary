@@ -1,0 +1,34 @@
+# ============================================================
+# Örnek 72: Win32 Metin Sezar Şifreleme GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv sezar_kaydir(metin: *u8, anahtar: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (metin[i] != 0) {
+        degisken c: u8 = metin[i];
+        eger c >= 65 ve c <= 90 ise { # Buyuk Harf
+            metin[i] = 65 + ((c - 65 + anahtar) % 26);
+        } yoksa eger c >= 97 ve c <= 122 ise { # Kucuk Harf
+            metin[i] = 97 + ((c - 97 + anahtar) % 26);
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Sezar Sifreleme".ptr, 380, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Metin Kutusu
+    metin_kutusu_olustur(p_h, 10101, 40, 30, 280, 36);
+
+    # Butonlar
+    buton_olustur(p_h, "+3 Harf Kaydir (Sifrele)".ptr, 10110, 40, 90, 280, 40);
+    buton_olustur(p_h, "-3 Harf Kaydir (Coz)".ptr, 10111, 40, 145, 280, 40);
+
+    ekrana_yaz("Sezar Sifreleme GUI hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

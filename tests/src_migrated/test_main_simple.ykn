@@ -1,0 +1,25 @@
+﻿ice_aktar "lexer.ykn";
+ice_aktar "ast.ykn";
+ice_aktar "parser.ykn";
+ice_aktar "macros.ykn";
+ice_aktar "typechecker.ykn";
+ice_aktar "generics.ykn";
+ice_aktar "optimizer.ykn";
+ice_aktar "codegen.ykn";
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) {}
+
+isv yukinary_derle(kaynak_kod: *u8, kod_uzunlugu: tamsayi, cikti_dosyasi: *u8) {
+    ekrana_yaz("YKN Derleyici Basliyor...\n".ptr);
+    degisken jeton_arenasi: *Jeton = bellek_tahsis_et(1048576);
+    eger jeton_arenasi == 0 ise { ekrana_yaz("HATA: bellek\n".ptr); }
+    ekrana_yaz("OK\n".ptr);
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("Test\n".ptr);
+    dondu 42;
+}

@@ -1,0 +1,62 @@
+# ============================================================
+# Yukinary IOCP Event Loop (FAZ 10)
+# Modul: std/es/iocp_loop.ykn
+#
+# Windows I/O Completion Port (IOCP) Asenkron Olay Dongusu
+# Soket ve dosya asenkron tamamlanma bildirimlerini alip
+# Work-Stealing havuzuna dagitir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/es/work_stealing.ykn";
+
+degisken IOCP_INVALID_HANDLE = -1;
+
+yapi IOCPDongusu {
+    port: tamsayi;
+    aktif: tamsayi;
+    havuz: *WSHavuz;
+}
+
+# IOCP Dongusu olustur
+isv iocp_dongusu_olustur(havuz: *WSHavuz) -> *IOCPDongusu {
+    degisken d: *IOCPDongusu = bellek_tahsis_et(32);
+    eger d == 0 ise { dondu 0; }
+    # Yeni IOCP nesnesi: FileHandle = INVALID_HANDLE_VALUE (-1)
+    d.port = CreateIoCompletionPort(-1, 0, 0, 0);
+    d.aktif = 1;
+    d.havuz = havuz;
+    dondu d;
+}
+
+# Bir handle'i (dosya veya soket) IOCP'ye bagla
+isv iocp_handle_bagla(dongu_ptr: *IOCPDongusu, dosya_veya_soket: tamsayi, anahtar: tamsayi) -> tamsayi {
+    eger dongu_ptr == 0 veya dongu_ptr.port == 0 ise { dondu -1; }
+    degisken p: tamsayi = CreateIoCompletionPort(dosya_veya_soket, dongu_ptr.port, anahtar, 0);
+    eger p == 0 ise { dondu -2; }
+    dondu 0;
+}
+
+# IOCP kuyruguna sentetik is bildirimi gonder
+isv iocp_bildirim_gonder(dongu_ptr: *IOCPDongusu, bayt_sayisi: tamsayi, anahtar: tamsayi, veri_ptr: *u8) -> tamsayi {
+    eger dongu_ptr == 0 veya dongu_ptr.port == 0 ise { dondu -1; }
+    dondu PostQueuedCompletionStatus(dongu_ptr.port, bayt_sayisi, anahtar, veri_ptr);
+}
+
+# Tek bir asenkron tamamlanma olayini bekle (polling/non-blocking veya timeoutlu)
+isv iocp_olay_yokla(dongu_ptr: *IOCPDongusu, bekleme_ms: tamsayi, aktarilan_bayt: *tamsayi, anahtar: *tamsayi) -> tamsayi {
+    eger dongu_ptr == 0 veya dongu_ptr.port == 0 ise { dondu 0; }
+    degisken overlapped: *u8 = 0;
+    degisken sonuc: tamsayi = GetQueuedCompletionStatus(dongu_ptr.port, aktarilan_bayt, anahtar, &overlapped, bekleme_ms);
+    dondu sonuc;
+}
+
+# IOCP kapat
+isv iocp_dongusu_kapat(dongu_ptr: *IOCPDongusu) {
+    eger dongu_ptr == 0 ise { dondu; }
+    dongu_ptr.aktif = 0;
+    eger dongu_ptr.port != 0 {
+        os_dosya_kapat(dongu_ptr.port);
+        dongu_ptr.port = 0;
+    }
+}

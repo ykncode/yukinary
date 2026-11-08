@@ -1,0 +1,168 @@
+# ============================================================
+# Faz 8.3 — Test 03: GGUF Loader + I2_S BitNet 2-bit Dekompresyon
+# Dosya: tests/llm/mini_test.gguf (132 bayt, 1 adet 2×3 I2_S tensör)
+# ============================================================
+
+# Test executable'i için runtime wrapper bildirimleri.
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+isv diske_bas_ve_kapat(dosya_adi: *u8, buffer: *u8, boyut: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(mesaj: *u8) {}
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    # TEST 0: Struct pointer ELLE testi (önce struct erisimi dogrulayalim!)
+    # ONEMLI: GGUFDurum structunu DIZIYE degil, HEAP'tan tahsis et!
+    degisken durum_ptr: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_ptr == 0 ise {
+        ekrana_yaz("TEST 03: Bellek tahsis edilemedi\n".ptr);
+        dondu 1;
+    }
+
+    # --- Struct POINTER ERISIM TESTI: Elle yaz -> elle oku -> dogru mu?
+    ekrana_yaz("[TEST-1] Struct elle doldur testi:\n".ptr);
+    durum_ptr.buffer_uzunluk = 132;
+    durum_ptr.versiyon = 3;
+    durum_ptr.tensor_sayisi = 1;
+    durum_ptr.meta_kv_sayisi = 1;
+    eger durum_ptr.buffer_uzunluk == 132 ise {
+        ekrana_yaz("    buf_len=132 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("    buf_len=132 HATA\n".ptr);
+    }
+    eger durum_ptr.versiyon == 3 ise {
+        ekrana_yaz("    versiyon=3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("    versiyon=3 HATA\n".ptr);
+    }
+    eger durum_ptr.tensor_sayisi == 1 ise {
+        ekrana_yaz("    tensor=1 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("    tensor=1 HATA\n".ptr);
+    }
+
+    # Simdi sifirla (gguf_yukle karismasin diye)
+    durum_ptr.buffer_uzunluk = 0;
+    durum_ptr.versiyon = 0;
+    durum_ptr.tensor_sayisi = 0;
+    durum_ptr.meta_kv_sayisi = 0;
+
+    # 1) GGUF yukle -----------------------------------------------------------
+    degisken yol: *u8 = "tests/llm/mini_test.gguf".ptr;
+
+    degisken basari: tamsayi = gguf_yukle(yol, durum_ptr);
+
+    eger basari == 0 ise {
+        ekrana_yaz("TEST 03 FAZ 8: FAILED (GGUF parse adimi: ".ptr);
+        eger GGUF_SON_HATA == 1 ise { ekrana_yaz("girdi".ptr); }
+        eger GGUF_SON_HATA == 2 ise { ekrana_yaz("reader tahsis".ptr); }
+        eger GGUF_SON_HATA == 3 ise { ekrana_yaz("header".ptr); }
+        eger GGUF_SON_HATA == 4 ise { ekrana_yaz("metadata key".ptr); }
+        eger GGUF_SON_HATA == 5 ise { ekrana_yaz("metadata value".ptr); }
+        eger GGUF_SON_HATA == 6 ise { ekrana_yaz("tensor sayisi".ptr); }
+        eger GGUF_SON_HATA == 7 ise { ekrana_yaz("tensor liste tahsisi".ptr); }
+        eger GGUF_SON_HATA == 8 ise { ekrana_yaz("tensor kaydi".ptr); }
+        eger GGUF_SON_HATA == 9 ise { ekrana_yaz("data hizalama".ptr); }
+        eger GGUF_SON_HATA == 10 ise { ekrana_yaz("son reader kontrolu".ptr); }
+        eger GGUF_SON_HATA == 11 ise { ekrana_yaz("dosya okuma".ptr); }
+        ekrana_yaz(")\n".ptr);
+        eger durum_ptr.versiyon == 3 ise { ekrana_yaz("  version=3 OK\n".ptr); } yoksa { ekrana_yaz("  version HATA\n".ptr); }
+        eger durum_ptr.tensor_sayisi == 1 ise { ekrana_yaz("  tensor_count=1 OK\n".ptr); } yoksa { ekrana_yaz("  tensor_count HATA\n".ptr); }
+        eger durum_ptr.meta_kv_sayisi == 1 ise { ekrana_yaz("  meta_count=1 OK\n".ptr); } yoksa { ekrana_yaz("  meta_count HATA\n".ptr); }
+        dondu 1;
+    }
+    ekrana_yaz("[1/6] GGUF yuklemesi: OK (132 bayt / buffer)\n".ptr);
+
+    # 2) Header dogrula (version=3, tensors=1, metakv=1) --------------------
+    degisken hdr_ok: tamsayi = 1;
+    eger durum_ptr.versiyon != 3 ise { hdr_ok = 0; }
+    eger durum_ptr.tensor_sayisi != 1 ise { hdr_ok = 0; }
+    eger durum_ptr.meta_kv_sayisi != 1 ise { hdr_ok = 0; }
+
+    eger hdr_ok == 1 ise {
+        ekrana_yaz("[2/6] Header: OK (v3 / 1 tensor / 1 metakv)\n".ptr);
+    } yoksa {
+        ekrana_yaz("[2/6] Header: FAILED (beklenen v3/1/1)\n".ptr);
+        dondu 2;
+    }
+
+    # 3) Tensor bul: blk.0.weight --------------------------------------------
+    degisken aranan: *u8 = "blk.0.weight".ptr;
+    degisken t: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum_ptr, aranan);
+
+    eger t == 0 ise {
+        ekrana_yaz("[3/6] Tensor bulma: FAILED (blk.0.weight bulunamadi)\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("[3/6] Tensor blk.0.weight: OK (bulundu)\n".ptr);
+
+    # 4) Tensor metadata dogrula (ndim=2, 2x3, type=34 (IQ2_S), bayt=4) ------
+    degisken tmd_ok: tamsayi = 1;
+    eger t.ndim != 2 ise { tmd_ok = 0; }
+    eger t.dim_0 != 2 ise { tmd_ok = 0; }
+    eger t.dim_1 != 3 ise { tmd_ok = 0; }
+    eger t.ggml_type != 34 ise { tmd_ok = 0; }
+    eger t.bayt_sayisi != 4 ise { tmd_ok = 0; }
+
+    eger tmd_ok == 1 ise {
+        ekrana_yaz("[4/6] Tensor metadata: OK (2x3 IQ2_S / 4 bayt sikistirilmis)\n".ptr);
+    } yoksa {
+        ekrana_yaz("[4/6] Tensor metadata: FAILED (beklenen 2x3 / tip34 / 4bayt)\n".ptr);
+        dondu 4;
+    }
+
+    # 5) I2_S dekompresyon: 4 bayt sikistirilmis -> 6 eleman -----------------
+    # BEKLENEN (2x3 matris):
+    #   row 0: +1, -1, +1  -> ykn kod: 1, 2, 1
+    #   row 1: +1, -1,  0  -> ykn kod: 1, 2, 0
+    degisken sikistirilmis_ptr: *u8 = durum_ptr.buffer + t.veri_offset;
+    degisken cozulmus_buf: [64]u8;
+    degisken cozulen_adet: tamsayi = i2s_tensor_coz(sikistirilmis_ptr, t.bayt_sayisi, cozulmus_buf, 64);
+
+    # Ilk 6 elemani karsilastir:
+    degisken i2s_ok: tamsayi = 1;
+    eger cozulmus_buf[0] != 1 ise { i2s_ok = 0; }
+    eger cozulmus_buf[1] != 2 ise { i2s_ok = 0; }
+    eger cozulmus_buf[2] != 1 ise { i2s_ok = 0; }
+    eger cozulmus_buf[3] != 1 ise { i2s_ok = 0; }
+    eger cozulmus_buf[4] != 2 ise { i2s_ok = 0; }
+    eger cozulmus_buf[5] != 0 ise { i2s_ok = 0; }
+
+    eger i2s_ok == 1 ve cozulen_adet >= 6 ise {
+        ekrana_yaz("[5/6] I2_S dekompresyon: OK (6/6 deger dogru: [1,-1,1,1,-1,0])\n".ptr);
+    } yoksa {
+        ekrana_yaz("[5/6] I2_S dekompresyon: FAILED (beklenen: 1,2,1,1,2,0)\n".ptr);
+        dondu 5;
+    }
+
+    # 6) Agirlik toplami testi: beklenen = 1 ---------------------------------
+    # Toplam: (+1) + (-1) + (+1) + (+1) + (-1) + (0) = 1
+    degisken gercek_toplam: tamsayi = 0;
+    degisken c: u8;
+    degisken k: tamsayi = 0;
+    dongu k < 6 {
+        c = cozulmus_buf[k];
+        eger c == 1 ise { gercek_toplam = gercek_toplam + 1; }
+        yoksa eger c == 2 ise { gercek_toplam = gercek_toplam - 1; }
+        k = k + 1;
+    }
+
+    eger gercek_toplam == 1 ise {
+        ekrana_yaz("[6/6] Agirlik toplami: OK (1 = +1-1+1+1-1+0)\n".ptr);
+    } yoksa {
+        ekrana_yaz("[6/6] Agirlik toplami: FAILED (beklenen 1)\n".ptr);
+        dondu 6;
+    }
+
+    # --- SONUC ---
+    ekrana_yaz("\nTEST 03 FAZ 8: BASARILI! (GGUF v3 + I2_S BitNet 2-bit DEKOMPRESYON %100)\n".ptr);
+    ekrana_yaz("    Yuklenen: tests/llm/mini_test.gguf (132 bayt / 1 tensor / 6 deger)\n".ptr);
+    ekrana_yaz("    Faz 8.3 GGUF Loader + I2_S => TAMAMLANDI\n".ptr);
+    dondu 0;
+}

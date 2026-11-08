@@ -1,0 +1,192 @@
+# ============================================================
+# Yukinary FAZ 19 - Cross-Platform ELF64 & POSIX Binary Doğrulama Testi
+# Modül: tests/crossplatform/test_crossplatform_faz19.ykn
+# ============================================================
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/metin.ykn";
+ice_aktar "std/dosya.ykn";
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    degisken j: tamsayi = i - 1;
+    dongu j >= 0 {
+        degisken c: [2]u8;
+        c[0] = buf[j];
+        c[1] = 0;
+        ekrana_yaz(c.ptr);
+        j = j - 1;
+    }
+}
+
+isv u16_al(b: *u8, off: tamsayi) -> tamsayi {
+    degisken lo: tamsayi = b[off];
+    degisken hi: tamsayi = b[off + 1];
+    dondu lo + (hi * 256);
+}
+
+isv u32_al(b: *u8, off: tamsayi) -> tamsayi {
+    degisken b0: tamsayi = b[off];
+    degisken b1: tamsayi = b[off + 1];
+    degisken b2: tamsayi = b[off + 2];
+    degisken b3: tamsayi = b[off + 3];
+    dondu b0 + (b1 * 256) + (b2 * 65536) + (b3 * 16777216);
+}
+
+isv elf64_dogrula(b: *u8, boyut: tamsayi, beklenen_makine: tamsayi) -> tamsayi {
+    eger boyut < 120 ise {
+        ekrana_yaz("HATA: Dosya boyutu ELF64 basligi icin cok kucuk!\n".ptr);
+        dondu 0;
+    }
+
+    # 1. Magic: 0x7F, 'E', 'L', 'F'
+    eger b[0] != 0x7F veya b[1] != 69 veya b[2] != 76 veya b[3] != 70 ise {
+        ekrana_yaz("HATA: ELF sihirli baytlari (magic) gecersiz!\n".ptr);
+        dondu 0;
+    }
+
+    # 2. Sinif 2 (ELFCLASS64), Veri 1 (ELFDATA2LSB), Surum 1 (EV_CURRENT)
+    eger b[4] != 2 ise {
+        ekrana_yaz("HATA: 64-bit degil!\n".ptr);
+        dondu 0;
+    }
+    eger b[5] != 1 ise {
+        ekrana_yaz("HATA: Little Endian degil!\n".ptr);
+        dondu 0;
+    }
+    eger b[6] != 1 ise {
+        ekrana_yaz("HATA: Gecersiz ELF surumu!\n".ptr);
+        dondu 0;
+    }
+
+    # 3. e_type == 2 (ET_EXEC)
+    degisken e_type: tamsayi = u16_al(b, 16);
+    eger e_type != 2 ise {
+        ekrana_yaz("HATA: ET_EXEC bekleniyordu!\n".ptr);
+        dondu 0;
+    }
+
+    # 4. e_machine
+    degisken e_machine: tamsayi = u16_al(b, 18);
+    eger e_machine != beklenen_makine ise {
+        ekrana_yaz("HATA: Hedef makine mimarisi eslesmedi!\n".ptr);
+        dondu 0;
+    }
+
+    # 5. e_entry >= 0x400000
+    degisken e_entry: tamsayi = u32_al(b, 24);
+    eger e_entry < 0x400000 ise {
+        ekrana_yaz("HATA: Entry point sanal adresi 0x400000 altinda!\n".ptr);
+        dondu 0;
+    }
+
+    # 6. e_phoff == 64
+    degisken e_phoff: tamsayi = u32_al(b, 32);
+    eger e_phoff != 64 ise {
+        ekrana_yaz("HATA: Program header tablosu ofseti 64 degil!\n".ptr);
+        dondu 0;
+    }
+
+    # 7. Program Header 0: PT_LOAD (1)
+    degisken p_type: tamsayi = u32_al(b, 64);
+    eger p_type != 1 ise {
+        ekrana_yaz("HATA: Program Header PT_LOAD (1) degil!\n".ptr);
+        dondu 0;
+    }
+
+    # 8. p_flags == 7 (PF_R | PF_W | PF_X)
+    degisken p_flags: tamsayi = u32_al(b, 68);
+    eger p_flags != 7 ise {
+        ekrana_yaz("HATA: Segment bayraklari PF_R|PF_W|PF_X (7) degil!\n".ptr);
+        dondu 0;
+    }
+
+    # 9. p_vaddr == 0x400000
+    degisken p_vaddr: tamsayi = u32_al(b, 80);
+    eger p_vaddr != 0x400000 ise {
+        ekrana_yaz("HATA: Segment sanal adresi 0x400000 degil!\n".ptr);
+        dondu 0;
+    }
+
+    # 10. p_filesz ve p_memsz kontrolu
+    degisken p_filesz: tamsayi = u32_al(b, 96);
+    degisken p_memsz: tamsayi = u32_al(b, 104);
+    eger p_filesz != boyut veya p_memsz != boyut ise {
+        ekrana_yaz("HATA: Segment boyutu dosya boyutu ile uyusmuyor!\n".ptr);
+        dondu 0;
+    }
+
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YUKINARY FAZ 19 - CROSS-PLATFORM ELF64 & POSIX TESTI\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+
+    # 1. Linux x86_64 ELF64 Testi
+    degisken linux_elf_yol: *u8 = "build/test_crossplatform_faz19_sample.elf".ptr;
+    degisken dosya_boyut: tamsayi = 0;
+    degisken dosya_icerik: *u8 = dosya_oku_tamami(linux_elf_yol, &dosya_boyut);
+    eger dosya_boyut <= 0 veya dosya_icerik == 0 ise {
+        ekrana_yaz("[FAIL] Linux x86_64 ELF64 dosyasi okunamadi!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("[BILGI] Linux x86_64 ELF64 dosyasi okundu, boyut: ".ptr);
+    sayi_yaz(dosya_boyut);
+    ekrana_yaz(" bayt\n".ptr);
+
+    degisken l_res: tamsayi = elf64_dogrula(dosya_icerik, dosya_boyut, 0x3E);
+    eger l_res != 1 ise {
+        ekrana_yaz("[FAIL] Linux x86_64 ELF64 dogrulamasi basarisiz!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[PASS] Linux x86_64 ELF64 basligi, program basligi ve segmentleri basariyla dogrulandi!\n".ptr);
+
+    # Linux x86_64 Syscall kontrolu: 0x0F 0x05 (syscall)
+    degisken syscall_bulundu: tamsayi = 0;
+    degisken idx: tamsayi = 120;
+    dongu idx < dosya_boyut - 1 ve syscall_bulundu == 0 {
+        eger dosya_icerik[idx] == 0x0F ve dosya_icerik[idx + 1] == 0x05 ise {
+            syscall_bulundu = 1;
+        }
+        idx = idx + 1;
+    }
+    eger syscall_bulundu == 1 ise {
+        ekrana_yaz("[PASS] Linux x86_64 Syscall opcode (0x0F 0x05) dogrulandi!\n".ptr);
+    } yoksa {
+        ekrana_yaz("[FAIL] Linux x86_64 Syscall opcode bulunamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Linux ARM64 ELF64 Testi (EM_AARCH64 = 0xB7 = 183)
+    degisken arm64_elf_yol: *u8 = "build/test_crossplatform_faz19_arm64.elf".ptr;
+    degisken arm64_boyut: tamsayi = 0;
+    degisken arm64_icerik: *u8 = dosya_oku_tamami(arm64_elf_yol, &arm64_boyut);
+    eger arm64_boyut > 0 ve arm64_icerik != 0 ise {
+        degisken a_res: tamsayi = elf64_dogrula(arm64_icerik, arm64_boyut, 0xB7);
+        eger a_res == 1 ise {
+            ekrana_yaz("[PASS] Linux ARM64 (AArch64) ELF64 basligi ve segmentleri basariyla dogrulandi!\n".ptr);
+        } yoksa {
+            ekrana_yaz("[FAIL] Linux ARM64 ELF64 dogrulamasi basarisiz!\n".ptr);
+            dondu 1;
+        }
+    } yoksa {
+        ekrana_yaz("[BILGI] ARM64 ELF dosyasi okunamadi!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("FAZ 19 CROSS-PLATFORM ELF64 DOGRULAMASI BASARILI! PASS\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,9 @@
+# En basit test: tek karsilastirma, sonucu direkt dondur
+# EXIT: 1 bekleniyor (dogru)
+
+isv ana() -> tamsayi {
+    eger 10 < 20 ise {
+        dondu 1;
+    }
+    dondu 0;
+}

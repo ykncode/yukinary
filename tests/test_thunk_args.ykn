@@ -1,0 +1,26 @@
+isv ekrana_yaz(m: *u8) {}
+
+isv str_tam_esit(s: *u8, ref: *u8, ref_len: tamsayi) -> tamsayi {
+    eger s == 0 veya ref == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < ref_len {
+        eger s[i] == 0 veya s[i] != ref[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    eger s[i] != 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < argc {
+        ekrana_yaz("ARG: ".ptr);
+        ekrana_yaz(argv[i]);
+        ekrana_yaz("\n".ptr);
+        eger str_tam_esit(argv[i], "linux".ptr, 5) == 1 ise {
+            ekrana_yaz("MATCHED LINUX!\n".ptr);
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}

@@ -1,0 +1,6 @@
+# FIX-13: nullable pointer index erisimi E033 ile reddedilmeli.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken buf: ?*u8 = bos;
+    buf[0] = 65;
+    dondu 0;
+}

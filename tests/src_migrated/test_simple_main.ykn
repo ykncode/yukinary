@@ -1,0 +1,6 @@
+﻿isv ekrana_yaz(m: *u8) {}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("BASIT\n".ptr);
+    dondu 0;
+}

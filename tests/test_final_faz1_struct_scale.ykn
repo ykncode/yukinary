@@ -1,0 +1,67 @@
+# ============================================================
+# Yukinary Test - tests/test_final_faz1_struct_scale.ykn
+# FAZ 1 DOGRULAMA: Yapi Uyesi Dizi Erisimi Dogrudan Olcek Dogrulamasi
+#
+# Ara yerel degisken (workaround) KULLANILMADAN:
+# s.tampon[i] (1-bayt *u8) ve s.degerler[i] (8-bayt *i64)
+# dogrudan struct alani uzerinden yazilip okunur.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+yapi TestTamponYapisi {
+    id:       tamsayi;
+    tampon:   *u8;      # 1-bayt eleman olcegi (eski hardcoded isimler arasinda YOK!)
+    degerler: *tamsayi; # 8-bayt eleman olcegi
+    boyut:    tamsayi;
+}
+
+isv main() -> tamsayi {
+    degisken s: TestTamponYapisi;
+    s.id = 1001;
+    s.boyut = 16;
+    s.tampon = bellek_tahsis_et(32);
+    s.degerler = bellek_tahsis_et(128);
+    
+    eger s.tampon == 0 veya s.degerler == 0 ise {
+        dondu 1;
+    }
+    
+    # 1. 1-baytlik tampon alanina dogrudan s.tampon[i] ile yaz
+    s.tampon[0] = 75; # 'K'
+    s.tampon[1] = 85; # 'U'
+    s.tampon[2] = 83; # 'S'
+    s.tampon[3] = 85; # 'U'
+    s.tampon[4] = 82; # 'R'
+    s.tampon[5] = 0;
+    
+    # Dogrudan s.tampon[i] ile oku ve 1-bayt olcegini dogrula
+    eger s.tampon[0] != 75 ise { dondu 10; }
+    eger s.tampon[1] != 85 ise { dondu 11; }
+    eger s.tampon[2] != 83 ise { dondu 12; }
+    eger s.tampon[3] != 85 ise { dondu 13; }
+    eger s.tampon[4] != 82 ise { dondu 14; }
+    
+    # 2. 8-baytlik degerler alanina dogrudan s.degerler[i] ile yaz
+    s.degerler[0] = 1000000;
+    s.degerler[1] = 2000000;
+    s.degerler[2] = 3000000;
+    
+    # Dogrudan s.degerler[i] ile oku ve 8-bayt olcegini dogrula
+    eger s.degerler[0] != 1000000 ise { dondu 20; }
+    eger s.degerler[1] != 2000000 ise { dondu 21; }
+    eger s.degerler[2] != 3000000 ise { dondu 22; }
+    
+    # 3. Yapi isaretcisi (pointer) uzerinden dogrudan erisim
+    degisken ptr: *TestTamponYapisi = &s;
+    ptr.tampon[7] = 99;
+    eger ptr.tampon[7] != 99 ise { dondu 30; }
+    
+    ptr.degerler[3] = 9999999;
+    eger ptr.degerler[3] != 9999999 ise { dondu 31; }
+    
+    # Tum testler kusursuz basarili!
+    dondu 0;
+}
+

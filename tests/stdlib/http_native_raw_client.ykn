@@ -1,0 +1,22 @@
+# HTTP harness transport diagnosis: native connect/send/recv only.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken s: tamsayi = istemci_olustur(ipv4_adres(127, 0, 0, 1), 18081, -1);
+    eger s < 0 ise { dondu 30; }
+    degisken istek: *u8 = "GET /durum HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".ptr;
+    degisken g: tamsayi = soket_gonder_tam(s, istek, 59);
+    eger g != 59 ise { soket_kapat(s); dondu 31; }
+    degisken cevap: [8192]u8;
+    degisken n: tamsayi = soket_al(s, cevap, 8191);
+    ekrana_yaz("CLIENT_RECV=".ptr);
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    degisken basamak: [4]u8;
+    eger n >= 100 ise { basamak[0] = (n / 100) + 48; basamak[1] = ((n / 10) % 10) + 48; basamak[2] = (n % 10) + 48; basamak[3] = 0; ekrana_yaz(basamak); }
+    yoksa eger n >= 10 ise { basamak[0] = (n / 10) + 48; basamak[1] = (n % 10) + 48; basamak[2] = 0; ekrana_yaz(basamak); }
+    yoksa { basamak[0] = n + 48; basamak[1] = 0; ekrana_yaz(basamak); }
+    ekrana_yaz("\n".ptr);
+    soket_kapat(s);
+    eger n <= 0 ise { dondu 32; }
+    dondu 0;
+}

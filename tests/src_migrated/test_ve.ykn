@@ -1,0 +1,12 @@
+isv ekrana_yaz(m: *u8) {}
+
+degisken SABIT_A = 42;
+degisken SABIT_B = 10;
+
+isv hesapla(x: tamsayi) -> tamsayi {
+    dondu x + SABIT_A + SABIT_B;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    dondu hesapla(0);
+}

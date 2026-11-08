@@ -1,0 +1,215 @@
+# ============================================================
+# src/fallback_shell.ykn
+# FAZ 9.4 Fallback E: SHELL_SYSTEM
+# Win32 CreateProcessA ve POSIX fork/execve ile shell komut calistirma
+# stdout/stderr capture ve cikis kodu
+# ============================================================
+
+ice_aktar "../std/os/common.ykn";
+
+# Win32 API Bildirimleri
+#c-lib "kernel32";
+harici isv CreatePipe(hRead: *tamsayi, hWrite: *tamsayi, lpAttr: *u8, n: tamsayi) -> tamsayi;
+harici isv CreateProcessA(app: *u8, cmd: *u8, pAttr: *u8, tAttr: *u8, inherit: tamsayi, flags: tamsayi, env: *u8, dir: *u8, startup: *u8, process: *u8) -> tamsayi;
+harici isv ReadFile(h: tamsayi, buf: *u8, n: tamsayi, read: *tamsayi, ov: *u8) -> tamsayi;
+harici isv CloseHandle(h: tamsayi) -> tamsayi;
+harici isv WaitForSingleObject(h: tamsayi, ms: tamsayi) -> tamsayi;
+harici isv GetExitCodeProcess(h: tamsayi, code: *tamsayi) -> tamsayi;
+
+# POSIX API Bildirimleri (Dogrudan Linux x86-64 syscalls ile baglanir)
+harici isv pipe(pipefd: *tamsayi) -> tamsayi;
+harici isv fork() -> tamsayi;
+harici isv dup2(oldfd: tamsayi, newfd: tamsayi) -> tamsayi;
+harici isv close(fd: tamsayi) -> tamsayi;
+harici isv execve(path: *u8, argv: **u8, envp: **u8) -> tamsayi;
+harici isv waitpid(pid: tamsayi, status: *tamsayi, options: tamsayi) -> tamsayi;
+harici isv read(fd: tamsayi, buf: *u8, count: tamsayi) -> tamsayi;
+harici isv write(fd: tamsayi, buf: *u8, count: tamsayi) -> tamsayi;
+harici isv _exit(status: tamsayi);
+
+yapi ShellSonuc {
+    cikis_kodu: tamsayi;
+    stdout_tampon: *u8;
+    stdout_uzn: tamsayi;
+    stderr_tampon: *u8;
+    stderr_uzn: tamsayi;
+    basarili: tamsayi;
+}
+
+# Win32 Shell komutu calistir, stdout ve cikis kodunu yakala
+isv shell_calistir_win32(komut: *u8, komut_uzn: tamsayi) -> *ShellSonuc {
+    degisken sonuc: *ShellSonuc = bellek_tahsis_et(40);
+    eger sonuc == 0 ise { dondu 0; }
+    sonuc.basarili = 0;
+    sonuc.cikis_kodu = -1;
+    sonuc.stdout_tampon = 0;
+    sonuc.stdout_uzn = 0;
+    sonuc.stderr_tampon = 0;
+    sonuc.stderr_uzn = 0;
+
+    # SECURITY_ATTRIBUTES: nLength=24, lpSecurityDescriptor=0, bInheritHandle=1
+    degisken sa: [24]u8;
+    degisken sa_i: tamsayi = 0;
+    dongu sa_i < 24 { sa[sa_i] = 0; sa_i = sa_i + 1; }
+    sa[0] = 24; # nLength = 24
+    sa[16] = 1; # bInheritHandle = TRUE (1)
+
+    degisken stdout_r: [1]tamsayi;
+    degisken stdout_w: [1]tamsayi;
+    eger CreatePipe(stdout_r, stdout_w, sa, 0) == 0 ise { dondu sonuc; }
+
+    # STARTUPINFOA boyutu: 104 byte (Win64)
+    degisken startup_info: [104]u8;
+    degisken si_i: tamsayi = 0;
+    dongu si_i < 104 { startup_info[si_i] = 0; si_i = si_i + 1; }
+    startup_info[0] = 104; # cb = 104
+    # STARTF_USESTDHANDLES (0x100) at offset 60
+    startup_info[60] = 0;
+    startup_info[61] = 1;
+
+    degisken handles_ptr: *tamsayi = startup_info + 80;
+    handles_ptr[0] = GetStdHandle(WIN_STD_INPUT_HANDLE); # stdin
+    handles_ptr[1] = stdout_w[0]; # stdout
+    handles_ptr[2] = stdout_w[0]; # stderr
+
+    degisken proc_info: [32]u8;
+    si_i = 0;
+    dongu si_i < 32 { proc_info[si_i] = 0; si_i = si_i + 1; }
+
+    # cmd.exe /c <komut> formatinda komut satiri hazirla
+    degisken cmd_buf: [512]u8;
+    degisken prefix: *u8 = "cmd.exe /c ".ptr;
+    degisken ci: tamsayi = 0;
+    dongu prefix[ci] != 0 ve ci < 511 { cmd_buf[ci] = prefix[ci]; ci = ci + 1; }
+    degisken ki: tamsayi = 0;
+    dongu ki < komut_uzn ve ci < 511 { cmd_buf[ci] = komut[ki]; ci = ci + 1; ki = ki + 1; }
+    cmd_buf[ci] = 0;
+
+    degisken ok: tamsayi = CreateProcessA(0, cmd_buf, 0, 0, 1, 0, 0, 0, startup_info, proc_info);
+    CloseHandle(stdout_w[0]);
+
+    eger ok == 0 ise {
+        CloseHandle(stdout_r[0]);
+        dondu sonuc;
+    }
+
+    # stdout oku
+    degisken out_tampon: *u8 = bellek_tahsis_et(65536);
+    degisken out_uzn: tamsayi = 0;
+    eger out_tampon != 0 ise {
+        dongu 1 {
+            degisken okunan: [1]tamsayi;
+            degisken r: tamsayi = ReadFile(stdout_r[0], out_tampon + out_uzn, 65535 - out_uzn, okunan, 0);
+            eger r == 0 veya okunan[0] == 0 ise { durdur; }
+            out_uzn = out_uzn + okunan[0];
+        }
+        out_tampon[out_uzn] = 0;
+    }
+    CloseHandle(stdout_r[0]);
+
+    degisken pi_ptr: *tamsayi = proc_info;
+    degisken proc_h: tamsayi = pi_ptr[0];
+    degisken thread_h: tamsayi = pi_ptr[1];
+    CloseHandle(thread_h);
+
+    WaitForSingleObject(proc_h, 30000);
+
+    degisken cikis_kodu: [1]tamsayi;
+    cikis_kodu[0] = 0;
+    GetExitCodeProcess(proc_h, cikis_kodu);
+    CloseHandle(proc_h);
+
+    sonuc.cikis_kodu = cikis_kodu[0];
+    sonuc.stdout_tampon = out_tampon;
+    sonuc.stdout_uzn = out_uzn;
+    sonuc.basarili = 1;
+    dondu sonuc;
+}
+
+# POSIX Shell komutu calistir (/bin/sh -c), stdout ve cikis kodunu yakala
+isv shell_calistir_posix(komut: *u8, komut_uzn: tamsayi) -> *ShellSonuc {
+    degisken sonuc: *ShellSonuc = bellek_tahsis_et(40);
+    eger sonuc == 0 ise { dondu 0; }
+    sonuc.basarili = 0;
+    sonuc.cikis_kodu = -1;
+    sonuc.stdout_tampon = 0;
+    sonuc.stdout_uzn = 0;
+    sonuc.stderr_tampon = 0;
+    sonuc.stderr_uzn = 0;
+
+    degisken pfd: [2]tamsayi;
+    eger pipe(pfd) != 0 ise { dondu sonuc; }
+
+    degisken pid: tamsayi = fork();
+    eger pid < 0 ise {
+        close(pfd[0]);
+        close(pfd[1]);
+        dondu sonuc;
+    }
+
+    eger pid == 0 ise {
+        # Cocuk surec (child process)
+        close(pfd[0]); # Okuma ucunu kapat
+        dup2(pfd[1], 1); # stdout -> pipe
+        dup2(pfd[1], 2); # stderr -> pipe
+        close(pfd[1]);
+
+        degisken cmd_null_term: [1024]u8;
+        degisken ki: tamsayi = 0;
+        dongu ki < komut_uzn ve ki < 1023 {
+            cmd_null_term[ki] = komut[ki];
+            ki = ki + 1;
+        }
+        cmd_null_term[ki] = 0;
+
+        degisken argv: [4]*u8;
+        argv[0] = "/bin/sh".ptr;
+        argv[1] = "-c".ptr;
+        argv[2] = cmd_null_term;
+        argv[3] = 0;
+
+        degisken envp: [1]*u8;
+        envp[0] = 0;
+
+        execve("/bin/sh".ptr, argv, envp);
+        _exit(127);
+    }
+
+    # Ebeveyn surec (parent process)
+    close(pfd[1]); # Yazma ucunu kapat
+
+    degisken out_tampon: *u8 = bellek_tahsis_et(65536);
+    degisken out_uzn: tamsayi = 0;
+    eger out_tampon != 0 ise {
+        dongu out_uzn < 65535 {
+            degisken okunan: tamsayi = read(pfd[0], out_tampon + out_uzn, 65535 - out_uzn);
+            eger okunan <= 0 ise { durdur; }
+            out_uzn = out_uzn + okunan;
+        }
+        out_tampon[out_uzn] = 0;
+    }
+    close(pfd[0]);
+
+    degisken stat_loc: [1]tamsayi;
+    stat_loc[0] = 0;
+    waitpid(pid, stat_loc, 0);
+
+    # WEXITSTATUS: (stat_loc[0] >> 8) & 0xFF
+    degisken raw_stat: tamsayi = stat_loc[0];
+    degisken exit_code: tamsayi = (raw_stat / 256) % 256;
+
+    sonuc.cikis_kodu = exit_code;
+    sonuc.stdout_tampon = out_tampon;
+    sonuc.stdout_uzn = out_uzn;
+    sonuc.basarili = 1;
+    dondu sonuc;
+}
+
+# Platform bagimsiz shell calistirma giris noktasi
+isv shell_calistir(komut: *u8, komut_uzn: tamsayi) -> *ShellSonuc {
+    degisken plt: tamsayi = os_hedef_platform_al();
+    eger plt == PLATFORM_WINDOWS ise {
+        dondu shell_calistir_win32(komut, komut_uzn);
+    }
+    dondu shell_calistir_posix(komut, komut_uzn);
+}

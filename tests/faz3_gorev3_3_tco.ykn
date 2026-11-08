@@ -1,0 +1,56 @@
+# ============================================================
+# Faz 3 Gorev 3.3: Gercek Kuyruk Cagrisi Optimizasyonu (TCO) Testi
+# ============================================================
+
+isv faktoriyel_tco(n: tamsayi, acc: tamsayi) -> tamsayi {
+    eger n <= 1 ise {
+        dondu acc;
+    }
+    dondu faktoriyel_tco(n - 1, acc * n);
+}
+
+isv fibonacci_tco(n: tamsayi, a: tamsayi, b: tamsayi) -> tamsayi {
+    eger n == 0 ise {
+        dondu a;
+    }
+    eger n == 1 ise {
+        dondu b;
+    }
+    dondu fibonacci_tco(n - 1, b, a + b);
+}
+
+# 100.000 adimlik derin kuyruk yinelemesi (TCO olmadan 1MB stack patlar!)
+isv derin_toplam_tco(n: tamsayi, acc: tamsayi) -> tamsayi {
+    eger n <= 0 ise {
+        dondu acc;
+    }
+    dondu derin_toplam_tco(n - 1, acc + n);
+}
+
+isv ana() -> tamsayi {
+    # 1. Faktoriyel TCO (5! = 120)
+    degisken f5: tamsayi = faktoriyel_tco(5, 1);
+    eger f5 != 120 ise {
+        ekrana_yaz("HATA: faktoriyel_tco(5, 1) != 120\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Fibonacci TCO coklu parametre takasi (fib(10) = 55)
+    degisken fib10: tamsayi = fibonacci_tco(10, 0, 1);
+    eger fib10 != 55 ise {
+        ekrana_yaz("HATA: fibonacci_tco(10, 0, 1) != 55\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Derin Kuyruk Cagrisi Testi (100.000 cagrida stack patlamamali!)
+    # Toplam = 100000 * 100001 / 2 = 5000050000
+    degisken t_derin: tamsayi = derin_toplam_tco(100000, 0);
+    eger t_derin != 5000050000 ise {
+        ekrana_yaz("HATA: derin_toplam_tco degeri hatali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("FAZ 3.3 GERCEK TCO OPTIMIZASYONU DOGRULANDI: Basarili!\n".ptr);
+    dondu 0;
+}
+

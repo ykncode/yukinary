@@ -1,0 +1,45 @@
+# ============================================================
+# std/is_parcacigi/mutex_win32.ykn
+# Win32 CRITICAL_SECTION tabanli Mutex sarmalayicilari
+# ============================================================
+
+# CRITICAL_SECTION boyutu: x64'te 40 bayt
+degisken CRITICAL_SECTION_BOYUT: tamsayi = 40;
+
+harici isv InitializeCriticalSection(lpCriticalSection: *u8);
+harici isv DeleteCriticalSection(lpCriticalSection: *u8);
+harici isv EnterCriticalSection(lpCriticalSection: *u8);
+harici isv LeaveCriticalSection(lpCriticalSection: *u8);
+harici isv TryEnterCriticalSection(lpCriticalSection: *u8) -> tamsayi;
+
+yapi Win32Mutex {
+    cs: *u8;   # CRITICAL_SECTION pointer
+    kilitli: tamsayi;
+}
+
+isv win32_mutex_olustur() -> *Win32Mutex {
+    degisken m: *Win32Mutex = bellek_tahsis_et(16);
+    eger m == 0 ise { dondu 0; }
+    m.cs = bellek_tahsis_et(CRITICAL_SECTION_BOYUT);
+    eger m.cs == 0 ise { dondu 0; }
+    InitializeCriticalSection(m.cs);
+    m.kilitli = 0;
+    dondu m;
+}
+
+isv win32_mutex_kilitle(m: *Win32Mutex) {
+    eger m == 0 veya m.cs == 0 ise { dondu; }
+    EnterCriticalSection(m.cs);
+    m.kilitli = 1;
+}
+
+isv win32_mutex_kilit_ac(m: *Win32Mutex) {
+    eger m == 0 veya m.cs == 0 ise { dondu; }
+    m.kilitli = 0;
+    LeaveCriticalSection(m.cs);
+}
+
+isv win32_mutex_yok_et(m: *Win32Mutex) {
+    eger m == 0 veya m.cs == 0 ise { dondu; }
+    DeleteCriticalSection(m.cs);
+}

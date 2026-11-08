@@ -1,0 +1,5 @@
+# FIX-6 negative: '?' scalar operand üzerinde sessizce kabul edilmemeli.
+isv ana() -> tamsayi {
+    degisken x: tamsayi = 42?;
+    dondu x;
+}

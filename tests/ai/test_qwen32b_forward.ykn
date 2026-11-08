@@ -1,0 +1,197 @@
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+degisken G_DURUM: *GGUFDurum = 0;
+degisken G_LOADER: LLMModelLoader;
+degisken G_ADAPTER: LLMArchitectureAdapter;
+degisken G_SPEC: LLMModelSpec;
+degisken G_ICRA: LLMTransformerExecution;
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("=== QWEN-CODER-32B-TQ2 MOTOR YUKLEME TESTI ===\n".ptr);
+    degisken path: *u8 = "models/qwen-coder-32b-tq2/qwen-coder-32b-tq2.gguf".ptr;
+    G_DURUM = bellek_tahsis_et(1024);
+    gguf_durum_sifirla(G_DURUM);
+    eger gguf_yukle(path, G_DURUM) == 0 {
+        ekrana_yaz("HATA: GGUF parse edilemedi\n".ptr); dondu 1;
+    }
+    ekrana_yaz("1. GGUF basariyla yuklendi.\n".ptr);
+
+    llm_runtime_spec_sifirla(&G_SPEC);
+    G_SPEC.model_adi = G_DURUM->mimari_adi;
+    G_SPEC.mimari = LLM_MIMARI_QWEN;
+    G_SPEC.quant_tipi = G_DURUM->quant_tipi;
+    G_SPEC.vocab_boyutu = G_DURUM->vocab_boyutu;
+    G_SPEC.gizli_boyut = G_DURUM->gizli_boyut;
+    G_SPEC.katman_sayisi = G_DURUM->katman_sayisi;
+    G_SPEC.context_boyutu = G_DURUM->context_boyutu;
+    G_SPEC.kafa_sayisi = G_DURUM->kafa_sayisi;
+    G_SPEC.kv_kafa_sayisi = G_DURUM->kv_kafa_sayisi;
+    G_SPEC.kafa_boyutu = G_DURUM->kafa_boyutu;
+    G_SPEC.ffn_boyutu = G_DURUM->ffn_boyutu;
+    G_SPEC.rope_boyutu = G_DURUM->rope_boyutu;
+    G_SPEC.rope_freq_base_q16 = G_DURUM->rope_freq_base_q16;
+    G_SPEC.norm_eps_q16 = G_DURUM->norm_eps_q16;
+    G_SPEC.bos_token_id = G_DURUM->bos_token_id;
+    G_SPEC.eos_token_id = G_DURUM->eos_token_id;
+
+    eger llm_model_loader_baslat(&G_LOADER, path, G_DURUM) == 0 {
+        ekrana_yaz("HATA: Model loader baslatilamadi\n".ptr); dondu 2;
+    }
+    ekrana_yaz("2. Model loader basariyla baslatildi.\n".ptr);
+
+    eger llm_architecture_adapter_kur(G_SPEC.mimari, &G_ADAPTER) == 0 {
+        ekrana_yaz("HATA: Architecture adapter kurulamadi\n".ptr); dondu 3;
+    }
+    ekrana_yaz("3. Architecture adapter (Qwen) kuruldu.\n".ptr);
+
+    degisken cache_capacity: tamsayi = 32;
+    degisken hidden_bytes: tamsayi = G_SPEC.gizli_boyut * 8;
+    degisken kv_width: tamsayi = G_SPEC.kv_kafa_sayisi * G_SPEC.kafa_boyutu;
+    degisken kv_bytes: tamsayi = cache_capacity * G_SPEC.katman_sayisi * kv_width * 8;
+    degisken max_weight_bytes: tamsayi = 141557760 + 65536; # En buyuk tensor ~141 MB
+    degisken logits_bytes: tamsayi = G_SPEC.vocab_boyutu * 8;
+
+    degisken hidden: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken key: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken value: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken attention: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn: *tamsayi = bellek_tahsis_et(G_SPEC.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+
+    eger weights == 0 {
+        ekrana_yaz("HATA: 141 MB agirlik tamponu icin bellek tahsis edilemedi!\n".ptr);
+        dondu 4;
+    }
+    ekrana_yaz("4. Bellek tamponlari (141 MB) basariyla ayrildi.\n".ptr);
+
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &G_LOADER;
+    paket.adapter = &G_ADAPTER;
+    paket.spec = &G_SPEC;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn;
+    paket.logits = logits;
+    paket.logits_kapasitesi = G_SPEC.vocab_boyutu;
+    paket.logits_aktif = 1;
+    paket.agirlik_buffer = weights;
+    paket.agirlik_kapasitesi = max_weight_bytes;
+    paket.kv_anahtar = key_cache;
+    paket.kv_deger = value_cache;
+    paket.kafa_sayisi = G_SPEC.kafa_sayisi;
+    paket.kv_kafa_sayisi = G_SPEC.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = G_SPEC.kafa_boyutu;
+    paket.kv_kapasitesi = cache_capacity;
+    paket.token_konumu = 0;
+    paket.ffn_boyutu = G_SPEC.ffn_boyutu;
+
+    eger llm_transformer_durum_kur_paketli(&G_ICRA, &paket) == 0 {
+        ekrana_yaz("HATA: Transformer setup basarisiz!\n".ptr); dondu 5;
+    }
+    ekrana_yaz("5. Transformer durumu basariyla kuruldu.\n".ptr);
+
+    # Ilk token icin forward test
+    degisken tq_ptr: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(G_DURUM, "blk.0.attn_q.weight".ptr);
+    eger tq_ptr != 0 {
+        ekrana_yaz("   blk.0.attn_q.weight ggml_type: ".ptr); sayi_yaz(tq_ptr->ggml_type);
+        ekrana_yaz(" bayt: ".ptr); sayi_yaz(tq_ptr->bayt_sayisi);
+        ekrana_yaz(" dim0: ".ptr); sayi_yaz(tq_ptr->dim_0);
+        ekrana_yaz(" dim1: ".ptr); sayi_yaz(tq_ptr->dim_1);
+        ekrana_yaz("\n".ptr);
+    }
+    degisken tout_ptr: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(G_DURUM, "output.weight".ptr);
+    eger tout_ptr != 0 {
+        ekrana_yaz("   output.weight ggml_type: ".ptr); sayi_yaz(tout_ptr->ggml_type);
+        ekrana_yaz(" bayt: ".ptr); sayi_yaz(tout_ptr->bayt_sayisi);
+        ekrana_yaz(" dim0: ".ptr); sayi_yaz(tout_ptr->dim_0);
+        ekrana_yaz(" dim1: ".ptr); sayi_yaz(tout_ptr->dim_1);
+        ekrana_yaz("\n".ptr);
+    } yoksa {
+        ekrana_yaz("   output.weight BULUNAMADI\n".ptr);
+    }
+    degisken temb_ptr: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(G_DURUM, "token_embd.weight".ptr);
+    eger temb_ptr != 0 {
+        ekrana_yaz("   token_embd.weight ggml_type: ".ptr); sayi_yaz(temb_ptr->ggml_type);
+        ekrana_yaz(" bayt: ".ptr); sayi_yaz(temb_ptr->bayt_sayisi);
+        ekrana_yaz(" dim0: ".ptr); sayi_yaz(temb_ptr->dim_0);
+        ekrana_yaz(" dim1: ".ptr); sayi_yaz(temb_ptr->dim_1);
+        ekrana_yaz("\n".ptr);
+    }
+
+    ekrana_yaz("6. Ilk token (BOS) forward testi yapiliyor...\n".ptr);
+    degisken ret: tamsayi = llm_transformer_token_uret_token(&G_ICRA, G_DURUM, G_SPEC.bos_token_id, "blk.0".ptr);
+    ekrana_yaz("   Forward donus degeri: ".ptr); sayi_yaz(ret); ekrana_yaz("\n".ptr);
+    eger TRANSFORMER_FORWARD_HATASI != 0 {
+        ekrana_yaz("   HATA KODU (TRANSFORMER_FORWARD_HATASI): ".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz("\n   TENSOR HATASI (TRANSFORMER_TENSOR_HATASI): ".ptr); sayi_yaz(TRANSFORMER_TENSOR_HATASI);
+        ekrana_yaz("\n".ptr);
+    } yoksa {
+        ekrana_yaz("   TEBRIKLER: Forward pass basariyla calisti!\n".ptr);
+        
+        # Token metnini decode et
+        degisken token_offsets: *tamsayi = bellek_tahsis_et(152064 * 8);
+        degisken token_lengths: *tamsayi = bellek_tahsis_et(152064 * 8);
+        degisken merge_offsets: *tamsayi = bellek_tahsis_et(152064 * 8);
+        degisken merge_lengths: *tamsayi = bellek_tahsis_et(152064 * 8);
+        degisken t_count: tamsayi = 0;
+        degisken m_count: tamsayi = 0;
+        eger bitnet_tokenizer_metadata_yukle(G_DURUM, token_offsets, token_lengths, 152064,
+               merge_offsets, merge_lengths, 152064, &t_count, &m_count) != 0 {
+            degisken piece_raw: [256]u8;
+            degisken piece_raw_len: tamsayi = bitnet_token_kopyala(
+                G_DURUM->buffer, token_offsets, token_lengths, t_count,
+                ret, piece_raw, 256);
+            degisken piece_decoded: [256]u8;
+            degisken piece_len: tamsayi = bitnet_gpt2_byte_decode(
+                piece_raw, piece_raw_len, piece_decoded, 256);
+            piece_decoded[piece_len] = 0;
+            ekrana_yaz("   Uretilen Token Metni: [".ptr); ekrana_yaz(piece_decoded.ptr); ekrana_yaz("]\n".ptr);
+        }
+    }
+
+    dondu 0;
+}

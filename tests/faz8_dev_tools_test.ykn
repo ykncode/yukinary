@@ -1,0 +1,228 @@
+# ============================================================
+# tests/faz8_dev_tools_test.ykn
+# FAZ 8: GELİŞTİRİCİ ARAÇLARI POZİTİF TEST PAKETİ
+# LSP (Typechecked & Resettable), PubGrub, Formatter, JIT REPL, DocGen, TestRunner
+# ============================================================
+
+ice_aktar "src/utils.ykn";
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "src/lexer.ykn";
+ice_aktar "src/ast.ykn";
+ice_aktar "src/parser.ykn";
+ice_aktar "src/typechecker.ykn";
+ice_aktar "src/self_healing.ykn";
+ice_aktar "src/safety.ykn";
+ice_aktar "src/lsp.ykn";
+ice_aktar "src/paket.ykn";
+ice_aktar "src/formatter.ykn";
+ice_aktar "src/repl.ykn";
+ice_aktar "src/doc_gen.ykn";
+ice_aktar "src/test_runner.ykn";
+
+# ------------------------------------------------------------
+# 1. LSP Sunucusu Testi
+# ------------------------------------------------------------
+isv test_lsp_analiz() -> tamsayi {
+    degisken kod: *u8 = "yapi Nokta { x: tamsayi; y: tamsayi; }\nisv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }\n".ptr;
+    degisken kod_uzn: tamsayi = 0;
+    dongu kod[kod_uzn] != 0 { kod_uzn = kod_uzn + 1; }
+
+    degisken dok: LspDokuman;
+    dok.uri = "file:///test.ykn".ptr;
+    dok.uri_uzunluk = 16;
+    dok.icerik = kod;
+    dok.icerik_uzunluk = kod_uzn;
+    dok.surum = 1;
+
+    # İlk analiz
+    lsp_dokuman_analiz_et(&dok);
+    eger g_lsp_hata_sayisi != 0 ise {
+        ekrana_yaz("HATA: Gecerli kodda LSP hatasi uretildi!\n".ptr);
+        dondu 1;
+    }
+    eger g_lsp_sembol_sayisi < 2 ise {
+        ekrana_yaz("HATA: LSP sembolleri cikaramadi!\n".ptr);
+        dondu 2;
+    }
+
+    # İkinci analiz (Resettable arena sıfırlama ve bellek sızıntısız yeniden analiz kontrolü)
+    lsp_dokuman_analiz_et(&dok);
+    eger g_lsp_hata_sayisi != 0 ise {
+        ekrana_yaz("HATA: LSP resettable analiz sonrasi hata bildirdi!\n".ptr);
+        dondu 3;
+    }
+
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# 2. PubGrub & Paket Yöneticisi Testi
+# ------------------------------------------------------------
+isv test_pubgrub_ve_paket() -> tamsayi {
+    # 3 paketlik bağımlılık grafı:
+    # pkgA 1.0.0 -> pkgC ^1.0.0
+    # pkgB 1.0.0 -> pkgC ^1.0.0
+    # pkgC 1.2.0 (uyumlu aday)
+    degisken pA: PubGrubPaketSurum;
+    pA.isim = "pkgA".ptr; pA.major = 1; pA.minor = 0; pA.patch = 0;
+    pA.alt_bagimli_paket = "pkgC".ptr;
+    pA.alt_bagimli_kisit = "^1.0.0".ptr;
+    pA.alt_bagimli_kisit_uzn = 6;
+
+    degisken pB: PubGrubPaketSurum;
+    pB.isim = "pkgB".ptr; pB.major = 1; pB.minor = 0; pB.patch = 0;
+    pB.alt_bagimli_paket = "pkgC".ptr;
+    pB.alt_bagimli_kisit = "^1.0.0".ptr;
+    pB.alt_bagimli_kisit_uzn = 6;
+
+    degisken pC: PubGrubPaketSurum;
+    pC.isim = "pkgC".ptr; pC.major = 1; pC.minor = 2; pC.patch = 0;
+    pC.alt_bagimli_paket = 0;
+    pC.alt_bagimli_kisit = 0;
+    pC.alt_bagimli_kisit_uzn = 0;
+
+    degisken katalog: [3]tamsayi;
+    katalog[0] = &pA as tamsayi;
+    katalog[1] = &pB as tamsayi;
+    katalog[2] = &pC as tamsayi;
+
+    degisken cozum: PubGrubCozum;
+    degisken ok: tamsayi = pubgrub_graf_coz(katalog.ptr, 3,
+                                           "pkgA".ptr, "^1.0.0".ptr, 6,
+                                           "pkgB".ptr, "^1.0.0".ptr, 6,
+                                           &cozum);
+    eger ok != 1 veya cozum.adet != 3 ise {
+        ekrana_yaz("HATA: PubGrub transitif cozum basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # Manifest bağımlılık ekleme kontrolü
+    degisken m: Manifest;
+    m.schema_version = 1;
+    m.bagimlilik_sayisi = 0;
+    degisken b1: Bagimlilik;
+    b1.isim = "test_pkg".ptr;
+    m.bagimliliklar[m.bagimlilik_sayisi] = &b1;
+    m.bagimlilik_sayisi = m.bagimlilik_sayisi + 1;
+
+    eger m.bagimlilik_sayisi != 1 ise {
+        ekrana_yaz("HATA: Manifest bagimlilik sayisi hatali!\n".ptr);
+        dondu 2;
+    }
+
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# 3. Formatter Testi (Çoklu Karakter & Operatörler)
+# ------------------------------------------------------------
+isv test_formatter() -> tamsayi {
+    degisken girdi: *u8 = "x+=5;y-=2;a=b&c;\n".ptr;
+    degisken cikti: *u8 = formatter_dosya_bicimlendir(girdi, 17);
+    eger cikti == 0 veya g_formatter_son_uzunluk <= 0 ise {
+        ekrana_yaz("HATA: Formatter cikti uretemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # '+=' ikili operatör olarak boşluklu basılmalı: "x += 5"
+    degisken bulundu_arti_esit: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < g_formatter_son_uzunluk - 3 {
+        eger cikti[i] == 32 ve cikti[i+1] == 43 ve cikti[i+2] == 61 ve cikti[i+3] == 32 {
+            bulundu_arti_esit = 1;
+            durdur;
+        }
+        i = i + 1;
+    }
+    eger bulundu_arti_esit == 0 ise {
+        ekrana_yaz("HATA: Formatter += operatorunu duzgun bicimlendirmedi!\n".ptr);
+        dondu 2;
+    }
+
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# 4. JIT REPL Testi
+# ------------------------------------------------------------
+isv test_jit_repl() -> tamsayi {
+    degisken ot: *ReplOturumu = repl_oturum_olustur();
+    eger ot == 0 ise { dondu 1; }
+
+    # degisken a = 15;
+    repl_jit_satir_calistir(ot, "degisken a = 15;".ptr, 17);
+    # degisken b = a * 2 + 12; (15 * 2 + 12 = 42)
+    repl_jit_satir_calistir(ot, "degisken b = a * 2 + 12;".ptr, 24);
+
+    degisken b_idx: tamsayi = repl_degisken_bul(ot, "b".ptr, 1);
+    eger b_idx < 0 ise {
+        ekrana_yaz("HATA: REPL degisken b'yi bulamadi!\n".ptr);
+        dondu 2;
+    }
+
+    degisken val: tamsayi = ot.degisken_degerler[b_idx];
+    eger val != 42 ise {
+        ekrana_yaz("HATA: REPL ifade degeri 42 beklerken farkli geldi!\n".ptr);
+        dondu 3;
+    }
+
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# 5. DocGen ve TestRunner Testi
+# ------------------------------------------------------------
+isv ornek_test_fn(dummy: tamsayi) -> tamsayi {
+    dondu 0; # PASS
+}
+
+isv test_docgen_ve_runner() -> tamsayi {
+    # 5.1 DocGen
+    degisken doc_m: *DocModul = doc_modul_olustur("Matematik".ptr, 10);
+    doc_islev_ekle(doc_m, "topla".ptr, "isv topla(a: tamsayi, b: tamsayi) -> tamsayi".ptr, "Iki tamsayiyi toplar".ptr);
+    degisken md_out: [512]u8;
+    degisken md_len: tamsayi = doc_markdown_uret(doc_m, md_out.ptr);
+    eger md_len <= 0 ise {
+        ekrana_yaz("HATA: DocGen markdown uretemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # 5.2 TestRunner
+    degisken runner: *TestKosuMotoru = test_motoru_olustur(10);
+    test_kaydet(runner, "ornek_test".ptr, ornek_test_fn as *u8);
+    degisken fail_count: tamsayi = test_motoru_calistir(runner);
+    eger fail_count != 0 veya runner.basarili != 1 ise {
+        ekrana_yaz("HATA: Test runner testi basariyla calistiramadi!\n".ptr);
+        dondu 2;
+    }
+
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# ANA GIRIS
+# ------------------------------------------------------------
+isv ana() -> tamsayi {
+    ekrana_yaz("1. test_lsp_analiz...\n".ptr);
+    degisken t1: tamsayi = test_lsp_analiz();
+    eger t1 != 0 ise { dondu t1; }
+
+    ekrana_yaz("2. test_pubgrub_ve_paket...\n".ptr);
+    degisken t2: tamsayi = test_pubgrub_ve_paket();
+    eger t2 != 0 ise { dondu t2; }
+
+    ekrana_yaz("3. test_formatter...\n".ptr);
+    degisken t3: tamsayi = test_formatter();
+    eger t3 != 0 ise { dondu t3; }
+
+    ekrana_yaz("4. test_jit_repl...\n".ptr);
+    degisken t4: tamsayi = test_jit_repl();
+    eger t4 != 0 ise { dondu t4; }
+
+    ekrana_yaz("5. test_docgen_ve_runner...\n".ptr);
+    degisken t5: tamsayi = test_docgen_ve_runner();
+    eger t5 != 0 ise { dondu t5; }
+
+    ekrana_yaz("FAZ 8 GELISTIRICI ARACLARI TESTLERI BASARILI!\n".ptr);
+    dondu 0;
+}

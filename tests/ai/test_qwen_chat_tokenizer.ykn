@@ -1,0 +1,63 @@
+# Qwen3 chat-template BPE acceptance against the real Bonsai GGUF vocab.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; }
+    dongu adet > 0 { adet = adet - 1; degisken ch: [2]u8; ch[0] = rakamlar[adet]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken model_yolu: *u8 = "models/bonsai-8b/Bonsai-8B.gguf".ptr;
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 veya gguf_yukle(model_yolu, durum) == 0 {
+        ekrana_yaz("QWEN_CHAT_TOKENIZER_FAIL_GGUF\n".ptr); dondu 1;
+    }
+    degisken token_offsets: *tamsayi = bellek_tahsis_et(151669 * 8);
+    degisken token_lengths: *tamsayi = bellek_tahsis_et(151669 * 8);
+    degisken merge_offsets: *tamsayi = bellek_tahsis_et(151387 * 8);
+    degisken merge_lengths: *tamsayi = bellek_tahsis_et(151387 * 8);
+    degisken token_count: tamsayi = 0;
+    degisken merge_count: tamsayi = 0;
+    eger token_offsets == 0 veya token_lengths == 0 veya merge_offsets == 0 veya merge_lengths == 0 veya
+       bitnet_tokenizer_metadata_yukle(durum, token_offsets, token_lengths, 151669,
+           merge_offsets, merge_lengths, 151387, &token_count, &merge_count) == 0 {
+        ekrana_yaz("QWEN_CHAT_TOKENIZER_FAIL_VOCAB\n".ptr); dondu 2;
+    }
+
+    degisken prompt: *u8 = "<|im_start|>user\nx<|im_end|>\n<|im_start|>assistant\n".ptr;
+    degisken prompt_length: tamsayi = 0;
+    dongu prompt[prompt_length] != 0 { prompt_length = prompt_length + 1; }
+    degisken actual: [9]tamsayi;
+    degisken count: tamsayi = bitnet_bpe_ascii_kodla(durum->buffer,
+        token_offsets, token_lengths, token_count, merge_offsets, merge_lengths,
+        merge_count, prompt, prompt_length, actual, 9);
+    degisken expected: [9]tamsayi;
+    expected[0] = 151644; expected[1] = 872; expected[2] = 198;
+    expected[3] = 87; expected[4] = 151645; expected[5] = 198;
+    expected[6] = 151644; expected[7] = 77091; expected[8] = 198;
+    eger count != 9 {
+        ekrana_yaz("QWEN_CHAT_TOKENIZER_FAIL_COUNT=".ptr); sayi_yaz(count); ekrana_yaz("\n".ptr); dondu 3;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < count {
+        eger actual[i] != expected[i] {
+            ekrana_yaz("QWEN_CHAT_TOKENIZER_FAIL_ID index=".ptr); sayi_yaz(i);
+            ekrana_yaz(" actual=".ptr); sayi_yaz(actual[i]);
+            ekrana_yaz(" expected=".ptr); sayi_yaz(expected[i]); ekrana_yaz("\n".ptr); dondu 4;
+        }
+        i = i + 1;
+    }
+    ekrana_yaz("QWEN_CHAT_TOKENIZER_PASS 9_IDS_MATCH_REFERENCE\n".ptr);
+    dondu 0;
+}

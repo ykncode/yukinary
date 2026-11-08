@@ -1,0 +1,72 @@
+# ============================================================
+# Test: tests/test_faz_borrow_guard.ykn
+# FAZ 5 Dogrulama: Odunc Bekcisi ve Non-Lexical Lifetimes (NLL)
+# ============================================================
+
+ice_aktar "std/guvenlik.ykn";
+
+isv main() -> tamsayi {
+    degisken b: *OduncBekcisi = odunc_bekcisi_olustur();
+    eger b == 0 ise { dondu 1; }
+
+    # 1. Coklu Salt-Okunur Referans (&T) Testi
+    degisken r1: tamsayi = odunc_al_salt_okunur(b);
+    degisken r2: tamsayi = odunc_al_salt_okunur(b);
+    degisken r3: tamsayi = odunc_al_salt_okunur(b);
+
+    eger r1 != 1 veya r2 != 1 veya r3 != 1 ise {
+        dondu 10; # Okuyucular eszamanli alinabilmeli
+    }
+
+    # Okuyucular varken yazici (&mut T) ALINAMAZ
+    degisken w_ihlal: tamsayi = odunc_al_yazilabilir(b);
+    eger w_ihlal != 0 ise {
+        dondu 11; # Okuma varken yazma alinamaz (Aliasing XOR Mutability)
+    }
+
+    # Okuyuculari serbest birak
+    odunc_birak(b, 0);
+    odunc_birak(b, 0);
+    odunc_birak(b, 0);
+
+    # 2. Tekil Yazilabilir Referans (&mut T) Testi
+    degisken w1: tamsayi = odunc_al_yazilabilir(b);
+    eger w1 != 1 ise {
+        dondu 20; # Tum okuyucular bittiginde yazici alinabilmeli
+    }
+
+    # Yazici varken ne baska yazici ne de okuyucu alinabilir
+    degisken w2_ihlal: tamsayi = odunc_al_yazilabilir(b);
+    degisken r_ihlal:  tamsayi = odunc_al_salt_okunur(b);
+    eger w2_ihlal != 0 veya r_ihlal != 0 ise {
+        dondu 21; # Yazici aktifken baska hicbir referans verilemez
+    }
+
+    # Yaziciyi serbest birak
+    odunc_birak(b, 1);
+
+    # Artik yeni okuyucu alinabilmeli
+    degisken r_yeni: tamsayi = odunc_al_salt_okunur(b);
+    eger r_yeni != 1 ise {
+        dondu 22;
+    }
+    odunc_birak(b, 0);
+
+    # 3. Non-Lexical Lifetimes (NLL) Canli Aralik Kesisim Testi
+    # [10, 25) ile [20, 35) araliklari kesisir
+    degisken kesisir: tamsayi = nll_cakisma_var_mi(10, 25, 20, 35);
+    eger kesisir != 1 ise {
+        dondu 30; # [20, 25) araligi kesisiyor olmali
+    }
+
+    # [10, 20) ile [20, 30) araliklari ayriktir
+    degisken ayrik: tamsayi = nll_cakisma_var_mi(10, 20, 20, 30);
+    eger ayrik != 0 ise {
+        dondu 31; # Bitis noktasi haric ayrik olmali
+    }
+
+    odunc_bekcisi_serbest_birak(b);
+
+    dondu 0;
+}
+

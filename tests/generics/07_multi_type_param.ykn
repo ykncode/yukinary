@@ -1,0 +1,34 @@
+# GOREV 3.3 Test 7: Coklu tip parametresi
+# isv cift_generic<K, V>(a: K, b: V) -> K
+
+# Cift tip parametreli fonksiyon: ilk parametreyi dondur
+isv cift_donuyor<K, V>(anahtar: K, deger: V) -> K {
+    dondu anahtar;
+}
+
+# Cift tip parametreli fonksiyon: toplama yap ve ilkini dondur
+isv cift_topla<A, B>(x: A, y: A, z: B) -> A {
+    dondu x + y;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    # Test 1: cift_donuyor<tamsayi, tamsayi> — ayni tipler
+    degisken r1: tamsayi = cift_donuyor<tamsayi, tamsayi>(42, 99);
+    eger r1 == 42 ise {
+        ekrana_yaz("TEST 07 MULTI-PARAM: CIFT DONUYOR OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 07 MULTI-PARAM: CIFT DONUYOR FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Test 2: cift_topla<tamsayi, tamsayi> — iki parametre, toplama
+    degisken r2: tamsayi = cift_topla<tamsayi, tamsayi>(10, 32, 0);
+    eger r2 == 42 ise {
+        ekrana_yaz("TEST 07 MULTI-PARAM: CIFT TOPLA OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 07 MULTI-PARAM: CIFT TOPLA FAILED\n".ptr);
+        dondu 1;
+    }
+
+    dondu 0;
+}

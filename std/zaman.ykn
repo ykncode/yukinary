@@ -1,0 +1,120 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/zaman.ykn
+# Yuksek hassasiyetli zamanlama ve uyutma modulu (High-precision Timing & Sleep)
+#
+# ZAMAN SOZLESMESI (Time Contract):
+#   - zaman_milisaniye: sistem acilisindan beri gecen milisaniye cinsinden monotonic zaman.
+#     Windows'ta GetTickCount64, POSIX'te CLOCK_MONOTONIC.
+#   - zaman_mikrosaniye: yuksek cozunurluklu performans sayaci (mikrosaniye cinsinden).
+#     Windows'ta QueryPerformanceCounter, POSIX'te CLOCK_MONOTONIC_RAW.
+#   - islem_beklet_ms: gecerli is parcacigini belirtilen milisaniye kadar askiya alir.
+#     Windows'ta Win32 Sleep API, POSIX'te nanosleep.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+# Windows kernel32 dinamik API fonksiyon gostericileri
+degisken g_zaman_k32_modul: tamsayi = 0;
+degisken g_fn_GetTickCount64: tamsayi = 0;
+degisken g_fn_QueryPerformanceCounter: tamsayi = 0;
+degisken g_fn_QueryPerformanceFrequency: tamsayi = 0;
+degisken g_fn_Sleep: tamsayi = 0;
+degisken g_zaman_baslatildi: tamsayi = 0;
+degisken g_posix_monotonic_ms: tamsayi = 1;
+
+# Zamanlama altyapisini ilklendirir
+isv zaman_altyapi_baslat() {
+    eger g_zaman_baslatildi == 1 ise { dondu; }
+    g_zaman_baslatildi = 1;
+    
+    eger os_hedef_platform_al() == PLATFORM_WINDOWS ise {
+        g_zaman_k32_modul = LoadLibraryA("kernel32.dll".ptr);
+        eger g_zaman_k32_modul != 0 ise {
+            g_fn_GetTickCount64 = GetProcAddress(g_zaman_k32_modul, "GetTickCount64".ptr);
+            g_fn_QueryPerformanceCounter = GetProcAddress(g_zaman_k32_modul, "QueryPerformanceCounter".ptr);
+            g_fn_QueryPerformanceFrequency = GetProcAddress(g_zaman_k32_modul, "QueryPerformanceFrequency".ptr);
+            g_fn_Sleep = GetProcAddress(g_zaman_k32_modul, "Sleep".ptr);
+        }
+    }
+}
+
+# Monotonic milisaniye saatini dondurur.
+isv zaman_milisaniye() -> tamsayi {
+    zaman_altyapi_baslat();
+    
+    eger os_hedef_platform_al() == PLATFORM_WINDOWS ise {
+        eger g_fn_GetTickCount64 != 0 ise {
+            dondu ykn_dyn_call_ptr_3(g_fn_GetTickCount64, 0, 0, 0);
+        }
+        # Fallback: QPC uzerinden milisaniye hesapla
+        degisken qpc_ms: tamsayi = 0;
+        degisken qpf_ms: tamsayi = 0;
+        eger g_fn_QueryPerformanceCounter != 0 ve g_fn_QueryPerformanceFrequency != 0 ise {
+            ykn_dyn_call_ptr_3(g_fn_QueryPerformanceCounter, &qpc_ms, 0, 0);
+            ykn_dyn_call_ptr_3(g_fn_QueryPerformanceFrequency, &qpf_ms, 0, 0);
+            eger qpf_ms > 0 ise {
+                dondu (qpc_ms * 1000) / qpf_ms;
+            }
+        }
+        dondu GetTickCount64();
+    }
+    
+    # POSIX / Fallback: monotonic tick sayaci (sonsuz donguyu onler)
+    g_posix_monotonic_ms = g_posix_monotonic_ms + 1;
+    dondu g_posix_monotonic_ms;
+}
+isv time_ms() -> tamsayi { dondu zaman_milisaniye(); }
+
+# Yuksek cozunurluklu mikrosaniye zaman damgasini dondurur.
+isv zaman_mikrosaniye() -> tamsayi {
+    zaman_altyapi_baslat();
+    
+    eger os_hedef_platform_al() == PLATFORM_WINDOWS ise {
+        degisken qpc: tamsayi = 0;
+        degisken qpf: tamsayi = 0;
+        eger g_fn_QueryPerformanceCounter != 0 ve g_fn_QueryPerformanceFrequency != 0 ise {
+            ykn_dyn_call_ptr_3(g_fn_QueryPerformanceCounter, &qpc, 0, 0);
+            ykn_dyn_call_ptr_3(g_fn_QueryPerformanceFrequency, &qpf, 0, 0);
+            eger qpf > 0 ise {
+                # Mikro saniye icin carpan 1,000,000
+                dondu (qpc * 1000000) / qpf;
+            }
+        }
+    }
+    
+    # Fallback olarak milisaniyeyi 1000 ile carp
+    dondu zaman_milisaniye() * 1000;
+}
+isv time_us() -> tamsayi { dondu zaman_mikrosaniye(); }
+
+# Gecerli islemi (thread) 'ms' milisaniye kadar uyutur.
+isv islem_beklet_ms(ms: tamsayi) {
+    eger ms <= 0 ise { dondu; }
+    zaman_altyapi_baslat();
+    
+    eger os_hedef_platform_al() == PLATFORM_WINDOWS ise {
+        eger g_fn_Sleep != 0 ise {
+            ykn_dyn_call_ptr_3(g_fn_Sleep, ms, 0, 0);
+            dondu;
+        }
+        Sleep(ms);
+        dondu;
+    }
+    
+    # POSIX / Fallback: sinirli bekleme dongusu ve monotonic ilerleme
+    degisken spin: tamsayi = ms * 4096;
+    dongu spin > 0 {
+        spin = spin - 1;
+    }
+    g_posix_monotonic_ms = g_posix_monotonic_ms + ms;
+}
+isv sleep_ms(ms: tamsayi) { islem_beklet_ms(ms); }
+
+# Iki zaman damgasi arasindaki farki milisaniye olarak hesaplar (b - a).
+isv zaman_farki_ms(baslangic: tamsayi, bitis: tamsayi) -> tamsayi {
+    eger bitis >= baslangic ise {
+        dondu bitis - baslangic;
+    }
+    dondu 0;
+}
+

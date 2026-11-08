@@ -1,0 +1,85 @@
+# Test: Faz 4 Gorev 4.4 - F-String Otomatik Tip Donusturme, Closure Yakalama ve RAII
+
+extern isv ExitProcess(kod: tamsayi);
+
+degisken g_raii_sayac: tamsayi = 0;
+
+yapi TestKaynagi {
+    id: tamsayi;
+}
+
+isv TestKaynagi_birak(k: *TestKaynagi) {
+    g_raii_sayac = g_raii_sayac + k.id;
+    ekrana_yaz("RAII: TestKaynagi_birak cagirildi!\n".ptr);
+}
+
+isv raii_blok_testi() {
+    ekrana_yaz("RAII blok testi basliyor...\n".ptr);
+    eger 1 == 1 ise {
+        degisken t: TestKaynagi;
+        t.id = 10;
+        eger t.id != 10 ise {
+            ekrana_yaz("HATA: t.id hatali!\n".ptr);
+            ExitProcess(1);
+        }
+    }
+    # Blok cikisinda TestKaynagi_birak calismis olmali (+10)
+    eger g_raii_sayac != 10 ise {
+        ekrana_yaz("HATA: RAII blok temizligi calismadi!\n".ptr);
+        ExitProcess(2);
+    }
+    ekrana_yaz("RAII blok testi BASARILI!\n".ptr);
+}
+
+isv test_closure() {
+    ekrana_yaz("Closure testi basliyor...\n".ptr);
+    degisken carpan: tamsayi = 5;
+    
+    # Lambda captures 'carpan' via static link
+    degisken f = isv(x: tamsayi) -> tamsayi {
+        dondu x * carpan;
+    };
+    
+    degisken res1: tamsayi = f(6);
+    degisken msg1: *u8 = f"res1 = {res1}\n".ptr;
+    ekrana_yaz(msg1);
+    eger res1 != 30 ise {
+        ekrana_yaz("HATA: Lambda closure yakalamasi hatali!\n".ptr);
+        ExitProcess(3);
+    }
+    
+    # Outer variable mutation inside lambda
+    degisken f_mut = isv(artis: tamsayi) -> tamsayi {
+        carpan = carpan + artis;
+        dondu carpan;
+    };
+    degisken res2: tamsayi = f_mut(10);
+    degisken msg2: *u8 = f"res2 = {res2}, carpan = {carpan}\n".ptr;
+    ekrana_yaz(msg2);
+    eger res2 != 15 veya carpan != 15 ise {
+        ekrana_yaz("HATA: Lambda closure degisken yazma hatali!\n".ptr);
+        ExitProcess(4);
+    }
+    ekrana_yaz("Closure testi BASARILI!\n".ptr);
+}
+
+isv test_fstring() {
+    ekrana_yaz("F-String testi basliyor...\n".ptr);
+    degisken a: tamsayi = 20;
+    degisken b: tamsayi = 7;
+    degisken s: *u8 = f"Deger: {a + b}, Carpim: {a * b}!".ptr;
+    ekrana_yaz("F-String ciktisi: ".ptr);
+    ekrana_yaz(s);
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("F-String testi BASARILI!\n".ptr);
+}
+
+isv ana() {
+    ekrana_yaz("=== Faz 4 Gorev 4.4 Testi Baslatiliyor ===\n".ptr);
+    
+    raii_blok_testi();
+    test_closure();
+    test_fstring();
+    
+    ekrana_yaz("BASARILI: Faz 4 Gorev 4.4 tamamlandi!\n".ptr);
+}

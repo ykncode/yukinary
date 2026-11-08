@@ -1,0 +1,95 @@
+# Faz 4 Gorev 4.2 Dogrulama Testi: Tam Yapi Tipi Yayilimi ve Ondalik Negasyonu
+
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+yapi Dikdortgen {
+    sol_ust: Nokta;
+    sag_alt: Nokta;
+    kimlik: tamsayi;
+}
+
+yapi Sahne {
+    kutu: Dikdortgen;
+    aktif: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    # 1. Derin Icice Yapi (Nested Struct) Alan Erisimi ve Atamasi Testi
+    degisken s: Sahne;
+    s.aktif = 1;
+    s.kutu.kimlik = 42;
+    s.kutu.sol_ust.x = 100;
+    s.kutu.sol_ust.y = 200;
+    s.kutu.sag_alt.x = 500;
+    s.kutu.sag_alt.y = 600;
+
+    eger s.aktif != 1 ise {
+        ekrana_yaz("HATA: s.aktif eslesmedi!\n".ptr);
+        dondu 1;
+    }
+    eger s.kutu.kimlik != 42 ise {
+        ekrana_yaz("HATA: s.kutu.kimlik eslesmedi!\n".ptr);
+        dondu 2;
+    }
+    eger s.kutu.sol_ust.x != 100 ise {
+        ekrana_yaz("HATA: s.kutu.sol_ust.x eslesmedi!\n".ptr);
+        dondu 3;
+    }
+    eger s.kutu.sol_ust.y != 200 ise {
+        ekrana_yaz("HATA: s.kutu.sol_ust.y eslesmedi!\n".ptr);
+        dondu 4;
+    }
+    eger s.kutu.sag_alt.x != 500 ise {
+        ekrana_yaz("HATA: s.kutu.sag_alt.x eslesmedi!\n".ptr);
+        dondu 5;
+    }
+    eger s.kutu.sag_alt.y != 600 ise {
+        ekrana_yaz("HATA: s.kutu.sag_alt.y eslesmedi!\n".ptr);
+        dondu 6;
+    }
+
+    # 2. Gosterici uzerinden derin alan erisimi ve atama (*Sahne)
+    degisken s_ptr: *Sahne = &s;
+    s_ptr.kutu.sol_ust.x = 777;
+    eger s.kutu.sol_ust.x != 777 ise {
+        ekrana_yaz("HATA: s_ptr uzerinden atama basarisiz!\n".ptr);
+        dondu 7;
+    }
+    eger s_ptr.kutu.sol_ust.x != 777 ise {
+        ekrana_yaz("HATA: s_ptr okuma basarisiz!\n".ptr);
+        dondu 8;
+    }
+
+    # 3. Ondalik (Float) Negasyon ve Aritmetik Dogrulamasi
+    degisken pi: gercek = 3.14159;
+    degisken eksi_pi: gercek = -pi;
+    degisken cift_neg: gercek = -eksi_pi;
+
+    eger eksi_pi >= 0.0 ise {
+        ekrana_yaz("HATA: -pi negatif olmali!\n".ptr);
+        dondu 9;
+    }
+    eger cift_neg <= 0.0 ise {
+        ekrana_yaz("HATA: -(-pi) pozitif olmali!\n".ptr);
+        dondu 10;
+    }
+
+    degisken sifir: gercek = pi + eksi_pi;
+    # Mutlak deger kontrolu: -0.0001 < sifir < 0.0001
+    eger sifir > 0.0001 veya sifir < -0.0001 ise {
+        ekrana_yaz("HATA: pi + (-pi) sifir olmali!\n".ptr);
+        dondu 11;
+    }
+
+    degisken dogrudan_neg: gercek = -42.5;
+    eger dogrudan_neg != -42.5 ise {
+        ekrana_yaz("HATA: dogrudan negatif ondalik eslesmedi!\n".ptr);
+        dondu 12;
+    }
+
+    ekrana_yaz("FAZ 4.2 YAPI TIPI YAYILIMI VE ONDALIK NEGASYONU: Basarili!\n".ptr);
+    dondu 0;
+}

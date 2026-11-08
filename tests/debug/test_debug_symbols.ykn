@@ -1,0 +1,44 @@
+# ============================================================
+# tests/debug/test_debug_symbols.ykn
+# FAZ 36: CodeView PDB & DWARF 5 Sembol Tablolari Testi
+# ============================================================
+
+ice_aktar "src/codegen/debug_codeview.ykn";
+ice_aktar "src/codegen/debug_dwarf.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 36: CodeView & DWARF 5 Debugger Sembol Testi Basliyor...\n".ptr);
+
+    # 1. Windows CodeView C13 Testi
+    degisken cv: *CodeViewAkisi = codeview_akis_olustur(128);
+    eger cv.kullanilan != 4 veya cv.tampon[0] != 4 ise {
+        ekrana_yaz("HATA: CodeView C13 basligi hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # Satir ekle: PC ofset=0 -> Satir=10, PC ofset=16 -> Satir=11
+    codeview_satir_ekle(cv, 0, 10);
+    codeview_satir_ekle(cv, 16, 11);
+
+    eger cv.satir_sayisi != 2 veya cv.kullanilan != 20 ise {
+        ekrana_yaz("HATA: CodeView satir kayitlari hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. Linux & macOS DWARF 5 Testi
+    degisken dwarf: *DwarfLineAkisi = dwarf_line_olustur(128);
+    eger dwarf.kullanilan != 4 veya dwarf.tampon[0] != 5 ise {
+        ekrana_yaz("HATA: DWARF 5 basligi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    dwarf_line_ilerle(dwarf, 15, 32);
+    eger dwarf.guncel_satir != 15 veya dwarf.guncel_pc != 32 ise {
+        ekrana_yaz("HATA: DWARF satir ilerleme hatali!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("DEBUG_SYMBOLS_PASS\n".ptr);
+    dondu 0;
+}
+

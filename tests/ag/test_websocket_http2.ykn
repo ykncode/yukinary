@@ -1,0 +1,92 @@
+# ============================================================
+# tests/ag/test_websocket_http2.ykn
+# FAZ 59: WebSocket ve HTTP/2 Protokol Bütünlüğü Testi
+# RFC 6455 XOR Maskeleme, HTTP/2 9-Bayt İkili Başlık ve HPACK Sıkıştırma Doğrulaması
+# ============================================================
+
+ice_aktar "std/ag/websocket.ykn";
+ice_aktar "std/ag/http2.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 59: WebSocket & HTTP/2 Cerceve Testi Basliyor...\n".ptr);
+
+    # ============================================================
+    # 1. WEBSOCKET METİN ÇERÇEVESİ VE XOR MASKELEME TESTİ
+    # ============================================================
+    degisken metin: *u8 = "HOLA".ptr;
+    degisken ws: *WsCerceve = ws_cerceve_olustur(WS_OP_METIN, metin, 4, 1);
+
+    eger ws.fin != 1 veya ws.opcode != WS_OP_METIN veya ws.uzunluk != 4 ise {
+        ekrana_yaz("HATA: WebSocket cerceve parametreleri hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # Maskeleme uygula: 0x12345678
+    degisken maske: tamsayi = 305419896;
+    ws_maske_uygula(ws.veri, 4, maske);
+
+    # Maskelenmis veri degismis olmali
+    eger ws.veri[0] == 72 ise {
+        ekrana_yaz("HATA: WebSocket maskeleme veriyi degistirmedi!\n".ptr);
+        dondu 2;
+    }
+
+    # Tekrar ayni maskeyi uygula -> Orijinal "HOLA" (72, 79, 76, 65) geri donmeli
+    ws_maske_uygula(ws.veri, 4, maske);
+    eger ws.veri[0] != 72 veya ws.veri[1] != 79 veya ws.veri[2] != 76 veya ws.veri[3] != 65 ise {
+        ekrana_yaz("HATA: WebSocket maske cozumu orijinal veriyi vermedi!\n".ptr);
+        dondu 3;
+    }
+
+    # ============================================================
+    # 2. HTTP/2 9-BAYT İKİLİ ÇERÇEVE SERİLEŞTİRME & AYRIŞTIRMA TESTİ
+    # ============================================================
+    degisken h2_kaynak: *Http2Baslik = http2_baslik_olustur(1024, H2_FRAME_DATA, H2_FLAG_END_STREAM, 3);
+    degisken tel_tamponu: *u8 = bellek_tahsis_et(16);
+
+    # 9-Bayt serilestir
+    degisken yazilan: tamsayi = http2_baslik_serilestir(h2_kaynak, tel_tamponu);
+    eger yazilan != 9 ise {
+        ekrana_yaz("HATA: HTTP/2 baslik 9 bayt olmali!\n".ptr);
+        dondu 4;
+    }
+
+    # Ikili diziden geri ayristir
+    degisken h2_cozulen: *Http2Baslik = http2_baslik_olustur(0, 0, 0, 0);
+    http2_baslik_ayristir(tel_tamponu, h2_cozulen);
+
+    eger h2_cozulen.uzunluk != 1024 veya h2_cozulen.tur != H2_FRAME_DATA veya h2_cozulen.bayraklar != H2_FLAG_END_STREAM veya h2_cozulen.akis_id != 3 ise {
+        ekrana_yaz("HATA: HTTP/2 baslik ikili ayristirma hatali!\n".ptr);
+        dondu 5;
+    }
+
+    # ============================================================
+    # 3. HPACK STATİK TABLO (RFC 7541) BAŞLIK SIKIŞTIRMA TESTİ
+    # ============================================================
+    # Indeks 2: ":method: GET" -> 0x80 | 2 = 130
+    degisken hpack_buf: *u8 = bellek_tahsis_et(8);
+    hpack_indeksli_kodla(2, hpack_buf);
+    eger hpack_buf[0] != 130 ise {
+        ekrana_yaz("HATA: HPACK :method: GET kodlamasi 130 olmali!\n".ptr);
+        dondu 6;
+    }
+
+    degisken cozulen_idx: tamsayi = hpack_indeksli_coz(hpack_buf[0]);
+    eger cozulen_idx != 2 ise {
+        ekrana_yaz("HATA: HPACK cozulen indeks 2 olmali!\n".ptr);
+        dondu 7;
+    }
+
+    # ============================================================
+    # 4. HTTP/2 TAM VERİ ÇERÇEVESİ ÜRETİM TESTİ
+    # ============================================================
+    degisken veri_tamponu: *u8 = bellek_tahsis_et(64);
+    degisken frame_len: tamsayi = http2_data_cercevesi_olustur(5, "YKN_STREAM".ptr, 10, 1, veri_tamponu);
+    eger frame_len != 19 ise { # 9 baslik + 10 veri = 19 bayt
+        ekrana_yaz("HATA: HTTP/2 Data cerceve boyutu 19 olmali!\n".ptr);
+        dondu 8;
+    }
+
+    ekrana_yaz("WEBSOCKET_HTTP2_PASS\n".ptr);
+    dondu 0;
+}

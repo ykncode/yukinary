@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 25: Konsol Tabanlı ASCII Kutu ve Çerçeve Çizici
+# ============================================================
+
+isv kutu_ciz(genislik: tamsayi, yukseklik: tamsayi, baslik: *u8) {
+    # Ust kenar: +-------+
+    ekrana_yaz("+");
+    degisken i: tamsayi = 0;
+    dongu (i < genislik - 2) { ekrana_yaz("-"); i = i + 1; }
+    ekrana_yaz("+\n");
+
+    # Baslik satiri: | Baslik |
+    ekrana_yaz("| ");
+    ekrana_yaz(baslik);
+    degisken bosluk: tamsayi = genislik - 4;
+    dongu (baslik[bosluk] != 0 ve bosluk > 0) { bosluk = bosluk - 1; }
+    dongu (bosluk > 0) { ekrana_yaz(" "); bosluk = bosluk - 1; }
+    ekrana_yaz(" |\n");
+
+    # Orta bosluklar
+    degisken r: tamsayi = 0;
+    dongu (r < yukseklik - 3) {
+        ekrana_yaz("|");
+        i = 0;
+        dongu (i < genislik - 2) { ekrana_yaz(" "); i = i + 1; }
+        ekrana_yaz("|\n");
+        r = r + 1;
+    }
+
+    # Alt kenar: +-------+
+    ekrana_yaz("+");
+    i = 0;
+    dongu (i < genislik - 2) { ekrana_yaz("-"); i = i + 1; }
+    ekrana_yaz("+\n");
+}
+
+isv ana() -> tamsayi {
+    kutu_ciz(30, 6, "YUKINARY OS".ptr);
+    kutu_ciz(24, 5, "BILGI KUTUSU".ptr);
+    dondu 0;
+}

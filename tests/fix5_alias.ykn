@@ -1,0 +1,5 @@
+tip Sayi = tamsayi;
+isv ana() -> Sayi {
+    degisken x: Sayi = 42;
+    dondu x;
+}

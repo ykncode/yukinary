@@ -1,0 +1,99 @@
+# ============================================================
+# tests/apps/test_desktop_apps.ykn
+# FAZ 49 & FAZ 66: Gercek Masaustu Uygulamalari (Hesap, GapBuffer, Dizin) Testi
+# Shunting-Yard Oncelikli Matematik, GapBuffer Imlec Gezinimi ve Dosya Siralama
+# ============================================================
+
+ice_aktar "std/apps/hesap_makinesi.ykn";
+ice_aktar "std/apps/ykn_office.ykn";
+ice_aktar "std/apps/dosya_yoneticisi.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 49 & FAZ 66: Gercek Masaustu Uygulama Motoru Testi Basliyor...\n".ptr);
+
+    # 1. Klasik Hesap Makinesi Testi (Zincirleme)
+    # "10+20*3" -> (10+20)=30, 30*3=90
+    degisken ifade: *u8 = "10+20*3".ptr;
+    degisken sonuc: tamsayi = hesap_makinesi_coz(ifade, 7);
+    eger sonuc != 90 ise {
+        ekrana_yaz("HATA: Hesap makinesi sonucu 90 olmali!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. FAZ 66: Shunting-Yard Operator Oncelikli & Parantezli Cozumleme
+    # "10+20*3" -> 10 + (20 * 3) = 70
+    degisken oncelikli_sonuc: tamsayi = hesap_makinesi_ifade_coz(ifade, 7);
+    eger oncelikli_sonuc != 70 ise {
+        ekrana_yaz("HATA: Shunting-yard oncelikli sonuc 70 olmali!\n".ptr);
+        dondu 2;
+    }
+
+    # "(10+20)*3" -> 30 * 3 = 90
+    degisken parantezli_ifade: *u8 = "(10+20)*3".ptr;
+    degisken parantez_sonuc: tamsayi = hesap_makinesi_ifade_coz(parantezli_ifade, 9);
+    eger parantez_sonuc != 90 ise {
+        ekrana_yaz("HATA: Parantezli ifade sonucu 90 olmali!\n".ptr);
+        dondu 3;
+    }
+
+    # 3. Gap Buffer Metin Duzenleyici Testi
+    degisken gb: *GapBuffer = gap_buffer_olustur(16);
+    gap_ekle(gb, 89); # 'Y'
+    gap_ekle(gb, 75); # 'K'
+    gap_ekle(gb, 78); # 'N'
+    gap_sil(gb);      # 'N' silindi
+    gap_ekle(gb, 85); # 'U' eklendi -> "YKU"
+
+    degisken cikti: *u8 = bellek_tahsis_et(16);
+    degisken len: tamsayi = gap_metin_al(gb, cikti);
+    eger len != 3 ise {
+        ekrana_yaz("HATA: Gap buffer uzunlugu 3 olmali!\n".ptr);
+        dondu 4;
+    }
+    eger cikti[0] != 89 veya cikti[1] != 75 veya cikti[2] != 85 ise {
+        ekrana_yaz("HATA: Gap buffer icerigi 'YKU' olmali!\n".ptr);
+        dondu 5;
+    }
+
+    # FAZ 66: Imlec Sola Kaydirma ve Araya Karakter Ekleme
+    # "YKU" -> imlec 1 sola (U oncesi) -> 'X' ekle -> "YXU"
+    gap_imlec_sola(gb);
+    gap_ekle(gb, 88); # 'X'
+    degisken cikti2: *u8 = bellek_tahsis_et(16);
+    gap_metin_al(gb, cikti2);
+    eger cikti2[0] != 89 veya cikti2[1] != 75 veya cikti2[2] != 88 veya cikti2[3] != 85 ise {
+        ekrana_yaz("HATA: Imlec sola kaydirma ve araya ekleme basarisiz!\n".ptr);
+        dondu 6;
+    }
+
+    # 4. Dosya Yoneticisi Testi
+    degisken dg: *DizinGorunumu = dizin_gorunumu_olustur(8);
+    dizin_dosya_ekle(dg, "main.ykn".ptr, 1024, 0);
+    dizin_dosya_ekle(dg, "app.exe".ptr, 2048, 0);
+    dizin_dosya_ekle(dg, "data.bin".ptr, 4096, 0);
+
+    degisken top_boyut: tamsayi = dizin_toplam_boyut(dg);
+    eger top_boyut != 7168 ise {
+        ekrana_yaz("HATA: Toplam dosya boyutu 7168 olmali!\n".ptr);
+        dondu 7;
+    }
+
+    # FAZ 66: Boyuta gore dosya siralama (azalan)
+    dizin_sirala_boyuta_gore(dg, 0);
+    degisken arr_k: *tamsayi = dg.kayitlar;
+    degisken ilk_k: *DosyaKaydi = arr_k[0];
+    eger ilk_k.boyut != 4096 ise {
+        ekrana_yaz("HATA: Boyuta gore siralama basarisiz!\n".ptr);
+        dondu 8;
+    }
+
+    # FAZ 66: Uzantiya gore filtreleme
+    degisken ykn_dg: *DizinGorunumu = dizin_filtrele_uzantiya_gore(dg, ".ykn".ptr);
+    eger ykn_dg.dosya_sayisi != 1 ise {
+        ekrana_yaz("HATA: Uzanti filtreleme sonucu 1 dosya olmali!\n".ptr);
+        dondu 9;
+    }
+
+    ekrana_yaz("DESKTOP_APPS_ENGINE_PASS\n".ptr);
+    dondu 0;
+}

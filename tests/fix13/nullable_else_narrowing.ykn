@@ -1,0 +1,10 @@
+# FIX-13 olumlu: p == bos false branch'inde p non-null kabul edilir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p == bos ise {
+        dondu 0;
+    } yoksa {
+        p[0] = 73;
+    }
+    dondu 0;
+}

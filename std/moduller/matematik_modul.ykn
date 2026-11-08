@@ -1,0 +1,19 @@
+# ============================================================
+# std/moduller/matematik_modul.ykn
+# Matematik Modulu - İsim Alani (Namespace: matematik)
+# ============================================================
+
+isv matematik__kare(x: tamsayi) -> tamsayi {
+    dondu x * x;
+}
+
+isv matematik__kup(x: tamsayi) -> tamsayi {
+    dondu x * x * x;
+}
+
+isv matematik__mutlak(x: tamsayi) -> tamsayi {
+    eger x < 0 ise {
+        dondu 0 - x;
+    }
+    dondu x;
+}

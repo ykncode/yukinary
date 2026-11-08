@@ -1,0 +1,105 @@
+# ============================================================
+# std/bulut/rpc.ykn
+# FAZ 45 & FAZ 65: Saf Yukinary Dagitik RPC Ikili Protokolu
+# SIFIR MOCK, Ikili Paket Serilestirme, Dogrulama, Checksum ve Cozumleme
+# ============================================================
+
+degisken RPC_MAGIC: tamsayi = 1498108496; # 0x594B5250 ('YKRP')
+degisken RPC_BASLIK_BOYUTU: tamsayi = 32;
+
+degisken RPC_ISLEM_REQUEST_VOTE:    tamsayi = 1;
+degisken RPC_ISLEM_APPEND_ENTRIES:  tamsayi = 2;
+degisken RPC_ISLEM_VERI_ILET:       tamsayi = 3;
+degisken RPC_ISLEM_KALP_ATISI:      tamsayi = 4;
+degisken RPC_ISLEM_YANIT:           tamsayi = 5;
+
+yapi RpcPaket {
+    magic:        tamsayi; # RPC_MAGIC
+    kaynak_dugum: tamsayi;
+    hedef_dugum:  tamsayi;
+    islem_kodu:   tamsayi; # 1: RequestVote, 2: AppendEntries, 3: VeriIlet
+    veri_boyutu:  tamsayi; # Eleman sayisi (tamsayi)
+    veri:         *tamsayi;
+    saglama:      tamsayi; # Checksum
+}
+
+# CRC-32 / Adler tabanli 32-bit saglama toplami
+isv rpc_checksum_hesapla(veri: *tamsayi, n: tamsayi) -> tamsayi {
+    eger veri == 0 veya n <= 0 ise { dondu 0; }
+    degisken a: tamsayi = 1;
+    degisken b: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken v: tamsayi = veri[i] & 4294967295;
+        a = (a + v) % 65521;
+        b = (b + a) % 65521;
+        i = i + 1;
+    }
+    dondu (b << 16) | a;
+}
+
+isv rpc_paket_olustur(kaynak: tamsayi, hedef: tamsayi, islem: tamsayi, eleman_sayisi: tamsayi) -> *RpcPaket {
+    degisken p: *RpcPaket = bellek_tahsis_et(56);
+    p.magic = RPC_MAGIC;
+    p.kaynak_dugum = kaynak;
+    p.hedef_dugum = hedef;
+    p.islem_kodu = islem;
+    p.veri_boyutu = eleman_sayisi;
+    p.veri = bellek_tahsis_et(eleman_sayisi * 8);
+    p.saglama = 0;
+    dondu p;
+}
+
+# Paketi ham bayt dizisine serilestirir (Little-endian 64-bit sozcukler)
+isv rpc_serilestir(p: *RpcPaket, tampon: *tamsayi) -> tamsayi {
+    degisken n: tamsayi = p.veri_boyutu;
+    degisken src: *tamsayi = p.veri;
+    p.saglama = rpc_checksum_hesapla(src, n);
+
+    tampon[0] = p.magic;
+    tampon[1] = p.kaynak_dugum;
+    tampon[2] = p.hedef_dugum;
+    tampon[3] = p.islem_kodu;
+    tampon[4] = p.veri_boyutu;
+    tampon[5] = p.saglama;
+
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        tampon[6 + i] = src[i];
+        i = i + 1;
+    }
+    dondu (6 + n) * 8; # Toplam bayt boyutu
+}
+
+# Ham bayt dizisinden RpcPaket nesnesi ayristirir
+isv rpc_ayristir(tampon: *tamsayi) -> *RpcPaket {
+    degisken magic: tamsayi = tampon[0];
+    eger magic != RPC_MAGIC ise {
+        dondu 0; # Gecersiz paket (Magic eslesmedi)
+    }
+
+    degisken kaynak: tamsayi = tampon[1];
+    degisken hedef: tamsayi = tampon[2];
+    degisken islem: tamsayi = tampon[3];
+    degisken n: tamsayi = tampon[4];
+    degisken gelen_saglama: tamsayi = tampon[5];
+
+    degisken p: *RpcPaket = rpc_paket_olustur(kaynak, hedef, islem, n);
+    degisken dst: *tamsayi = p.veri;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        dst[i] = tampon[6 + i];
+        i = i + 1;
+    }
+    p.saglama = gelen_saglama;
+    dondu p;
+}
+
+isv rpc_paket_dogrula(p: *RpcPaket) -> tamsayi {
+    eger p == 0 veya p.magic != RPC_MAGIC ise { dondu 0; }
+    degisken hesaplanan: tamsayi = rpc_checksum_hesapla(p.veri, p.veri_boyutu);
+    eger p.saglama != 0 ve p.saglama != hesaplanan ise {
+        dondu 0; # Bozuk paket
+    }
+    dondu 1;
+}

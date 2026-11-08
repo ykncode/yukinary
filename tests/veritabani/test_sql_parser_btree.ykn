@@ -1,0 +1,63 @@
+# ============================================================
+# tests/veritabani/test_sql_parser_btree.ykn
+# FAZ 51: Dize Tabanli SQL Sozcuk Ayristirici & Sorgu Motoru Testi
+# ============================================================
+
+ice_aktar "std/veritabani/sql_motoru.ykn";
+ice_aktar "std/veritabani/sql_tokenizer.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 51: Dize SQL Sozcuk Ayristirici Testi Basliyor...\n".ptr);
+
+    degisken tbl: *SqlTablo = sql_tablo_olustur(16);
+
+    # 1. Dize INSERT komutlari
+    degisken s_ins1: *u8 = "INSERT 201 8800".ptr;
+    degisken q1: *SqlSorgusu = sql_dize_ayristir(s_ins1, 15);
+    eger q1 == 0 veya q1.komut_turu != SQL_KOMUT_INSERT ise {
+        ekrana_yaz("HATA: INSERT dizesi ayristirilamadi!\n".ptr);
+        dondu 1;
+    }
+    sql_sorgu_calistir(tbl, q1);
+
+    degisken s_ins2: *u8 = "INSERT 202 9900".ptr;
+    degisken q2: *SqlSorgusu = sql_dize_ayristir(s_ins2, 15);
+    sql_sorgu_calistir(tbl, q2);
+
+    # 2. Dize SELECT komutu: "SELECT 202"
+    degisken s_sel: *u8 = "SELECT 202".ptr;
+    degisken q_sel: *SqlSorgusu = sql_dize_ayristir(s_sel, 10);
+    degisken r_sel: tamsayi = sql_sorgu_calistir(tbl, q_sel);
+    eger r_sel != 9900 ise {
+        ekrana_yaz("HATA: SELECT 202 beklenen 9900!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Dize UPDATE komutu: "UPDATE 202 9950"
+    degisken s_upd: *u8 = "UPDATE 202 9950".ptr;
+    degisken q_upd: *SqlSorgusu = sql_dize_ayristir(s_upd, 15);
+    sql_sorgu_calistir(tbl, q_upd);
+
+    degisken r_upd: tamsayi = sql_sorgu_calistir(tbl, q_sel);
+    eger r_upd != 9950 ise {
+        ekrana_yaz("HATA: UPDATE sonrasi SELECT beklenen 9950!\n".ptr);
+        dondu 3;
+    }
+
+    # 4. Dize DELETE komutu: "DELETE 201"
+    degisken s_del: *u8 = "DELETE 201".ptr;
+    degisken q_del: *SqlSorgusu = sql_dize_ayristir(s_del, 10);
+    sql_sorgu_calistir(tbl, q_del);
+
+    degisken s_sel_del: *u8 = "SELECT 201".ptr;
+    degisken q_sel_del: *SqlSorgusu = sql_dize_ayristir(s_sel_del, 10);
+    degisken r_del: tamsayi = sql_sorgu_calistir(tbl, q_sel_del);
+    eger r_del != (0 - 1) ise {
+        ekrana_yaz("HATA: DELETE sonrasi kayit bulunmamali (-1)!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("SQL_TOKENIZER_BTREE_PASS\n".ptr);
+    dondu 0;
+}
+

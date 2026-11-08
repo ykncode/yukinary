@@ -1,0 +1,32 @@
+ice_aktar "std/ag/event_loop.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Asenkron Olay Dongusu Testi Basliyor...\n");
+    degisken d: *OlayDongusu = olay_dongusu_olustur();
+    eger d == 0 ise {
+        ekrana_yaz("HATA: Olay dongusu olusturulamadi!\n");
+        dondu 1;
+    }
+    ekrana_yaz("Olay dongusu basariyla olusturuldu.\n");
+    
+    degisken r: tamsayi = olay_dongusu_ekle(d, 42, OLAY_OKUMA);
+    eger r < 0 {
+        ekrana_yaz("HATA: Olay dongusu ekleme basarisiz!\n");
+        dondu 2;
+    }
+    ekrana_yaz("FD 42 olay dongusune eklendi.\n");
+    
+    eger d.kayit_sayisi != 1 ise {
+        ekrana_yaz("HATA: Kayit sayisi hatali!\n");
+        dondu 3;
+    }
+    
+    olay_dongusu_cikar(d, 42);
+    ekrana_yaz("FD 42 olay dongusunden cikarildi.\n");
+    
+    olay_dongusu_kapat(d);
+    ekrana_yaz("Olay dongusu kapatildi.\n");
+    ekrana_yaz("TEST BASARILI: PASS\n");
+    dondu 0;
+}
+

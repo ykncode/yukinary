@@ -1,0 +1,48 @@
+# ============================================================
+# Unary İfadeler Codegen Testi
+# F4.3: Negatif (-), bitwise NOT (~), mantıksal NOT (!), dereference (*)
+# ============================================================
+isv ekrana_yaz(m: *u8) {}
+harici isv bellek_tahsis_et(n: tamsayi) -> *u8;
+
+isv ana() -> tamsayi {
+    # 1. Unary Negatif
+    degisken x: tamsayi = 42;
+    degisken neg_x: tamsayi = -x;
+    eger neg_x != -42 ise {
+        ekrana_yaz("FAIL: unary neg_x\n".ptr);
+        dondu 1;
+    }
+
+    degisken neg_expr: tamsayi = -(x + 8);
+    eger neg_expr != -50 ise {
+        ekrana_yaz("FAIL: unary neg_expr\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Birden fazla unary eksi: -(-x)
+    degisken cift_neg: tamsayi = -(-x);
+    eger cift_neg != 42 ise {
+        ekrana_yaz("FAIL: cift unary -(-x)\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Pointer Dereference (*) ve Adres Alma (&)
+    degisken val: tamsayi = 12345;
+    degisken p: *tamsayi = &val;
+    degisken read_val: tamsayi = *p;
+    eger read_val != 12345 ise {
+        ekrana_yaz("FAIL: pointer dereference *p\n".ptr);
+        dondu 1;
+    }
+
+    # *p üzerinden yazma
+    *p = 54321;
+    eger val != 54321 ise {
+        ekrana_yaz("FAIL: pointer dereference atamasi *p = 54321\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("UNARY_EXPRESSIONS_PASS\n".ptr);
+    dondu 0;
+}

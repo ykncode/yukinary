@@ -1,0 +1,64 @@
+# ============================================================
+# std/os/os_linux_uring.ykn
+# FAZ 31: Saf Linux io_uring Cekirdek Asenkron G/C Surucusu
+# ============================================================
+
+# Linux x86_64 Sistem Cagri Numaralari (Syscall ID)
+degisken SYS_IO_URING_SETUP    = 425;
+degisken SYS_IO_URING_ENTER    = 426;
+degisken SYS_IO_URING_REGISTER = 427;
+
+# io_uring Islem Kodlari (Opcodes)
+degisken IORING_OP_NOP         = 0;
+degisken IORING_OP_READV       = 1;
+degisken IORING_OP_WRITEV      = 2;
+degisken IORING_OP_FSYNC       = 3;
+degisken IORING_OP_READ_FIXED  = 4;
+degisken IORING_OP_WRITE_FIXED = 5;
+degisken IORING_OP_POLL_ADD    = 6;
+degisken IORING_OP_POLL_REMOVE = 7;
+degisken IORING_OP_ACCEPT      = 13;
+degisken IORING_OP_CONNECT     = 14;
+
+# 64-Bayt Standart Linux io_uring Submission Queue Entry (SQE)
+yapi IoUringSqe {
+    opcode:      tamsayi; # u8 islem kodu
+    flags:       tamsayi; # u8 bayraklar
+    ioprio:      tamsayi; # u16 I/O onceligi
+    fd:          tamsayi; # i32 hedef dosya tanimlayici
+    offset:      tamsayi; # u64 dosya ofseti
+    addr:        *u8;     # u64 tampon adresi (veya iovec dizisi)
+    len:         tamsayi; # u32 tampon uzunlugu
+    rw_flags:    tamsayi; # u32 cekirdek bayraklari
+    user_data:   tamsayi; # u64 kullanici kimligi / context
+}
+
+# 16-Bayt Standart Linux io_uring Completion Queue Entry (CQE)
+yapi IoUringCqe {
+    user_data:   tamsayi; # u64 kullanici kimligi
+    res:         tamsayi; # i32 islem sonucu (okunan bayt veya -errno)
+    flags:       tamsayi; # u32 bayraklar
+}
+
+# io_uring Kurulum Parametreleri
+yapi IoUringParams {
+    sq_entries:  tamsayi;
+    cq_entries:  tamsayi;
+    flags:       tamsayi;
+    sq_thread_cpu: tamsayi;
+    sq_thread_idle: tamsayi;
+    features:    tamsayi;
+}
+
+isv linux_uring_sqe_hazirla(sqe: *IoUringSqe, op: tamsayi, hedef_fd: tamsayi, tampon: *u8, uzunluk: tamsayi, ofset: tamsayi, veri: tamsayi) {
+    sqe.opcode = op;
+    sqe.flags = 0;
+    sqe.ioprio = 0;
+    sqe.fd = hedef_fd;
+    sqe.offset = ofset;
+    sqe.addr = tampon;
+    sqe.len = uzunluk;
+    sqe.rw_flags = 0;
+    sqe.user_data = veri;
+}
+

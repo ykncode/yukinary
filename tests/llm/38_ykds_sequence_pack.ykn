@@ -1,0 +1,131 @@
+# Saf YKN YKDS -> tokenizer -> causal sequence packing -> next-token trainer acceptance.
+ice_aktar "std/ai/dataset_batch.ykn";
+ice_aktar "std/ai/trainer.ykn";
+
+degisken DATA_BYTES: tamsayi = 32768;
+
+isv ana() -> tamsayi {
+    degisken yol: *u8 = "build/test-work/ykds-sequence-pack.ykds".ptr;
+    degisken w: *YKNDatasetWriter = ykn_dataset_writer_olustur(42);
+    eger w == 0 veya ykn_dataset_append(w, 31, "a".ptr, "b".ptr, "E001".ptr, "sequence-pack".ptr) == 0 veya
+       ykn_dataset_append(w, 32, "a".ptr, "b".ptr, "E002".ptr, "sequence-pack".ptr) == 0 veya
+       ykn_dataset_writer_bitir(w, yol) <= 0 ise {
+        ekrana_yaz("FAIL: dataset fixture\n".ptr);
+        dondu 1;
+    }
+    degisken data: *u8 = bellek_tahsis_et(DATA_BYTES);
+    eger data == 0 ise { ekrana_yaz("FAIL: dataset buffer\n".ptr); dondu 2; }
+    degisken data_size: tamsayi = dosya_oku(yol, data, DATA_BYTES);
+    degisken batch: *YKNDatasetBatch = bellek_tahsis_et(64);
+    eger data_size <= 0 veya batch == 0 veya
+       ykn_dataset_batch_open(data, data_size, YKN_DS_BATCH_ALL_SPLITS, 2, batch) == 0 ise {
+        ekrana_yaz("FAIL: batch open\n".ptr);
+        dondu 3;
+    }
+
+    degisken vocab: [4]u8;
+    vocab[0] = 97; vocab[1] = 0; vocab[2] = 98; vocab[3] = 0;
+    degisken token_offsets: [2]tamsayi;
+    degisken token_lengths: [2]tamsayi;
+    token_offsets[0] = 0; token_offsets[1] = 2;
+    token_lengths[0] = 1; token_lengths[1] = 1;
+    degisken merge_offsets: [1]tamsayi;
+    degisken merge_lengths: [1]tamsayi;
+    merge_offsets[0] = 0; merge_lengths[0] = 0;
+    degisken source_text: [8]u8;
+    degisken target_text: [8]u8;
+    degisken source_ids: [4]tamsayi;
+    degisken target_ids: [4]tamsayi;
+    degisken source_count: tamsayi = 0;
+    degisken target_count: tamsayi = 0;
+    degisken split: tamsayi = 0;
+    degisken sample_id: tamsayi = 0;
+    degisken output: *YKNDatasetBatchOutput = bellek_tahsis_et(96);
+    degisken cfg: *YKNDatasetTokenizerBatch = bellek_tahsis_et(160);
+    eger output == 0 veya cfg == 0 ise { ekrana_yaz("FAIL: tokenizer alloc\n".ptr); dondu 4; }
+    output->source_out = source_text;
+    output->source_capacity = 8;
+    output->target_out = target_text;
+    output->target_capacity = 8;
+    output->diagnostic_out = 0;
+    output->diagnostic_capacity = 0;
+    output->provenance_out = 0;
+    output->provenance_capacity = 0;
+    output->split_out = &split;
+    output->sample_id_out = &sample_id;
+    cfg->tokenizer_buffer = vocab;
+    cfg->token_offsets = token_offsets;
+    cfg->token_lengths = token_lengths;
+    cfg->token_count = 2;
+    cfg->merge_offsets = merge_offsets;
+    cfg->merge_lengths = merge_lengths;
+    cfg->merge_count = 0;
+    cfg->output = output;
+    cfg->source_text = source_text;
+    cfg->source_text_capacity = 8;
+    cfg->target_text = target_text;
+    cfg->target_text_capacity = 8;
+    cfg->source_ids = source_ids;
+    cfg->source_id_capacity = 4;
+    cfg->target_ids = target_ids;
+    cfg->target_id_capacity = 4;
+    cfg->source_id_count = &source_count;
+    cfg->target_id_count = &target_count;
+    cfg->split_out = &split;
+    cfg->sample_id_out = &sample_id;
+
+    degisken packed_input: [8]tamsayi;
+    degisken packed_labels: [8]tamsayi;
+    degisken packed_mask: [8]tamsayi;
+    degisken pack: *YKNSequencePack = bellek_tahsis_et(72);
+    eger pack == 0 veya ykn_sequence_pack_init(pack, packed_input, packed_labels, packed_mask, 8, 4, 2, 3) == 0 ise {
+        ekrana_yaz("FAIL: pack init\n".ptr);
+        dondu 5;
+    }
+    eger ykn_dataset_batch_next_tokenized(batch, cfg) == 0 veya source_count != 1 veya target_count != 1 veya sample_id != 31 ise {
+        ekrana_yaz("FAIL: first tokenized sample\n".ptr);
+        dondu 6;
+    }
+    eger ykn_sequence_pack_append(pack, source_ids, source_count, target_ids, target_count) != 4 ise {
+        ekrana_yaz("FAIL: first pack append\n".ptr);
+        dondu 7;
+    }
+    eger ykn_dataset_batch_next_tokenized(batch, cfg) == 0 veya source_count != 1 veya target_count != 1 veya sample_id != 32 ise {
+        ekrana_yaz("FAIL: second tokenized sample\n".ptr);
+        dondu 8;
+    }
+    eger ykn_sequence_pack_append(pack, source_ids, source_count, target_ids, target_count) != 4 ise {
+        ekrana_yaz("FAIL: second pack append\n".ptr);
+        dondu 9;
+    }
+    eger pack->count != 8 veya pack->segment_count != 2 veya
+       packed_input[0] != 0 veya packed_input[1] != 2 veya packed_input[2] != 1 veya
+       packed_input[3] != 3 veya packed_input[4] != 0 veya packed_input[5] != 2 veya
+       packed_input[6] != 1 veya packed_input[7] != 3 ise {
+        ekrana_yaz("FAIL: packed input\n".ptr);
+        dondu 10;
+    }
+    eger packed_labels[0] != (0 - 100) veya packed_labels[1] != 1 veya
+       packed_labels[2] != 3 veya packed_labels[3] != (0 - 100) veya
+       packed_labels[4] != (0 - 100) veya packed_labels[5] != 1 veya
+       packed_labels[6] != 3 veya packed_labels[7] != (0 - 100) veya
+       packed_mask[0] != 0 veya packed_mask[1] != 1 veya packed_mask[2] != 1 veya
+       packed_mask[3] != 0 veya packed_mask[4] != 0 veya packed_mask[5] != 1 veya
+       packed_mask[6] != 1 veya packed_mask[7] != 0 ise {
+        ekrana_yaz("FAIL: shifted labels veya mask\n".ptr);
+        dondu 11;
+    }
+    eger ykn_sequence_pack_append(pack, source_ids, source_count, target_ids, target_count) != 0 veya
+       pack->count != 8 ise {
+        ekrana_yaz("FAIL: capacity overflow accepted\n".ptr);
+        dondu 12;
+    }
+    ai_egitim_baslat();
+    degisken loss: tamsayi = ai_ykds_paket_egit(packed_input, packed_labels, packed_mask, pack->count);
+    eger loss <= 0 veya g_ai_adam_adim != 1 veya (g_ai_m1_b2[0] == 0 ve g_ai_m2_b2[0] == 0) ise {
+        ekrana_yaz("FAIL: packed trainer update\n".ptr);
+        dondu 13;
+    }
+    ekrana_yaz("YKN_YKDS_SEQUENCE_PACK_PASS\n".ptr);
+    dondu 0;
+}

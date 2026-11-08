@@ -1,0 +1,11 @@
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+ice_aktar "std/ai/model_llama.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("LLAMA_FACADE_COMPILED\n".ptr);
+    dondu 0;
+}

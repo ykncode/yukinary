@@ -1,0 +1,147 @@
+# CUDA I2_S matrix-vector parity against the YKN integer reference kernel.
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/cuda_backend.ykn";
+# Force the SIMD PE/IAT layout as well as CUDA FFI in this integration test.
+ice_aktar "std/ai/attention.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; }
+    dongu adet > 0 { adet = adet - 1; degisken ch: [2]u8; ch[0] = rakamlar[adet]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("CUDA_I2S_UNAVAILABLE status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 20;
+    }
+    # Real IQ2_S block fixture: half scale + qs + qh + per-32 scales.
+    degisken packed: [82]u8;
+    degisken i: tamsayi = 0;
+    dongu i < 82 { packed[i] = (i * 37 + 11) % 256; i = i + 1; }
+    packed[0] = 0; packed[1] = 48; # f16 0.125
+    degisken activation: [256]tamsayi;
+    i = 0;
+    dongu i < 256 { activation[i] = (i - 128) * 65536; i = i + 1; }
+    degisken cpu_output: [1]tamsayi;
+    degisken gpu_output: [1]tamsayi;
+    degisken probe_i: tamsayi = 0;
+    dongu probe_i < 256 {
+        degisken clear_i: tamsayi = 0;
+        dongu clear_i < 256 { activation[clear_i] = 0; clear_i = clear_i + 1; }
+        activation[probe_i] = 65536;
+        eger bitnet_iq2s_paketli_matris_carp(packed, activation,
+            cpu_output, 1, 256, 1) != 1 {
+            ekrana_yaz("CUDA_IQ2S_PROBE_CPU_FAIL\n".ptr); dondu 34;
+        }
+        eger ykn_cuda_i2s_matvec(packed, activation, gpu_output, 256, 1, 82, 0) != 1 {
+            ekrana_yaz("CUDA_IQ2S_PROBE_KERNEL_FAIL\n".ptr); dondu 35;
+        }
+        eger cpu_output[0] != gpu_output[0] {
+            ekrana_yaz("CUDA_IQ2S_PROBE_FAIL index=".ptr); sayi_yaz(probe_i);
+            ekrana_yaz(" cpu/gpu=".ptr); sayi_yaz(cpu_output[0]); ekrana_yaz("/".ptr);
+            sayi_yaz(gpu_output[0]); ekrana_yaz("\n".ptr); dondu 36;
+        }
+        probe_i = probe_i + 1;
+    }
+    i = 0; dongu i < 256 { activation[i] = (i - 128) * 65536; i = i + 1; }
+    eger bitnet_iq2s_paketli_matris_carp(packed, activation,
+        cpu_output, 1, 256, 1) != 1 {
+        ekrana_yaz("CUDA_IQ2S_CPU_REFERENCE_FAIL\n".ptr); dondu 21;
+    }
+
+    eger ykn_cuda_i2s_matvec(packed, activation, gpu_output, 256, 1, 82, 0) != 1 {
+        ekrana_yaz("CUDA_IQ2S_KERNEL_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 22;
+    }
+    eger gpu_output[0] != cpu_output[0] {
+        ekrana_yaz("CUDA_IQ2S_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(cpu_output[0]); ekrana_yaz("/".ptr);
+        sayi_yaz(gpu_output[0]); ekrana_yaz("\n".ptr); dondu 23;
+    }
+    ekrana_yaz("CUDA_IQ2S_PARITY_PASS value=".ptr);
+    sayi_yaz(gpu_output[0]); ekrana_yaz("\n".ptr);
+
+    degisken q1_weights: [18]u8;
+    q1_weights[0] = 0; q1_weights[1] = 60;
+    i = 2; dongu i < 18 { q1_weights[i] = 255; i = i + 1; }
+    degisken q1_cpu: [1]tamsayi;
+    degisken q1_gpu: [1]tamsayi;
+    eger llm_q1_0_matris_carp(q1_weights, activation,
+        q1_cpu, 1, 128, 1) != 1 {
+        ekrana_yaz("CUDA_Q1_CPU_REFERENCE_FAIL\n".ptr); dondu 24;
+    }
+    eger ykn_cuda_q1_matvec(q1_weights, activation, q1_gpu, 128, 1, 18) != 1 {
+        ekrana_yaz("CUDA_Q1_KERNEL_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 25;
+    }
+    eger q1_gpu[0] != q1_cpu[0] {
+        ekrana_yaz("CUDA_Q1_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(q1_cpu[0]); ekrana_yaz("/".ptr);
+        sayi_yaz(q1_gpu[0]); ekrana_yaz("\n".ptr); dondu 26;
+    }
+    ekrana_yaz("CUDA_Q1_PARITY_PASS value=".ptr); sayi_yaz(q1_gpu[0]); ekrana_yaz("\n".ptr);
+
+    degisken q4_weights: [144]u8;
+    i = 0; dongu i < 144 { q4_weights[i] = 0; i = i + 1; }
+    q4_weights[0] = 0; q4_weights[1] = 60;
+    i = 4; dongu i < 8 { q4_weights[i] = 1; i = i + 1; }
+    i = 12; dongu i < 16 { q4_weights[i] = 1; i = i + 1; }
+    i = 16; dongu i < 144 { q4_weights[i] = 33; i = i + 1; }
+    degisken quant_activation: [256]tamsayi;
+    i = 0; dongu i < 256 { quant_activation[i] = 65536; i = i + 1; }
+    degisken q4_cpu: [1]tamsayi;
+    degisken q4_gpu: [1]tamsayi;
+    eger llm_q4_k_matris_carp(q4_weights, quant_activation, q4_cpu,
+        1, 256, 1) != 1 {
+        ekrana_yaz("CUDA_Q4_K_CPU_REFERENCE_FAIL\n".ptr); dondu 27;
+    }
+    eger ykn_cuda_q4_k_matvec(q4_weights, quant_activation, q4_gpu,
+        256, 1, 144) != 1 {
+        ekrana_yaz("CUDA_Q4_K_KERNEL_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 28;
+    }
+    eger q4_gpu[0] != q4_cpu[0] {
+        ekrana_yaz("CUDA_Q4_K_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(q4_cpu[0]); ekrana_yaz("/".ptr);
+        sayi_yaz(q4_gpu[0]); ekrana_yaz("\n".ptr); dondu 29;
+    }
+    ekrana_yaz("CUDA_Q4_K_PARITY_PASS value=".ptr); sayi_yaz(q4_gpu[0]); ekrana_yaz("\n".ptr);
+
+    degisken q6_weights: [210]u8;
+    i = 0; dongu i < 210 { q6_weights[i] = 0; i = i + 1; }
+    i = 0; dongu i < 128 { q6_weights[i] = 17; i = i + 1; }
+    i = 128; dongu i < 192 { q6_weights[i] = 170; i = i + 1; }
+    i = 192; dongu i < 208 { q6_weights[i] = 1; i = i + 1; }
+    q6_weights[208] = 0; q6_weights[209] = 60;
+    degisken q6_cpu: [1]tamsayi;
+    degisken q6_gpu: [1]tamsayi;
+    eger llm_q6_k_matris_carp(q6_weights, quant_activation, q6_cpu,
+        1, 256, 1) != 1 {
+        ekrana_yaz("CUDA_Q6_K_CPU_REFERENCE_FAIL\n".ptr); dondu 30;
+    }
+    eger ykn_cuda_q6_k_matvec(q6_weights, quant_activation, q6_gpu,
+        256, 1, 210) != 1 {
+        ekrana_yaz("CUDA_Q6_K_KERNEL_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 31;
+    }
+    eger q6_gpu[0] != q6_cpu[0] {
+        ekrana_yaz("CUDA_Q6_K_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(q6_cpu[0]); ekrana_yaz("/".ptr);
+        sayi_yaz(q6_gpu[0]); ekrana_yaz("\n".ptr); dondu 32;
+    }
+    ekrana_yaz("CUDA_Q6_K_PARITY_PASS value=".ptr); sayi_yaz(q6_gpu[0]); ekrana_yaz("\n".ptr);
+    eger YKN_CUDA_Q4K_CALLS != 1 or YKN_CUDA_Q6K_CALLS != 1 {
+        ekrana_yaz("CUDA_Q4Q6_COUNTER_FAIL\n".ptr); dondu 33;
+    }
+    ykn_cuda_backend_stop();
+    dondu 0;
+}

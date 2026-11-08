@@ -1,0 +1,124 @@
+ice_aktar "std/ai/micro_llm.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("[TEST FAZ 14] Micro-LLM Sayisal Sabitleme & UTF-8 Tokenizer Baslatiliyor...\n".ptr);
+
+    # ---------------------------------------------------------
+    # TEST 1: Kayipsiz UTF-8 Byte-Level Tokenizer Round-trip
+    # ---------------------------------------------------------
+    ekrana_yaz("1. UTF-8 Byte-Level Tokenizer Testi: ".ptr);
+    degisken b: tamsayi = 0;
+    degisken roundtrip_hatasi: tamsayi = 0;
+    dongu b < 256 {
+        degisken tok: tamsayi = micro_char_to_token(b);
+        degisken geri_b: tamsayi = micro_token_to_char(tok);
+        eger geri_b != b ise {
+            roundtrip_hatasi = roundtrip_hatasi + 1;
+        }
+        b = b + 1;
+    }
+
+    eger roundtrip_hatasi == 0 ise {
+        ekrana_yaz("BASARILI (256/256 Bayt Kayipsiz Round-Trip)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Round-trip hatasi tespit edildi!\n".ptr);
+        ExitProcess(1);
+    }
+
+    # ---------------------------------------------------------
+    # TEST 2: Q16.16 Numerically Stable Softmax Toplami (Sum(P) == 65536)
+    # ---------------------------------------------------------
+    ekrana_yaz("2. Q16.16 Numerically Stable Softmax Testi: ".ptr);
+    degisken test_logits: [8]tamsayi;
+    degisken test_probs: [8]tamsayi;
+    
+    test_logits[0] = 65536;    # 1.0
+    test_logits[1] = 131072;   # 2.0
+    test_logits[2] = 0;        # 0.0
+    test_logits[3] = -65536;   # -1.0
+    test_logits[4] = 196608;   # 3.0
+    test_logits[5] = 32768;    # 0.5
+    test_logits[6] = -131072;  # -2.0
+    test_logits[7] = 65536;    # 1.0
+
+    micro_softmax_q16(test_logits.ptr, 8, test_probs.ptr);
+
+    degisken toplam_prob: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        toplam_prob = toplam_prob + test_probs[i];
+        i = i + 1;
+    }
+
+    # Q16.16'da 1.0 = 65536. Yuvarlama payi +/- 16
+    degisken fark: tamsayi = toplam_prob - 65536;
+    eger fark < 0 ise {
+        fark = 0 - fark;
+    }
+
+    eger fark <= 16 ise {
+        ekrana_yaz("BASARILI (Toplam Prob: ".ptr);
+        sayi_yaz(toplam_prob);
+        ekrana_yaz(" / 65536 [Q16.16])\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Softmax toplami 1.0'a yakin degil! Toplam: ".ptr);
+        sayi_yaz(toplam_prob);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(2);
+    }
+
+    # ---------------------------------------------------------
+    # TEST 3: Scaled Dot-Product Attention ve Cikti Boyutu
+    # ---------------------------------------------------------
+    ekrana_yaz("3. BitNet Transformer Adim & Token Uretim Testi: ".ptr);
+    micro_llm_sifirla();
+    
+    # Bir token ilerlet ('A' = 65)
+    degisken sonraki: tamsayi = micro_transformer_adim(65, 0);
+    eger sonraki >= 0 ve sonraki < MICRO_VOCAB_BOYUTU ise {
+        ekrana_yaz("BASARILI (Uretilen Token Gecerli)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Token aralik disi!\n".ptr);
+        ExitProcess(3);
+    }
+
+    # ---------------------------------------------------------
+    # TEST 4: micro_llm_uret_tampon ile Otokorelasyon Testi
+    # ---------------------------------------------------------
+    ekrana_yaz("4. micro_llm_uret_tampon Tamamlama Testi: ".ptr);
+    degisken prompt: *u8 = "ykn".ptr;
+    degisken cikis: [128]u8;
+    degisken yazilan: tamsayi = micro_llm_uret_tampon(prompt, 10, cikis.ptr, 128);
+
+    eger yazilan > 0 ise {
+        ekrana_yaz("BASARILI (Uretilen cikis tamponda mevcut)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Tampona uretim yapilamadi!\n".ptr);
+        ExitProcess(4);
+    }
+
+    ekrana_yaz("\n>>> [SONUC] FAZ 14 TUM TESTLER BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,44 @@
+# Test Faz 2: Compiler Table Capacity & Aliases
+ice_aktar "std/io.ykn";
+
+isv hesapla_kare(x: tamsayi) -> tamsayi {
+    dondu x * x;
+}
+
+isv hesapla_kup(x: tamsayi) -> tamsayi {
+    dondu x * x * x;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 2 Testi Basliyor...\n".ptr);
+
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 1;
+    dongu i <= 10 {
+        toplam = toplam + hesapla_kare(i);
+        i = i + 1;
+    }
+
+    eger toplam != 385 ise {
+        ekrana_yaz("HATA: Kareler toplami yanlis!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("Kareler toplami DOGRU (385)\n".ptr);
+
+    degisken kup_toplam: tamsayi = 0;
+    i = 1;
+    dongu i <= 5 {
+        kup_toplam = kup_toplam + hesapla_kup(i);
+        i = i + 1;
+    }
+
+    eger kup_toplam != 225 ise {
+        ekrana_yaz("HATA: Kupler toplami yanlis!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("Kupler toplami DOGRU (225)\n".ptr);
+
+    ekrana_yaz("FAZ 2 TABLO VE DERLEYICI KAPASITE TESTI BASARILI!\n".ptr);
+    dondu 0;
+}
+

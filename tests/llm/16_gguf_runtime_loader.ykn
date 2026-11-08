@@ -1,0 +1,18 @@
+# Gerçek GGUF -> LLMModelSpec -> native range loader entegrasyon testi.
+ice_aktar "../../src/llm.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(2048);
+    degisken yol: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    eger llm_gguf_modeli_yukle(yol, durum) != 1 veya
+       g_llm_model_yuklendi != 1 veya
+       g_llm_model_mimarisi != LLM_MIMARI_BITNET veya
+       g_llm_model_backend != LLM_BACKEND_BITNET_NATIVE ise { dondu 1; }
+    degisken pencere: [32]u8;
+    eger llm_model_aralik_oku(&g_llm_model_loader,
+       durum->ilk_veri_offset, pencere, 32) != 32 veya
+       g_llm_model_loader.son_okunan != 32 veya
+       g_llm_model_loader.son_ofset != durum->ilk_veri_offset ise { dondu 2; }
+    ekrana_yaz("LLM-GGUF-RANGE-RUNTIME-PASS\n".ptr);
+    dondu 0;
+}

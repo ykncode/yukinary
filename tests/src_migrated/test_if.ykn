@@ -1,0 +1,7 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x = 0;
+    eger x {
+        dondu 50;
+    }
+    dondu 20;
+}

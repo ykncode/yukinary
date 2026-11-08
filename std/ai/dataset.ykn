@@ -1,0 +1,205 @@
+# ============================================================
+# YKN Saf Binary Dataset (YKDS v1)
+#
+# Urun yolu JSON/JSONL degildir. Writer ve reader tamamen YKN'dir.
+# Header: magic/version/header_size/flags/count/seed/records_offset/
+#         provenance_len + provenance bytes
+# Record: record_len/version/split/type/source_len/target_len/
+#         diagnostic_len/provenance_len/sample_id/sha256_hex + payload
+# ============================================================
+
+ice_aktar "src/fingerprint.ykn";
+
+degisken YKN_DS_MAGIC_0: u8 = 89;
+degisken YKN_DS_MAGIC_1: u8 = 75;
+degisken YKN_DS_MAGIC_2: u8 = 68;
+degisken YKN_DS_MAGIC_3: u8 = 83;
+degisken YKN_DS_VERSION: tamsayi = 1;
+degisken YKN_DS_HEADER_SIZE: tamsayi = 32;
+degisken YKN_DS_RECORD_HEADER_SIZE: tamsayi = 100;
+degisken YKN_DS_MAX_BYTES: tamsayi = 262144;
+degisken YKN_DS_MAX_TEXT: tamsayi = 16384;
+
+yapi YKNDatasetWriter {
+    buffer: *u8;
+    pos: tamsayi;
+    count: tamsayi;
+    seed: tamsayi;
+    provenance: *u8;
+    provenance_len: tamsayi;
+}
+
+isv ykn_ds_u32_yaz(buf: *u8, pos: tamsayi, deger: tamsayi) {
+    buf[pos] = deger & 255;
+    buf[pos + 1] = (deger >> 8) & 255;
+    buf[pos + 2] = (deger >> 16) & 255;
+    buf[pos + 3] = (deger >> 24) & 255;
+}
+
+
+isv ykn_ds_kopyala(buf: *u8, pos: tamsayi, veri: *u8, uzunluk: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        buf[pos + i] = veri[i];
+        i = i + 1;
+    }
+}
+
+
+isv ykn_ds_str_uzunluk(veri: *u8) -> tamsayi {
+    eger veri == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu veri[n] != 0 {
+        n = n + 1;
+        eger n >= YKN_DS_MAX_TEXT ise { dondu 0; }
+    }
+    dondu n;
+}
+
+# Ayni sample id + seed her zaman ayni split'i verir.
+isv ykn_dataset_split(sample_id: tamsayi, seed: tamsayi) -> tamsayi {
+    degisken x: tamsayi = (sample_id * 1103515245 + seed * 12345 + 1013904223) & 0x7fffffff;
+    degisken yuzde: tamsayi = x % 100;
+    eger yuzde < 80 ise { dondu 0; }
+    eger yuzde < 90 ise { dondu 1; }
+    dondu 2;
+}
+
+isv ykn_dataset_writer_olustur(seed: tamsayi) -> *YKNDatasetWriter {
+    degisken w: *YKNDatasetWriter = bellek_tahsis_et(64);
+    eger w == 0 ise { dondu 0; }
+    w.buffer = bellek_tahsis_et(YKN_DS_MAX_BYTES);
+    eger w.buffer == 0 ise { dondu 0; }
+    w.pos = YKN_DS_HEADER_SIZE + 21;
+    w.count = 0;
+    w.seed = seed;
+    w.provenance = "ykn-native-dataset-v1".ptr;
+    w.provenance_len = 21;
+    ykn_ds_u32_yaz(w.buffer, 0, 0x53444b59);
+    ykn_ds_u32_yaz(w.buffer, 4, YKN_DS_VERSION);
+    ykn_ds_u32_yaz(w.buffer, 8, YKN_DS_HEADER_SIZE);
+    ykn_ds_u32_yaz(w.buffer, 12, 1);
+    ykn_ds_u32_yaz(w.buffer, 16, 0);
+    ykn_ds_u32_yaz(w.buffer, 20, seed);
+    ykn_ds_u32_yaz(w.buffer, 24, w.pos);
+    ykn_ds_u32_yaz(w.buffer, 28, w.provenance_len);
+    ykn_ds_kopyala(w.buffer, YKN_DS_HEADER_SIZE, w.provenance, w.provenance_len);
+    dondu w;
+}
+
+isv ykn_dataset_append(
+    w: *YKNDatasetWriter,
+    sample_id: tamsayi,
+    kaynak: *u8,
+    hedef: *u8,
+    tanilar: *u8,
+    kaynak_yolu: *u8
+) -> tamsayi {
+    eger w == 0 veya w.buffer == 0 veya
+       kaynak == 0 veya hedef == 0 veya tanilar == 0 veya kaynak_yolu == 0 ise { dondu 0; }
+    degisken kaynak_len: tamsayi = ykn_ds_str_uzunluk(kaynak);
+    degisken hedef_len: tamsayi = ykn_ds_str_uzunluk(hedef);
+    degisken tani_len: tamsayi = ykn_ds_str_uzunluk(tanilar);
+    degisken yol_len: tamsayi = ykn_ds_str_uzunluk(kaynak_yolu);
+    eger kaynak_len <= 0 veya hedef_len <= 0 veya yol_len <= 0 ise { dondu 0; }
+    degisken payload_len: tamsayi = kaynak_len + hedef_len + tani_len + yol_len;
+    eger payload_len <= 0 veya payload_len > 65536 ise { dondu 0; }
+    degisken record_len: tamsayi = YKN_DS_RECORD_HEADER_SIZE + payload_len;
+    eger record_len > YKN_DS_MAX_BYTES - w.pos ise { dondu 0; }
+
+    degisken rec: tamsayi = w.pos;
+    ykn_ds_u32_yaz(w.buffer, rec, record_len);
+    ykn_ds_u32_yaz(w.buffer, rec + 4, YKN_DS_VERSION);
+    ykn_ds_u32_yaz(w.buffer, rec + 8, ykn_dataset_split(sample_id, w.seed));
+    ykn_ds_u32_yaz(w.buffer, rec + 12, 1);
+    ykn_ds_u32_yaz(w.buffer, rec + 16, kaynak_len);
+    ykn_ds_u32_yaz(w.buffer, rec + 20, hedef_len);
+    ykn_ds_u32_yaz(w.buffer, rec + 24, tani_len);
+    ykn_ds_u32_yaz(w.buffer, rec + 28, yol_len);
+    ykn_ds_u32_yaz(w.buffer, rec + 32, sample_id);
+    degisken pay: tamsayi = rec + YKN_DS_RECORD_HEADER_SIZE;
+    ykn_ds_kopyala(w.buffer, pay, kaynak, kaynak_len);
+    pay = pay + kaynak_len;
+    ykn_ds_kopyala(w.buffer, pay, hedef, hedef_len);
+    pay = pay + hedef_len;
+    ykn_ds_kopyala(w.buffer, pay, tanilar, tani_len);
+    pay = pay + tani_len;
+    ykn_ds_kopyala(w.buffer, pay, kaynak_yolu, yol_len);
+    degisken hash_hex: [65]u8;
+    sha256_hesapla(w.buffer + rec + YKN_DS_RECORD_HEADER_SIZE, payload_len, hash_hex);
+    ykn_ds_kopyala(w.buffer, rec + 36, hash_hex, 64);
+    w.pos = rec + record_len;
+    w.count = w.count + 1;
+    dondu 1;
+}
+
+isv ykn_dataset_writer_bitir(w: *YKNDatasetWriter, yol: *u8) -> tamsayi {
+    eger w == 0 veya w.buffer == 0 veya yol == 0 veya w.count <= 0 ise { dondu 0; }
+    ykn_ds_u32_yaz(w.buffer, 16, w.count);
+    # diske_bas_ve_kapat compiler primitive'i hedefe gore gercek
+    # Win32 CreateFileA/WriteFile/CloseHandle veya POSIX syscall uretir.
+    diske_bas_ve_kapat(yol, w.buffer, w.pos);
+    dondu w.pos;
+}
+
+isv ykn_ds_buf_u32_oku(buf: *u8, pos: tamsayi) -> tamsayi {
+    dondu buf[pos] | (buf[pos + 1] << 8) | (buf[pos + 2] << 16) | (buf[pos + 3] << 24);
+}
+
+isv ykn_ds_ascii_esit(a: *u8, b: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ykn_dataset_validate_buffer(buf: *u8, boyut: tamsayi, out_count: *tamsayi) -> tamsayi {
+    eger out_count != 0 ise { out_count[0] = 0; }
+    eger buf == 0 veya boyut < YKN_DS_HEADER_SIZE ise { dondu 0; }
+    eger buf[0] != 89 ise { dondu 0; }
+    eger buf[1] != 75 ise { dondu 0; }
+    eger buf[2] != 68 ise { dondu 0; }
+    eger buf[3] != 83 ise { dondu 0; }
+    eger ykn_ds_buf_u32_oku(buf, 4) != YKN_DS_VERSION veya
+       ykn_ds_buf_u32_oku(buf, 8) != YKN_DS_HEADER_SIZE ise { dondu 0; }
+    degisken count: tamsayi = ykn_ds_buf_u32_oku(buf, 16);
+    degisken prov_len: tamsayi = ykn_ds_buf_u32_oku(buf, 28);
+    eger prov_len <= 0 veya prov_len > boyut - YKN_DS_HEADER_SIZE ise { dondu 0; }
+    degisken pos: tamsayi = YKN_DS_HEADER_SIZE + prov_len;
+    eger ykn_ds_buf_u32_oku(buf, 24) != pos veya pos > boyut ise { dondu 0; }
+    degisken seen: tamsayi = 0;
+    dongu pos < boyut {
+        eger boyut - pos < YKN_DS_RECORD_HEADER_SIZE ise { dondu 0; }
+        degisken record_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos);
+        eger record_len < YKN_DS_RECORD_HEADER_SIZE veya record_len > boyut - pos ise { dondu 0; }
+        eger ykn_ds_buf_u32_oku(buf, pos + 4) != YKN_DS_VERSION veya
+           ykn_ds_buf_u32_oku(buf, pos + 8) > 2 veya
+           ykn_ds_buf_u32_oku(buf, pos + 12) != 1 ise { dondu 0; }
+        degisken kaynak_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 16);
+        degisken hedef_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 20);
+        degisken tani_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 24);
+        degisken yol_len: tamsayi = ykn_ds_buf_u32_oku(buf, pos + 28);
+        eger kaynak_len <= 0 veya kaynak_len > YKN_DS_MAX_TEXT veya
+           hedef_len <= 0 veya hedef_len > YKN_DS_MAX_TEXT veya
+           tani_len > YKN_DS_MAX_TEXT veya yol_len <= 0 veya yol_len > YKN_DS_MAX_TEXT ise { dondu 0; }
+        degisken payload_len: tamsayi = kaynak_len + hedef_len + tani_len + yol_len;
+        eger record_len != YKN_DS_RECORD_HEADER_SIZE + payload_len ise { dondu 0; }
+        degisken hash_hex: [65]u8;
+        sha256_hesapla(buf + pos + YKN_DS_RECORD_HEADER_SIZE, payload_len, hash_hex);
+        eger ykn_ds_ascii_esit(buf + pos + 36, hash_hex, 64) == 0 ise { dondu 0; }
+        pos = pos + record_len;
+        seen = seen + 1;
+    }
+    eger pos != boyut veya seen != count ise { dondu 0; }
+    eger out_count != 0 ise { out_count[0] = seen; }
+    dondu 1;
+}
+
+isv ykn_dataset_read_file(yol: *u8, buffer: *u8, kapasite: tamsayi, out_count: *tamsayi) -> tamsayi {
+    eger yol == 0 veya buffer == 0 veya kapasite <= 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(yol, buffer, kapasite);
+    eger okunan <= 0 veya okunan > kapasite ise { dondu 0; }
+    dondu ykn_dataset_validate_buffer(buffer, okunan, out_count);
+}

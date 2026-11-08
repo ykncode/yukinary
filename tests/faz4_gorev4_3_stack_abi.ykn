@@ -1,0 +1,87 @@
+# Faz 4 - Görev 4.3 Kapsamlı Doğrulama Testi
+# 1. > 4 KB Yığın Çerçevesi ve Sayfa Sondalama (Page Probing)
+# 2. 20 Parametreli Fonksiyon ve disp32 Parametre Ofseti
+# 3. Callee-Saved Yazmaç Koruma (Tamam, Hata, String Birleştirme)
+
+fn buyuk_yigin_testi() -> tamsayi {
+    degisken dizi: [1000]tamsayi;
+    dizi[0] = 42;
+    dizi[500] = 100;
+    dizi[999] = 200;
+    
+    degisken t: tamsayi = dizi[0] + dizi[500] + dizi[999];
+    dondu t; # 42 + 100 + 200 = 342
+}
+
+fn yirmi_parametre(
+    p1: tamsayi, p2: tamsayi, p3: tamsayi, p4: tamsayi,
+    p5: tamsayi, p6: tamsayi, p7: tamsayi, p8: tamsayi,
+    p9: tamsayi, p10: tamsayi, p11: tamsayi, p12: tamsayi,
+    p13: tamsayi, p14: tamsayi, p15: tamsayi, p16: tamsayi,
+    p17: tamsayi, p18: tamsayi, p19: tamsayi, p20: tamsayi
+) -> tamsayi {
+    degisken toplam: tamsayi = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 +
+                              p11 + p12 + p13 + p14 + p15 + p16 + p17 + p18 + p19 + p20;
+    dondu toplam;
+}
+
+fn callee_saved_koruma_testi() -> tamsayi {
+    degisken a: tamsayi = 11;
+    degisken b: tamsayi = 22;
+    degisken c: tamsayi = 33;
+    degisken d: tamsayi = 44;
+    degisken e: tamsayi = 55;
+
+    # Tamam ve Hata çağrıları
+    degisken t_res: *Sonuc = Tamam(a + b); # 33
+    degisken h_res: *Sonuc = Hata(c + d);  # 77
+
+    # String birleştirme çağrısı
+    degisken s1: metin = "antigravity";
+    degisken s2: metin = "_yukinary";
+    degisken s3: metin = s1 + s2;
+
+    # Değerlerin bozulmadığını kontrol et
+    eger a != 11 ise { dondu 1; }
+    eger b != 22 ise { dondu 2; }
+    eger c != 33 ise { dondu 3; }
+    eger d != 44 ise { dondu 4; }
+    eger e != 55 ise { dondu 5; }
+
+    eger t_res.basarili != 1 ise { dondu 6; }
+    eger t_res.deger != 33 ise { dondu 7; }
+
+    eger h_res.basarili != 0 ise { dondu 8; }
+    eger h_res.hata_kodu != 77 ise { dondu 9; }
+
+    dondu 0;
+}
+
+fn main() -> tamsayi {
+    # 1. Büyük yığın çerçevesi kontrolü (> 8000 byte)
+    degisken r1: tamsayi = buyuk_yigin_testi();
+    eger r1 != 342 ise {
+        ekrana_yaz("HATA: buyuk_yigin_testi basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 2. 20 Parametre kontrolü (1..20 toplamı = 210)
+    degisken r2: tamsayi = yirmi_parametre(
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+    );
+    eger r2 != 210 ise {
+        ekrana_yaz("HATA: yirmi_parametre basarisiz\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Callee-saved koruma kontrolü
+    degisken r3: tamsayi = callee_saved_koruma_testi();
+    eger r3 != 0 ise {
+        ekrana_yaz("HATA: callee_saved_koruma_testi basarisiz\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("BASARILI: Faz 4 Gorev 4.3 dogrulandi!\n".ptr);
+    dondu 0;
+}

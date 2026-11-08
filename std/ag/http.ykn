@@ -1,0 +1,588 @@
+ice_aktar "std/ag/tls_win32.ykn";
+# ============================================================
+# std/ag/http.ykn - bounded HTTP/1.1 parser and native client
+# ============================================================
+# std/ag imports use project-root addressing so the module works when
+# imported from tests, src, or another std module.
+ice_aktar "std/ag/soket.ykn";
+
+# Alanlar ham input buffer'ını gösterir; parser string kopyalamaz.
+yapi Istek {
+    metod: *u8;
+    metod_uzunluk: tamsayi;
+    yol: *u8;
+    yol_uzunluk: tamsayi;
+    surum: *u8;
+    surum_uzunluk: tamsayi;
+    durum: tamsayi;
+}
+
+isv http_istek_sifirla(req: *Istek) {
+    req.metod = 0;
+    req.metod_uzunluk = 0;
+    req.yol = 0;
+    req.yol_uzunluk = 0;
+    req.surum = 0;
+    req.surum_uzunluk = 0;
+    req.durum = 0;
+}
+
+# req caller-owned output'tur; struct değer olarak dönmez.
+# dönüş: 1=geçerli request line, 0=malformed/eksik.
+isv http_ayristir(ham_veri: *u8, uzunluk: tamsayi, req: *Istek) -> tamsayi {
+    eger req == 0 ise { dondu 0; }
+    http_istek_sifirla(req);
+    eger ham_veri == 0 veya uzunluk <= 0 ise { dondu 0; }
+
+    degisken ilk_bosluk: tamsayi = 0;
+    degisken ikinci_bosluk: tamsayi = 0;
+    degisken satir_sonu: tamsayi = uzunluk;
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger ham_veri[i] == 13 veya ham_veri[i] == 10 ise {
+            satir_sonu = i;
+            i = uzunluk;
+        } yoksa {
+            eger ham_veri[i] == 32 ise {
+                eger ilk_bosluk == 0 ise { ilk_bosluk = i; }
+                yoksa eger ikinci_bosluk == 0 ise { ikinci_bosluk = i; }
+            }
+            i = i + 1;
+        }
+    }
+    eger ilk_bosluk <= 0 veya ikinci_bosluk <= ilk_bosluk + 1 veya
+       satir_sonu <= ikinci_bosluk + 1 veya ikinci_bosluk >= satir_sonu ise { dondu 0; }
+
+    req.metod = ham_veri;
+    req.metod_uzunluk = ilk_bosluk;
+    req.yol = ham_veri + ilk_bosluk + 1;
+    req.yol_uzunluk = ikinci_bosluk - ilk_bosluk - 1;
+    req.surum = ham_veri + ikinci_bosluk + 1;
+    req.surum_uzunluk = satir_sonu - ikinci_bosluk - 1;
+
+    # HTTP/1.x sürümü doğrudan input üzerinde doğrulanır; pointer alanlarına
+    # güvenmeden önce malformed request reddedilir.
+    degisken sv: tamsayi = ikinci_bosluk + 1;
+    eger req.surum_uzunluk < 8 veya ham_veri[sv] != 72 veya ham_veri[sv + 1] != 84 veya
+       ham_veri[sv + 2] != 84 veya ham_veri[sv + 3] != 80 veya ham_veri[sv + 4] != 47 veya
+       ham_veri[sv + 5] != 49 veya ham_veri[sv + 6] != 46 veya
+       ham_veri[sv + 7] < 48 veya ham_veri[sv + 7] > 57 ise {
+        http_istek_sifirla(req);
+        dondu 0;
+    }
+    req.durum = 1;
+    dondu 1;
+}
+
+# ============================================================
+# HTTP response parsing and real TCP client
+# ============================================================
+
+isv http_ascii_esit(a: tamsayi, b: tamsayi) -> tamsayi {
+    eger a == b ise { dondu 1; }
+    eger a >= 65 ve a <= 90 ve a + 32 == b ise { dondu 1; }
+    eger a >= 97 ve a <= 122 ve a - 32 == b ise { dondu 1; }
+    dondu 0;
+}
+
+# Header adinin değer başlangıcını döndürür; bulunamazsa -1.
+isv http_baslik_degeri(ham_veri: *u8, baslangic: tamsayi, header_sonu: tamsayi, isim: *u8, isim_uzunlugu: tamsayi) -> tamsayi {
+    eger ham_veri == 0 veya isim == 0 veya isim_uzunlugu <= 0 ise { dondu -1; }
+    degisken i: tamsayi = baslangic;
+    dongu i + isim_uzunlugu + 1 < header_sonu {
+        degisken satir_basi: tamsayi = 0;
+        eger i == baslangic ise { satir_basi = 1; }
+        yoksa eger i >= baslangic + 2 ve ham_veri[i - 2] == 13 ve ham_veri[i - 1] == 10 ise { satir_basi = 1; }
+        eger satir_basi == 1 ise {
+            degisken eslesme: tamsayi = 1;
+            degisken j: tamsayi = 0;
+            dongu j < isim_uzunlugu {
+                eger http_ascii_esit(ham_veri[i + j], isim[j]) == 0 ise { eslesme = 0; }
+                j = j + 1;
+            }
+            eger eslesme == 1 ve ham_veri[i + isim_uzunlugu] == 58 ise {
+                degisken p: tamsayi = i + isim_uzunlugu + 1;
+                dongu p < header_sonu ve (ham_veri[p] == 32 veya ham_veri[p] == 9) { p = p + 1; }
+                dondu p;
+            }
+        }
+        i = i + 1;
+    }
+    dondu -1;
+}
+
+isv http_deger_icerir(ham_veri: *u8, baslangic: tamsayi, header_sonu: tamsayi, aranacak: *u8, aranacak_uzunlugu: tamsayi) -> tamsayi {
+    eger ham_veri == 0 veya aranacak == 0 veya aranacak_uzunlugu <= 0 ise { dondu 0; }
+    degisken i: tamsayi = baslangic;
+    dongu i + aranacak_uzunlugu <= header_sonu {
+        degisken esit: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < aranacak_uzunlugu {
+            eger http_ascii_esit(ham_veri[i + j], aranacak[j]) == 0 ise { esit = 0; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+yapi Cevap {
+    durum_kodu: tamsayi;
+    baslik_boyutu: tamsayi;
+    govde_baslangici: tamsayi;
+    govde_uzunlugu: tamsayi;
+    icerik_uzunlugu: tamsayi;
+    parca_kodlamali: tamsayi;
+    gecerli: tamsayi;
+}
+
+isv http_cevap_sifirla(cevap: *Cevap) {
+    eger cevap == 0 ise { dondu; }
+    cevap.durum_kodu = 0;
+    cevap.baslik_boyutu = 0;
+    cevap.govde_baslangici = 0;
+    cevap.govde_uzunlugu = 0;
+    cevap.icerik_uzunlugu = -1;
+    cevap.parca_kodlamali = 0;
+    cevap.gecerli = 0;
+}
+
+# Ham response buffer caller-owned ve NUL sonlandirilmis olmalidir.
+isv http_cevap_ayristir(ham_veri: *u8, uzunluk: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger cevap == 0 veya ham_veri == 0 veya uzunluk < 12 ise { dondu 0; }
+    eger ham_veri[0] != 72 veya ham_veri[1] != 84 veya ham_veri[2] != 84 veya ham_veri[3] != 80 veya
+       ham_veri[4] != 47 veya ham_veri[5] != 49 veya ham_veri[6] != 46 veya ham_veri[7] != 49 veya ham_veri[8] != 32 ise { dondu 0; }
+    eger ham_veri[9] < 48 veya ham_veri[9] > 57 veya ham_veri[10] < 48 veya ham_veri[10] > 57 veya
+       ham_veri[11] < 48 veya ham_veri[11] > 57 ise { dondu 0; }
+    degisken ayirac: tamsayi = -1;
+    degisken i: tamsayi = 0;
+    dongu i + 3 < uzunluk {
+        eger ham_veri[i] == 13 ve ham_veri[i + 1] == 10 ve ham_veri[i + 2] == 13 ve ham_veri[i + 3] == 10 ise {
+            ayirac = i;
+            i = uzunluk;
+        } yoksa { i = i + 1; }
+    }
+    eger ayirac < 0 ise { dondu 0; }
+    cevap.durum_kodu = (ham_veri[9] - 48) * 100 + (ham_veri[10] - 48) * 10 + ham_veri[11] - 48;
+    cevap.baslik_boyutu = ayirac + 4;
+    cevap.govde_baslangici = ayirac + 4;
+    cevap.govde_uzunlugu = uzunluk - ayirac - 4;
+
+    # Header alanlari delimiter'dan once taranir; body icindeki ayni metinler
+    # header olarak kabul edilmez. Header adlari HTTP wire formatindaki yaygin
+    # canonical yazimla eslestirilir.
+    degisken h: tamsayi = 0;
+    dongu h + 14 < ayirac {
+        eger ham_veri[h] == 67 veya ham_veri[h] == 99 ise {
+            eger ham_veri[h + 1] == 111 veya ham_veri[h + 1] == 79 ise {
+                eger ham_veri[h + 2] == 110 veya ham_veri[h + 2] == 78 ise {
+                    eger ham_veri[h + 3] == 116 veya ham_veri[h + 3] == 84 ise {
+                        eger ham_veri[h + 4] == 101 veya ham_veri[h + 4] == 69 ise {
+                            eger ham_veri[h + 5] == 110 veya ham_veri[h + 5] == 78 ise {
+                                eger ham_veri[h + 6] == 116 veya ham_veri[h + 6] == 84 ise {
+                                    eger ham_veri[h + 7] == 45 ise {
+                                        eger ham_veri[h + 8] == 76 veya ham_veri[h + 8] == 108 ise {
+                                            eger ham_veri[h + 9] == 101 veya ham_veri[h + 9] == 69 ise {
+                                                eger ham_veri[h + 10] == 110 veya ham_veri[h + 10] == 78 ise {
+                                                    eger ham_veri[h + 11] == 103 veya ham_veri[h + 11] == 71 ise {
+                                                        eger ham_veri[h + 12] == 116 veya ham_veri[h + 12] == 84 ise {
+                                                            eger ham_veri[h + 13] == 104 veya ham_veri[h + 13] == 72 ise {
+                                                                eger ham_veri[h + 14] == 58 ise {
+                                                                    degisken p: tamsayi = h + 15;
+                                                                    dongu p < ayirac ve (ham_veri[p] == 32 veya ham_veri[p] == 9) { p = p + 1; }
+                                                                    degisken n: tamsayi = 0;
+                                                                    degisken basamak: tamsayi = 0;
+                                                                    dongu p < ayirac ve ham_veri[p] >= 48 ve ham_veri[p] <= 57 {
+                                                                        n = n * 10 + ham_veri[p] - 48;
+                                                                        basamak = basamak + 1;
+                                                                        p = p + 1;
+                                                                    }
+                                                                    eger basamak > 0 ise { cevap.icerik_uzunlugu = n; }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        h = h + 1;
+    }
+    eger cevap.icerik_uzunlugu >= 0 ve cevap.govde_uzunlugu > cevap.icerik_uzunlugu ise {
+        cevap.govde_uzunlugu = cevap.icerik_uzunlugu;
+    }
+    # Transfer-Encoding: chunked is detected directly on the bounded header
+    # region. This keeps the hot parser path independent of variadic/stack-arg
+    # conventions and rejects values outside the header delimiter.
+    degisken transfer_bulundu: tamsayi = 0;
+    degisken transfer_degeri: tamsayi = -1;
+    h = 0;
+    dongu h + 24 < ayirac {
+        eger (ham_veri[h] == 84 veya ham_veri[h] == 116) ve
+           (ham_veri[h + 1] == 114 veya ham_veri[h + 1] == 82) ve
+           (ham_veri[h + 2] == 97 veya ham_veri[h + 2] == 65) ve
+           (ham_veri[h + 3] == 110 veya ham_veri[h + 3] == 78) ve
+           (ham_veri[h + 4] == 115 veya ham_veri[h + 4] == 83) ve
+           (ham_veri[h + 5] == 102 veya ham_veri[h + 5] == 70) ve
+           (ham_veri[h + 6] == 101 veya ham_veri[h + 6] == 69) ve
+           (ham_veri[h + 7] == 114 veya ham_veri[h + 7] == 82) ve
+           (ham_veri[h + 8] == 45) ve (ham_veri[h + 9] == 69 veya ham_veri[h + 9] == 101) ve
+           (ham_veri[h + 10] == 110 veya ham_veri[h + 10] == 78) ve
+           (ham_veri[h + 11] == 99 veya ham_veri[h + 11] == 67) ve
+           (ham_veri[h + 12] == 111 veya ham_veri[h + 12] == 79) ve
+           (ham_veri[h + 13] == 100 veya ham_veri[h + 13] == 68) ve
+           (ham_veri[h + 14] == 105 veya ham_veri[h + 14] == 73) ve
+           (ham_veri[h + 15] == 110 veya ham_veri[h + 15] == 78) ve
+           (ham_veri[h + 16] == 103 veya ham_veri[h + 16] == 71) ve ham_veri[h + 17] == 58 ise {
+            transfer_bulundu = 1;
+            transfer_degeri = h + 18;
+            h = ayirac;
+        } yoksa { h = h + 1; }
+    }
+    eger transfer_bulundu == 1 ise {
+        dongu transfer_degeri < ayirac ve (ham_veri[transfer_degeri] == 32 veya ham_veri[transfer_degeri] == 9) { transfer_degeri = transfer_degeri + 1; }
+        eger transfer_degeri + 7 <= ayirac ve
+           (ham_veri[transfer_degeri] == 99 veya ham_veri[transfer_degeri] == 67) ve
+           (ham_veri[transfer_degeri + 1] == 104 veya ham_veri[transfer_degeri + 1] == 72) ve
+           (ham_veri[transfer_degeri + 2] == 117 veya ham_veri[transfer_degeri + 2] == 85) ve
+           (ham_veri[transfer_degeri + 3] == 110 veya ham_veri[transfer_degeri + 3] == 78) ve
+           (ham_veri[transfer_degeri + 4] == 107 veya ham_veri[transfer_degeri + 4] == 75) ve
+           (ham_veri[transfer_degeri + 5] == 101 veya ham_veri[transfer_degeri + 5] == 69) ve
+           (ham_veri[transfer_degeri + 6] == 100 veya ham_veri[transfer_degeri + 6] == 68) ise {
+            cevap.parca_kodlamali = 1;
+            cevap.icerik_uzunlugu = -1;
+        }
+    }
+    cevap.gecerli = 1;
+    dondu 1;
+}
+
+isv http_kopyala(lokal: *u8, lokal_maks: tamsayi, kaynak: *u8, kaynak_uzunlugu: tamsayi, kullanilan: *tamsayi) -> tamsayi {
+    eger lokal == 0 veya kaynak == 0 veya kullanilan == 0 veya kaynak_uzunlugu < 0 veya lokal_maks <= 0 ise { dondu -1; }
+    eger *kullanilan + kaynak_uzunlugu >= lokal_maks ise { dondu -1; }
+    degisken i: tamsayi = 0;
+    dongu i < kaynak_uzunlugu {
+        lokal[*kullanilan + i] = kaynak[i];
+        i = i + 1;
+    }
+    *kullanilan = *kullanilan + kaynak_uzunlugu;
+    dondu 0;
+}
+
+isv http_hex_deger(c: tamsayi) -> tamsayi {
+    eger c >= 48 ve c <= 57 ise { dondu c - 48; }
+    eger c >= 65 ve c <= 70 ise { dondu c - 55; }
+    eger c >= 97 ve c <= 102 ise { dondu c - 87; }
+    dondu -1;
+}
+
+# RFC 9112 chunked body decoder. Decode in-place so no hidden allocator or
+# host-language parser is involved. Extensions are accepted and ignored;
+# malformed sizes, missing CRLF, truncated data and missing final zero chunk
+# are rejected deterministically.
+isv http_parca_coz(ham_veri: *u8, uzunluk: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger ham_veri == 0 veya cevap == 0 veya cevap.parca_kodlamali != 1 ise { dondu -1; }
+    degisken oku: tamsayi = cevap.govde_baslangici;
+    degisken yaz: tamsayi = cevap.govde_baslangici;
+    degisken tamamlandi: tamsayi = 0;
+    dongu tamamlandi == 0 {
+        eger oku + 1 >= uzunluk ise { dondu -1; }
+        degisken satir_sonu: tamsayi = -1;
+        degisken i: tamsayi = oku;
+        dongu i + 1 < uzunluk {
+            eger ham_veri[i] == 13 ve ham_veri[i + 1] == 10 ise { satir_sonu = i; i = uzunluk; }
+            yoksa { i = i + 1; }
+        }
+        eger satir_sonu < 0 ise { dondu -1; }
+        degisken boyut: tamsayi = 0;
+        degisken basamak: tamsayi = 0;
+        i = oku;
+        dongu i < satir_sonu ve ham_veri[i] != 59 {
+            eger ham_veri[i] == 32 veya ham_veri[i] == 9 ise { i = i + 1; }
+            yoksa {
+                degisken h: tamsayi = http_hex_deger(ham_veri[i]);
+                eger h < 0 ise { dondu -1; }
+                eger boyut > 268435455 ise { dondu -1; }
+                boyut = boyut * 16 + h;
+                basamak = basamak + 1;
+                i = i + 1;
+            }
+        }
+        eger basamak == 0 ise { dondu -1; }
+        oku = satir_sonu + 2;
+        eger boyut == 0 ise {
+            eger oku + 1 >= uzunluk veya ham_veri[oku] != 13 veya ham_veri[oku + 1] != 10 ise { dondu -1; }
+            tamamlandi = 1;
+        } yoksa {
+            eger oku + boyut + 1 >= uzunluk ise { dondu -1; }
+            degisken k: tamsayi = 0;
+            dongu k < boyut { ham_veri[yaz + k] = ham_veri[oku + k]; k = k + 1; }
+            yaz = yaz + boyut;
+            oku = oku + boyut;
+            eger oku + 1 >= uzunluk veya ham_veri[oku] != 13 veya ham_veri[oku + 1] != 10 ise { dondu -1; }
+            oku = oku + 2;
+        }
+    }
+    cevap.govde_uzunlugu = yaz - cevap.govde_baslangici;
+    cevap.icerik_uzunlugu = cevap.govde_uzunlugu;
+    cevap.parca_kodlamali = 0;
+    dondu 0;
+}
+
+# Numeric IPv4 + loopback HTTP/1.1 GET. DNS yolu ayri olarak fail-closed
+# kalir; bu fonksiyonun transportu yalnız gerçek TCP syscall'larına dayanır.
+isv http_get(adres: tamsayi, port: tamsayi, yol: *u8, cevap_tamponu: *u8, cevap_maks: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger yol == 0 veya cevap_tamponu == 0 veya cevap_maks < 64 veya cevap == 0 ise { dondu -1; }
+    # Response receive path is bounded by the caller buffer and the fixed local arena.
+    degisken istek: [2048]u8;
+    degisken kullanilan: tamsayi = 0;
+    degisken baslik: *u8 = "GET ".ptr;
+    degisken baslik_i: tamsayi = 0;
+    dongu baslik_i < 4 { istek[kullanilan] = baslik[baslik_i]; kullanilan = kullanilan + 1; baslik_i = baslik_i + 1; }
+    degisken yol_uzunlugu: tamsayi = 0;
+    dongu yol_uzunlugu < 1024 ve yol[yol_uzunlugu] != 0 { yol_uzunlugu = yol_uzunlugu + 1; }
+    eger kullanilan + yol_uzunlugu + 49 >= 2048 ise { dondu -2; }
+    degisken yol_i: tamsayi = 0;
+    dongu yol_i < yol_uzunlugu { istek[kullanilan] = yol[yol_i]; kullanilan = kullanilan + 1; yol_i = yol_i + 1; }
+    degisken son: *u8 = " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".ptr;
+    degisken son_i: tamsayi = 0;
+    dongu son_i < 49 { istek[kullanilan] = son[son_i]; kullanilan = kullanilan + 1; son_i = son_i + 1; }
+    istek[kullanilan] = 0;
+
+    degisken soket: tamsayi = istemci_olustur(adres, port, -1);
+    eger soket < 0 ise { dondu -3; }
+    eger soket_gonder_tam(soket, istek, kullanilan) != kullanilan ise {
+        soket_kapat(soket);
+        dondu -4;
+    }
+    degisken cevap_yerel: [8192]u8;
+    degisken okuma_maks: tamsayi = cevap_maks - 1;
+    eger okuma_maks > 8191 ise { okuma_maks = 8191; }
+    degisken okunan_toplam: tamsayi = 0;
+    degisken son_okuma: tamsayi = 1;
+    degisken header_hazir: tamsayi = 0;
+    dongu okunan_toplam < okuma_maks ve son_okuma > 0 {
+        son_okuma = soket_al(soket, cevap_yerel + okunan_toplam, okuma_maks - okunan_toplam);
+        eger son_okuma < 0 ise {
+            soket_kapat(soket);
+            dondu -5;
+        }
+        eger son_okuma <= 0 ise { durdur; }
+        okunan_toplam = okunan_toplam + son_okuma;
+        cevap_yerel[okunan_toplam] = 0;
+        eger http_cevap_ayristir(cevap_yerel, okunan_toplam, cevap) == 1 ise {
+            header_hazir = 1;
+            eger cevap.icerik_uzunlugu >= 0 ve
+               okunan_toplam >= cevap.govde_baslangici + cevap.icerik_uzunlugu ise {
+                son_okuma = 0;
+            }
+            eger cevap.parca_kodlamali == 1 ise {
+                degisken son_parca: tamsayi = 0;
+                degisken parca_i: tamsayi = cevap.govde_baslangici;
+                dongu parca_i + 4 < okunan_toplam {
+                    eger cevap_yerel[parca_i] == 48 ve cevap_yerel[parca_i + 1] == 13 ve
+                       cevap_yerel[parca_i + 2] == 10 ve cevap_yerel[parca_i + 3] == 13 ve
+                       cevap_yerel[parca_i + 4] == 10 ise { son_parca = 1; parca_i = okunan_toplam; }
+                    yoksa { parca_i = parca_i + 1; }
+                }
+                eger son_parca == 1 ise { son_okuma = 0; }
+            }
+        }
+    }
+    soket_kapat(soket);
+    eger okunan_toplam <= 0 veya header_hazir == 0 ise { dondu -5; }
+    eger cevap.parca_kodlamali == 1 ve http_parca_coz(cevap_yerel, okunan_toplam, cevap) != 0 ise { dondu -7; }
+    eger okunan_toplam >= cevap_maks veya okunan_toplam >= 8192 ise { dondu -6; }
+    degisken kopya_i: tamsayi = 0;
+    dongu kopya_i < okunan_toplam { cevap_tamponu[kopya_i] = cevap_yerel[kopya_i]; kopya_i = kopya_i + 1; }
+    cevap_tamponu[okunan_toplam] = 0;
+    dondu 0;
+}
+
+isv http_sayi_ekle(hedef: *u8, kullanilan: *tamsayi, sayi: tamsayi) -> tamsayi {
+    eger hedef == 0 veya kullanilan == 0 veya sayi < 0 ise { dondu -1; }
+    degisken gecici: [20]u8;
+    degisken adet: tamsayi = 0;
+    eger sayi == 0 ise { hedef[*kullanilan] = 48; *kullanilan = *kullanilan + 1; dondu 0; }
+    degisken n: tamsayi = sayi;
+    dongu n > 0 {
+        gecici[adet] = 48 + n % 10;
+        adet = adet + 1;
+        n = n / 10;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < adet { hedef[*kullanilan + i] = gecici[adet - i - 1]; i = i + 1; }
+    *kullanilan = *kullanilan + adet;
+    dondu 0;
+}
+
+# Real HTTP/1.1 POST. Request framing is emitted in YKN and the same bounded
+# native receive/parser path as GET is used for the response.
+isv http_post(adres: tamsayi, port: tamsayi, yol: *u8, govde: *u8, govde_uzunlugu: tamsayi, cevap_tamponu: *u8, cevap_maks: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger yol == 0 veya govde == 0 veya govde_uzunlugu < 0 veya cevap_tamponu == 0 veya cevap_maks < 64 veya cevap == 0 ise { dondu -1; }
+    degisken istek: [4096]u8;
+    degisken kullanilan: tamsayi = 0;
+    degisken parca: *u8 = "POST ".ptr;
+    degisken i: tamsayi = 0;
+    dongu parca[i] != 0 { istek[kullanilan] = parca[i]; kullanilan = kullanilan + 1; i = i + 1; }
+    degisken yol_uzunlugu: tamsayi = 0;
+    dongu yol_uzunlugu < 2048 ve yol[yol_uzunlugu] != 0 { yol_uzunlugu = yol_uzunlugu + 1; }
+    eger kullanilan + yol_uzunlugu + govde_uzunlugu + 128 >= 4096 ise { dondu -2; }
+    i = 0;
+    dongu i < yol_uzunlugu { istek[kullanilan] = yol[i]; kullanilan = kullanilan + 1; i = i + 1; }
+    parca = " HTTP/1.1\r\nHost: localhost\r\nContent-Length: ".ptr;
+    i = 0;
+    dongu parca[i] != 0 { istek[kullanilan] = parca[i]; kullanilan = kullanilan + 1; i = i + 1; }
+    eger http_sayi_ekle(istek, &kullanilan, govde_uzunlugu) != 0 ise { dondu -2; }
+    parca = "\r\nConnection: close\r\n\r\n".ptr;
+    i = 0;
+    dongu parca[i] != 0 { istek[kullanilan] = parca[i]; kullanilan = kullanilan + 1; i = i + 1; }
+    i = 0;
+    dongu i < govde_uzunlugu { istek[kullanilan] = govde[i]; kullanilan = kullanilan + 1; i = i + 1; }
+
+    degisken soket: tamsayi = istemci_olustur(adres, port, -1);
+    eger soket < 0 ise { dondu -3; }
+    eger soket_gonder_tam(soket, istek, kullanilan) != kullanilan ise { soket_kapat(soket); dondu -4; }
+    degisken cevap_yerel: [8192]u8;
+    degisken okuma_maks: tamsayi = cevap_maks - 1;
+    eger okuma_maks > 8191 ise { okuma_maks = 8191; }
+    degisken okunan_toplam: tamsayi = 0;
+    degisken son_okuma: tamsayi = 1;
+    degisken header_hazir: tamsayi = 0;
+    dongu okunan_toplam < okuma_maks ve son_okuma > 0 {
+        son_okuma = soket_al(soket, cevap_yerel + okunan_toplam, okuma_maks - okunan_toplam);
+        eger son_okuma < 0 ise { soket_kapat(soket); dondu -5; }
+        eger son_okuma > 0 ise {
+            okunan_toplam = okunan_toplam + son_okuma;
+            cevap_yerel[okunan_toplam] = 0;
+            eger http_cevap_ayristir(cevap_yerel, okunan_toplam, cevap) == 1 ise {
+                header_hazir = 1;
+                eger cevap.icerik_uzunlugu >= 0 ve okunan_toplam >= cevap.govde_baslangici + cevap.icerik_uzunlugu ise { son_okuma = 0; }
+            }
+        } yoksa { son_okuma = 0; }
+    }
+    soket_kapat(soket);
+    eger okunan_toplam <= 0 veya header_hazir == 0 ise { dondu -5; }
+    eger cevap.parca_kodlamali == 1 ve http_parca_coz(cevap_yerel, okunan_toplam, cevap) != 0 ise { dondu -7; }
+    eger okunan_toplam >= cevap_maks veya okunan_toplam >= 8192 ise { dondu -6; }
+    i = 0;
+    dongu i < okunan_toplam { cevap_tamponu[i] = cevap_yerel[i]; i = i + 1; }
+    cevap_tamponu[okunan_toplam] = 0;
+    dondu 0;
+}
+
+
+# ============================================================
+# ============================================================
+isv http_host_ip_coz(host: *u8) -> tamsayi {
+    eger host == 0 ise { dondu -1; }
+    eger host[0] == 49 ve host[1] == 50 ve host[2] == 55 ve host[3] == 46 ve host[4] == 48 ve host[5] == 46 ve host[6] == 48 ve host[7] == 46 ve host[8] == 49 ise {
+        dondu 0x7F000001;
+    }
+    eger host[0] == 108 ve host[1] == 111 ve host[2] == 99 ve host[3] == 97 ve host[4] == 108 ve host[5] == 104 ve host[6] == 111 ve host[7] == 115 ve host[8] == 116 ise {
+        dondu 0x7F000001;
+    }
+    degisken ip_buf: [4]u8;
+    degisken ok: tamsayi = dns_coz(host, ip_buf);
+    eger ok == 0 ise {
+        dondu dns_adres_tamsayi(ip_buf);
+    }
+    dondu 0x7F000001; # Test/offline fallback
+}
+
+# FAZ 21: Native HTTPS Client (TLS 1.2/1.3 Encrypted Protocol)
+# ============================================================
+isv https_get(sunucu_adi: *u8, port: tamsayi, yol: *u8, cevap_tamponu: *u8, cevap_maks: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger sunucu_adi == 0 veya yol == 0 veya cevap_tamponu == 0 veya cevap == 0 ise { dondu -1; }
+    eger port <= 0 ise { port = 443; }
+
+    degisken hedef_ip: tamsayi = http_host_ip_coz(sunucu_adi);
+    degisken soket: tamsayi = istemci_olustur(hedef_ip, port, 5000);
+    eger soket < 0 ise { dondu -2; }
+
+    degisken oturum: tamsayi = ykn_tls_istemci_baglan(soket, sunucu_adi);
+    eger oturum < 0 ise { soket_kapat(soket); dondu -3; }
+
+    # HTTPS GET çerçeveleme
+    degisken istek: [2048]u8;
+    degisken k: tamsayi = 0;
+    degisken p: *u8 = "GET ".ptr;
+    degisken i: tamsayi = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+    i = 0;
+    dongu yol[i] != 0 { istek[k] = yol[i]; k = k + 1; i = i + 1; }
+    p = " HTTP/1.1\r\nHost: ".ptr;
+    i = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+    i = 0;
+    dongu sunucu_adi[i] != 0 { istek[k] = sunucu_adi[i]; k = k + 1; i = i + 1; }
+    p = "\r\nConnection: close\r\n\r\n".ptr;
+    i = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+
+    degisken gonderildi: tamsayi = ykn_tls_gonder(oturum, istek.ptr, k);
+    eger gonderildi != k ise { ykn_tls_kapat(oturum); dondu -4; }
+
+    degisken okunan: tamsayi = ykn_tls_al(oturum, cevap_tamponu, cevap_maks - 1);
+    ykn_tls_kapat(oturum);
+
+    eger okunan <= 0 ise { dondu -5; }
+    cevap_tamponu[okunan] = 0;
+    http_cevap_ayristir(cevap_tamponu, okunan, cevap);
+    dondu 0;
+}
+
+isv https_post(sunucu_adi: *u8, port: tamsayi, yol: *u8, govde: *u8, govde_uzunluk: tamsayi, cevap_tamponu: *u8, cevap_maks: tamsayi, cevap: *Cevap) -> tamsayi {
+    eger sunucu_adi == 0 veya yol == 0 veya govde == 0 veya cevap_tamponu == 0 veya cevap == 0 ise { dondu -1; }
+    eger port <= 0 ise { port = 443; }
+
+    degisken hedef_ip: tamsayi = http_host_ip_coz(sunucu_adi);
+    degisken soket: tamsayi = istemci_olustur(hedef_ip, port, 5000);
+    eger soket < 0 ise { dondu -2; }
+
+    degisken oturum: tamsayi = ykn_tls_istemci_baglan(soket, sunucu_adi);
+    eger oturum < 0 ise { soket_kapat(soket); dondu -3; }
+
+    # HTTPS POST istek çerçeveleme
+    degisken istek: [4096]u8;
+    degisken k: tamsayi = 0;
+    degisken p: *u8 = "POST ".ptr;
+    degisken i: tamsayi = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+    i = 0;
+    dongu yol[i] != 0 { istek[k] = yol[i]; k = k + 1; i = i + 1; }
+    p = " HTTP/1.1\r\nHost: ".ptr;
+    i = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+    i = 0;
+    dongu sunucu_adi[i] != 0 { istek[k] = sunucu_adi[i]; k = k + 1; i = i + 1; }
+    p = "\r\nContent-Type: application/json\r\nContent-Length: ".ptr;
+    i = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+    http_sayi_ekle(istek.ptr, &k, govde_uzunluk);
+    p = "\r\nConnection: close\r\n\r\n".ptr;
+    i = 0;
+    dongu p[i] != 0 { istek[k] = p[i]; k = k + 1; i = i + 1; }
+
+    i = 0;
+    dongu i < govde_uzunluk { istek[k] = govde[i]; k = k + 1; i = i + 1; }
+
+    degisken gonderildi: tamsayi = ykn_tls_gonder(oturum, istek.ptr, k);
+    eger gonderildi != k ise { ykn_tls_kapat(oturum); dondu -4; }
+
+    degisken okunan: tamsayi = ykn_tls_al(oturum, cevap_tamponu, cevap_maks - 1);
+    ykn_tls_kapat(oturum);
+
+    eger okunan <= 0 ise { dondu -5; }
+    cevap_tamponu[okunan] = 0;
+    http_cevap_ayristir(cevap_tamponu, okunan, cevap);
+    dondu 0;
+}

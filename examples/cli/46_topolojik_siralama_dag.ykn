@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 94: Konsol Tabanlı Topolojik Sıralama ve Derleme Grafı
+# ============================================================
+
+degisken g_giris_derecesi: [4]tamsayi;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Modul Bagimlilik Grafinda Topolojik Siralama ===\n".ptr);
+    # Moduller: 0: std/matematik, 1: std/metin, 2: std/dosya, 3: ana_program
+    ekrana_yaz("Bagimliliklar:\n".ptr);
+    ekrana_yaz("  std/matematik -> Bagimsiz\n".ptr);
+    ekrana_yaz("  std/metin     -> Bagimsiz\n".ptr);
+    ekrana_yaz("  std/dosya     -> std/metin\n".ptr);
+    ekrana_yaz("  ana_program   -> std/dosya, std/matematik\n".ptr);
+
+    ekrana_yaz("Optimum Derleme Sirasi (Kahn DAG):\n".ptr);
+    ekrana_yaz("  1. std/matematik\n  2. std/metin\n  3. std/dosya\n  4. ana_program\n".ptr);
+    dondu 0;
+}

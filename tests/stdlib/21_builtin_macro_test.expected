@@ -1,0 +1,6 @@
+42
+TEST BUILTIN: ayikla OK
+TEST BUILTIN: boyut(tamsayi)=8 OK
+TEST BUILTIN: boyut(u8)=1 OK
+TEST BUILTIN: dogrula OK (devam etti)
+BUILTIN-MACRO-PASS

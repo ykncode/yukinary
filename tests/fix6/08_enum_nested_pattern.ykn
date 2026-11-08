@@ -1,0 +1,21 @@
+enum Ic {
+    Deger(tamsayi),
+    Bos
+}
+
+enum Dis {
+    IcDeger(Ic),
+    Bos
+}
+
+isv ana() -> tamsayi {
+    degisken d: Dis = Dis.IcDeger(Ic.Deger(42));
+    esles d {
+        Dis.IcDeger(Ic.Deger(x)) ise {
+            dondu x;
+        }
+        varsayilan ise {
+            dondu -1;
+        }
+    }
+}

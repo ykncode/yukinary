@@ -1,0 +1,33 @@
+# ============================================================
+# Örnek 47: Win32 Arayüzlü REST API İstemcisi (Postman Benzeri)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_http_metot: tamsayi = 1; # 1: GET, 2: POST, 3: PUT, 4: DELETE
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN API Client".ptr, 720, 520);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Metot Secim Butonlari
+    buton_olustur(p_h, "GET".ptr, 201, 20, 20, 80, 35);
+    buton_olustur(p_h, "POST".ptr, 202, 110, 20, 80, 35);
+
+    # URL Adres Cubugu
+    metin_kutusu_olustur(p_h, 101, 200, 20, 380, 35);
+    buton_olustur(p_h, "Gonder (Send)".ptr, 203, 590, 20, 100, 35);
+
+    # Istek Govdesi (Request Body)
+    metin_kutusu_olustur(p_h, 102, 20, 70, 670, 130);
+
+    # Yanit Kutusu (Response Payload)
+    metin_kutusu_olustur(p_h, 103, 20, 220, 670, 230);
+
+    ekrana_yaz("REST API Test Araci aktif. JSON/HTTP 1.1 destege hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

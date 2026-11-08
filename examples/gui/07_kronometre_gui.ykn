@@ -1,0 +1,43 @@
+# ============================================================
+# Örnek 57: Win32 Kronometre Uygulaması (Stopwatch GUI)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_calisiyor: tamsayi = 0;
+degisken g_gecen_saniye: tamsayi = 0;
+
+isv kronometre_baslat() {
+    g_calisiyor = 1;
+    ekrana_yaz("Kronometre Baslatildi.\n".ptr);
+}
+
+isv kronometre_durdur() {
+    g_calisiyor = 0;
+    ekrana_yaz("Kronometre Durduruldu. Toplam Saniye: ".ptr);
+    sayiyi_ekrana_yaz(g_gecen_saniye);
+    ekrana_yaz("\n".ptr);
+}
+
+isv kronometre_sifirla() {
+    g_calisiyor = 0;
+    g_gecen_saniye = 0;
+    ekrana_yaz("Kronometre Sifirlandi.\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Kronometre".ptr, 360, 220);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Sure Gosterge Kutusu
+    metin_kutusu_olustur(p_h, 5001, 30, 30, 280, 40);
+
+    # Kontrol Butonlari
+    buton_olustur(p_h, "Baslat".ptr, 5010, 30, 100, 85, 45);
+    buton_olustur(p_h, "Durdur".ptr, 5011, 130, 100, 85, 45);
+    buton_olustur(p_h, "Sifirla".ptr, 5012, 230, 100, 85, 45);
+
+    ekrana_yaz("Kronometre GUI hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

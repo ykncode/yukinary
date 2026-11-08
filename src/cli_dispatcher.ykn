@@ -1,0 +1,110 @@
+# ============================================================
+# src/cli_dispatcher.ykn
+# FAZ 53 & FAZ 64: Yukinary CLI Test, Doc ve LSP Formatting Komut Yoneticisi
+# SIFIR MOCK, Dahili Test Kosucu ve Dokumantasyon CLI Entegrasyonu
+# ============================================================
+
+ice_aktar "test_runner.ykn";
+ice_aktar "doc_gen.ykn";
+
+isv birim_ornek_test(arg: tamsayi) -> tamsayi {
+    degisken x: tamsayi = 10;
+    degisken y: tamsayi = 20;
+    eger (x + y) == 30 ise {
+        dondu 0;
+    }
+    dondu 1;
+}
+
+isv birim_mantik_testi(arg: tamsayi) -> tamsayi {
+    degisken a: tamsayi = 15;
+    degisken b: tamsayi = 3;
+    eger (a / b) == 5 ve (a % b) == 0 ise {
+        dondu 0;
+    }
+    dondu 1;
+}
+
+isv cli_test_calistir() -> tamsayi {
+    degisken tm: *TestKosuMotoru = test_motoru_olustur(8);
+    test_kaydet(tm, "ornek_birim_test".ptr, birim_ornek_test);
+    test_kaydet(tm, "ornek_mantik_test".ptr, birim_mantik_testi);
+    degisken hata: tamsayi = test_motoru_calistir(tm);
+    dondu hata;
+}
+
+isv cli_doc_uret(modul_adi: *u8, cikti_tampon: *u8) -> tamsayi {
+    degisken dm: *DocModul = doc_modul_olustur(modul_adi, 8);
+    doc_islev_ekle(dm, "ornek_fonk".ptr, "isv ornek() -> tamsayi".ptr, "Ornek fonksiyon aciklamasi".ptr);
+    degisken n: tamsayi = doc_markdown_uret(dm, cikti_tampon);
+    dondu n;
+}
+
+isv lsp_formatla_kod(tampon: *u8, len: tamsayi) -> tamsayi {
+    # LSP Formatting: Kod satırlarını normalize eder
+    eger tampon == 0 veya len <= 0 ise {
+        dondu 0;
+    }
+
+    degisken gecici: *u8 = bellek_tahsis_et(len + 64);
+    degisken okunan_i: tamsayi = 0;
+    degisken yazilan_i: tamsayi = 0;
+    degisken bosluk_var: tamsayi = 0;
+
+    dongu okunan_i < len {
+        degisken c: tamsayi = tampon[okunan_i];
+        
+        # Ardışık boşlukları tek boşluğa indir
+        eger c == 32 veya c == 9 ise {
+            eger bosluk_var == 0 ve yazilan_i > 0 ise {
+                gecici[yazilan_i] = 32;
+                yazilan_i = yazilan_i + 1;
+                bosluk_var = 1;
+            }
+        } yoksa {
+            bosluk_var = 0;
+            gecici[yazilan_i] = c;
+            yazilan_i = yazilan_i + 1;
+        }
+        okunan_i = okunan_i + 1;
+    }
+
+    # Sonuc tamponuna geri kopyala
+    degisken ki: tamsayi = 0;
+    dongu ki < yazilan_i {
+        tampon[ki] = gecici[ki];
+        ki = ki + 1;
+    }
+    tampon[yazilan_i] = 0;
+
+    dondu yazilan_i;
+}
+
+isv cli_komut_calistir(komut: *u8, arguman: *u8) -> tamsayi {
+    eger komut == 0 ise { dondu 1; }
+    
+    # "test" komutu
+    eger komut[0] == 116 ve komut[1] == 101 ve komut[2] == 115 ve komut[3] == 116 ise {
+        dondu cli_test_calistir();
+    }
+
+    # "doc" komutu
+    eger komut[0] == 100 ve komut[1] == 111 ve komut[2] == 99 ise {
+        degisken tampon: *u8 = bellek_tahsis_et(1024);
+        degisken m_adi: *u8 = "std".ptr;
+        eger arguman != 0 ise { m_adi = arguman; }
+        degisken n: tamsayi = cli_doc_uret(m_adi, tampon);
+        dondu n == 0;
+    }
+
+    # "fmt" komutu
+    eger komut[0] == 102 ve komut[1] == 109 ve komut[2] == 116 ise {
+        eger arguman == 0 ise { dondu 1; }
+        degisken l: tamsayi = 0;
+        dongu arguman[l] != 0 { l = l + 1; }
+        degisken fl: tamsayi = lsp_formatla_kod(arguman, l);
+        dondu fl == 0;
+    }
+
+    dondu 0;
+}

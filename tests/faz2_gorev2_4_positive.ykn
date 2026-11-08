@@ -1,0 +1,30 @@
+# FAZ 2.4 POZITIF TEST
+# Trait Imza Dogrulamasi ve Comptime Katlama
+
+ozellik Toplanabilir {
+    isv topla(self: Self, diger: tamsayi) -> tamsayi;
+}
+
+yapi Sayac {
+    deger: tamsayi;
+}
+
+uygula Toplanabilir Sayac {
+    isv topla(self: Sayac, diger: tamsayi) -> tamsayi {
+        dondu self.deger + diger;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken s: Sayac;
+    s.deger = 100;
+
+    degisken sabit_ek: tamsayi = comptime (10 + 20 * 2);
+    degisken sonuc: tamsayi = Sayac__topla(s, sabit_ek);
+
+    eger sonuc == 150 ise {
+        ekrana_yaz("FAZ 2.4 GOREV DOGRULANDI: Basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

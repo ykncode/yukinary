@@ -1,0 +1,14 @@
+# Guvenlik Testi: Ayni fonksiyona ayni degiskenin iki kez mutable referans verilmesi (Aliasing / Data Race)
+# E041 (BORROW_CONFLICT) beklenir.
+isv iki_referans(a: *tamsayi, b: *tamsayi) {
+    a[0] = 10;
+    b[0] = 20;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 5;
+    # Ayni degiskenden iki ayri mutable borrow olusturulamaz!
+    iki_referans(&x, &x);
+    dondu x;
+}
+

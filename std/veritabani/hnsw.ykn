@@ -1,0 +1,299 @@
+# ============================================================
+# std/veritabani/hnsw.ykn
+# FAZ 57: Saf Yukinary HNSW Vektor Indeksi ve k-NN Graf Arama Motoru
+# Hiyerarsik Cok Katmanli Graf (Layered Navigable Small World), Greedy Layer Skip ve k-NN
+# ============================================================
+
+degisken HNSW_M          = 8;  # Katman basina azami komsu sayisi
+degisken HNSW_M0         = 16; # 0. katmanda (taban) azami komsu sayisi
+degisken HNSW_MAKS_LEVEL = 4;  # Azami katman derinligi (L0 .. L3)
+degisken HNSW_EF_SEARCH  = 16; # Arama genisligi
+
+# 1. Vektor Mesafe Metrikleri
+isv vektor_l2_kare(v1: *tamsayi, v2: *tamsayi, dim: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < dim {
+        degisken fark: tamsayi = v1[i] - v2[i];
+        toplam = toplam + (fark * fark);
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+isv vektor_ic_carpim(v1: *tamsayi, v2: *tamsayi, dim: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < dim {
+        toplam = toplam + (v1[i] * v2[i]);
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+# 2. HNSW Graf Veri Yapilari
+yapi HnswDugum {
+    id:             tamsayi;
+    vektor:         *tamsayi;
+    katman:         tamsayi;      # Dugumun olusturuldugu en tepe katman (0..HNSW_MAKS_LEVEL-1)
+    komsular:       **HnswDugum;  # [HNSW_MAKS_LEVEL * HNSW_M0] komsu isaretcileri
+    komsu_sayisi:   *tamsayi;     # [HNSW_MAKS_LEVEL] her katmandaki guncel komsu adedi
+}
+
+yapi HnswGraf {
+    boyut:          tamsayi;      # Vektor boyutu (dim)
+    dugum_sayisi:   tamsayi;
+    kapasite:       tamsayi;
+    dugumler:       **HnswDugum;  # Dugum isaretci dizisi
+    giris_noktasi:  *HnswDugum;   # En ust katmandaki arama giris noktasi (Entry Point)
+    maks_katman:    tamsayi;      # Grafin guncel en tepe katmani
+    rastgele_tohum: tamsayi;      # Katman atama sozde-rastgele uretici
+}
+
+isv hnsw_dugum_olustur(id: tamsayi, v: *tamsayi, katman: tamsayi) -> *HnswDugum {
+    degisken d: *HnswDugum = bellek_tahsis_et(40);
+    d.id = id;
+    d.vektor = v;
+    d.katman = katman;
+
+    degisken toplam_komsu_kapasite: tamsayi = HNSW_MAKS_LEVEL * HNSW_M0;
+    d.komsular = bellek_tahsis_et(toplam_komsu_kapasite * 8);
+    d.komsu_sayisi = bellek_tahsis_et(HNSW_MAKS_LEVEL * 8);
+
+    degisken i: tamsayi = 0;
+    dongu i < HNSW_MAKS_LEVEL {
+        d.komsu_sayisi[i] = 0;
+        i = i + 1;
+    }
+
+    degisken j: tamsayi = 0;
+    dongu j < toplam_komsu_kapasite {
+        d.komsular[j] = 0;
+        j = j + 1;
+    }
+
+    dondu d;
+}
+
+isv hnsw_olustur(vektor_boyutu: tamsayi) -> *HnswGraf {
+    degisken g: *HnswGraf = bellek_tahsis_et(48);
+    g.boyut = vektor_boyutu;
+    g.dugum_sayisi = 0;
+    g.kapasite = 512;
+    g.dugumler = bellek_tahsis_et(512 * 8);
+    g.giris_noktasi = 0;
+    g.maks_katman = 0;
+    g.rastgele_tohum = 123456789;
+    dondu g;
+}
+
+# Sozde-rastgele katman secici (Exponential Decay simülasyonu)
+isv hnsw_rastgele_katman_sec(g: *HnswGraf) -> tamsayi {
+    g.rastgele_tohum = (g.rastgele_tohum * 1103515245 + 12345) & 2147483647;
+    degisken r: tamsayi = g.rastgele_tohum % 100;
+    # %50 L0, %30 L1, %15 L2, %5 L3
+    eger r < 50 ise { dondu 0; }
+    eger r < 80 ise { dondu 1; }
+    eger r < 95 ise { dondu 2; }
+    dondu 3;
+}
+
+# Komsu dugum ekleme (Iki dugum arasinda yonlu/yonsuz kenar kurar)
+isv hnsw_kenar_ekle(kaynak: *HnswDugum, hedef: *HnswDugum, katman: tamsayi) {
+    eger katman >= HNSW_MAKS_LEVEL veya kaynak == hedef ise { dondu; }
+
+    degisken mevcut: tamsayi = kaynak.komsu_sayisi[katman];
+    degisken maks_k: tamsayi = HNSW_M;
+    eger katman == 0 ise { maks_k = HNSW_M0; }
+
+    # Zaten bagli mi kontrol et
+    degisken base_ofs: tamsayi = katman * HNSW_M0;
+    degisken i: tamsayi = 0;
+    dongu i < mevcut {
+        degisken k_ptr: *HnswDugum = kaynak.komsular[base_ofs + i];
+        eger k_ptr == hedef ise { dondu; } # Zaten var
+        i = i + 1;
+    }
+
+    eger mevcut < maks_k ise {
+        kaynak.komsular[base_ofs + mevcut] = hedef;
+        kaynak.komsu_sayisi[katman] = mevcut + 1;
+    }
+}
+
+# 3. Katmanda Greedy (Acgozlu) En Yakin Komsu Arama
+isv hnsw_katmanda_acgozlu_ara(guncel_ep: *HnswDugum, sorgu: *tamsayi, katman: tamsayi, dim: tamsayi) -> *HnswDugum {
+    degisken en_iyi: *HnswDugum = guncel_ep;
+    degisken min_d: tamsayi = vektor_l2_kare(sorgu, en_iyi.vektor, dim);
+    degisken ilerleme: tamsayi = 1;
+
+    dongu ilerleme == 1 {
+        ilerleme = 0;
+        degisken base_ofs: tamsayi = katman * HNSW_M0;
+        degisken komsu_say: tamsayi = en_iyi.komsu_sayisi[katman];
+        degisken i: tamsayi = 0;
+
+        dongu i < komsu_say {
+            degisken komsu: *HnswDugum = en_iyi.komsular[base_ofs + i];
+            eger komsu != 0 ise {
+                degisken d: tamsayi = vektor_l2_kare(sorgu, komsu.vektor, dim);
+                eger d < min_d ise {
+                    min_d = d;
+                    en_iyi = komsu;
+                    ilerleme = 1; # Daha yakin komsu bulundu, aramayi surdur
+                }
+            }
+            i = i + 1;
+        }
+    }
+    dondu en_iyi;
+}
+
+# 4. HNSW Dugum Ekleme (Insertion)
+isv hnsw_ekle(g: *HnswGraf, dugum_id: tamsayi, v: *tamsayi) {
+    degisken hedef_katman: tamsayi = hnsw_rastgele_katman_sec(g);
+    degisken yeni_dugum: *HnswDugum = hnsw_dugum_olustur(dugum_id, v, hedef_katman);
+
+    # Grafa kaydet
+    eger g.dugum_sayisi < g.kapasite ise {
+        g.dugumler[g.dugum_sayisi] = yeni_dugum;
+        g.dugum_sayisi = g.dugum_sayisi + 1;
+    }
+
+    # Ilk dugum ise giris noktasi yap
+    eger g.giris_noktasi == 0 ise {
+        g.giris_noktasi = yeni_dugum;
+        g.maks_katman = hedef_katman;
+        dondu;
+    }
+
+    degisken ep: *HnswDugum = g.giris_noktasi;
+    degisken l: tamsayi = g.maks_katman;
+
+    # 1. Aşama: En tepe katmandan hedef_katman + 1'e kadar greedy atlama (Layer Skip)
+    dongu l > hedef_katman {
+        ep = hnsw_katmanda_acgozlu_ara(ep, v, l, g.boyut);
+        l = l - 1;
+    }
+
+    # 2. Aşama: Hedef katmandan tabana (L0) kadar komsulari bagla
+    degisken seviye: tamsayi = hedef_katman;
+    dongu seviye >= 0 {
+        ep = hnsw_katmanda_acgozlu_ara(ep, v, seviye, g.boyut);
+
+        # Cift yonlu kenar kur
+        hnsw_kenar_ekle(yeni_dugum, ep, seviye);
+        hnsw_kenar_ekle(ep, yeni_dugum, seviye);
+
+        # Graf uzerindeki diger yakin dugumlerle de kenar kur
+        degisken ofs: tamsayi = seviye * HNSW_M0;
+        degisken komsu_adet: tamsayi = ep.komsu_sayisi[seviye];
+        degisken j: tamsayi = 0;
+        dongu j < komsu_adet {
+            degisken k_dugum: *HnswDugum = ep.komsular[ofs + j];
+            eger k_dugum != 0 ve k_dugum != yeni_dugum ise {
+                hnsw_kenar_ekle(yeni_dugum, k_dugum, seviye);
+                hnsw_kenar_ekle(k_dugum, yeni_dugum, seviye);
+            }
+            j = j + 1;
+        }
+
+        seviye = seviye - 1;
+    }
+
+    # Yeni dugumun katmani tepe katmandan yuksekse giris noktasini guncelle
+    eger hedef_katman > g.maks_katman ise {
+        g.maks_katman = hedef_katman;
+        g.giris_noktasi = yeni_dugum;
+    }
+}
+
+# 5. HNSW Hiyerarsik k-NN Arama Motoru
+isv hnsw_en_yakin_bul(g: *HnswGraf, sorgu: *tamsayi) -> tamsayi {
+    eger g.dugum_sayisi == 0 veya g.giris_noktasi == 0 ise {
+        dondu 0 - 1;
+    }
+
+    degisken ep: *HnswDugum = g.giris_noktasi;
+    degisken l: tamsayi = g.maks_katman;
+
+    # Tepe katmanlardan 1. katmana kadar greedy atlama
+    dongu l > 0 {
+        ep = hnsw_katmanda_acgozlu_ara(ep, sorgu, l, g.boyut);
+        l = l - 1;
+    }
+
+    # 0. Katmanda taban aramasi
+    ep = hnsw_katmanda_acgozlu_ara(ep, sorgu, 0, g.boyut);
+
+    dondu ep.id;
+}
+
+# k-NN Coklu Komsu Arama (K adet en yakin dugumu L0 katmaninda oncelikli taramayla dondurur)
+isv hnsw_k_ara(g: *HnswGraf, sorgu: *tamsayi, k: tamsayi, cikti_idleri: *tamsayi) -> tamsayi {
+    eger g == 0 veya sorgu == 0 veya cikti_idleri == 0 veya k <= 0 ise { dondu 0; }
+    eger g.dugum_sayisi == 0 veya g.giris_noktasi == 0 ise { dondu 0; }
+
+    degisken ep: *HnswDugum = g.giris_noktasi;
+    degisken l: tamsayi = g.maks_katman;
+
+    # Tepe katmanlardan 1. katmana kadar greedy atlama
+    dongu l > 0 {
+        ep = hnsw_katmanda_acgozlu_ara(ep, sorgu, l, g.boyut);
+        l = l - 1;
+    }
+
+    # 0. Katmanda coklu aday havuzu (efSearch / K eleman)
+    degisken maks_aday: tamsayi = 64;
+    degisken aday_dugumler: [64]*HnswDugum;
+    degisken aday_mesafeler: [64]tamsayi;
+    degisken aday_sayisi: tamsayi = 0;
+
+    # Ilk adayi ekle (ep)
+    aday_dugumler[0] = ep;
+    aday_mesafeler[0] = vektor_l2_kare(sorgu, ep.vektor, g.boyut);
+    aday_sayisi = 1;
+
+    # Ziyaret edilen dugumleri genisleterek en yakin k komsuyu topla
+    degisken z: tamsayi = 0;
+    dongu z < aday_sayisi ve z < maks_aday {
+        degisken cur_d: *HnswDugum = aday_dugumler[z];
+        degisken komsu_say: tamsayi = cur_d.komsu_sayisi[0];
+        degisken j: tamsayi = 0;
+        dongu j < komsu_say {
+            degisken k_dugum: *HnswDugum = cur_d.komsular[j];
+            eger k_dugum != 0 {
+                degisken var_mi: tamsayi = 0;
+                degisken c: tamsayi = 0;
+                dongu c < aday_sayisi ve var_mi == 0 {
+                    eger aday_dugumler[c] == k_dugum ise { var_mi = 1; }
+                    c = c + 1;
+                }
+                eger var_mi == 0 ve aday_sayisi < maks_aday ise {
+                    degisken dist: tamsayi = vektor_l2_kare(sorgu, k_dugum.vektor, g.boyut);
+                    degisken pos: tamsayi = aday_sayisi;
+                    dongu pos > 0 ve aday_mesafeler[pos - 1] > dist {
+                        aday_dugumler[pos] = aday_dugumler[pos - 1];
+                        aday_mesafeler[pos] = aday_mesafeler[pos - 1];
+                        pos = pos - 1;
+                    }
+                    aday_dugumler[pos] = k_dugum;
+                    aday_mesafeler[pos] = dist;
+                    aday_sayisi = aday_sayisi + 1;
+                }
+            }
+            j = j + 1;
+        }
+        z = z + 1;
+    }
+
+    degisken sonuc_adet: tamsayi = k;
+    eger sonuc_adet > aday_sayisi ise { sonuc_adet = aday_sayisi; }
+    degisken out_i: tamsayi = 0;
+    dongu out_i < sonuc_adet {
+        degisken d_res: *HnswDugum = aday_dugumler[out_i];
+        cikti_idleri[out_i] = d_res.id;
+        out_i = out_i + 1;
+    }
+    dondu sonuc_adet;
+}

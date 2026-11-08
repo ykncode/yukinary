@@ -1,0 +1,17 @@
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 10 {
+        i = i + 1;
+        eger i == 3 ise { devam_et; } # skip 3
+        eger i == 8 ise { durdur; }   # stop at 8
+        toplam = toplam + i; # adds 1, 2, 4, 5, 6, 7 = 25
+    }
+    
+    eger toplam == 25 ise {
+        ekrana_yaz("TEST 03: CONTROL FLOW OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 03: CONTROL FLOW FAILED\n".ptr);
+    }
+    dondu 0;
+}

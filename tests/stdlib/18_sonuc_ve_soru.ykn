@@ -1,0 +1,35 @@
+ice_aktar "../../std/sonuc.ykn";
+
+isv basarili_islem() -> *Sonuc {
+    dondu tamam(42);
+}
+
+isv hatali_islem() -> *Sonuc {
+    dondu hata(99);
+}
+
+isv hesapla(hata_olsun_mu: tamsayi) -> tamsayi {
+    eger hata_olsun_mu == 1 ise {
+        degisken h: tamsayi = hatali_islem()?;
+        dondu h;
+    }
+    degisken b: tamsayi = basarili_islem()?;
+    dondu b;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken res1: tamsayi = hesapla(0);
+    eger res1 == 42 ise {
+        ekrana_yaz("SONUC-PASS-1\n".ptr);
+    } yoksa {
+        ekrana_yaz("SONUC-FAIL-1\n".ptr);
+    }
+    
+    degisken res2: tamsayi = hesapla(1);
+    eger res2 == 99 ise {
+        ekrana_yaz("SONUC-PASS-2\n".ptr);
+    } yoksa {
+        ekrana_yaz("SONUC-FAIL-2\n".ptr);
+    }
+    dondu 0;
+}

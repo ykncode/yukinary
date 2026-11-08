@@ -1,0 +1,248 @@
+# ============================================================
+# Yukinary Yardimci Fonksiyonlar (src/utils.ykn)
+# GÖREV 5.1: djb2_hash ve ortak yardimci fonksiyonlarin birlestirilmesi
+# ============================================================
+
+# DJB2 String Hash Fonksiyonu
+isv djb2_hash(veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken hash: tamsayi = 5381;
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        hash = ((hash * 33) + veri[i]);
+        i = i + 1;
+    }
+    dondu hash;
+}
+
+# Geriye donuk uyumluluk takma adlari
+isv djb2_sembol(veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    dondu djb2_hash(veri, uzunluk);
+}
+
+isv djb2_makro(veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    dondu djb2_hash(veri, uzunluk);
+}
+
+# String'den 64-bit tamsayi degerine donusturucu (ondalik, 0x onaltilik, 0b ikili, 0o sekizli)
+isv string_tamsayiya(veri: *u8, uzn: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken sign: tamsayi = 1;
+    eger uzn > 0 ve veri[0] == 45 ise {
+        sign = 0 - 1;
+        i = 1;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 120 veya veri[i + 1] == 88) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken c: u8 = veri[i];
+            eger c != 95 ise {
+                degisken digit: tamsayi = 0;
+                eger c >= 48 ve c <= 57 ise { digit = c - 48; }
+                yoksa eger c >= 97 ve c <= 102 ise { digit = (c - 97) + 10; }
+                yoksa eger c >= 65 ve c <= 70 ise { digit = (c - 65) + 10; }
+                sonuc = (sonuc * 16) + digit;
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 98 veya veri[i + 1] == 66) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken cb: u8 = veri[i];
+            eger cb == 48 veya cb == 49 ise {
+                sonuc = (sonuc * 2) + (cb - 48);
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 111 veya veri[i + 1] == 79) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken co: u8 = veri[i];
+            eger co >= 48 ve co <= 55 ise {
+                sonuc = (sonuc * 8) + (co - 48);
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    dongu i < uzn {
+        degisken cd: u8 = veri[i];
+        eger cd >= 48 ve cd <= 57 ise {
+            sonuc = (sonuc * 10) + (cd - 48);
+        }
+        i = i + 1;
+    }
+    dondu sign * sonuc;
+}
+
+# String'den IEEE-754 64-bit float (double / binary64) bit temsiline donusturucu
+# Destekler: ondalik (3.14), tam sayi (42), negatif (-0.0, -1.5), bilimsel us (1e-5, 2.5e+3)
+isv string_gerceksayiya_ieee754(veri: *u8, uzn: tamsayi) -> tamsayi {
+    eger veri == 0 veya uzn <= 0 ise { dondu 0; }
+
+    degisken i: tamsayi = 0;
+    degisken sign: tamsayi = 0;
+    eger veri[0] == 45 ise { # '-'
+        sign = 1;
+        i = 1;
+    } yoksa eger veri[0] == 43 ise { # '+'
+        i = 1;
+    }
+
+    degisken sig_digits: tamsayi = 0;
+    degisken dec_exp: tamsayi = 0;
+    degisken digit_count: tamsayi = 0;
+
+    # 1. Tamsayi basamaklarini topla
+    dongu i < uzn ve veri[i] >= 48 ve veri[i] <= 57 {
+        degisken d: tamsayi = veri[i] - 48;
+        eger sig_digits == 0 ve d == 0 ise {
+            # Bastaki sifirlar yok sayilir
+        } yoksa {
+            eger digit_count < 17 ise {
+                sig_digits = (sig_digits * 10) + d;
+                digit_count = digit_count + 1;
+            } yoksa {
+                dec_exp = dec_exp + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    # 2. Kesir basamaklarini topla
+    eger i < uzn ve veri[i] == 46 ise { # '.'
+        i = i + 1;
+        dongu i < uzn ve veri[i] >= 48 ve veri[i] <= 57 {
+            degisken d2: tamsayi = veri[i] - 48;
+            eger sig_digits == 0 ve d2 == 0 ise {
+                dec_exp = dec_exp - 1;
+            } yoksa {
+                eger digit_count < 17 ise {
+                    sig_digits = (sig_digits * 10) + d2;
+                    dec_exp = dec_exp - 1;
+                    digit_count = digit_count + 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    # 3. Bilimsel us (e veya E)
+    eger i < uzn ve (veri[i] == 101 veya veri[i] == 69) ise {
+        i = i + 1;
+        degisken exp_sign: tamsayi = 1;
+        eger i < uzn ve veri[i] == 45 ise { # '-'
+            exp_sign = 0 - 1;
+            i = i + 1;
+        } yoksa eger i < uzn ve veri[i] == 43 ise { # '+'
+            i = i + 1;
+        }
+        degisken exp_val: tamsayi = 0;
+        dongu i < uzn ve veri[i] >= 48 ve veri[i] <= 57 {
+            exp_val = (exp_val * 10) + (veri[i] - 48);
+            i = i + 1;
+        }
+        dec_exp = dec_exp + (exp_sign * exp_val);
+    }
+
+    # 4. Sifir ve Negatif Sifir kontrolu (-0.0 veya +0.0)
+    eger sig_digits == 0 ise {
+        eger sign == 1 ise {
+            # IEEE-754 -0.0: bit 63 = 1, diger tum bitler 0
+            dondu (0 - 9223372036854775807) - 1;
+        }
+        dondu 0;
+    }
+
+    # 5. Onlu tabandan ikili tabana olcekleme (Binary scaling)
+    degisken d_val: tamsayi = sig_digits;
+    degisken bin_exp: tamsayi = 0;
+
+    # Pozitif 10'luk usleri donustur
+    dongu dec_exp > 0 {
+        dongu d_val > 900000000000000000 {
+            d_val = d_val / 2;
+            bin_exp = bin_exp + 1;
+        }
+        d_val = d_val * 10;
+        dec_exp = dec_exp - 1;
+    }
+
+    # Negatif 10'luk usleri donustur (Hassasiyet icin 2^54 altina dusurme)
+    dongu dec_exp < 0 {
+        dongu d_val < 18014398509481984 {
+            d_val = d_val * 2;
+            bin_exp = bin_exp - 1;
+        }
+        d_val = (d_val + 5) / 10;
+        dec_exp = dec_exp + 1;
+    }
+
+    # 6. Mantissa'yi 52-bite normalize et ([2^52, 2^53) araligi)
+    degisken bit52: tamsayi = 4503599627370496; # 2^52
+    degisken bit53: tamsayi = 9007199254740992; # 2^53
+
+    dongu d_val >= bit53 {
+        d_val = (d_val + 1) / 2;
+        bin_exp = bin_exp + 1;
+    }
+
+    dongu d_val < bit52 {
+        d_val = d_val * 2;
+        bin_exp = bin_exp - 1;
+    }
+
+    # 7. IEEE-754 exponent ve mantissa hesapla
+    # Gercek exp = bin_exp + 52. Biased exp = gercek_exp + 1023 = bin_exp + 1075
+    degisken exp: tamsayi = bin_exp + 1075;
+    degisken mantissa: tamsayi = d_val - bit52;
+
+    eger exp >= 2047 ise {
+        # Infinity
+        exp = 2047;
+        mantissa = 0;
+    } yoksa eger exp <= 0 ise {
+        # Underflow to zero
+        exp = 0;
+        mantissa = 0;
+    }
+
+    degisken sonuc: tamsayi = (exp * bit52) + mantissa;
+    eger sign == 1 ise {
+        sonuc = sonuc + ((0 - 9223372036854775807) - 1);
+    }
+    dondu sonuc;
+}
+
+isv sayiyi_ekrana_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek.ptr);
+    }
+}
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    sayiyi_ekrana_yaz(sayi);
+}
+
+isv compiler_tahsis_et(boyut: tamsayi) -> *u8 {
+    dondu bellek_tahsis_et(boyut);
+}
+

@@ -1,0 +1,9 @@
+﻿yapi Yok {
+}
+
+islev ana() {
+    degisken a: u8 = 0x42;
+    degisken p: *u8 = &a;
+    cikis( p[0] );
+}
+

@@ -1,0 +1,184 @@
+# ============================================================
+# Saf YKN Trainer Checkpoint (YKCP v1)
+#
+# JSON/Python yoktur. Agirliklar + AdamW m/v tamponlari little-endian
+# tamsayi olarak saklanir. Payload SHA-256 olmadan checkpoint kabul edilmez.
+# ============================================================
+
+ice_aktar "std/ai/trainer.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+degisken YKN_CP_PARAM_COUNT: tamsayi = 742;
+degisken YKN_CP_HEADER_SIZE: tamsayi = 96;
+degisken YKN_CP_PAYLOAD_BYTES: tamsayi = 17808;
+degisken YKN_CP_TOTAL_BYTES: tamsayi = 17904;
+
+isv cp_u32_yaz(buf: *u8, pos: tamsayi, deger: tamsayi) {
+    buf[pos] = deger & 255;
+    buf[pos + 1] = (deger >> 8) & 255;
+    buf[pos + 2] = (deger >> 16) & 255;
+    buf[pos + 3] = (deger >> 24) & 255;
+}
+
+isv cp_u64_yaz(buf: *u8, pos: tamsayi, deger: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        buf[pos + i] = (deger >> (i * 8)) & 255;
+        i = i + 1;
+    }
+}
+
+isv cp_deger_yaz(buf: *u8, pos: *tamsayi, deger: tamsayi) {
+    cp_u64_yaz(buf, pos[0], deger);
+    pos[0] = pos[0] + 8;
+}
+
+isv cp_dizi_yaz(buf: *u8, pos: *tamsayi, d: *tamsayi, adet: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        cp_deger_yaz(buf, pos, d[i]);
+        i = i + 1;
+    }
+}
+
+isv cp_state_yaz(buf: *u8, pos: *tamsayi) {
+    cp_dizi_yaz(buf, pos, g_ai_w1, 512);
+    cp_dizi_yaz(buf, pos, g_ai_b1, 32);
+    cp_dizi_yaz(buf, pos, g_ai_w2, 192);
+    cp_dizi_yaz(buf, pos, g_ai_b2, 6);
+    cp_dizi_yaz(buf, pos, g_ai_m1_w1, 512);
+    cp_dizi_yaz(buf, pos, g_ai_m1_b1, 32);
+    cp_dizi_yaz(buf, pos, g_ai_m1_w2, 192);
+    cp_dizi_yaz(buf, pos, g_ai_m1_b2, 6);
+    cp_dizi_yaz(buf, pos, g_ai_m2_w1, 512);
+    cp_dizi_yaz(buf, pos, g_ai_m2_b1, 32);
+    cp_dizi_yaz(buf, pos, g_ai_m2_w2, 192);
+    cp_dizi_yaz(buf, pos, g_ai_m2_b2, 6);
+}
+
+isv cp_u64_oku(buf: *u8, pos: tamsayi) -> tamsayi {
+    # Signed tamsayi degerleri iki'nin tumleyeni olarak geri kurulur.
+    # Pozitif dal dogrudan little-endian okur; negatif dal once mutlak
+    # degeri byte byte iki'nin tumleyeniyle hesaplar ve tekrar isaretler.
+    eger (buf[pos + 7] & 128) == 0 ise {
+        degisken sonuc: tamsayi = 0;
+        degisken i: tamsayi = 0;
+        dongu i < 8 {
+            sonuc = sonuc | ((buf[pos + i] & 255) << (i * 8));
+            i = i + 1;
+        }
+        dondu sonuc;
+    }
+    degisken mutlak: [8]u8;
+    degisken tasima: tamsayi = 1;
+    degisken j: tamsayi = 0;
+    dongu j < 8 {
+        degisken ters: tamsayi = (255 - (buf[pos + j] & 255)) + tasima;
+        eger ters >= 256 ise {
+            mutlak[j] = ters - 256;
+            tasima = 1;
+        } yoksa {
+            mutlak[j] = ters;
+            tasima = 0;
+        }
+        j = j + 1;
+    }
+    degisken magnitude: tamsayi = 0;
+    j = 0;
+    dongu j < 8 {
+        magnitude = magnitude | ((mutlak[j] & 255) << (j * 8));
+        j = j + 1;
+    }
+    dondu 0 - magnitude;
+}
+
+isv cp_u32_oku(buf: *u8, pos: tamsayi) -> tamsayi {
+    dondu (buf[pos] & 255) | ((buf[pos + 1] & 255) << 8) |
+        ((buf[pos + 2] & 255) << 16) | ((buf[pos + 3] & 255) << 24);
+}
+
+isv cp_dizi_oku(buf: *u8, pos: *tamsayi, d: *tamsayi, adet: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        d[i] = cp_u64_oku(buf, pos[0]);
+        pos[0] = pos[0] + 8;
+        i = i + 1;
+    }
+}
+
+isv cp_state_oku(buf: *u8, pos: *tamsayi) {
+    cp_dizi_oku(buf, pos, g_ai_w1, 512);
+    cp_dizi_oku(buf, pos, g_ai_b1, 32);
+    cp_dizi_oku(buf, pos, g_ai_w2, 192);
+    cp_dizi_oku(buf, pos, g_ai_b2, 6);
+    cp_dizi_oku(buf, pos, g_ai_m1_w1, 512);
+    cp_dizi_oku(buf, pos, g_ai_m1_b1, 32);
+    cp_dizi_oku(buf, pos, g_ai_m1_w2, 192);
+    cp_dizi_oku(buf, pos, g_ai_m1_b2, 6);
+    cp_dizi_oku(buf, pos, g_ai_m2_w1, 512);
+    cp_dizi_oku(buf, pos, g_ai_m2_b1, 32);
+    cp_dizi_oku(buf, pos, g_ai_m2_w2, 192);
+    cp_dizi_oku(buf, pos, g_ai_m2_b2, 6);
+}
+
+isv trainer_checkpoint_hash_dogrula(buf: *u8, boyut: tamsayi) -> tamsayi {
+    eger buf == 0 veya boyut != YKN_CP_TOTAL_BYTES ise { dondu 0; }
+    eger cp_u32_oku(buf, 0) != 0x50434b59 veya
+       cp_u32_oku(buf, 4) != 1 veya
+       cp_u32_oku(buf, 8) != YKN_CP_HEADER_SIZE veya
+       cp_u32_oku(buf, 16) != YKN_CP_PARAM_COUNT veya
+       cp_u32_oku(buf, 20) != YKN_CP_PAYLOAD_BYTES ise { dondu 0; }
+    degisken hesap: [65]u8;
+    sha256_hesapla(buf + YKN_CP_HEADER_SIZE, YKN_CP_PAYLOAD_BYTES, hesap);
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        eger buf[32 + i] != hesap[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv trainer_checkpoint_save(yol: *u8) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    degisken buf: *u8 = bellek_tahsis_et(YKN_CP_TOTAL_BYTES);
+    eger buf == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < YKN_CP_TOTAL_BYTES { buf[i] = 0; i = i + 1; }
+    cp_u32_yaz(buf, 0, 0x50434b59);
+    cp_u32_yaz(buf, 4, 1);
+    cp_u32_yaz(buf, 8, YKN_CP_HEADER_SIZE);
+    cp_u32_yaz(buf, 12, g_ai_adam_adim);
+    cp_u32_yaz(buf, 16, YKN_CP_PARAM_COUNT);
+    cp_u32_yaz(buf, 20, YKN_CP_PAYLOAD_BYTES);
+    degisken pos: tamsayi = YKN_CP_HEADER_SIZE;
+    cp_state_yaz(buf, &pos);
+    eger pos != YKN_CP_TOTAL_BYTES ise { dondu 0; }
+    degisken hesap: [65]u8;
+    sha256_hesapla(buf + YKN_CP_HEADER_SIZE, YKN_CP_PAYLOAD_BYTES, hesap);
+    i = 0;
+    dongu i < 64 { buf[32 + i] = hesap[i]; i = i + 1; }
+    degisken yazilan: tamsayi = diske_bas_ve_kapat(yol, buf, YKN_CP_TOTAL_BYTES);
+    eger yazilan != YKN_CP_TOTAL_BYTES ise { dondu 0; }
+    dondu YKN_CP_TOTAL_BYTES;
+}
+
+isv trainer_checkpoint_load(yol: *u8) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    degisken buf: *u8 = bellek_tahsis_et(YKN_CP_TOTAL_BYTES);
+    eger buf == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(yol, buf, YKN_CP_TOTAL_BYTES);
+    eger okunan != YKN_CP_TOTAL_BYTES veya trainer_checkpoint_hash_dogrula(buf, okunan) == 0 ise { dondu 0; }
+    degisken pos: tamsayi = YKN_CP_HEADER_SIZE;
+    cp_state_oku(buf, &pos);
+    eger pos != YKN_CP_TOTAL_BYTES ise { dondu 0; }
+    g_ai_adam_adim = cp_u32_oku(buf, 12);
+    g_ai_beta1_pow = TRAINER_Q16_BIR;
+    g_ai_beta2_pow = TRAINER_Q16_BIR;
+    degisken i: tamsayi = 0;
+    dongu i < g_ai_adam_adim {
+        g_ai_beta1_pow = q16_carp(g_ai_beta1_pow, 58982);
+        g_ai_beta2_pow = q16_carp(g_ai_beta2_pow, 65470);
+        i = i + 1;
+    }
+    dondu 1;
+}

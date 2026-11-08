@@ -1,0 +1,144 @@
+# ============================================================
+# std/ai/lora.ykn
+# FAZ 39: Saf Yukinary LoRA / QLoRA Ince Ayar (Fine-Tuning) Motoru
+# W_yeni = W0 + (alpha / r) * (B * A)
+# W0 dondurulur; sadece dusuk sirali A (r x d_in) ve B (d_out x r) egitilir.
+# ============================================================
+
+ice_aktar "std/sayisal/tensor.ykn";
+ice_aktar "std/sayisal/autograd.ykn";
+
+yapi LoRAKatmani {
+    in_dim:     tamsayi;
+    out_dim:    tamsayi;
+    r:          tamsayi;  # Dusuk rank (orn. 2, 4, 8)
+    alpha:      tamsayi;  # Olcek katsayisi
+    olcek:      tamsayi;  # alpha / r
+    W0:         *Tensor;  # [out_dim x in_dim] dondurulmus ana agirlik
+    A:          *Tensor;  # [r x in_dim] egitilebilir matris (Gaussian init)
+    B:          *Tensor;  # [out_dim x r] egitilebilir matris (Sifir init)
+    son_girdi:  *Tensor;  # Ileri gecis girdisi (backward icin)
+    ara_BA:     *Tensor;  # B * A adaptoru
+}
+
+isv lora_olustur(in_d: tamsayi, out_d: tamsayi, rank: tamsayi, alp: tamsayi) -> *LoRAKatmani {
+    degisken l: *LoRAKatmani = bellek_tahsis_et(80);
+    l.in_dim = in_d;
+    l.out_dim = out_d;
+    l.r = rank;
+    l.alpha = alp;
+    l.olcek = alp / rank;
+
+    # W0 dondurulmus (grad_istiyor = 0)
+    l.W0 = tensor_olustur_2d(out_d, in_d, 0);
+
+    # A ve B egitilebilir (grad_istiyor = 1)
+    l.A = tensor_olustur_2d(rank, in_d, 1);
+    l.B = tensor_olustur_2d(out_d, rank, 1);
+
+    # Baslangic: A kucuk degerlerle (Kaiming pseudo-random) baslar, B sifir ile baslar (ΔW = 0)
+    degisken i: tamsayi = 0;
+    dongu i < rank {
+        degisken j: tamsayi = 0;
+        dongu j < in_d {
+            degisken k_val: tamsayi = ((i * 17 + j * 31 + 7) % 5) - 2;
+            eger k_val == 0 ise { k_val = 1; }
+            tensor_koy_2d(l.A, i, j, k_val);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    i = 0;
+    dongu i < out_d {
+        degisken j: tamsayi = 0;
+        dongu j < rank {
+            tensor_koy_2d(l.B, i, j, 0);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    dondu l;
+}
+
+# Ileri Gecis: Y = X * W0^T + (alpha/r) * (X * A^T) * B^T
+isv lora_ileri_1d(l: *LoRAKatmani, X: *Tensor) -> *Tensor {
+    l.son_girdi = X;
+
+    # 1. Ana model cikisi: Y_ana = X * W0^T
+    # Basitlik icin X (1 x in_d), W0 (out_d x in_d)
+    degisken Y: *Tensor = tensor_olustur_2d(1, l.out_dim, 1);
+
+    degisken o: tamsayi = 0;
+    dongu o < l.out_dim {
+        degisken ana_skor: tamsayi = 0;
+        degisken i: tamsayi = 0;
+        dongu i < l.in_dim {
+            ana_skor = ana_skor + (tensor_al_2d(X, 0, i) * tensor_al_2d(l.W0, o, i));
+            i = i + 1;
+        }
+
+        # 2. LoRA adaptoru: (X * A^T) * B^T
+        degisken lora_skor: tamsayi = 0;
+        degisken r_idx: tamsayi = 0;
+        dongu r_idx < l.r {
+            degisken x_a: tamsayi = 0;
+            i = 0;
+            dongu i < l.in_dim {
+                x_a = x_a + (tensor_al_2d(X, 0, i) * tensor_al_2d(l.A, r_idx, i));
+                i = i + 1;
+            }
+            lora_skor = lora_skor + (x_a * tensor_al_2d(l.B, o, r_idx));
+            r_idx = r_idx + 1;
+        }
+
+        tensor_koy_2d(Y, 0, o, ana_skor + (l.olcek * lora_skor));
+        o = o + 1;
+    }
+
+    dondu Y;
+}
+
+# LoRA Adaptor Guncellemesi (SGD: hem A hem B matrisleri gradyanla guncellenir)
+isv lora_adim_guncelle(l: *LoRAKatmani, hata_grad: tamsayi, lr: tamsayi) {
+    # 1. B matrisini guncelle: dL/dB = hata * (X * A^T)
+    degisken o: tamsayi = 0;
+    dongu o < l.out_dim {
+        degisken r_idx: tamsayi = 0;
+        dongu r_idx < l.r {
+            degisken x_a: tamsayi = 0;
+            degisken i: tamsayi = 0;
+            dongu i < l.in_dim {
+                x_a = x_a + (tensor_al_2d(l.son_girdi, 0, i) * tensor_al_2d(l.A, r_idx, i));
+                i = i + 1;
+            }
+            degisken grad_b: tamsayi = hata_grad * x_a;
+            degisken eski_b: tamsayi = tensor_al_2d(l.B, o, r_idx);
+            tensor_koy_2d(l.B, o, r_idx, eski_b - (lr * grad_b));
+            r_idx = r_idx + 1;
+        }
+        o = o + 1;
+    }
+
+    # 2. A matrisini guncelle: dL/dA = (hata * B) * X
+    degisken r_a: tamsayi = 0;
+    dongu r_a < l.r {
+        # B'den gelen zincir gradyani topla
+        degisken b_grad_sum: tamsayi = 0;
+        o = 0;
+        dongu o < l.out_dim {
+            b_grad_sum = b_grad_sum + (hata_grad * tensor_al_2d(l.B, o, r_a));
+            o = o + 1;
+        }
+        degisken col: tamsayi = 0;
+        dongu col < l.in_dim {
+            degisken grad_a: tamsayi = b_grad_sum * tensor_al_2d(l.son_girdi, 0, col);
+            degisken eski_a: tamsayi = tensor_al_2d(l.A, r_a, col);
+            tensor_koy_2d(l.A, r_a, col, eski_a - (lr * grad_a));
+            col = col + 1;
+        }
+        r_a = r_a + 1;
+    }
+}
+

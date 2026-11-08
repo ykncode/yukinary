@@ -1,0 +1,45 @@
+# ============================================================
+# Örnek 10: Konsol Tabanlı Mini JSON Ayrıştırıcı (JSON Key-Value Parser)
+# ============================================================
+
+isv json_basit_tara(json_metin: *u8) {
+    degisken i: tamsayi = 0;
+    degisken anahtar_modu: tamsayi = 0;
+    degisken deger_modu: tamsayi = 0;
+
+    ekrana_yaz("--- JSON Alanlari ---\n".ptr);
+    dongu (json_metin[i] != 0) {
+        degisken c: u8 = json_metin[i];
+
+        eger c == 34 ise { # '"' karakteri
+            eger anahtar_modu == 0 ve deger_modu == 0 ise {
+                anahtar_modu = 1;
+                ekrana_yaz("Anahtar: ".ptr);
+            } yoksa eger anahtar_modu == 1 ise {
+                anahtar_modu = 0;
+                ekrana_yaz("\n".ptr);
+            } yoksa eger deger_modu == 1 ise {
+                deger_modu = 0;
+                ekrana_yaz("\n--------------------\n".ptr);
+            }
+        } yoksa eger c == 58 ise { # ':' karakteri
+            deger_modu = 1;
+            ekrana_yaz("Deger  : ".ptr);
+        } yoksa {
+            eger anahtar_modu == 1 veya deger_modu == 1 ise {
+                degisken buf: [2]u8;
+                buf[0] = c;
+                buf[1] = 0;
+                ekrana_yaz(buf);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken ornek_json: *u8 = "{\"dil\": \"Yukinary\", \"surum\": \"2.0\", \"hedef\": \"Native PE\"}".ptr;
+    ekrana_yaz("Girdi JSON: ".ptr); ekrana_yaz(ornek_json); ekrana_yaz("\n\n".ptr);
+    json_basit_tara(ornek_json);
+    dondu 0;
+}

@@ -1,0 +1,129 @@
+# ============================================================
+# src/yknllm_audit_reader.ykn
+# YKNA append-only audit kaydi decoder ve recovery validator.
+#
+# Cagiran kaynak once src/yknllm_audit.ykn'i ice aktarmalidir.
+# Decoder yalniz tam kayitleri kabul eder; header, bounded alan,
+# hash, accepted flag ve trailing byte hatalarinda basari donmez.
+# ============================================================
+
+yapi YKNLLMAuditDecoded {
+    correlation_id: *u8;
+    intent_sha256: *u8;
+    ykn_sha256: *u8;
+    model_version: *u8;
+    selected_model: *u8;
+    diagnostics: *u8;
+    compiler_exit: tamsayi;
+    accepted: tamsayi;
+}
+
+isv yknllm_audit_reader_u64_oku(buf: *u8, uzunluk: tamsayi,
+                                pos: *tamsayi, hata: *tamsayi) -> tamsayi {
+    eger buf == 0 veya pos == 0 veya hata == 0 veya hata[0] != 0 veya
+       *pos < 0 veya *pos + 8 > uzunluk ise {
+        eger hata != 0 ise { hata[0] = 1; }
+        dondu 0;
+    }
+    degisken b0: tamsayi = buf[*pos];
+    degisken b1: tamsayi = buf[*pos + 1];
+    degisken b2: tamsayi = buf[*pos + 2];
+    degisken b3: tamsayi = buf[*pos + 3];
+    degisken b4: tamsayi = buf[*pos + 4];
+    degisken b5: tamsayi = buf[*pos + 5];
+    degisken b6: tamsayi = buf[*pos + 6];
+    degisken b7: tamsayi = buf[*pos + 7];
+    eger b0 < 0 ise { b0 = b0 + 256; }
+    eger b1 < 0 ise { b1 = b1 + 256; }
+    eger b2 < 0 ise { b2 = b2 + 256; }
+    eger b3 < 0 ise { b3 = b3 + 256; }
+    eger b4 < 0 ise { b4 = b4 + 256; }
+    eger b5 < 0 ise { b5 = b5 + 256; }
+    eger b6 < 0 ise { b6 = b6 + 256; }
+    eger b7 < 0 ise { b7 = b7 + 256; }
+    *pos = *pos + 8;
+    dondu b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 +
+           b4 * 4294967296 + b5 * 1099511627776 +
+           b6 * 281474976710656 + b7 * 72057594037927936;
+}
+
+isv yknllm_audit_reader_metin_oku(buf: *u8, uzunluk: tamsayi,
+                                  pos: *tamsayi, hata: *tamsayi,
+                                  azami: tamsayi) -> *u8 {
+    degisken metin_uzn: tamsayi = yknllm_audit_reader_u64_oku(buf, uzunluk, pos, hata);
+    eger hata[0] != 0 veya metin_uzn < 0 veya metin_uzn > azami veya
+       *pos > uzunluk veya metin_uzn > uzunluk - *pos ise {
+        hata[0] = 1;
+        dondu 0;
+    }
+    degisken sonuc: *u8 = bellek_tahsis_et(metin_uzn + 1);
+    eger sonuc == 0 ise { hata[0] = 1; dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < metin_uzn {
+        sonuc[i] = buf[*pos + i];
+        i = i + 1;
+    }
+    sonuc[metin_uzn] = 0;
+    *pos = *pos + metin_uzn;
+    dondu sonuc;
+}
+
+isv yknllm_audit_kayit_coz(buf: *u8, uzunluk: tamsayi,
+                           pos: *tamsayi,
+                           kayit: *YKNLLMAuditDecoded) -> tamsayi {
+    eger buf == 0 veya pos == 0 veya kayit == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken hata: tamsayi = 0;
+    degisken magic: tamsayi = yknllm_audit_reader_u64_oku(buf, uzunluk, pos, &hata);
+    degisken version: tamsayi = yknllm_audit_reader_u64_oku(buf, uzunluk, pos, &hata);
+    eger hata != 0 veya magic != YKNLLM_AUDIT_MAGIC veya
+       version != YKNLLM_AUDIT_VERSION ise { dondu 2; }
+
+    kayit->correlation_id = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, 256);
+    kayit->intent_sha256 = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, 64);
+    kayit->ykn_sha256 = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, 64);
+    kayit->model_version = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, 256);
+    kayit->selected_model = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, YKNLLM_AUDIT_MAX_FIELD);
+    kayit->compiler_exit = yknllm_audit_reader_u64_oku(buf, uzunluk, pos, &hata);
+    kayit->accepted = yknllm_audit_reader_u64_oku(buf, uzunluk, pos, &hata);
+    kayit->diagnostics = yknllm_audit_reader_metin_oku(buf, uzunluk, pos, &hata, YKNLLM_AUDIT_MAX_FIELD);
+    eger hata != 0 ise { dondu 3; }
+    eger yknllm_audit_uzunluk(kayit->correlation_id) <= 0 veya
+       yknllm_audit_hex_mi(kayit->intent_sha256) == 0 veya
+       yknllm_audit_hex_mi(kayit->ykn_sha256) == 0 veya
+       yknllm_audit_uzunluk(kayit->model_version) <= 0 veya
+       yknllm_audit_uzunluk(kayit->selected_model) <= 0 veya
+       (kayit->accepted != 0 ve kayit->accepted != 1) ise { dondu 4; }
+    dondu 1;
+}
+
+isv yknllm_audit_buffer_dogrula(buf: *u8, uzunluk: tamsayi,
+                                kayit_sayisi: *tamsayi) -> tamsayi {
+    eger buf == 0 veya uzunluk <= 0 veya kayit_sayisi == 0 ise { dondu 0; }
+    *kayit_sayisi = 0;
+    degisken pos: tamsayi = 0;
+    dongu pos < uzunluk {
+        degisken kayit: YKNLLMAuditDecoded;
+        degisken sonuc: tamsayi = yknllm_audit_kayit_coz(buf, uzunluk, &pos, &kayit);
+        eger sonuc != 1 ise { dondu 0; }
+        *kayit_sayisi = *kayit_sayisi + 1;
+    }
+    eger pos != uzunluk veya *kayit_sayisi <= 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# Windows bootstrap dosya adapter'i. Dosyanin tamamini bounded read ile
+# alir; tek bir truncated/corrupt record varsa butun validation reddedilir.
+isv yknllm_audit_dosya_dogrula(dosya_yolu: *u8, kayit_sayisi: *tamsayi) -> tamsayi {
+    eger dosya_yolu == 0 veya yknllm_audit_uzunluk(dosya_yolu) <= 0 veya
+       kayit_sayisi == 0 ise { dondu 0; }
+    degisken tampon: *u8 = bellek_tahsis_et(YKNLLM_AUDIT_MAX_RECORD);
+    eger tampon == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(dosya_yolu, tampon, YKNLLM_AUDIT_MAX_RECORD);
+    eger okunan <= 0 veya okunan > YKNLLM_AUDIT_MAX_RECORD ise {
+        os_bellek_serbest(tampon);
+        dondu 0;
+    }
+    degisken sonuc: tamsayi = yknllm_audit_buffer_dogrula(tampon, okunan, kayit_sayisi);
+    os_bellek_serbest(tampon);
+    dondu sonuc;
+}

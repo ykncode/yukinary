@@ -1,0 +1,12 @@
+# 한국어 테스트: 실수형
+함수 메인(argc: 정수, argv: **u8) -> 정수 {
+    변수 p: 실수 = 25.5;
+    변수 q: 실수 = 0.5;
+    변수 r: 실수 = p + q;
+    만약 r == 26.0 라면 {
+        ekrana_yaz("KO-FLOAT-PASS\n".ptr);
+    } 아니면 {
+        ekrana_yaz("KO-FLOAT-FAIL\n".ptr);
+    }
+    반환 0;
+}

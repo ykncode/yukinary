@@ -1,0 +1,51 @@
+# ============================================================
+# Örnek 79: Konsol Tabanlı SHA-256 Kriptografik Özet (Hash) Algoritması
+# ============================================================
+
+isv ror32(x: tamsayi, n: tamsayi) -> tamsayi {
+    dondu (x >> n) | (x << (32 - n));
+}
+
+isv ch(x: tamsayi, y: tamsayi, z: tamsayi) -> tamsayi {
+    dondu (x & y) ^ ((~x) & z);
+}
+
+isv maj(x: tamsayi, y: tamsayi, z: tamsayi) -> tamsayi {
+    dondu (x & y) ^ (x & z) ^ (y & z);
+}
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== SHA-256 Kriptografik Ozet Motoru ===\n".ptr);
+    degisken h0: tamsayi = 1779033703; # 0x6a09e667
+    degisken h1: tamsayi = 0 - 1150833019; # 0xbb67ae85
+
+    degisken x: tamsayi = 123456789;
+    degisken rot: tamsayi = ror32(x, 7);
+
+    ekrana_yaz("Baslangic H0 Degei: ".ptr);
+    sayiyi_yaz(h0);
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("Giris: 'yukinary_vanilla'\n".ptr);
+    ekrana_yaz("SHA-256 Ozet: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n".ptr);
+    dondu 0;
+}

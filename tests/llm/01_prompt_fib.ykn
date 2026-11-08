@@ -1,0 +1,13 @@
+﻿# FAZ 8 Test 1: Compile-time AI Code Generation via #prompt
+#prompt "fibonacci hesaplayan fonksiyon yaz"
+
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken f10: tamsayi = fibonacci(10);
+    eger f10 == 55 ise {
+        ekrana_yaz("TEST 01 FAZ 8: PROMPT FIBONACCI OK (55)\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 01 FAZ 8: FAILED\n".ptr);
+    }
+    dondu 0;
+}

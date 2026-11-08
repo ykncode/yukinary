@@ -1,0 +1,54 @@
+# ============================================================
+# Örnek 51: Konsol Tabanlı Kelime ve Satır Sayacı (wc aracı)
+# ============================================================
+ice_aktar "std/dosya.ykn";
+ice_aktar "std/metin.ykn";
+
+isv kelime_sayisi_bul(metin_ptr: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken sayac: tamsayi = 0;
+    degisken icinde: tamsayi = 0;
+    degisken i: tamsayi = 0;
+
+    dongu (i < uzunluk) {
+        degisken c: u8 = metin_ptr[i];
+        # Bosluk, tab veya yeni satir kontrolu (32: ' ', 9: '\t', 10: '\n')
+        eger c == 32 veya c == 9 veya c == 10 veya c == 13 ise {
+            icinde = 0;
+        } yoksa {
+            eger icinde == 0 ise {
+                icinde = 1;
+                sayac = sayac + 1;
+            }
+        }
+        i = i + 1;
+    }
+    dondu sayac;
+}
+
+isv ana() -> tamsayi {
+    degisken dosya_adi: *u8 = "README.md".ptr;
+    eger dosya_var_mi(dosya_adi) == 0 ise {
+        ekrana_yaz("Hedef dosya bulunamadi.\n".ptr);
+        dondu 1;
+    }
+
+    degisken okunan_uzunluk: [1]tamsayi;
+    degisken icerik: *u8 = dosya_oku_tamami(dosya_adi, okunan_uzunluk);
+    eger icerik == 0 ise {
+        ekrana_yaz("Dosya okunamadi.\n".ptr);
+        dondu 1;
+    }
+
+    degisken toplam_bayt: tamsayi = okunan_uzunluk[0];
+    degisken toplam_kelime: tamsayi = kelime_sayisi_bul(icerik, toplam_bayt);
+    degisken toplam_satir: tamsayi = dosya_satir_sayisi(dosya_adi);
+
+    ekrana_yaz("--- Dosya Istatistik Raporu ---\n".ptr);
+    ekrana_yaz("Dosya: ".ptr); ekrana_yaz(dosya_adi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Toplam Bayt Sayisi: ".ptr); sayiyi_ekrana_yaz(toplam_bayt); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Toplam Satir Sayisi: ".ptr); sayiyi_ekrana_yaz(toplam_satir); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Toplam Kelime Sayisi: ".ptr); sayiyi_ekrana_yaz(toplam_kelime); ekrana_yaz("\n".ptr);
+
+    bellek_serbest_birak(icerik);
+    dondu 0;
+}

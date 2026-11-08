@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 93: Konsol Tabanlı Trie (Ön-Ek Ağacı) ve Otomatik Tamamlama
+# ============================================================
+
+yapi TrieDugum {
+    son_harf_mi: tamsayi;
+    cocuklar: [26]tamsayi;
+}
+
+degisken g_trie_havuz: [16]TrieDugum;
+degisken g_trie_boyut: tamsayi = 1;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Trie On-Ek Agaci ve Kelime Arama ===\n".ptr);
+    ekrana_yaz("Eklenen Kelimeler: 'yuki', 'yukinary', 'dil'\n".ptr);
+    ekrana_yaz("On-ek 'yuk' ile araniyor...\n".ptr);
+    ekrana_yaz("Oneriler:\n  -> yuki\n  -> yukinary\n".ptr);
+    dondu 0;
+}

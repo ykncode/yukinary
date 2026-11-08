@@ -1,0 +1,1 @@
+isv ana(c: tamsayi, argv: **u8) -> tamsayi { degisken s: *u8 = argv[1]; degisken b: u8 = s[0]; dondu b; }

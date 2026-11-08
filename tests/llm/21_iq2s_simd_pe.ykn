@@ -1,0 +1,33 @@
+# Generated PE -> native fused IQ2_S kernel fixture
+harici isv ykn_llm_iq2s_dot_q16(packed: *u8, activation: *tamsayi, k: tamsayi, row_offset: tamsayi) -> tamsayi;
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken n: tamsayi = sayi;
+    degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    dongu i > 0 { i = i - 1; degisken one: [2]u8; one[0] = buf[i]; one[1] = 0; ekrana_yaz(one); }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken packed: [82]u8;
+    degisken activation: [256]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 82 { packed[i] = 0; i = i + 1; }
+    # IQ2_S d = 1.0 (half 0x3c00), q/sign/nibble fields zero:
+    # every decoded lane is +1 and the 256-element dot is 256.
+    packed[0] = 0;
+    packed[1] = 60;
+    i = 0;
+    dongu i < 256 { activation[i] = 65536; i = i + 1; }
+    degisken result: tamsayi = ykn_llm_iq2s_dot_q16(packed, activation, 256, 0);
+    # IQ2_S scale d*(1+2*nibble)/8 ve grid /32 ile normalize edilir.
+    # Bu fixture'da d=1, nibble=0 ve grid=8 olduğundan her lane 1/32,
+    # toplam 8.0 Q16 = 524288'tir.
+    ekrana_yaz("RESULT=".ptr); sayiyi_yazdir(result); ekrana_yaz(" ".ptr);
+    eger result == 524288 ise { ekrana_yaz("IQ2S-PE-PASS".ptr); }
+    yoksa { ekrana_yaz("IQ2S-PE-FAIL".ptr); }
+    dondu result;
+}

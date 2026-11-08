@@ -1,0 +1,72 @@
+# ============================================================
+# Faz 8.5 — Gerçek GGUF merge rank tablosuyla BPE testi
+# ASCII alt kümesi: "in" -> token ID 258 (i+n merge).
+# ============================================================
+
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/tokenizer.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    degisken yol: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    eger gguf_yukle(yol, durum) == 0 ise { dondu 1; }
+
+    degisken token_ofsetleri: *tamsayi = bellek_tahsis_et(1026048);
+    degisken token_uzunluklari: *tamsayi = bellek_tahsis_et(1026048);
+    degisken merge_ofsetleri: *tamsayi = bellek_tahsis_et(2241176);
+    degisken merge_uzunluklari: *tamsayi = bellek_tahsis_et(2241176);
+    degisken token_adet: tamsayi = 0;
+    degisken merge_adet: tamsayi = 0;
+    eger bitnet_tokenizer_metadata_yukle(durum, token_ofsetleri, token_uzunluklari,
+       128256, merge_ofsetleri, merge_uzunluklari, 280147,
+       &token_adet, &merge_adet) == 0 ise { dondu 2; }
+
+    degisken i_id: tamsayi = bitnet_token_id_bul(durum->buffer, token_ofsetleri, token_uzunluklari, token_adet, "i".ptr, 1);
+    degisken n_id: tamsayi = bitnet_token_id_bul(durum->buffer, token_ofsetleri, token_uzunluklari, token_adet, "n".ptr, 1);
+    degisken in_id: tamsayi = bitnet_token_id_bul(durum->buffer, token_ofsetleri, token_uzunluklari, token_adet, "in".ptr, 2);
+    degisken cift: [4]u8;
+    cift[0] = 105;
+    cift[1] = 32;
+    cift[2] = 110;
+    degisken rank: tamsayi = bitnet_merge_ranki_bul(durum->buffer, merge_ofsetleri, merge_uzunluklari, merge_adet, cift, 3);
+    eger i_id != 72 veya n_id != 77 veya in_id != 258 veya rank != 4 ise {
+        ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE tables)\n".ptr);
+        dondu 3;
+    }
+    degisken sol_test: [4]u8;
+    degisken sag_test: [4]u8;
+    degisken sol_len: tamsayi = bitnet_token_kopyala(durum->buffer, token_ofsetleri, token_uzunluklari, token_adet, 72, sol_test, 4);
+    degisken sag_len: tamsayi = bitnet_token_kopyala(durum->buffer, token_ofsetleri, token_uzunluklari, token_adet, 77, sag_test, 4);
+    eger sol_len != 1 veya sag_len != 1 veya sol_test[0] != 105 veya sag_test[0] != 110 ise {
+        ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE token copy)\n".ptr);
+        dondu 3;
+    }
+    degisken sonuc: [4]tamsayi;
+
+    degisken adet: tamsayi = bitnet_bpe_ascii_kodla(durum->buffer,
+       token_ofsetleri, token_uzunluklari, token_adet,
+       merge_ofsetleri, merge_uzunluklari, merge_adet,
+       "in".ptr, 2, sonuc, 4);
+    eger adet == 0 - 11 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE initial token)\n".ptr); dondu 3; }
+    eger adet == 0 - 10 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE args)\n".ptr); dondu 3; }
+    eger adet == 0 - 12 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE scratch)\n".ptr); dondu 3; }
+
+    eger adet != 1 ise {
+        ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE count)\n".ptr);
+        dondu 3;
+    }
+    eger sonuc[0] != 258 ise {
+        eger BITNET_BPE_DEBUG == 258 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE output transport)\n".ptr); }
+        yoksa eger BITNET_BPE_DEBUG == 72 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE kept left)\n".ptr); }
+        yoksa eger BITNET_BPE_DEBUG == 77 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE kept right)\n".ptr); }
+        yoksa eger BITNET_BPE_DEBUG == 30 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE merge id search)\n".ptr); }
+        yoksa eger BITNET_BPE_DEBUG == 0 ise { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE zero id)\n".ptr); }
+        yoksa { ekrana_yaz("TEST 10 FAZ 8: FAILED (BPE merged id)\n".ptr); }
+        dondu 3;
+    }
+    ekrana_yaz("TEST 10 FAZ 8: GERCEK BPE MERGE OK\n".ptr);
+    dondu 0;
+}

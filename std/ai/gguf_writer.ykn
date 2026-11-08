@@ -1,0 +1,188 @@
+# ============================================================
+# Saf YKN GGUF v3 writer
+#
+# Tek F32 tensor export'u: gerçek GGUF header/KV/tensor-info,
+# 32-byte alignment ve little-endian payload üretir.
+# Yazma sonucu byte sayısı ile doğrulanır; sahte başarı yoktur.
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "src/fingerprint.ykn";
+
+degisken YKN_GGUF_WRITER_MAX_TENSOR: tamsayi = 65536;
+degisken YKN_GGUF_WRITER_ALIGNMENT: tamsayi = 32;
+
+isv ykn_gguf_w_u32(buf: *u8, pos: tamsayi, value: tamsayi) {
+    buf[pos] = value & 255;
+    buf[pos + 1] = (value >> 8) & 255;
+    buf[pos + 2] = (value >> 16) & 255;
+    buf[pos + 3] = (value >> 24) & 255;
+}
+
+isv ykn_gguf_w_u64(buf: *u8, pos: tamsayi, value: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        buf[pos + i] = (value >> (i * 8)) & 255;
+        i = i + 1;
+    }
+}
+
+isv ykn_gguf_w_copy(buf: *u8, pos: tamsayi, source: *u8, length: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < length {
+        buf[pos + i] = source[i];
+        i = i + 1;
+    }
+}
+
+isv ykn_gguf_w_string(buf: *u8, pos: *tamsayi, value: *u8, length: tamsayi) {
+    ykn_gguf_w_u64(buf, pos[0], length);
+    pos[0] = pos[0] + 8;
+    ykn_gguf_w_copy(buf, pos[0], value, length);
+    pos[0] = pos[0] + length;
+}
+
+isv ykn_gguf_w_align(buf: *u8, pos: *tamsayi, alignment: tamsayi) {
+    degisken remainder: tamsayi = pos[0] % alignment;
+    eger remainder != 0 ise {
+        degisken padding: tamsayi = alignment - remainder;
+        degisken i: tamsayi = 0;
+        dongu i < padding {
+            buf[pos[0]] = 0;
+            pos[0] = pos[0] + 1;
+            i = i + 1;
+        }
+    }
+}
+
+isv ykn_gguf_f32_tensor_yaz(path: *u8, tensor_name: *u8,
+                            architecture: *u8, bits: *tamsayi,
+                            element_count: tamsayi) -> tamsayi {
+    eger path == 0 veya tensor_name == 0 veya architecture == 0 veya
+       bits == 0 veya element_count <= 0 veya
+       element_count > YKN_GGUF_WRITER_MAX_TENSOR ise { dondu 0; }
+    degisken name_length: tamsayi = 0;
+    dongu tensor_name[name_length] != 0 {
+        name_length = name_length + 1;
+        eger name_length > 1024 ise { dondu 0; }
+    }
+    degisken architecture_length: tamsayi = 0;
+    dongu architecture[architecture_length] != 0 {
+        architecture_length = architecture_length + 1;
+        eger architecture_length > 1024 ise { dondu 0; }
+    }
+    eger name_length <= 0 veya architecture_length <= 0 ise { dondu 0; }
+    degisken capacity: tamsayi = 1048576;
+    degisken buffer: *u8 = bellek_tahsis_et(capacity);
+    eger buffer == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    # GGUF magic/version/tensor count/KV count.
+    ykn_gguf_w_u32(buffer, pos, GGUF_MAGIC); pos = pos + 4;
+    ykn_gguf_w_u32(buffer, pos, GGUF_V3); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, 1); pos = pos + 8;
+    ykn_gguf_w_u64(buffer, pos, 1); pos = pos + 8;
+    # general.architecture: string metadata.
+    ykn_gguf_w_string(buffer, &pos, "general.architecture".ptr, 20);
+    ykn_gguf_w_u32(buffer, pos, GGUF_VT_STRING); pos = pos + 4;
+    ykn_gguf_w_string(buffer, &pos, architecture, architecture_length);
+    # One tensor info: name, one dimension, F32, relative offset zero.
+    ykn_gguf_w_string(buffer, &pos, tensor_name, name_length);
+    ykn_gguf_w_u32(buffer, pos, 1); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, element_count); pos = pos + 8;
+    ykn_gguf_w_u32(buffer, pos, GGML_TYPE_F32); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, 0); pos = pos + 8;
+    ykn_gguf_w_align(buffer, &pos, YKN_GGUF_WRITER_ALIGNMENT);
+    eger pos <= 0 veya (pos + (element_count * 4)) > capacity ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < element_count {
+        ykn_gguf_w_u32(buffer, pos, bits[i]);
+        pos = pos + 4;
+        i = i + 1;
+    }
+    eger pos <= 0 veya pos > capacity ise { dondu 0; }
+    degisken written: tamsayi = diske_bas_ve_kapat(path, buffer, pos);
+    eger written != pos ise { dondu 0; }
+    dondu written;
+}
+
+# BitNet IQ2_S kuantize tensor yazici
+isv ykn_gguf_iq2s_tensor_yaz(path: *u8, tensor_name: *u8,
+                             architecture: *u8, ternary_weights: *tamsayi,
+                             element_count: tamsayi) -> tamsayi {
+    eger path == 0 veya tensor_name == 0 veya architecture == 0 veya
+       ternary_weights == 0 veya element_count <= 0 veya
+       element_count > YKN_GGUF_WRITER_MAX_TENSOR ise { dondu 0; }
+    degisken name_length: tamsayi = 0;
+    dongu tensor_name[name_length] != 0 {
+        name_length = name_length + 1;
+        eger name_length > 1024 ise { dondu 0; }
+    }
+    degisken architecture_length: tamsayi = 0;
+    dongu architecture[architecture_length] != 0 {
+        architecture_length = architecture_length + 1;
+        eger architecture_length > 1024 ise { dondu 0; }
+    }
+    eger name_length <= 0 veya architecture_length <= 0 ise { dondu 0; }
+    degisken capacity: tamsayi = 1048576;
+    degisken buffer: *u8 = bellek_tahsis_et(capacity);
+    eger buffer == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    # GGUF magic/version/tensor count/KV count.
+    ykn_gguf_w_u32(buffer, pos, GGUF_MAGIC); pos = pos + 4;
+    ykn_gguf_w_u32(buffer, pos, GGUF_V3); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, 1); pos = pos + 8;
+    ykn_gguf_w_u64(buffer, pos, 1); pos = pos + 8;
+    # general.architecture: string metadata.
+    ykn_gguf_w_string(buffer, &pos, "general.architecture".ptr, 20);
+    ykn_gguf_w_u32(buffer, pos, GGUF_VT_STRING); pos = pos + 4;
+    ykn_gguf_w_string(buffer, &pos, architecture, architecture_length);
+    # Tensor info uses the Microsoft BitNet I2_S extension type ID 36.
+    ykn_gguf_w_string(buffer, &pos, tensor_name, name_length);
+    ykn_gguf_w_u32(buffer, pos, 1); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, element_count); pos = pos + 8;
+    ykn_gguf_w_u32(buffer, pos, GGML_TYPE_I2_S); pos = pos + 4;
+    ykn_gguf_w_u64(buffer, pos, 0); pos = pos + 8;
+    ykn_gguf_w_align(buffer, &pos, YKN_GGUF_WRITER_ALIGNMENT);
+
+    # BitNet IQ2_S 2-bit packing (4 eleman / bayt)
+    degisken quant_bytes: tamsayi = (element_count + 3) / 4;
+    eger pos <= 0 veya (pos + quant_bytes + 32) > capacity ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < quant_bytes {
+        degisken byte_val: tamsayi = 0;
+        degisken b: tamsayi = 0;
+        dongu b < 4 {
+            degisken elem_idx: tamsayi = i * 4 + b;
+            degisken code: tamsayi = 1; # varsayilan 0 (01)
+            eger elem_idx < element_count ise {
+                degisken t_val: tamsayi = ternary_weights[elem_idx];
+                eger t_val == -1 ise {
+                    code = 0; # raw 00 = -1
+                } yoksa eger t_val == 1 ise {
+                    code = 2; # raw 10 = +1
+                } yoksa {
+                    code = 1; # raw 01 = 0
+                }
+            }
+            byte_val = (byte_val << 2) | code;
+            b = b + 1;
+        }
+        buffer[pos] = byte_val & 255;
+        pos = pos + 1;
+        i = i + 1;
+    }
+    # 32-byte scale trailer: ilk 4 bayt IEEE-754 F32 1.0f (0x3F800000), kalan 28 bayt 0
+    ykn_gguf_w_u32(buffer, pos, 0x3F800000);
+    pos = pos + 4;
+    degisken s_idx: tamsayi = 4;
+    dongu s_idx < 32 {
+        buffer[pos] = 0;
+        pos = pos + 1;
+        s_idx = s_idx + 1;
+    }
+
+    eger pos <= 0 veya pos > capacity ise { dondu 0; }
+    degisken written: tamsayi = diske_bas_ve_kapat(path, buffer, pos);
+    eger written != pos ise { dondu 0; }
+    dondu written;
+}

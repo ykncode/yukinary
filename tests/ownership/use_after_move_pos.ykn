@@ -1,0 +1,13 @@
+# Ownership Test POZITIF: move kullanimi gecerli — E040 olmamali.
+isv tasi(x: tamsayi) -> tamsayi {
+    dondu x + 1;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken y: tamsayi = tasi(x);
+    # x tasinmis ama y kullanilyor — gecerli
+    eger y == 43 ise {
+        ekrana_yaz("USE_AFTER_MOVE_POS: OK\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,73 @@
+# ============================================================
+# Test: tests/test_faz4_work_stealing.ykn
+# FAZ 4 Dogrulama: Lock-Free Chase-Lev Work-Stealing Runtime
+# Windows ve Linux uzerinde sifir mock ile tam dogrulama.
+# ============================================================
+
+ice_aktar "std/es/work_stealing.ykn";
+
+yapi GorevVeri {
+    deger:       tamsayi;
+    akumulator:  *tamsayi;
+}
+
+isv gorev_topla(veri_ptr: tamsayi, b: tamsayi) -> tamsayi {
+    degisken gv: *GorevVeri = veri_ptr as *GorevVeri;
+    eger gv != 0 ve gv.akumulator != 0 ise {
+        degisken ak: *tamsayi = gv.akumulator;
+        ak[0] = ak[0] + gv.deger;
+    }
+    dondu 0;
+}
+
+isv main() -> tamsayi {
+    # 4 worker'li Work-Stealing havuzu olustur
+    degisken h: *WSHavuz = ws_havuz_olustur(4);
+    eger h == 0 ise { dondu 1; }
+
+    degisken ak: *tamsayi = bellek_tahsis_et(8);
+    ak[0] = 0;
+
+    degisken fn_topla: tamsayi = gorev_topla as tamsayi;
+
+    # 40 gorevi YALNIZCA worker 0'a yukle
+    # Worker 1, 2 ve 3 bos kalacak ve worker 0'dan Lock-Free Steal yapacak
+    degisken gorev_verileri: **GorevVeri = bellek_tahsis_et(40 * 8);
+
+    degisken i: tamsayi = 0;
+    dongu i < 40 {
+        degisken gv: *GorevVeri = bellek_tahsis_et(16);
+        gv.deger = i + 1; # 1, 2, ... 40
+        gv.akumulator = ak;
+        gorev_verileri[i] = gv;
+
+        # Tum isleri worker 0'in kuyruguna koy
+        ws_havuz_gorev_ekle(h, 0, fn_topla, gv as tamsayi);
+        i = i + 1;
+    }
+
+    # Tum isleri bitene kadar calistir (Steal mekanizmasini tetikler)
+    degisken tamamlanan: tamsayi = ws_havuz_tumunu_calistir(h);
+    eger tamamlanan != 40 ise {
+        dondu 10; # 40 gorevin tamami bitmeliydi
+    }
+
+    # Akumulator toplami: 1 + 2 + ... + 40 = 40 * 41 / 2 = 820
+    eger ak[0] != 820 ise {
+        dondu 11; # Akumulator toplami 820 olmaliydi
+    }
+
+    # Bellek temizligi
+    i = 0;
+    dongu i < 40 {
+        degisken ptr: *GorevVeri = gorev_verileri[i];
+        os_bellek_serbest(ptr as *u8);
+        i = i + 1;
+    }
+    os_bellek_serbest(gorev_verileri as *u8);
+    os_bellek_serbest(ak as *u8);
+    ws_havuz_temizle(h);
+
+    dondu 0;
+}
+

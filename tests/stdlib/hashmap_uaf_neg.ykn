@@ -1,0 +1,19 @@
+# Collection Ownership Test NEGATIF: HashMap use-after-free
+# HashMap serbest biraksildiktan sonra elemanlara erisilemez.
+ice_aktar "std/collection/hashmap.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken h: *HashMap = hashmap_olustur(16);
+    eger h == 0 ise {
+        ekrana_yaz("HASHMAP_UAF_NEG: tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+    hashmap_ekle(h, 42, 100);
+    ekrana_yaz("HASHMAP_UAF_NEG: hashmap hazir\n".ptr);
+    hashmap_yok_et(h);
+    ekrana_yaz("HASHMAP_UAF_NEG: yok_et OK\n".ptr);
+    # Serbest birakildiktan sonra erisim — UAF beklenir
+    degisken deger: tamsayi = hashmap_al(h, 42);
+    ekrana_yaz("HASHMAP_UAF_NEG: ULASILMAMALI\n".ptr);
+    dondu deger;
+}

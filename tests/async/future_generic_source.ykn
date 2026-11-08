@@ -1,0 +1,8 @@
+async isv fetch() -> Future<tamsayi> {
+    dondu 1;
+}
+
+async isv ana() -> tamsayi {
+    degisken value: tamsayi = await fetch();
+    dondu value;
+}

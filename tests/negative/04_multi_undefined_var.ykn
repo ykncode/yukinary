@@ -1,0 +1,13 @@
+# Negatif Test 04: Coklu tanimsiz degisken kullanimi
+# Self-heal kapaliyken: TC HATA ile abort
+# Self-heal acikken: 2 adimda tanimsiz sembolleri 0 sabitine donusturerek derleme tamamlanir
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = tanimsiz_bir + tanimsiz_iki + 42;
+    eger x == 42 ise {
+        ekrana_yaz("MULTI-SELF-HEAL-PASS\n".ptr);
+    } yoksa {
+        ekrana_yaz("MULTI-SELF-HEAL-FAIL\n".ptr);
+    }
+    dondu 0;
+}

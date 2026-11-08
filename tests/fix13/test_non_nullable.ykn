@@ -1,0 +1,7 @@
+# FIX 13 — Null Güvenliği: ?*T nullable pointer ile bos literal
+# Test 1: Non-nullable *u8 normal kullanim (olumlu)
+isv principal(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken s: *u8 = "merhaba".ptr;
+    imprimer(s);
+    dondu 0;
+}

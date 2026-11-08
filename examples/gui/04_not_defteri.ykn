@@ -1,0 +1,22 @@
+# ============================================================
+# Örnek 54: Win32 Minimal Not Defteri Uygulaması (Notepad)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Not Defteri".ptr, 500, 400);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Ust Menü / Islem Butonlari
+    buton_olustur(p_h, "Yeni Not".ptr, 2001, 20, 15, 90, 30);
+    buton_olustur(p_h, "Kaydet".ptr, 2002, 120, 15, 90, 30);
+    buton_olustur(p_h, "Hakkinda".ptr, 2003, 220, 15, 90, 30);
+
+    # Genis Metin Alani (Edit Control)
+    degisken metin_alani_h: tamsayi = metin_kutusu_olustur(p_h, 2100, 20, 60, 440, 280);
+
+    ekrana_yaz("YKN Not Defteri arayuzu basariyla olusturuldu.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

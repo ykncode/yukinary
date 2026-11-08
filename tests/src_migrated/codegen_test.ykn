@@ -1,0 +1,1857 @@
+# ============================================================
+# Yukinary Codegen v3 - x86_64 + Windows PE32+ + Win32 Import Table
+# Tamamen bagimsiz - g++, MSVC, NASM gerektirmez
+# kernel32.dll: ExitProcess, WriteFile, GetStdHandle
+# ============================================================
+
+yapi MakineKoduArenasi {
+    bellek: *u8;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+}
+
+# ============================================================
+# Ham bellek yazicilari
+# ============================================================
+isv byte_yaz(a: *MakineKoduArenasi, b: u8) {
+    a.bellek[a.kullanilan] = b;
+    a.kullanilan = a.kullanilan + 1;
+}
+
+isv u16_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, (v & 0xFF));
+    byte_yaz(a, ((v >> 8) & 0xFF));
+}
+
+isv int32_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, (v & 0xFF));
+    byte_yaz(a, ((v >> 8) & 0xFF));
+    byte_yaz(a, ((v >> 16) & 0xFF));
+    byte_yaz(a, ((v >> 24) & 0xFF));
+}
+
+isv int64_yaz(a: *MakineKoduArenasi, v: tamsayi) {
+    int32_yaz(a, (v & 0xFFFFFFFF));
+    int32_yaz(a, ((v >> 32) & 0xFFFFFFFF));
+}
+
+isv sifir_doldur(a: *MakineKoduArenasi, adet: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        byte_yaz(a, 0);
+        i = i + 1;
+    }
+}
+
+isv str_yaz(a: *MakineKoduArenasi, s: *u8) {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        byte_yaz(a, s[i]);
+        i = i + 1;
+    }
+    byte_yaz(a, 0);
+}
+
+isv hizala_yukari(deger: tamsayi, hizalama: tamsayi) -> tamsayi {
+    eger deger == 0 ise { dondu hizalama; }
+    dondu ((deger + hizalama - 1) / hizalama) * hizalama;
+}
+
+# ============================================================
+# x86_64 Opcode uretcileri
+# ============================================================
+isv emit_push_rbp(a: *MakineKoduArenasi) { byte_yaz(a, 0x55); }
+isv emit_pop_rbp(a: *MakineKoduArenasi)  { byte_yaz(a, 0x5D); }
+isv emit_ret(a: *MakineKoduArenasi)      { byte_yaz(a, 0xC3); }
+
+isv emit_mov_rbp_rsp(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xE5);
+}
+
+isv emit_sub_rsp(a: *MakineKoduArenasi, n: tamsayi) {
+    eger n <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, n & 0xFF);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xEC); int32_yaz(a, n);
+    }
+}
+
+isv emit_add_rsp(a: *MakineKoduArenasi, n: tamsayi) {
+    eger n <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, n & 0xFF);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xC4); int32_yaz(a, n);
+    }
+}
+
+isv emit_xor_rax_rax(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x33); byte_yaz(a, 0xC0);
+}
+
+isv emit_mov_rax_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0);
+    int32_yaz(a, v);
+}
+
+isv emit_mov_rcx_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC1);
+    int32_yaz(a, v);
+}
+
+isv emit_mov_rdx_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2);
+    int32_yaz(a, v);
+}
+
+isv emit_add_rax_rcx(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x01); byte_yaz(a, 0xC8);
+}
+
+isv emit_sub_rax_rcx(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x29); byte_yaz(a, 0xC8);
+}
+
+isv emit_imul_rax_rcx(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xAF); byte_yaz(a, 0xC1);
+}
+
+# call [rip+offset32] - IAT indirect call
+isv emit_call_rip_rel(a: *MakineKoduArenasi, rel32: tamsayi) {
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    int32_yaz(a, rel32);
+}
+
+# lea rcx, [rip+offset32] - string pointer
+isv emit_lea_rcx_rip(a: *MakineKoduArenasi, rel32: tamsayi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x0D);
+    int32_yaz(a, rel32);
+}
+
+# mov r8d, imm32
+isv emit_mov_r8d_imm32(a: *MakineKoduArenasi, v: tamsayi) {
+    byte_yaz(a, 0x41); byte_yaz(a, 0xB8);
+    int32_yaz(a, v);
+}
+
+# xor r9d, r9d
+isv emit_xor_r9d_r9d(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x45); byte_yaz(a, 0x33); byte_yaz(a, 0xC9);
+}
+
+# ============================================================
+# Karsilastirma Operatorleri: CMP + SETcc + MOVZX
+# CMP RAX, RCX => bayraklari ayarlar
+# SETcc AL    => kosula gore AL = 0 veya 1
+# MOVZX RAX, AL => AL'yi RAX'a sifir-genislet
+# Sonuc: RAX = 0 (yanlis) veya 1 (dogru)
+# ============================================================
+isv emit_cmp_rax_rcx(a: *MakineKoduArenasi) {
+    # CMP RAX, RCX  => 48 3B C1
+    byte_yaz(a, 0x48); byte_yaz(a, 0x3B); byte_yaz(a, 0xC1);
+}
+
+isv emit_sete_al(a: *MakineKoduArenasi) {
+    # SETE AL  => 0F 94 C0  (esitse 1, degilse 0)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x94); byte_yaz(a, 0xC0);
+}
+
+isv emit_setne_al(a: *MakineKoduArenasi) {
+    # SETNE AL  => 0F 95 C0  (esit degilse 1)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x95); byte_yaz(a, 0xC0);
+}
+
+isv emit_setl_al(a: *MakineKoduArenasi) {
+    # SETL AL  => 0F 9C C0  (isaretli kucukse 1)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9C); byte_yaz(a, 0xC0);
+}
+
+isv emit_setg_al(a: *MakineKoduArenasi) {
+    # SETG AL  => 0F 9F C0  (isaretli buyukse 1)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9F); byte_yaz(a, 0xC0);
+}
+
+isv emit_setle_al(a: *MakineKoduArenasi) {
+    # SETLE AL  => 0F 9E C0  (kucuk veya esitse 1)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9E); byte_yaz(a, 0xC0);
+}
+
+isv emit_setge_al(a: *MakineKoduArenasi) {
+    # SETGE AL  => 0F 9D C0  (buyuk veya esitse 1)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x9D); byte_yaz(a, 0xC0);
+}
+
+isv emit_movzx_rax_al(a: *MakineKoduArenasi) {
+    # MOVZX RAX, AL  => 48 0F B6 C0
+    byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0xC0);
+}
+
+# ============================================================
+# Yerel degisken tablosu (lokal scope takibi)
+# ============================================================
+yapi LokalDegisken {
+    isim:         *u8;
+    uzunluk:      tamsayi;
+    offset:       tamsayi;
+    tip_adi:      *u8;
+    tip_uzunluk:  tamsayi;
+}
+
+yapi LokalTablo {
+    isimler:        [256]*u8;
+    uzunluklar:     [256]tamsayi;
+    offsetler:      [256]tamsayi;
+    tip_adilari:    [256]*u8;
+    tip_uzunlar:    [256]tamsayi;
+    yildizlar:      [256]tamsayi;
+    dizi_boyutlari: [256]tamsayi;
+    adet:           tamsayi;
+    stack_offset:   tamsayi;
+}
+
+yapi FonksiyonSembolu {
+    isim:    *u8;
+    uzunluk: tamsayi;
+    adres:   tamsayi;
+}
+
+yapi CagirYamasi {
+    isim:      *u8;
+    uzunluk:   tamsayi;
+    cagri_pos: tamsayi;
+}
+
+yapi FonksiyonTablosu {
+    kayitlar: [1024]FonksiyonSembolu;
+    adet:     tamsayi;
+}
+
+yapi YamaTablosu {
+    kayitlar: [4096]CagirYamasi;
+    adet:     tamsayi;
+}
+
+# IAT call patch tablosu: slot 1=WriteFile, 2=GetStdHandle
+yapi IatYamasi {
+    text_offset: tamsayi; # .text icerisinde rel32 alaninin offseti
+    slot:        tamsayi; # 1=WriteFile, 2=GetStdHandle
+}
+
+yapi IatYamaTablosu {
+    kayitlar: [64]IatYamasi;
+    adet:     tamsayi;
+}
+
+
+isv lokal_tablo_sifirla(tbl: *LokalTablo) {
+    tbl.adet = 0;
+    tbl.stack_offset = 0;
+}
+
+isv lokal_bul_offset(tbl: *LokalTablo, isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < tbl.adet {
+        eger tbl.uzunluklar[i] == uzn ise {
+            eger bellek_esit_mi(tbl.isimler[i], isim, uzn) == 1 ise {
+                dondu tbl.offsetler[i];
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv lokal_bul_yildiz(tbl: *LokalTablo, isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < tbl.adet {
+        eger tbl.uzunluklar[i] == uzn ise {
+            eger bellek_esit_mi(tbl.isimler[i], isim, uzn) == 1 ise {
+                dondu tbl.yildizlar[i];
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv lokal_bul_dizi(tbl: *LokalTablo, isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < tbl.adet {
+        eger tbl.uzunluklar[i] == uzn ise {
+            eger bellek_esit_mi(tbl.isimler[i], isim, uzn) == 1 ise {
+                dondu tbl.dizi_boyutlari[i];
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv lokal_bul_tip_uzn(tbl: *LokalTablo, isim: *u8, uzn: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < tbl.adet {
+        eger tbl.uzunluklar[i] == uzn ise {
+            eger bellek_esit_mi(tbl.isimler[i], isim, uzn) == 1 ise {
+                dondu tbl.tip_uzunlar[i];
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv lokal_bul_tip_adi(tbl: *LokalTablo, isim: *u8, uzn: tamsayi) -> *u8 {
+    degisken i: tamsayi = 0;
+    dongu i < tbl.adet {
+        eger tbl.uzunluklar[i] == uzn ise {
+            eger bellek_esit_mi(tbl.isimler[i], isim, uzn) == 1 ise {
+                dondu tbl.tip_adilari[i];
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# u8 pointer (*u8, yildiz=1) veya [N]u8 array → byte erisim (scale 1)
+# **u8, *Jeton vb → pointer erisim (scale 8)
+isv subscript_byte_mi(tbl: *LokalTablo, isim: *u8, uzn: tamsayi, dizi_boyutu: tamsayi) -> tamsayi {
+    degisken tip_adi: *u8 = lokal_bul_tip_adi(tbl, isim, uzn);
+    eger tip_adi == 0 ise { dondu 0; }
+    degisken tip_uzn: tamsayi = lokal_bul_tip_uzn(tbl, isim, uzn);
+    eger tip_uzn != 2 ise { dondu 0; }
+    eger tip_adi[0] != 117 ise { dondu 0; } # 'u'
+    eger tip_adi[1] != 56 ise { dondu 0; }  # '8'
+    # tip_adi == "u8": byte element if pointer depth == 1 OR stack array
+    degisken yildiz: tamsayi = lokal_bul_yildiz(tbl, isim, uzn);
+    eger yildiz == 1 ise { dondu 1; }
+    eger dizi_boyutu > 0 ise { dondu 1; }
+    dondu 0;
+}
+
+# u8 pointer (*u8, yildiz=1) veya [N]u8 array → byte erisim (scale 1)
+isv subscript_byte_mi_ast(arr_node: *AstDugum, tbl: *LokalTablo) -> tamsayi {
+    # Check local table by identifier name
+    eger arr_node.ilk_jeton != 0 ise {
+        degisken tip_adi: *u8 = lokal_bul_tip_adi(tbl, arr_node.ilk_jeton.baslangic, arr_node.ilk_jeton.uzunluk);
+        eger tip_adi != 0 ise {
+            degisken tip_uzn: tamsayi = lokal_bul_tip_uzn(tbl, arr_node.ilk_jeton.baslangic, arr_node.ilk_jeton.uzunluk);
+            eger tip_uzn == 2 ise {
+                eger tip_adi[0] == 117 ise {
+                    eger tip_adi[1] == 56 ise {
+                        degisken yildiz: tamsayi = lokal_bul_yildiz(tbl, arr_node.ilk_jeton.baslangic, arr_node.ilk_jeton.uzunluk);
+                        eger yildiz == 1 ise { dondu 1; }
+                    }
+                }
+            }
+        }
+    }
+    # Check arr_node.tip_adi (typechecker/parser-set type annotation)
+    # Sadece *u8 (yildiz=1) veya [N]u8 (dizi_boyutu>0) icin byte erisimi
+    eger arr_node.tip_adi != 0 ise {
+        eger arr_node.tip_adi_uzunluk == 2 ise {
+            eger arr_node.tip_adi[0] == 117 ise {
+                eger arr_node.tip_adi[1] == 56 ise {
+                    degisken ny: tamsayi = arr_node.cozumlenmis_tip;
+                    degisken nd: tamsayi = arr_node.dizi_boyutu;
+                    eger ny == 1 ise { dondu 1; }
+                    eger nd > 0 ise { dondu 1; }
+                }
+            }
+        }
+    }
+    dondu 0;
+}
+
+isv lokal_kaydet(tbl: *LokalTablo, isim: *u8, uzn: tamsayi, dizi_boyutu: tamsayi, tip_adi: *u8, tip_uzn: tamsayi, yildiz: tamsayi) -> tamsayi {
+    eger dizi_boyutu > 0 ise {
+        tbl.stack_offset = tbl.stack_offset + (dizi_boyutu * 8);
+    } yoksa eger yildiz == 0 ve tip_adi != 0 ve tip_uzn > 0 ise {
+        degisken byt: tamsayi = 8;
+        degisken yi: tamsayi = 0;
+        dongu yi < g_yapi_tablosu.adet {
+            eger g_yapi_tablosu.kayitlar[yi].uzunluk == tip_uzn ise {
+                eger bellek_esit_mi(g_yapi_tablosu.kayitlar[yi].isim, tip_adi, tip_uzn) == 1 ise {
+                    byt = g_yapi_tablosu.kayitlar[yi].alan_sayisi * 8;
+                    eger byt == 0 ise { byt = 8; }
+                }
+            }
+            yi = yi + 1;
+        }
+        tbl.stack_offset = tbl.stack_offset + byt;
+    } yoksa {
+        tbl.stack_offset = tbl.stack_offset + 8;
+    }
+    degisken idx: tamsayi = tbl.adet;
+    tbl.isimler[idx]       = isim;
+    tbl.uzunluklar[idx]    = uzn;
+    tbl.offsetler[idx]     = tbl.stack_offset;
+    tbl.tip_adilari[idx]   = tip_adi;
+    tbl.tip_uzunlar[idx]   = tip_uzn;
+    tbl.yildizlar[idx]     = yildiz;
+    tbl.dizi_boyutlari[idx] = dizi_boyutu;
+    tbl.adet = tbl.adet + 1;    dondu tbl.stack_offset;
+}
+
+# ============================================================
+# Struct (yapi) kayit tablosu
+# ============================================================
+yapi YapiAlani {
+    isim:          *u8;
+    uzunluk:       tamsayi;
+    offset:        tamsayi;
+    tip_adi:       *u8;
+    tip_uzunluk:   tamsayi;
+    yildiz_sayisi: tamsayi;
+}
+
+yapi YapiTanimi {
+    isim:        *u8;
+    uzunluk:     tamsayi;
+    alanlar:     [32]YapiAlani;
+    alan_sayisi: tamsayi;
+}
+
+yapi YapiTablosu {
+    kayitlar: [64]YapiTanimi;
+    adet:     tamsayi;
+}
+
+# Global lokal degisken tablosu (fonksiyon basinda sifirlanir)
+degisken g_lokal_tablo: LokalTablo;
+degisken g_fonksiyonlar: FonksiyonTablosu;
+degisken g_yamalar: YamaTablosu;
+degisken g_yapi_tablosu: YapiTablosu;
+degisken g_iat_yamalar: IatYamaTablosu;
+
+
+isv emit_store_rax(a: *MakineKoduArenasi, off: tamsayi) {
+    eger off <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x45);
+        byte_yaz(a, 256 - off);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x85);
+        int32_yaz(a, 0 - off);
+    }
+}
+
+isv emit_load_rax(a: *MakineKoduArenasi, off: tamsayi) {
+    eger off <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x45);
+        byte_yaz(a, 256 - off);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x85);
+        int32_yaz(a, 0 - off);
+    }
+}
+
+isv emit_lea_rax(a: *MakineKoduArenasi, off: tamsayi) {
+    eger off <= 127 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x45);
+        byte_yaz(a, 256 - off);
+    } yoksa {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x85);
+        int32_yaz(a, 0 - off);
+    }
+}
+
+# ============================================================
+# AST -> x86_64 kod uretimi
+# ============================================================
+isv string_tamsayiya(veri: *u8, uzn: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        sonuc = (sonuc * 10) + (veri[i] - 48);
+        i = i + 1;
+    }
+    dondu sonuc;
+}
+
+isv ast_kod_uret(a: *MakineKoduArenasi, dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+
+    eger dugum.tip == AST_SAYI ise {
+        degisken sayi: tamsayi = string_tamsayiya(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk);
+        emit_mov_rax_imm32(a, sayi);
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_METIN: String verisini atla, RAX'a adresini LEA ile yukle
+    # --------------------------------------------------------
+    eger dugum.tip == AST_METIN ise {
+        degisken ic_uzunluk: tamsayi = dugum.ilk_jeton.uzunluk;
+        degisken ic_baslangic: *u8 = dugum.ilk_jeton.baslangic;
+        
+        eger ic_uzunluk >= 2 ve ic_baslangic[0] == 34 ise { # '"'
+            ic_baslangic = ic_baslangic + 1;
+            ic_uzunluk = ic_uzunluk - 2;
+        }
+        
+        degisken gercek_uzunluk: tamsayi = 0;
+        degisken i: tamsayi = 0;
+        dongu i < ic_uzunluk {
+            eger ic_baslangic[i] == 92 ve (i + 1) < ic_uzunluk ve ic_baslangic[i + 1] == 110 ise { # '\n'
+                gercek_uzunluk = gercek_uzunluk + 1;
+                i = i + 1;
+            } yoksa {
+                gercek_uzunluk = gercek_uzunluk + 1;
+            }
+            i = i + 1;
+        }
+        
+        byte_yaz(a, 0xEB);
+        byte_yaz(a, (gercek_uzunluk + 1) & 0xFF);
+        
+        degisken str_pos: tamsayi = a.kullanilan;
+        i = 0;
+        dongu i < ic_uzunluk {
+            eger ic_baslangic[i] == 92 ve (i + 1) < ic_uzunluk ve ic_baslangic[i + 1] == 110 ise {
+                byte_yaz(a, 10);
+                i = i + 1;
+            } yoksa {
+                byte_yaz(a, ic_baslangic[i]);
+            }
+            i = i + 1;
+        }
+        byte_yaz(a, 0);
+        
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x05);
+        int32_yaz(a, str_pos - (a.kullanilan + 4));
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_KIMLIK: Yerel degisken degerini RAX'e yukle
+    # --------------------------------------------------------
+    eger dugum.tip == AST_KIMLIK ise {
+        degisken off: tamsayi = lokal_bul_offset(g_lokal_tablo, dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk);
+        eger off != 0 ise {
+            emit_load_rax(a, off);
+        } yoksa {
+            emit_xor_rax_rax(a);
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_DEGISKEN_TANIMI: Stack'te yer ac, ilk degeri kaydet
+    # --------------------------------------------------------
+    eger dugum.tip == AST_DEGISKEN_TANIMI ise {
+        # Once baslangic degerini hesapla (RAX'e)
+        eger dugum.sag != 0 ise {
+            ast_kod_uret(a, dugum.sag);
+        } yoksa {
+            emit_xor_rax_rax(a);
+        }
+        # Lokal tablosuna kaydet, stack offset al
+        degisken off: tamsayi = lokal_kaydet(
+            g_lokal_tablo,
+            dugum.ilk_jeton.baslangic,
+            dugum.ilk_jeton.uzunluk,
+            dugum.dizi_boyutu,
+            dugum.tip_adi,
+            dugum.tip_adi_uzunluk,
+            dugum.cozumlenmis_tip
+        );
+        # RAX'i [RBP - off] adresine yaz
+        emit_store_rax(a, off);
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_ATAMA: sag = ifade, sol = hedef (KIMLIK veya INDEKS)
+    # --------------------------------------------------------
+    eger dugum.tip == AST_ATAMA ise {
+        ast_kod_uret(a, dugum.sag);
+        degisken sol: *AstDugum = dugum.sol;
+        # Basit degisken atamasi: x = ifade
+        eger sol.tip == AST_KIMLIK ise {
+            degisken off: tamsayi = lokal_bul_offset(g_lokal_tablo, sol.ilk_jeton.baslangic, sol.ilk_jeton.uzunluk);
+            eger off != 0 ise {
+                emit_store_rax(a, off);
+            }
+            dondu 0;
+        }
+        # Pointer dereference atamasi: *ptr = ifade  => MOV [RAX], RCX
+        eger sol.tip == 19 ise { # AST_UNARY
+            byte_yaz(a, 0x50); # PUSH RAX (atanacak deger)
+            ast_kod_uret(a, sol.sag); # pointer adresini RAX'e al
+            byte_yaz(a, 0x59); # POP RCX (atanacak deger)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x08); # MOV [RAX], RCX
+            dondu 0;
+        }
+        # Struct alan atamasi: obj.field = ifade
+        eger sol.tip == 17 ise { # AST_ALAN_ERISIMI
+            byte_yaz(a, 0x50); # PUSH RAX (atanacak deger)
+            degisken asgn_obj: *AstDugum = sol.sol;
+            degisken asgn_field: *AstDugum = sol.sag;
+            degisken asgn_var_off: tamsayi = 0;
+            degisken asgn_t_adi: *u8 = 0;
+            degisken asgn_t_uzn: tamsayi = 0;
+            eger asgn_obj.tip == AST_KIMLIK ise {
+                degisken ki: tamsayi = 0;
+                dongu ki < g_lokal_tablo.adet {
+                    eger g_lokal_tablo.uzunluklar[ki] == asgn_obj.ilk_jeton.uzunluk ise {
+                        eger bellek_esit_mi(g_lokal_tablo.isimler[ki], asgn_obj.ilk_jeton.baslangic, g_lokal_tablo.uzunluklar[ki]) == 1 ise {
+                            asgn_var_off = g_lokal_tablo.offsetler[ki];
+                            asgn_t_adi   = g_lokal_tablo.tip_adilari[ki];
+                            asgn_t_uzn   = g_lokal_tablo.tip_uzunlar[ki];
+                        }
+                    }
+                    ki = ki + 1;
+                }
+            }
+            # Fallback: nested objeler icin asgn_obj dugumunun kendi tip alanlarini kullan
+            eger asgn_t_adi == 0 veya asgn_t_uzn == 0 ise {
+                degisken af_tip: *u8 = asgn_obj.tip_adi;
+                degisken af_uzn: tamsayi = asgn_obj.tip_adi_uzunluk;
+                eger af_tip != 0 ve af_uzn > 0 ise {
+                    asgn_t_adi = af_tip;
+                    asgn_t_uzn = af_uzn;
+                }
+            }
+            degisken asgn_field_off: tamsayi = 0 - 1;
+            eger asgn_t_adi != 0 ise {
+                degisken yi: tamsayi = 0;
+                dongu yi < g_yapi_tablosu.adet {
+                    eger g_yapi_tablosu.kayitlar[yi].uzunluk == asgn_t_uzn ise {
+                        eger bellek_esit_mi(g_yapi_tablosu.kayitlar[yi].isim, asgn_t_adi, asgn_t_uzn) == 1 ise {
+                            degisken ai: tamsayi = 0;
+                            dongu ai < g_yapi_tablosu.kayitlar[yi].alan_sayisi {
+                                eger g_yapi_tablosu.kayitlar[yi].alanlar[ai].uzunluk == asgn_field.ilk_jeton.uzunluk ise {
+                                    eger bellek_esit_mi(g_yapi_tablosu.kayitlar[yi].alanlar[ai].isim, asgn_field.ilk_jeton.baslangic, g_yapi_tablosu.kayitlar[yi].alanlar[ai].uzunluk) == 1 ise {
+                                        asgn_field_off = g_yapi_tablosu.kayitlar[yi].alanlar[ai].offset;
+                                    }
+                                }
+                                ai = ai + 1;
+                            }
+                        }
+                    }
+                    yi = yi + 1;
+                }
+            }
+            # Nesne pointer'ini RAX'e yukle: lokal degisken ise load, nested ifade ise yeniden uret
+            eger asgn_var_off != 0 ise {
+                emit_load_rax(a, asgn_var_off);
+            } yoksa {
+                ast_kod_uret(a, asgn_obj);
+            }
+            byte_yaz(a, 0x59); # POP RCX (atanacak deger)
+            eger asgn_field_off != (0 - 1) ise {
+                eger asgn_field_off <= 127 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x48);
+                    byte_yaz(a, asgn_field_off & 0xFF);
+                } yoksa {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x88);
+                    int32_yaz(a, asgn_field_off);
+                }
+            }
+            dondu 0;
+        }
+        # Dizi indeks atamasi: arr[i] = ifade
+        # ONEMLI: Once kod uret (AST_ALAN_ERISIMI tip bilgisini yazsin), sonra fallback al
+        eger sol.tip == AST_INDEKS_ERISIMI ise {
+            byte_yaz(a, 0x50); # PUSH RAX (atanacak deger)
+            degisken arr_node: *AstDugum = sol.sol;
+            degisken idx_node: *AstDugum = sol.sag;
+            degisken lvar_off: tamsayi = 0;
+            degisken lvar_dizi: tamsayi = 0;
+            degisken lvar_yildiz: tamsayi = 0;
+            degisken lvar_tip_adi: *u8 = 0;
+            degisken lvar_tip_uzunluk: tamsayi = 0;
+            eger arr_node.tip == AST_KIMLIK ise {
+                degisken lki: tamsayi = 0;
+                dongu lki < g_lokal_tablo.adet {
+                    eger g_lokal_tablo.uzunluklar[lki] == arr_node.ilk_jeton.uzunluk ise {
+                        eger bellek_esit_mi(g_lokal_tablo.isimler[lki], arr_node.ilk_jeton.baslangic, g_lokal_tablo.uzunluklar[lki]) == 1 ise {
+                            lvar_off = g_lokal_tablo.offsetler[lki];
+                            lvar_tip_adi = g_lokal_tablo.tip_adilari[lki];
+                            lvar_tip_uzunluk = g_lokal_tablo.tip_uzunlar[lki];
+                            lvar_yildiz = g_lokal_tablo.yildizlar[lki];
+                            lvar_dizi = lokal_bul_dizi(g_lokal_tablo, arr_node.ilk_jeton.baslangic, arr_node.ilk_jeton.uzunluk);
+                        }
+                    }
+                    lki = lki + 1;
+                }
+            }
+            # ADIM 1 (ONCELIKLE): Taban adresi uret/yukle
+            eger lvar_off != 0 ve lvar_dizi > 0 ise {
+                eger lvar_off <= 127 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x45);
+                    byte_yaz(a, 256 - lvar_off);
+                } yoksa {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x85);
+                    int32_yaz(a, 0 - lvar_off);
+                }
+            } yoksa {
+                ast_kod_uret(a, arr_node);
+            }
+            # ADIM 2 (KOD URETIMINDEN SONRA): Fallback
+            eger lvar_yildiz == 0 ve lvar_dizi == 0 ve lvar_tip_adi == 0 ise {
+                lvar_yildiz = arr_node.cozumlenmis_tip;
+                lvar_tip_adi = arr_node.tip_adi;
+                lvar_tip_uzunluk = arr_node.tip_adi_uzunluk;
+                lvar_dizi = arr_node.dizi_boyutu;
+            }
+            byte_yaz(a, 0x50); # PUSH RAX (taban adresi)
+            # ADIM 3: Element olcegi
+            degisken lis_byte_array: tamsayi = 0;
+            degisken lelm_scale: tamsayi = 8;
+            eger lvar_tip_adi != 0 ve lvar_tip_uzunluk == 2 ise {
+                eger lvar_tip_adi[0] == 117 ise {
+                    eger lvar_tip_adi[1] == 56 ise {
+                        eger lvar_dizi > 0 veya lvar_yildiz == 1 ise {
+                            lis_byte_array = 1;
+                            lelm_scale = 1;
+                        }
+                    }
+                }
+            }
+            eger lis_byte_array == 0 ise {
+                eger lvar_dizi > 0 ve lvar_tip_adi != 0 ve lvar_tip_uzunluk > 0 ise {
+                    degisken lsi: tamsayi = 0;
+                    dongu lsi < g_yapi_tablosu.adet {
+                        eger g_yapi_tablosu.kayitlar[lsi].uzunluk == lvar_tip_uzunluk ise {
+                            eger bellek_esit_mi(g_yapi_tablosu.kayitlar[lsi].isim, lvar_tip_adi, lvar_tip_uzunluk) == 1 ise {
+                                lelm_scale = g_yapi_tablosu.kayitlar[lsi].alan_sayisi * 8;
+                                eger lelm_scale == 0 ise { lelm_scale = 8; }
+                            }
+                        }
+                        lsi = lsi + 1;
+                    }
+                }
+            }
+            # ADIM 4: indeks + olcek
+            ast_kod_uret(a, idx_node);
+            eger lis_byte_array == 0 ise {
+                eger lelm_scale == 8 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x03);
+                } yoksa eger lelm_scale == 16 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x04);
+                } yoksa eger lelm_scale == 32 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x05);
+                } yoksa eger lelm_scale == 64 ise {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x06);
+                } yoksa {
+                    byte_yaz(a, 0x48); byte_yaz(a, 0x69); byte_yaz(a, 0xC0); int32_yaz(a, lelm_scale);
+                }
+            }
+            byte_yaz(a, 0x59); # POP RCX (taban adresi)
+            emit_add_rax_rcx(a); # RAX = hedef adres
+            byte_yaz(a, 0x59); # POP RCX (atanacak deger)
+            eger lis_byte_array == 1 ise {
+                byte_yaz(a, 0x88); byte_yaz(a, 0x08); # MOV [RAX], CL
+            } yoksa {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x08); # MOV [RAX], RCX
+            }
+            dondu 0;
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_INDEKS_ERISIMI: arr[i] => RAX = *(base + i*scale)
+    # ONEMLI: Once kod uret (AST_ALAN_ERISIMI tip bilgisini yazsin), sonra fallback al
+    # --------------------------------------------------------
+    eger dugum.tip == AST_INDEKS_ERISIMI ise {
+        degisken arr_node: *AstDugum = dugum.sol;
+        degisken idx_node: *AstDugum = dugum.sag;
+        degisken var_off: tamsayi = 0;
+        degisken var_dizi: tamsayi = 0;
+        degisken var_yildiz: tamsayi = 0;
+        degisken var_tip_adi: *u8 = 0;
+        degisken var_tip_uzunluk: tamsayi = 0;
+        eger arr_node.tip == AST_KIMLIK ise {
+            degisken ki: tamsayi = 0;
+            dongu ki < g_lokal_tablo.adet {
+                eger g_lokal_tablo.uzunluklar[ki] == arr_node.ilk_jeton.uzunluk ise {
+                    eger bellek_esit_mi(g_lokal_tablo.isimler[ki], arr_node.ilk_jeton.baslangic, g_lokal_tablo.uzunluklar[ki]) == 1 ise {
+                        var_off = g_lokal_tablo.offsetler[ki];
+                        var_tip_adi = g_lokal_tablo.tip_adilari[ki];
+                        var_tip_uzunluk = g_lokal_tablo.tip_uzunlar[ki];
+                        var_yildiz = g_lokal_tablo.yildizlar[ki];
+                        var_dizi = lokal_bul_dizi(g_lokal_tablo, arr_node.ilk_jeton.baslangic, arr_node.ilk_jeton.uzunluk);
+                    }
+                }
+                ki = ki + 1;
+            }
+        }
+        # ADIM 1 (ONCELIKLE): Taban adresi uret/yukle
+        # - Stack dizisi (AST_KIMLIK + var_dizi>0): LEA
+        # - Diger tum durumlar (pointer, struct field uzerinden, nested): ast_kod_uret
+        #   Not: ast_kod_uret AST_ALAN_ERISIMI ise arr_node.tip_adi / cozumlenmis_tip alanlarini doldurur
+        eger var_off != 0 ve var_dizi > 0 ise {
+            eger var_off <= 127 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x45);
+                byte_yaz(a, 256 - var_off);
+            } yoksa {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x85);
+                int32_yaz(a, 0 - var_off);
+            }
+        } yoksa {
+            ast_kod_uret(a, arr_node);
+        }
+        # ADIM 2 (KOD URETIMINDEN SONRA): Fallback — eger lokal tablo bilgi vermediyse
+        # artık arr_node'un kendi alanlari (AST_ALAN_ERISIMI tarafindan dolduruldu)
+        eger var_yildiz == 0 ve var_dizi == 0 ve var_tip_adi == 0 ise {
+            var_yildiz = arr_node.cozumlenmis_tip;
+            var_tip_adi = arr_node.tip_adi;
+            var_tip_uzunluk = arr_node.tip_adi_uzunluk;
+            var_dizi = arr_node.dizi_boyutu;
+        }
+        byte_yaz(a, 0x50); # PUSH RAX (taban adresini sakla)
+        # ADIM 3: Element olcegi belirle (artık var_tip_adi/var_yildiz/var_dizi dolu)
+        degisken is_byte_array: tamsayi = 0;
+        degisken elem_scale: tamsayi = 8;
+        eger var_tip_adi != 0 ve var_tip_uzunluk == 2 ise {
+            eger var_tip_adi[0] == 117 ise { # 'u'
+                eger var_tip_adi[1] == 56 ise { # '8'
+                    eger var_dizi > 0 veya var_yildiz == 1 ise {
+                        is_byte_array = 1;
+                        elem_scale = 1;
+                    }
+                }
+            }
+        }
+        eger is_byte_array == 0 ise {
+            eger var_dizi > 0 ve var_tip_adi != 0 ve var_tip_uzunluk > 0 ise {
+                degisken si: tamsayi = 0;
+                dongu si < g_yapi_tablosu.adet {
+                    eger g_yapi_tablosu.kayitlar[si].uzunluk == var_tip_uzunluk ise {
+                        eger bellek_esit_mi(g_yapi_tablosu.kayitlar[si].isim, var_tip_adi, var_tip_uzunluk) == 1 ise {
+                            elem_scale = g_yapi_tablosu.kayitlar[si].alan_sayisi * 8;
+                            eger elem_scale == 0 ise { elem_scale = 8; }
+                        }
+                    }
+                    si = si + 1;
+                }
+            }
+        }
+        # ADIM 4: indeks hesapla + olcekle
+        ast_kod_uret(a, idx_node); # RAX = indeks
+        eger is_byte_array == 0 ise {
+            eger elem_scale == 8 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x03);
+            } yoksa eger elem_scale == 16 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x04);
+            } yoksa eger elem_scale == 32 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x05);
+            } yoksa eger elem_scale == 64 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC1); byte_yaz(a, 0xE0); byte_yaz(a, 0x06);
+            } yoksa {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x69); byte_yaz(a, 0xC0); int32_yaz(a, elem_scale);
+            }
+        }
+        byte_yaz(a, 0x59); # POP RCX (taban)
+        emit_add_rax_rcx(a); # RAX = &elem[i]
+        eger is_byte_array == 1 ise {
+            byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0x00);
+        } yoksa {
+            byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x00);
+        }
+        dondu 0;
+    }
+
+    eger dugum.tip == AST_IKILI_OP ise {
+        ast_kod_uret(a, dugum.sol);
+        byte_yaz(a, 0x50); # PUSH RAX (sol sonucu stack'e kaydet)
+        ast_kod_uret(a, dugum.sag);
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); # MOV RCX, RAX (sag = RCX)
+        byte_yaz(a, 0x58); # POP RAX (sol = RAX)
+        eger dugum.ilk_jeton != 0 ise {
+            # Aritmetik operatorler
+            eger dugum.ilk_jeton.tip == TIP_ARTI  ise { emit_add_rax_rcx(a);  dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_EKSI  ise { emit_sub_rax_rcx(a);  dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_CARPI ise { emit_imul_rax_rcx(a); dondu 0; }
+            # Karsilastirma operatorleri: CMP RAX, RCX + SETcc AL + MOVZX RAX, AL
+            eger dugum.ilk_jeton.tip == TIP_ESIT_MI    ise { emit_cmp_rax_rcx(a); emit_sete_al(a);  emit_movzx_rax_al(a); dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_ESIT_DEGIL ise { emit_cmp_rax_rcx(a); emit_setne_al(a); emit_movzx_rax_al(a); dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_KUCUK_MU   ise { emit_cmp_rax_rcx(a); emit_setl_al(a);  emit_movzx_rax_al(a); dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_BUYUK_MU   ise { emit_cmp_rax_rcx(a); emit_setg_al(a);  emit_movzx_rax_al(a); dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_KUCUK_ESIT ise { emit_cmp_rax_rcx(a); emit_setle_al(a); emit_movzx_rax_al(a); dondu 0; }
+            eger dugum.ilk_jeton.tip == TIP_BUYUK_ESIT ise { emit_cmp_rax_rcx(a); emit_setge_al(a); emit_movzx_rax_al(a); dondu 0; }
+            # Mantiksal AND/OR: iki taraf sifir degil mi?
+            eger dugum.ilk_jeton.tip == TIP_VE ise {
+                # TEST RAX,RAX → SETNE AL → MOVZX RAX,AL
+                byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0);
+                byte_yaz(a, 0x0F); byte_yaz(a, 0x95); byte_yaz(a, 0xC0);
+                byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0xC0);
+                # TEST RCX,RCX → SETNE CL → MOVZX RCX,CL
+                byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC9);
+                byte_yaz(a, 0x0F); byte_yaz(a, 0x95); byte_yaz(a, 0xC1);
+                byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0xC9);
+                # AND RAX,RCX
+                byte_yaz(a, 0x48); byte_yaz(a, 0x21); byte_yaz(a, 0xC8);
+                dondu 0;
+            }
+            eger dugum.ilk_jeton.tip == TIP_VEYA ise {
+                # OR RAX,RCX → SETNE AL → MOVZX RAX,AL
+                byte_yaz(a, 0x48); byte_yaz(a, 0x09); byte_yaz(a, 0xC8);
+                byte_yaz(a, 0x0F); byte_yaz(a, 0x95); byte_yaz(a, 0xC0);
+                byte_yaz(a, 0x48); byte_yaz(a, 0x0F); byte_yaz(a, 0xB6); byte_yaz(a, 0xC0);
+                dondu 0;
+            }
+        }
+        dondu 0;
+    }
+
+    eger dugum.tip == AST_DONDUR ise {
+        eger dugum.sag != 0 ise { ast_kod_uret(a, dugum.sag); }
+        yoksa { emit_xor_rax_rax(a); }
+        emit_add_rsp(a, 520);
+        emit_pop_rbp(a);
+        emit_ret(a);
+        dondu 0;
+    }
+
+    eger dugum.tip == AST_BLOK ise {
+        degisken iter: *AstDugum = dugum.sol;
+        dongu iter != 0 {
+            ast_kod_uret(a, iter);
+            iter = iter.sonraki;
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_ISLEV: Prolog + parametreler stack'e + govde + epilog
+    # --------------------------------------------------------
+    eger dugum.tip == AST_ISLEV ise {
+        # Fonksiyonu kaydet
+        degisken f_idx: tamsayi = g_fonksiyonlar.adet;
+        g_fonksiyonlar.kayitlar[f_idx].isim = dugum.ilk_jeton.baslangic;
+        g_fonksiyonlar.kayitlar[f_idx].uzunluk = dugum.ilk_jeton.uzunluk;
+        g_fonksiyonlar.kayitlar[f_idx].adres = a.kullanilan;
+        g_fonksiyonlar.adet = g_fonksiyonlar.adet + 1;
+
+        # Fonksiyon scope'unu sifirla
+        lokal_tablo_sifirla(g_lokal_tablo);
+        emit_push_rbp(a);
+        emit_mov_rbp_rsp(a);
+        emit_sub_rsp(a, 520);
+        # Parametreleri Windows x64 ABI'ye gore stack'e spill et
+        # Param 0: RCX, Param 1: RDX, Param 2: R8, Param 3: R9
+        degisken param: *AstDugum = dugum.parametreler;
+        degisken pidx: tamsayi = 0;
+        dongu param != 0 {
+            degisken poff: tamsayi = lokal_kaydet(g_lokal_tablo, param.ilk_jeton.baslangic, param.ilk_jeton.uzunluk, 0, param.tip_adi, param.tip_adi_uzunluk, param.cozumlenmis_tip);
+            eger pidx == 0 ise {
+                # MOV [RBP - poff], RCX
+                byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x4D);
+                byte_yaz(a, 256 - poff);
+            }
+            eger pidx == 1 ise {
+                # MOV [RBP - poff], RDX
+                byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x55);
+                byte_yaz(a, 256 - poff);
+            }
+            eger pidx == 2 ise {
+                # MOV [RBP - poff], R8
+                byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0x45);
+                byte_yaz(a, 256 - poff);
+            }
+            eger pidx == 3 ise {
+                # MOV [RBP - poff], R9
+                byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0x4D);
+                byte_yaz(a, 256 - poff);
+            }
+            pidx = pidx + 1;
+            param = param.sonraki;
+        }
+        ast_kod_uret(a, dugum.govde);
+        emit_add_rsp(a, 520);
+        emit_xor_rax_rax(a);
+        emit_pop_rbp(a);
+        emit_ret(a);
+        dondu 0;
+    }
+
+    eger dugum.tip == 11 ise { # AST_ISLEV_CAGRISI
+        degisken f_isim: *u8 = dugum.sol.ilk_jeton.baslangic;
+        degisken f_uzn: tamsayi = dugum.sol.ilk_jeton.uzunluk;
+
+        eger bellek_esit_mi(f_isim, "ekrana_yaz".ptr, 10) == 1 ise {
+            degisken arg_dugum: *AstDugum = dugum.sag;
+            degisken metin_dugum: *AstDugum = 0;
+            eger arg_dugum != 0 ise {
+                eger arg_dugum.sol != 0 ve arg_dugum.sol.tip == AST_METIN ise {
+                    metin_dugum = arg_dugum.sol;
+                } yoksa eger arg_dugum.tip == AST_METIN ise {
+                    metin_dugum = arg_dugum;
+                }
+            }
+            eger metin_dugum == 0 ise {
+                ast_kod_uret(a, arg_dugum);
+            } yoksa {
+                ast_kod_uret(a, metin_dugum);
+            }
+                # MOV R15, RAX
+                byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);
+                # SUB RSP, 40 (shadow space + alignment)
+                byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28);
+                # MOV RCX, -11
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC1); int32_yaz(a, 0xFFFFFFF5);
+                # CALL GetStdHandle IAT (placeholder, patched in pe32plus_uret)
+                byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+                degisken iat_gs_idx: tamsayi = g_iat_yamalar.adet;
+                g_iat_yamalar.kayitlar[iat_gs_idx].text_offset = a.kullanilan;
+                g_iat_yamalar.kayitlar[iat_gs_idx].slot = 2;
+                g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+                int32_yaz(a, 0); # placeholder
+                # MOV RCX, RAX
+                byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1);
+                # MOV RDX, R15
+                byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFA);
+                # XOR R8, R8
+                byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC0);
+                # CMP byte [RDX+R8], 0
+                byte_yaz(a, 0x42); byte_yaz(a, 0x80); byte_yaz(a, 0x3C); byte_yaz(a, 0x02); byte_yaz(a, 0x00);
+                # JE +5
+                byte_yaz(a, 0x74); byte_yaz(a, 0x05);
+                # INC R8
+                byte_yaz(a, 0x49); byte_yaz(a, 0xFF); byte_yaz(a, 0xC0);
+                # JMP -12
+                byte_yaz(a, 0xEB); byte_yaz(a, 0xF4);
+                # XOR R9, R9
+                byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9);
+                # MOV [RSP+32], 0
+                byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 0);
+                # CALL WriteFile IAT (placeholder, patched in pe32plus_uret)
+                byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+                degisken iat_wf_idx: tamsayi = g_iat_yamalar.adet;
+                g_iat_yamalar.kayitlar[iat_wf_idx].text_offset = a.kullanilan;
+                g_iat_yamalar.kayitlar[iat_wf_idx].slot = 1;
+                g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+                int32_yaz(a, 0); # placeholder
+                # ADD RSP, 40
+                byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28);
+            }
+        } yoksa eger bellek_esit_mi(f_isim, "bellek_tahsis_et".ptr, 16) == 1 ise {
+            # bellek_tahsis_et(boyut) -> VirtualAlloc(NULL, boyut, 0x3000, 0x04)
+            degisken ba_arg: *AstDugum = dugum.sag;
+            # Argumani (boyut) RAX'a yukle
+            eger ba_arg != 0 ise {
+                ast_kod_uret(a, ba_arg);
+            } yoksa {
+                emit_xor_rax_rax(a);
+            }
+            # MOV RDX, RAX  (dwSize = boyut)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC2);
+            # XOR RCX, RCX  (lpAddress = NULL)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x31); byte_yaz(a, 0xC9);
+            # MOV R8D, 0x3000  (MEM_COMMIT|MEM_RESERVE)
+            byte_yaz(a, 0x41); byte_yaz(a, 0xB8); int32_yaz(a, 0x3000);
+            # MOV R9D, 0x04  (PAGE_READWRITE)
+            byte_yaz(a, 0x41); byte_yaz(a, 0xB9); int32_yaz(a, 0x04);
+            # SUB RSP, 40  (shadow space)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28);
+            # CALL [RIP+rel32] -> VirtualAlloc IAT (slot 3)
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_va_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_va_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_va_idx].slot = 3;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0); # placeholder
+            # ADD RSP, 40
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28);
+        } yoksa eger bellek_esit_mi(f_isim, "dosya_oku".ptr, 9) == 1 ise {
+            # dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi
+            # CreateFileA (slot 4) + ReadFile (slot 5) + CloseHandle (slot 6)
+            degisken do_a1: *AstDugum = dugum.sag;
+            degisken do_a2: *AstDugum = 0;
+            degisken do_a3: *AstDugum = 0;
+            eger do_a1 != 0 ise { do_a2 = do_a1.sonraki; }
+            eger do_a2 != 0 ise { do_a3 = do_a2.sonraki; }
+            eger do_a1 != 0 ise { ast_kod_uret(a, do_a1); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC4); # MOV R12, RAX (dosya_adi)
+            eger do_a2 != 0 ise { ast_kod_uret(a, do_a2); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC5); # MOV R13, RAX (buffer)
+            eger do_a3 != 0 ise { ast_kod_uret(a, do_a3); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC6); # MOV R14, RAX (maks_boyut)
+
+            # CreateFileA(dosya_adi, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x38); # SUB RSP,56
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xE1); # MOV RCX, R12 (dosya_adi)
+            byte_yaz(a, 0xBA); int32_yaz(a, 0x80000000); # MOV EDX, GENERIC_READ
+            byte_yaz(a, 0x41); byte_yaz(a, 0xB8); int32_yaz(a, 1); # MOV R8D, 1 (FILE_SHARE_READ)
+            byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9); # XOR R9, R9 (NULL security)
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 3);   # [RSP+32]=OPEN_EXISTING
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x28); int32_yaz(a, 128); # [RSP+40]=FILE_ATTRIBUTE_NORMAL
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x30); int32_yaz(a, 0);   # [RSP+48]=NULL template
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_cfa_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_cfa_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_cfa_idx].slot = 4;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x38); # ADD RSP,56
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7); # MOV R15, RAX (hFile)
+
+            # JZ -> INVALID_HANDLE_VALUE ise ReadFile/CloseHandle atla (return 0)
+            byte_yaz(a, 0x49); byte_yaz(a, 0x83); byte_yaz(a, 0xFF); byte_yaz(a, 0xFF); # CMP R15,-1
+            byte_yaz(a, 0x0F); byte_yaz(a, 0x84);
+            degisken do_jz_pos: tamsayi = a.kullanilan;
+            int32_yaz(a, 0); # placeholder
+
+            # bytesRead alanini [RBP-512]'de sifirla
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x85); int32_yaz(a, -512); int32_yaz(a, 0);
+
+            # ReadFile(hFile, buffer, maks_boyut, &bytesRead@[RBP-512], NULL)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28); # SUB RSP,40
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # MOV RCX, R15 (hFile)
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xEA); # MOV RDX, R13 (buffer)
+            byte_yaz(a, 0x4D); byte_yaz(a, 0x89); byte_yaz(a, 0xF0); # MOV R8,  R14 (maks_boyut)
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x8D); int32_yaz(a, -512); # LEA R9,[RBP-512]
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 0); # [RSP+32]=NULL lpOverlapped
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_rf_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_rf_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_rf_idx].slot = 5;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x8B); byte_yaz(a, 0x85); int32_yaz(a, -512); # MOV EAX, [RBP-512] (bytesRead, zero-extends)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC3);  # MOV RBX, RAX
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28); # ADD RSP,40
+
+            # CloseHandle(hFile)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28); # SUB RSP,40
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # MOV RCX, R15
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_ch_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_ch_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_ch_idx].slot = 6;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28); # ADD RSP,40
+
+            byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD8); # MOV RAX, RBX (return bytes_read)
+
+            # JZ hedefi: buraya (INVALID_HANDLE -> RBX hicbir zaman yazilmadi, RAX=0 istiyoruz)
+            degisken do_jz_target: tamsayi = a.kullanilan;
+            int32_patch(a, do_jz_pos, do_jz_target - (do_jz_pos + 4));
+        } yoksa eger bellek_esit_mi(f_isim, "diske_bas_ve_kapat".ptr, 18) == 1 ise {
+            # diske_bas_ve_kapat(dosya_adi: *u8, bellek: *u8, boyut: tamsayi)
+            # CreateFileA(GENERIC_WRITE, CREATE_ALWAYS) + WriteFile + CloseHandle
+            degisken db_a1: *AstDugum = dugum.sag;
+            degisken db_a2: *AstDugum = 0;
+            degisken db_a3: *AstDugum = 0;
+            eger db_a1 != 0 ise { db_a2 = db_a1.sonraki; }
+            eger db_a2 != 0 ise { db_a3 = db_a2.sonraki; }
+            eger db_a1 != 0 ise { ast_kod_uret(a, db_a1); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC6); # MOV R14, RAX (dosya_adi)
+            eger db_a2 != 0 ise { ast_kod_uret(a, db_a2); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC5); # MOV R13, RAX (bellek ptr)
+            eger db_a3 != 0 ise { ast_kod_uret(a, db_a3); } yoksa { emit_xor_rax_rax(a); }
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC4); # MOV R12, RAX (boyut)
+
+            # CreateFileA(dosya_adi, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x38); # SUB RSP,56
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF1); # MOV RCX, R14
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 0x40000000); # MOV RDX, GENERIC_WRITE
+            byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC0); # XOR R8, R8 (no sharing)
+            byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9); # XOR R9, R9 (NULL security)
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 2);   # [RSP+32]=CREATE_ALWAYS
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x28); int32_yaz(a, 128); # [RSP+40]=FILE_ATTRIBUTE_NORMAL
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x30); int32_yaz(a, 0);   # [RSP+48]=NULL template
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_cfa2_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_cfa2_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_cfa2_idx].slot = 4;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x38); # ADD RSP,56
+            byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7); # MOV R15, RAX (hFile)
+
+            # WriteFile(hFile, bellek, boyut, &written@[RSP+32], NULL)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x30); # SUB RSP,48
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # MOV RCX, R15
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xEA); # MOV RDX, R13
+            byte_yaz(a, 0x4D); byte_yaz(a, 0x89); byte_yaz(a, 0xE0); # MOV R8, R12
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x4C); byte_yaz(a, 0x24); byte_yaz(a, 0x20); # LEA R9, [RSP+32]
+            byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x28); int32_yaz(a, 0); # [RSP+40]=NULL overlap
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_wf2_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_wf2_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_wf2_idx].slot = 1;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x30); # ADD RSP,48
+
+            # CloseHandle(hFile)
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x28); # SUB RSP,40
+            byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # MOV RCX, R15
+            byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+            degisken iat_ch2_idx: tamsayi = g_iat_yamalar.adet;
+            g_iat_yamalar.kayitlar[iat_ch2_idx].text_offset = a.kullanilan;
+            g_iat_yamalar.kayitlar[iat_ch2_idx].slot = 6;
+            g_iat_yamalar.adet = g_iat_yamalar.adet + 1;
+            int32_yaz(a, 0);
+            byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x28); # ADD RSP,40
+
+            emit_xor_rax_rax(a); # return 0
+        } yoksa {
+            degisken arg_iter: *AstDugum = dugum.sag;
+            degisken arg_idx: tamsayi = 0;
+            dongu arg_iter != 0 {
+                ast_kod_uret(a, arg_iter);
+                eger arg_idx == 0 ise { byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); }
+                eger arg_idx == 1 ise { byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC2); }
+                eger arg_idx == 2 ise { byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC0); }
+                eger arg_idx == 3 ise { byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); }
+                arg_iter = arg_iter.sonraki;
+                arg_idx = arg_idx + 1;
+            }
+            byte_yaz(a, 0xE8);
+            degisken y_idx: tamsayi = g_yamalar.adet;
+            g_yamalar.kayitlar[y_idx].isim = f_isim;
+            g_yamalar.kayitlar[y_idx].uzunluk = f_uzn;
+            g_yamalar.kayitlar[y_idx].cagri_pos = a.kullanilan;
+            g_yamalar.adet = g_yamalar.adet + 1;
+            int32_yaz(a, 0);
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_UNARY (19): Pointer dereference *ptr => MOV RAX, [RAX]
+    # --------------------------------------------------------
+    eger dugum.tip == 19 ise { # AST_UNARY
+        ast_kod_uret(a, dugum.sag);
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x00); # MOV RAX, [RAX]
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_REFERANS (20): Adres alma &var => LEA RAX, [RBP-off]
+    # --------------------------------------------------------
+    eger dugum.tip == 20 ise { # AST_REFERANS
+        degisken ref_sag: *AstDugum = dugum.sag;
+        eger ref_sag != 0 ise {
+            eger ref_sag.tip == AST_KIMLIK ise {
+                degisken ref_off: tamsayi = lokal_bul_offset(g_lokal_tablo, ref_sag.ilk_jeton.baslangic, ref_sag.ilk_jeton.uzunluk);
+                eger ref_off != 0 ise {
+                    emit_lea_rax(a, ref_off);
+                }
+            }
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_YAPI_TANIMI (16): Struct tanimini g_yapi_tablosu'na kaydet
+    # --------------------------------------------------------
+    eger dugum.tip == 16 ise { # AST_YAPI_TANIMI
+        degisken yp_idx: tamsayi = g_yapi_tablosu.adet;
+        g_yapi_tablosu.kayitlar[yp_idx].isim       = dugum.ilk_jeton.baslangic;
+        g_yapi_tablosu.kayitlar[yp_idx].uzunluk    = dugum.ilk_jeton.uzunluk;
+        g_yapi_tablosu.kayitlar[yp_idx].alan_sayisi = 0;
+        degisken yp_alan: *AstDugum = dugum.sol;
+        degisken yp_off: tamsayi = 0;
+        dongu yp_alan != 0 {
+            degisken ai: tamsayi = g_yapi_tablosu.kayitlar[yp_idx].alan_sayisi;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].isim          = yp_alan.ilk_jeton.baslangic;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].uzunluk       = yp_alan.ilk_jeton.uzunluk;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].offset        = yp_off;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].tip_adi       = yp_alan.tip_adi;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].tip_uzunluk   = yp_alan.tip_adi_uzunluk;
+            g_yapi_tablosu.kayitlar[yp_idx].alanlar[ai].yildiz_sayisi = yp_alan.cozumlenmis_tip;
+            g_yapi_tablosu.kayitlar[yp_idx].alan_sayisi = ai + 1;
+            yp_off  = yp_off + 8;
+            yp_alan = yp_alan.sonraki;
+        }
+        g_yapi_tablosu.adet = yp_idx + 1;
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_ALAN_ERISIMI (17): obj.field okuma => MOV RAX, [RAX+off]
+    # --------------------------------------------------------
+    eger dugum.tip == 17 ise { # AST_ALAN_ERISIMI
+        degisken ae_obj:   *AstDugum = dugum.sol;
+        degisken ae_field: *AstDugum = dugum.sag;
+        ast_kod_uret(a, ae_obj); # RAX = nesne pointer'i
+        # Nesne tipini bul (lokal tablo)
+        degisken ae_t_adi: *u8 = 0;
+        degisken ae_t_uzn: tamsayi = 0;
+        eger ae_obj.tip == AST_KIMLIK ise {
+            degisken ki: tamsayi = 0;
+            dongu ki < g_lokal_tablo.adet {
+                eger g_lokal_tablo.uzunluklar[ki] == ae_obj.ilk_jeton.uzunluk ise {
+                    eger bellek_esit_mi(g_lokal_tablo.isimler[ki], ae_obj.ilk_jeton.baslangic, g_lokal_tablo.uzunluklar[ki]) == 1 ise {
+                        ae_t_adi = g_lokal_tablo.tip_adilari[ki];
+                        ae_t_uzn = g_lokal_tablo.tip_uzunlar[ki];
+                    }
+                }
+                ki = ki + 1;
+            }
+        }
+        # Fallback: nested objeler (fonksiyon donusu, pointer-to-struct, baska alan erisimi) icin
+        # ae_obj dugumunun kendi tip alanlarini kullan (typechecker tarafindan doldurulur)
+        eger ae_t_adi == 0 veya ae_t_uzn == 0 ise {
+            degisken f_tip: *u8 = ae_obj.tip_adi;
+            degisken f_uzn: tamsayi = ae_obj.tip_adi_uzunluk;
+            eger f_tip != 0 ve f_uzn > 0 ise {
+                ae_t_adi = f_tip;
+                ae_t_uzn = f_uzn;
+            }
+        }
+        # Yapi tablosundan alan offset'ini bul
+        degisken ae_field_off: tamsayi = 0 - 1;
+        eger ae_t_adi != 0 ise {
+            degisken yi: tamsayi = 0;
+            dongu yi < g_yapi_tablosu.adet {
+                eger g_yapi_tablosu.kayitlar[yi].uzunluk == ae_t_uzn ise {
+                    eger bellek_esit_mi(g_yapi_tablosu.kayitlar[yi].isim, ae_t_adi, ae_t_uzn) == 1 ise {
+                        degisken ai: tamsayi = 0;
+                        dongu ai < g_yapi_tablosu.kayitlar[yi].alan_sayisi {
+                            eger g_yapi_tablosu.kayitlar[yi].alanlar[ai].uzunluk == ae_field.ilk_jeton.uzunluk ise {
+                                eger bellek_esit_mi(g_yapi_tablosu.kayitlar[yi].alanlar[ai].isim, ae_field.ilk_jeton.baslangic, g_yapi_tablosu.kayitlar[yi].alanlar[ai].uzunluk) == 1 ise {
+                                    ae_field_off = g_yapi_tablosu.kayitlar[yi].alanlar[ai].offset;
+                                    dugum.tip_adi         = g_yapi_tablosu.kayitlar[yi].alanlar[ai].tip_adi;
+                                    dugum.tip_adi_uzunluk = g_yapi_tablosu.kayitlar[yi].alanlar[ai].tip_uzunluk;
+                                    dugum.cozumlenmis_tip = g_yapi_tablosu.kayitlar[yi].alanlar[ai].yildiz_sayisi;
+                                    dugum.dizi_boyutu     = 0;
+                                }
+                            }
+                            ai = ai + 1;
+                        }
+                    }
+                }
+                yi = yi + 1;
+            }
+        }
+        eger ae_field_off != (0 - 1) ise {
+            eger ae_field_off <= 127 ise {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x40);
+                byte_yaz(a, ae_field_off & 0xFF); # MOV RAX, [RAX + ae_field_off]
+            } yoksa {
+                byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x80);
+                int32_yaz(a, ae_field_off); # MOV RAX, [RAX + ae_field_off] (32-bit offset)
+            }
+        } yoksa {
+            emit_xor_rax_rax(a); # Alan bulunamazsa 0 don
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_EGER (8): if/else => TEST RAX,RAX + JZ + geri yamala
+    # --------------------------------------------------------
+    eger dugum.tip == 8 ise { # AST_EGER
+        ast_kod_uret(a, dugum.sol); # Sart ifadesini hesapla -> RAX
+        # TEST RAX, RAX
+        byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0);
+        # JZ rel32 (yoksa blogu veya bitise atla)
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x84);
+        degisken eger_jz_pos: tamsayi = a.kullanilan;
+        int32_yaz(a, 0); # Yer tutucu, sonra yamalanacak
+        # Eger blogu
+        ast_kod_uret(a, dugum.govde);
+        eger dugum.yoksa_govde != 0 ise {
+            # JMP rel32 (else blogu bittikten sonra atlayacak)
+            byte_yaz(a, 0xE9);
+            degisken eger_jmp_pos: tamsayi = a.kullanilan;
+            int32_yaz(a, 0); # Yer tutucu
+            # else_label: JZ buraya atlamali
+            degisken else_label: tamsayi = a.kullanilan;
+            int32_patch(a, eger_jz_pos, else_label - (eger_jz_pos + 4));
+            # Yoksa blogu
+            ast_kod_uret(a, dugum.yoksa_govde);
+            # end_label: JMP buraya atlamali
+            degisken eger_end_label: tamsayi = a.kullanilan;
+            int32_patch(a, eger_jmp_pos, eger_end_label - (eger_jmp_pos + 4));
+        } yoksa {
+            # Yoksa yok, sadece JZ'yi bitise yamala
+            degisken eger_end_label2: tamsayi = a.kullanilan;
+            int32_patch(a, eger_jz_pos, eger_end_label2 - (eger_jz_pos + 4));
+        }
+        dondu 0;
+    }
+
+    # --------------------------------------------------------
+    # AST_DONGU (9): while loop => TEST + JZ + govde + JMP geri
+    # --------------------------------------------------------
+    eger dugum.tip == 9 ise { # AST_DONGU
+        degisken dongu_baslangic: tamsayi = a.kullanilan;
+        degisken dongu_jz_pos: tamsayi = 0;
+        # Sart varsa hesapla ve JZ ile bitise atla
+        eger dugum.sol != 0 ise {
+            ast_kod_uret(a, dugum.sol); # Sart -> RAX
+            # TEST RAX, RAX
+            byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0);
+            # JZ rel32 (dongu bitisine atla)
+            byte_yaz(a, 0x0F); byte_yaz(a, 0x84);
+            dongu_jz_pos = a.kullanilan;
+            int32_yaz(a, 0); # Yer tutucu
+        }
+        # Dongu govdesi
+        ast_kod_uret(a, dugum.govde);
+        # JMP rel32 (dongu basina don)
+        byte_yaz(a, 0xE9);
+        degisken dongu_jmp_pos: tamsayi = a.kullanilan;
+        degisken dongu_rip_after: tamsayi = dongu_jmp_pos + 4;
+        int32_yaz(a, dongu_baslangic - dongu_rip_after);
+        # Sart varsa JZ'yi buradaki konuma yamala
+        eger dugum.sol != 0 ise {
+            degisken dongu_bitis: tamsayi = a.kullanilan;
+            int32_patch(a, dongu_jz_pos, dongu_bitis - (dongu_jz_pos + 4));
+        }
+        dondu 0;
+    }
+
+    eger dugum.sonraki != 0 ise { ast_kod_uret(a, dugum.sonraki); }
+    dondu 0;
+}
+
+# ============================================================
+# PE32+ Windows Executable Uretici - Import Table ile
+#
+# Bellek duzeni:
+#   0x000 - 0x1FF  : Headers (DOS + PE + Section headers)
+#   0x200 - 0x3FF  : .text   (RVA 0x1000, makine kodu)
+#   0x400 - 0x5FF  : .rdata  (RVA 0x2000, import table + IAT + DLL/func isimleri)
+#
+# Import table icin gereken yapilar:
+#   IMAGE_IMPORT_DESCRIPTOR (20 byte her DLL icin, son girdi sifir)
+#   IAT (Import Address Table) - 8 byte her fonksiyon
+#   INT (Import Name Table)    - 8 byte her fonksiyon  
+#   Hint/Name kayitlari        - 2 byte hint + isim + null
+#   DLL ismi                   - null-terminated string
+#
+# kernel32.dll'den 3 fonksiyon:
+#   [0] ExitProcess
+#   [1] WriteFile
+#   [2] GetStdHandle
+# ============================================================
+
+isv int32_patch(a: *MakineKoduArenasi, pos: tamsayi, val: tamsayi) {
+    a.bellek[pos] = val & 0xFF;
+    a.bellek[pos + 1] = (val >> 8) & 0xFF;
+    a.bellek[pos + 2] = (val >> 16) & 0xFF;
+    a.bellek[pos + 3] = (val >> 24) & 0xFF;
+}
+
+isv yamalari_uygula(a: *MakineKoduArenasi) {
+    degisken i: tamsayi = 0;
+    dongu i < g_yamalar.adet {
+        degisken j: tamsayi = 0;
+        degisken bulundu: tamsayi = 0;
+        degisken call_end: tamsayi = g_yamalar.kayitlar[i].cagri_pos + 4;
+        dongu j < g_fonksiyonlar.adet {
+            eger g_fonksiyonlar.kayitlar[j].uzunluk == g_yamalar.kayitlar[i].uzunluk ise {
+                eger bellek_esit_mi(g_fonksiyonlar.kayitlar[j].isim, g_yamalar.kayitlar[i].isim, g_fonksiyonlar.kayitlar[j].uzunluk) == 1 ise {
+                    int32_patch(a, g_yamalar.kayitlar[i].cagri_pos, g_fonksiyonlar.kayitlar[j].adres - call_end);
+                    bulundu = 1;
+                }
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+isv bul_ana_adres() -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < g_fonksiyonlar.adet {
+        eger g_fonksiyonlar.kayitlar[i].uzunluk == 3 ise {
+            eger g_fonksiyonlar.kayitlar[i].isim[0] == 97 ise { # 'a'
+                eger g_fonksiyonlar.kayitlar[i].isim[1] == 110 ise { # 'n'
+                    eger g_fonksiyonlar.kayitlar[i].isim[2] == 97 ise { # 'a'
+                        dondu 0x1000 + g_fonksiyonlar.kayitlar[i].adres;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+isv pe32plus_uret(kod_arenasi: *MakineKoduArenasi, cikti: *MakineKoduArenasi, ep_rva: tamsayi) {
+
+    yamalari_uygula(kod_arenasi);
+
+    # Sabitler
+    degisken IMAGE_BASE:    tamsayi = 0x400000;
+    degisken SEC_ALIGN:     tamsayi = 0x1000;
+    degisken FILE_ALIGN:    tamsayi = 0x200;
+    degisken TEXT_RVA:      tamsayi = 0x1000;
+
+
+    # .text boyutu (file-aligned)
+    degisken text_raw:  tamsayi = kod_arenasi.kullanilan;
+    degisken text_file: tamsayi = hizala_yukari(text_raw, FILE_ALIGN);
+    degisken RDATA_RVA: tamsayi = hizala_yukari(TEXT_RVA + text_raw, SEC_ALIGN);
+
+    # .rdata icerigi: size covers 8-slot IAT+INT + all hint/names + dll name
+    degisken size_rdata: tamsayi = 0x120;
+    degisken size_rdata_file: tamsayi = hizala_yukari(size_rdata, FILE_ALIGN);
+    degisken rdata_file: tamsayi = FILE_ALIGN + text_file;
+    #
+    # .rdata duzeni (8-slot IAT: 7 fonksiyon + null terminator):
+    #   0x00: IDT[0] - kernel32.dll           (20 byte)
+    #   0x14: IDT[1] - null                   (20 byte)
+    #   0x28: IAT  - 8 girdi * 8 = 64 byte   [EP, WF, GS, VA, CFA, RF, CH, null]
+    #   0x68: INT  - 8 girdi * 8 = 64 byte   (IAT ile ayni)
+    #   0xA8: HN ExitProcess  : 2+11+1     = 14 byte
+    #   0xB6: HN WriteFile    : 2+9+1      = 12 byte
+    #   0xC2: HN GetStdHandle : 2+12+1+pad = 16 byte
+    #   0xD2: HN VirtualAlloc : 2+12+1+pad = 16 byte
+    #   0xE2: HN CreateFileA  : 2+11+1     = 14 byte
+    #   0xF0: HN ReadFile     : 2+8+1+pad  = 12 byte
+    #   0xFC: HN CloseHandle  : 2+11+1     = 14 byte
+    #   0x10A: DLL "KERNEL32.dll\0"         = 13 byte
+    #   Toplam: 0x117 byte, size_rdata=0x120
+    # NOT: onceki 5-slot tabloda hint/name uzunluklari yanlis hesaplanmisti
+    # (ExitProcess/GetStdHandle/VirtualAlloc gercek yazilan byte sayisiyla
+    # uyusmuyordu) — bu revizyonda tum ofsetler byte-simulasyonuyla dogrulandi.
+
+    # RVA hesaplari (RDATA_RVA baz alinarak)
+    degisken rva_idt:       tamsayi = RDATA_RVA;          # Import Descriptor Table
+    degisken rva_iat:       tamsayi = RDATA_RVA + 0x28;   # IAT (8 entries*8=64 bytes)
+    degisken rva_int:       tamsayi = RDATA_RVA + 0x68;   # INT (0x28+64=0x68)
+    degisken rva_hn_exit:   tamsayi = RDATA_RVA + 0xA8;   # ExitProcess (0x68+64=0xA8)
+    degisken rva_hn_write:  tamsayi = RDATA_RVA + 0xB6;   # WriteFile (0xA8+14)
+    degisken rva_hn_getstd: tamsayi = RDATA_RVA + 0xC2;   # GetStdHandle (0xB6+12)
+    degisken rva_hn_valloc: tamsayi = RDATA_RVA + 0xD2;   # VirtualAlloc (0xC2+16)
+    degisken rva_hn_crtfl:  tamsayi = RDATA_RVA + 0xE2;   # CreateFileA (0xD2+16)
+    degisken rva_hn_rdfl:   tamsayi = RDATA_RVA + 0xF0;   # ReadFile (0xE2+14)
+    degisken rva_hn_clhnd:  tamsayi = RDATA_RVA + 0xFC;   # CloseHandle (0xF0+12)
+    degisken rva_dllname:   tamsayi = RDATA_RVA + 0x10A;  # "KERNEL32.dll" (0xFC+14)
+
+    # IAT adresleri (programdan CALL icin kullanilacak)
+    # VA = IMAGE_BASE + rva
+    degisken va_iat_exit:   tamsayi = IMAGE_BASE + rva_iat;
+    degisken va_iat_write:  tamsayi = ((IMAGE_BASE + rva_iat) + 8);
+    degisken va_iat_getstd: tamsayi = ((IMAGE_BASE + rva_iat) + 16);
+    degisken image_size:    tamsayi = hizala_yukari(RDATA_RVA + SEC_ALIGN, SEC_ALIGN);
+
+    # --------------------------------------------------------
+    # DOS Header (64 byte)
+    # --------------------------------------------------------
+    byte_yaz(cikti, 0x4D); byte_yaz(cikti, 0x5A);  # MZ
+    u16_yaz(cikti, 0x90);  u16_yaz(cikti, 0x03);
+    u16_yaz(cikti, 0x00);  u16_yaz(cikti, 0x04);
+    u16_yaz(cikti, 0x00);  u16_yaz(cikti, 0xFFFF);
+    u16_yaz(cikti, 0x00);  u16_yaz(cikti, 0xB8);
+    u16_yaz(cikti, 0x00);  u16_yaz(cikti, 0x00);
+    u16_yaz(cikti, 0x00);  u16_yaz(cikti, 0x40);
+    u16_yaz(cikti, 0x00);
+    sifir_doldur(cikti, 8);
+    u16_yaz(cikti, 0x00); u16_yaz(cikti, 0x00);
+    sifir_doldur(cikti, 20);
+    int32_yaz(cikti, 0x40);  # e_lfanew = 0x40
+
+    # --------------------------------------------------------
+    # PE Signature
+    # --------------------------------------------------------
+    byte_yaz(cikti, 0x50); byte_yaz(cikti, 0x45);  # PE
+    byte_yaz(cikti, 0x00); byte_yaz(cikti, 0x00);
+
+    # --------------------------------------------------------
+    # COFF File Header (20 byte)
+    # --------------------------------------------------------
+    u16_yaz(cikti, 0x8664);   # AMD64
+    u16_yaz(cikti, 2);         # 2 section: .text + .rdata
+    int32_yaz(cikti, 0);       # TimeDateStamp
+    int32_yaz(cikti, 0);       # PointerToSymbolTable
+    int32_yaz(cikti, 0);       # NumberOfSymbols
+    u16_yaz(cikti, 0xF0);     # SizeOfOptionalHeader
+    u16_yaz(cikti, 0x0022);   # Characteristics: EXE | 64-bit
+
+    # --------------------------------------------------------
+    # Optional Header PE32+ (240 byte)
+    # --------------------------------------------------------
+    u16_yaz(cikti, 0x020B);   # Magic PE32+
+    byte_yaz(cikti, 14);       # MajorLinkerVersion
+    byte_yaz(cikti, 0);        # MinorLinkerVersion
+    int32_yaz(cikti, text_file);     # SizeOfCode
+    int32_yaz(cikti, size_rdata_file); # SizeOfInitializedData
+    int32_yaz(cikti, 0);       # SizeOfUninitializedData
+    int32_yaz(cikti, ep_rva); # AddressOfEntryPoint
+    int32_yaz(cikti, TEXT_RVA); # BaseOfCode
+    int64_yaz(cikti, IMAGE_BASE); # ImageBase
+    int32_yaz(cikti, SEC_ALIGN);  # SectionAlignment
+    int32_yaz(cikti, FILE_ALIGN); # FileAlignment
+    u16_yaz(cikti, 6); u16_yaz(cikti, 0);  # OS version
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0);  # Image version
+    u16_yaz(cikti, 6); u16_yaz(cikti, 0);  # Subsystem version
+    int32_yaz(cikti, 0);       # Win32VersionValue
+    int32_yaz(cikti, image_size); # SizeOfImage
+    int32_yaz(cikti, FILE_ALIGN); # SizeOfHeaders
+    int32_yaz(cikti, 0);       # CheckSum
+    u16_yaz(cikti, 3);         # Subsystem: CUI
+    u16_yaz(cikti, 0x8160);   # DllCharacteristics
+    int64_yaz(cikti, 0x100000); # SizeOfStackReserve
+    int64_yaz(cikti, 0x1000);   # SizeOfStackCommit
+    int64_yaz(cikti, 0x100000); # SizeOfHeapReserve
+    int64_yaz(cikti, 0x1000);   # SizeOfHeapCommit
+    int32_yaz(cikti, 0);        # LoaderFlags
+    int32_yaz(cikti, 16);       # NumberOfRvaAndSizes
+
+    # Data Directories (16 x 8 byte = 128 byte)
+    # [0] Export  - bos
+    int32_yaz(cikti, 0); int32_yaz(cikti, 0);
+    # [1] Import  - .rdata'daki IDT
+    int32_yaz(cikti, rva_idt); int32_yaz(cikti, 40);
+    # [2..4] bos
+    sifir_doldur(cikti, 24);
+    # [5] IAT: size = 8 entries * 8 = 64 bytes
+    int32_yaz(cikti, rva_iat); int32_yaz(cikti, 64);
+    # [6..15] bos
+    sifir_doldur(cikti, 80);
+
+    # --------------------------------------------------------
+    # Section Header 1: .text
+    # --------------------------------------------------------
+    byte_yaz(cikti, 0x2E); byte_yaz(cikti, 0x74); byte_yaz(cikti, 0x65); byte_yaz(cikti, 0x78);
+    byte_yaz(cikti, 0x74); byte_yaz(cikti, 0x00); byte_yaz(cikti, 0x00); byte_yaz(cikti, 0x00);
+    int32_yaz(cikti, text_raw);      # VirtualSize
+    int32_yaz(cikti, TEXT_RVA);      # VirtualAddress
+    int32_yaz(cikti, text_file);     # SizeOfRawData
+    int32_yaz(cikti, FILE_ALIGN);    # PointerToRawData
+    int32_yaz(cikti, 0); int32_yaz(cikti, 0);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0);
+    int32_yaz(cikti, 0x60000020);    # CODE | EXECUTE | READ
+
+    # Section Header 2: .rdata
+    byte_yaz(cikti, 0x2E); byte_yaz(cikti, 0x72); byte_yaz(cikti, 0x64); byte_yaz(cikti, 0x61);
+    byte_yaz(cikti, 0x74); byte_yaz(cikti, 0x61); byte_yaz(cikti, 0x00); byte_yaz(cikti, 0x00);
+    int32_yaz(cikti, size_rdata);             # VirtualSize
+    int32_yaz(cikti, RDATA_RVA);              # VirtualAddress
+    int32_yaz(cikti, size_rdata_file);        # SizeOfRawData
+    int32_yaz(cikti, FILE_ALIGN + text_file); # PointerToRawData
+    int32_yaz(cikti, 0); int32_yaz(cikti, 0);
+    u16_yaz(cikti, 0); u16_yaz(cikti, 0);
+    int32_yaz(cikti, 0x40000040);    # INITIALIZED_DATA | READ
+
+    # Headers'i 0x200'e hizala
+    sifir_doldur(cikti, FILE_ALIGN - cikti.kullanilan);
+
+    # --------------------------------------------------------
+    # .text section (offset 0x200)
+    # --------------------------------------------------------
+    degisken i: tamsayi = 0;
+    dongu i < kod_arenasi.kullanilan {
+        byte_yaz(cikti, kod_arenasi.bellek[i]);
+        i = i + 1;
+    }
+    sifir_doldur(cikti, text_file - text_raw);
+
+    # IAT rel32 placeholder'larini gercek degerlerle yamala
+    degisken pi: tamsayi = 0;
+    dongu pi < g_iat_yamalar.adet {
+        degisken text_off: tamsayi = g_iat_yamalar.kayitlar[pi].text_offset;
+        degisken slot: tamsayi = g_iat_yamalar.kayitlar[pi].slot;
+        # slot 0=ExitProcess, 1=WriteFile, 2=GetStdHandle, 3=VirtualAlloc,
+        # 4=CreateFileA, 5=ReadFile, 6=CloseHandle -> rva_iat + slot*8
+        degisken iat_rva: tamsayi = rva_iat + (slot * 8);
+        # RIP after CALL [RIP+rel32] = TEXT_RVA + text_off + 4
+        degisken rip_after: tamsayi = TEXT_RVA + text_off + 4;
+        degisken rel32: tamsayi = iat_rva - rip_after;
+        # Cikti'daki konumu: FILE_ALIGN + text_off
+        degisken cikti_off: tamsayi = FILE_ALIGN + text_off;
+        cikti.bellek[cikti_off + 0] = rel32 & 0xFF;
+        cikti.bellek[cikti_off + 1] = (rel32 >> 8) & 0xFF;
+        cikti.bellek[cikti_off + 2] = (rel32 >> 16) & 0xFF;
+        cikti.bellek[cikti_off + 3] = (rel32 >> 24) & 0xFF;
+        pi = pi + 1;
+    }
+
+
+    # --------------------------------------------------------
+    # .rdata section (offset 0x200 + text_file)
+    # Import Descriptor Table (IDT)
+    # --------------------------------------------------------
+
+    # IDT[0]: kernel32.dll
+    int32_yaz(cikti, rva_int);      # OriginalFirstThunk (INT RVA)
+    int32_yaz(cikti, 0);            # TimeDateStamp
+    int32_yaz(cikti, 0);            # ForwarderChain
+    int32_yaz(cikti, rva_dllname);  # Name RVA
+    int32_yaz(cikti, rva_iat);      # FirstThunk (IAT RVA)
+
+    # IDT[1]: null terminator
+    sifir_doldur(cikti, 20);
+
+    # --------------------------------------------------------
+    # IAT - Import Address Table (ofset 0x28'de)
+    # Yukleme oncesi INT kopyasi, loader bunlari gercek adresle doldurur
+    # --------------------------------------------------------
+    # IAT: ExitProcess, WriteFile, GetStdHandle, VirtualAlloc, CreateFileA, ReadFile, CloseHandle, null
+    int64_yaz(cikti, rva_hn_exit);
+    int64_yaz(cikti, rva_hn_write);
+    int64_yaz(cikti, rva_hn_getstd);
+    int64_yaz(cikti, rva_hn_valloc);
+    int64_yaz(cikti, rva_hn_crtfl);
+    int64_yaz(cikti, rva_hn_rdfl);
+    int64_yaz(cikti, rva_hn_clhnd);
+    int64_yaz(cikti, 0);
+
+    # INT: ayni
+    int64_yaz(cikti, rva_hn_exit);
+    int64_yaz(cikti, rva_hn_write);
+    int64_yaz(cikti, rva_hn_getstd);
+    int64_yaz(cikti, rva_hn_valloc);
+    int64_yaz(cikti, rva_hn_crtfl);
+    int64_yaz(cikti, rva_hn_rdfl);
+    int64_yaz(cikti, rva_hn_clhnd);
+    int64_yaz(cikti, 0);
+
+    # --------------------------------------------------------
+    # Hint/Name kayitlari (ofset 0x68'de)
+    # --------------------------------------------------------
+    # ExitProcess (ofset 0x68)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 69);  # E
+    byte_yaz(cikti, 120); # x
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 80);  # P
+    byte_yaz(cikti, 114); # r
+    byte_yaz(cikti, 111); # o
+    byte_yaz(cikti, 99);  # c
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 115); # s
+    byte_yaz(cikti, 115); # s
+    byte_yaz(cikti, 0);   # null
+
+    # WriteFile (ofset 0x76)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 87);  # W
+    byte_yaz(cikti, 114); # r
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 70);  # F
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 0);   # null
+
+    # GetStdHandle (ofset 0x82)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 71);  # G
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 83);  # S
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 100); # d
+    byte_yaz(cikti, 72);  # H
+    byte_yaz(cikti, 97);  # a
+    byte_yaz(cikti, 110); # n
+    byte_yaz(cikti, 100); # d
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 0);   # null (ends at 0xA1)
+    byte_yaz(cikti, 0);   # padding -> word-aligned at 0xA2
+
+    # VirtualAlloc Hint/Name
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 86);  # V
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 114); # r
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 117); # u
+    byte_yaz(cikti, 97);  # a
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 65);  # A
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 111); # o
+    byte_yaz(cikti, 99);  # c
+    byte_yaz(cikti, 0);   # null
+    byte_yaz(cikti, 0);   # padding -> word-aligned
+
+    # CreateFileA Hint/Name (2+11+1 = 14 byte)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 67);  # C
+    byte_yaz(cikti, 114); # r
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 97);  # a
+    byte_yaz(cikti, 116); # t
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 70);  # F
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 65);  # A
+    byte_yaz(cikti, 0);   # null
+
+    # ReadFile Hint/Name (2+8+1+1pad = 12 byte)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 82);  # R
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 97);  # a
+    byte_yaz(cikti, 100); # d
+    byte_yaz(cikti, 70);  # F
+    byte_yaz(cikti, 105); # i
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 0);   # null
+    byte_yaz(cikti, 0);   # padding -> word-aligned
+
+    # CloseHandle Hint/Name (2+11+1 = 14 byte)
+    u16_yaz(cikti, 0);
+    byte_yaz(cikti, 67);  # C
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 111); # o
+    byte_yaz(cikti, 115); # s
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 72);  # H
+    byte_yaz(cikti, 97);  # a
+    byte_yaz(cikti, 110); # n
+    byte_yaz(cikti, 100); # d
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 101); # e
+    byte_yaz(cikti, 0);   # null
+
+    # DLL ismi: "KERNEL32.dll\0"
+    byte_yaz(cikti, 75);  # K
+    byte_yaz(cikti, 69);  # E
+    byte_yaz(cikti, 82);  # R
+    byte_yaz(cikti, 78);  # N
+    byte_yaz(cikti, 69);  # E
+    byte_yaz(cikti, 76);  # L
+    byte_yaz(cikti, 51);  # 3
+    byte_yaz(cikti, 50);  # 2
+    byte_yaz(cikti, 46);  # .
+    byte_yaz(cikti, 100); # d
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 108); # l
+    byte_yaz(cikti, 0);   # null
+
+    # .rdata'yi 0x200'e hizala
+    degisken rdata_kullanilan: tamsayi = cikti.kullanilan - (FILE_ALIGN + text_file);
+    sifir_doldur(cikti, rdata_file - rdata_kullanilan);
+}
+
+# ============================================================
+# Eski ELF uyumluluk (Linux icin)
+# ============================================================
+isv elf64_basligi_ve_kodu_yaz(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi) {
+    byte_yaz(os_arena, 0x7F); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x4C); byte_yaz(os_arena, 0x46);
+    byte_yaz(os_arena, 0x02); byte_yaz(os_arena, 0x01);
+    byte_yaz(os_arena, 0x01); byte_yaz(os_arena, 0x00);
+    sifir_doldur(os_arena, 8);
+    u16_yaz(os_arena, 2); u16_yaz(os_arena, 0x3E);
+    int32_yaz(os_arena, 1);
+    int64_yaz(os_arena, 4194424);
+    int64_yaz(os_arena, 64); int64_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    u16_yaz(os_arena, 64); u16_yaz(os_arena, 56);
+    u16_yaz(os_arena, 1);  u16_yaz(os_arena, 0);
+    u16_yaz(os_arena, 0);  u16_yaz(os_arena, 0);
+    int32_yaz(os_arena, 1); int32_yaz(os_arena, 5);
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, 4194304); int64_yaz(os_arena, 4194304);
+    int64_yaz(os_arena, 120 + kod.kullanilan);
+    int64_yaz(os_arena, 120 + kod.kullanilan);
+    int64_yaz(os_arena, 2097152);
+    degisken k: tamsayi = 0;
+    dongu k < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k]);
+        k = k + 1;
+    }
+}

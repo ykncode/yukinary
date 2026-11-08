@@ -1,0 +1,399 @@
+# ============================================================
+# hir.ykn - Yukinary High-Level Intermediate Representation
+# FIX 7: AST ile MIR arasında tip güvenli ve sadeleştirilmiş katman
+# ============================================================
+
+yapi HirDugum {
+    tip: tamsayi;       # HIR_ISLEV, HIR_ATAMA, vb.
+    tip_bilgisi: *TipBilgisi;
+    
+    sol: *HirDugum;
+    sag: *HirDugum;
+    govde: *HirDugum;
+    
+    # Parametre zinciri veya liste için
+    sonraki: *HirDugum;
+    
+    # Sabit değerler veya kimlik hashleri
+    deger: tamsayi;
+}
+
+yapi HirMotoru {
+    kullanilan: tamsayi;
+    kapasite: tamsayi;
+    arena: *u8;
+    kok_dugum: *HirDugum;
+}
+
+degisken HIR_ISLEV = 1;
+degisken HIR_BLOK = 2;
+degisken HIR_ATAMA = 3;
+degisken HIR_SAYI = 4;
+degisken HIR_KIMLIK = 5;
+degisken HIR_IKILI_OP = 6;
+degisken HIR_EGER = 7;
+degisken HIR_DONGU = 8;
+degisken HIR_DONDUR = 9;
+degisken HIR_ISLEV_CAGRISI = 10;
+degisken HIR_ASYNC_ISLEV     = 11;
+degisken HIR_AWAIT           = 12;
+degisken HIR_YIELD           = 13;
+degisken HIR_GERCEK_SAYI     = 14;
+degisken HIR_METIN           = 15;
+degisken HIR_ALAN_ERISIMI    = 16;
+degisken HIR_INDEKS_ERISIMI  = 17;
+degisken HIR_UNARY           = 18;
+degisken HIR_REFERANS        = 19;
+
+isv hir_motoru_olustur(kapasite: tamsayi) -> *HirMotoru {
+    degisken m: *HirMotoru = compiler_tahsis_et(64);
+    m.kullanilan = 0;
+    m.kapasite = kapasite;
+    m.arena = compiler_tahsis_et(kapasite);
+    m.kok_dugum = 0;
+    dondu m;
+}
+
+isv hir_dugum_olustur(m: *HirMotoru, tip: tamsayi, tb: *TipBilgisi) -> *HirDugum {
+    eger m.kullanilan + 64 > m.kapasite ise {
+        ekrana_yaz("HATA [E016] [ERR_HIR_LIMIT] [class=compiler]: HIR dugum siniri asildi.\n".ptr);
+        # Güvenli çıkış
+        dondu 0;
+    }
+    
+    degisken ptr: *u8 = m.arena + m.kullanilan;
+    m.kullanilan = m.kullanilan + 64;
+    
+    degisken dugum: *HirDugum = ptr;
+    dugum.tip = tip;
+    dugum.tip_bilgisi = tb;
+    dugum.sol = 0;
+    dugum.sag = 0;
+    dugum.govde = 0;
+    dugum.sonraki = 0;
+    dugum.deger = 0;
+    dondu dugum;
+}
+
+# AST'yi traverse edip HIR üreten ana fonksiyon
+isv ast_to_hir_ifade(m: *HirMotoru, ast: *AstDugum) -> *HirDugum {
+    eger ast == 0 ise { dondu 0; }
+    
+    degisken ast_tip: tamsayi = ast.tip;
+    
+    # AST_SAYI = 1
+    eger ast_tip == 1 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_SAYI, 0);
+        eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = string_tamsayiya(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dondu dugum;
+    }
+    
+    # AST_KIMLIK = 4
+    eger ast_tip == 4 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_KIMLIK, 0);
+        eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dondu dugum;
+    }
+    
+    # AST_IKILI_OP = 5
+    eger ast_tip == 5 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_IKILI_OP, 0);
+        dugum.deger = ast.ilk_jeton.tip; # YKN_ARTI vb
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.sag = ast_to_hir_ifade(m, ast.sag);
+        dondu dugum;
+    }
+    
+    # AST_ATAMA = 6
+    eger ast_tip == 6 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ATAMA, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.sag = ast_to_hir_ifade(m, ast.sag);
+        dondu dugum;
+    }
+    
+    # AST_DEGISKEN_TANIMI = 7
+    eger ast_tip == 7 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ATAMA, 0);
+        degisken kimlik: *HirDugum = hir_dugum_olustur(m, HIR_KIMLIK, 0);
+        eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            kimlik.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dugum.sol = kimlik;
+        eger ast.sag != 0 ise {
+            dugum.sag = ast_to_hir_ifade(m, ast.sag);
+        }
+        dondu dugum;
+    }
+    
+    # AST_ISLEV_CAGRISI = 11
+    eger ast_tip == 11 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ISLEV_CAGRISI, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        eger dugum.sol != 0 ise {
+            dugum.deger = dugum.sol.deger;
+        } yoksa eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        
+        # Argumanlari kopyala (cagri.sag icindedir)
+        degisken p_ast: *AstDugum = ast.sag;
+        eger p_ast == 0 ise { p_ast = ast.parametreler; }
+        degisken son_p: *HirDugum = 0;
+        dongu p_ast != 0 {
+            degisken p_hir: *HirDugum = ast_to_hir_ifade(m, p_ast);
+            eger dugum.govde == 0 ise {
+                dugum.govde = p_hir;
+            } yoksa {
+                son_p.sonraki = p_hir;
+            }
+            son_p = p_hir;
+            p_ast = p_ast.sonraki;
+        }
+        
+        dondu dugum;
+    }
+    
+    # AST_BLOK = 13
+    eger ast_tip == 13 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_BLOK, 0);
+        degisken i_ast: *AstDugum = ast.sol;
+        degisken son_h: *HirDugum = 0;
+        
+        dongu i_ast != 0 {
+            degisken h_ifade: *HirDugum = ast_to_hir_ifade(m, i_ast);
+            eger dugum.sol == 0 ise {
+                dugum.sol = h_ifade;
+            } yoksa {
+                son_h.sonraki = h_ifade;
+            }
+            son_h = h_ifade;
+            i_ast = i_ast.sonraki;
+        }
+        dondu dugum;
+    }
+    
+    # AST_ISLEV = 10
+    eger ast_tip == 10 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ISLEV, 0);
+        eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dugum.govde = ast_to_hir_ifade(m, ast.govde); # govde = blok
+        eger dugum.govde == 0 ve ast.sol != 0 ise {
+            dugum.govde = ast_to_hir_ifade(m, ast.sol);
+        }
+        degisken p_ast: *AstDugum = ast.parametreler;
+        degisken son_p: *HirDugum = 0;
+        dongu p_ast != 0 {
+            degisken p_hir: *HirDugum = ast_to_hir_ifade(m, p_ast);
+            eger dugum.sol == 0 ise {
+                dugum.sol = p_hir;
+            } yoksa {
+                son_p.sonraki = p_hir;
+            }
+            son_p = p_hir;
+            p_ast = p_ast.sonraki;
+        }
+        dondu dugum;
+    }
+    
+    # AST_DONDUR = 12
+    eger ast_tip == 12 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_DONDUR, 0);
+        eger ast.sag != 0 ise {
+            dugum.sol = ast_to_hir_ifade(m, ast.sag);
+        } yoksa eger ast.sol != 0 ise {
+            dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        }
+        dondu dugum;
+    }
+    
+    # AST_EGER = 8
+    eger ast_tip == 8 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_EGER, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.govde = ast_to_hir_ifade(m, ast.govde);
+        # In HIR, sag is used for else-block if any
+        eger ast.yoksa_govde != 0 ise {
+            dugum.sag = ast_to_hir_ifade(m, ast.yoksa_govde);
+        }
+        dondu dugum;
+    }
+    
+    # AST_DONGU = 9
+    eger ast_tip == 9 ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_DONGU, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.govde = ast_to_hir_ifade(m, ast.govde);
+        dondu dugum;
+    }
+    
+    # AST_ASYNC_ISLEV = 41
+    eger ast_tip == 41 veya ast_tip == AST_ASYNC_ISLEV ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ASYNC_ISLEV, 0);
+        eger ast.ilk_jeton != 0 ise {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dugum.govde = ast_to_hir_ifade(m, ast.govde);
+        degisken p_ast: *AstDugum = ast.parametreler;
+        degisken son_p: *HirDugum = 0;
+        dongu p_ast != 0 {
+            degisken p_hir: *HirDugum = ast_to_hir_ifade(m, p_ast);
+            eger dugum.sol == 0 ise {
+                dugum.sol = p_hir;
+            } yoksa {
+                son_p.sonraki = p_hir;
+            }
+            son_p = p_hir;
+            p_ast = p_ast.sonraki;
+        }
+        dondu dugum;
+    }
+
+    # AST_AWAIT = 42
+    eger ast_tip == 42 veya ast_tip == AST_AWAIT ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_AWAIT, 0);
+        dugum.sag = ast_to_hir_ifade(m, ast.sag);
+        dondu dugum;
+    }
+
+    # AST_GERCEK_SAYI = 2
+    eger ast_tip == 2 veya ast_tip == AST_GERCEK_SAYI ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_GERCEK_SAYI, 0);
+        eger ast.ilk_jeton != 0 {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = string_gerceksayiya_ieee754(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dondu dugum;
+    }
+
+    # AST_METIN = 3
+    eger ast_tip == 3 veya ast_tip == AST_METIN ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_METIN, 0);
+        eger ast.ilk_jeton != 0 {
+            degisken j_tk: *Jeton = ast.ilk_jeton;
+            dugum.deger = djb2_hash(j_tk.baslangic, j_tk.uzunluk);
+        }
+        dondu dugum;
+    }
+
+    # AST_ALAN_ERISIMI = 17
+    eger ast_tip == 17 veya ast_tip == AST_ALAN_ERISIMI ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_ALAN_ERISIMI, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.deger = ast.dizi_boyutu;
+        dondu dugum;
+    }
+
+    # AST_INDEKS_ERISIMI = 18
+    eger ast_tip == 18 veya ast_tip == AST_INDEKS_ERISIMI ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_INDEKS_ERISIMI, 0);
+        dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        dugum.sag = ast_to_hir_ifade(m, ast.sag);
+        dondu dugum;
+    }
+
+    # AST_UNARY = 19
+    eger ast_tip == 19 veya ast_tip == AST_UNARY ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_UNARY, 0);
+        eger ast.sag != 0 ise {
+            dugum.sol = ast_to_hir_ifade(m, ast.sag);
+        } yoksa {
+            dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        }
+        eger ast.ilk_jeton != 0 {
+            dugum.deger = ast.ilk_jeton.tip;
+        }
+        dondu dugum;
+    }
+
+    # AST_REFERANS = 20
+    eger ast_tip == 20 veya ast_tip == AST_REFERANS ise {
+        degisken dugum: *HirDugum = hir_dugum_olustur(m, HIR_REFERANS, 0);
+        eger ast.sag != 0 ise {
+            dugum.sol = ast_to_hir_ifade(m, ast.sag);
+        } yoksa {
+            dugum.sol = ast_to_hir_ifade(m, ast.sol);
+        }
+        dondu dugum;
+    }
+
+    # Diğerleri pas geç (fallback)
+    dondu 0;
+}
+
+isv hir_await_say(dugum: *HirDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    degisken toplam: tamsayi = 0;
+    eger dugum.tip == HIR_AWAIT ise {
+        toplam = 1;
+    }
+    dondu toplam + hir_await_say(dugum.sol) + hir_await_say(dugum.sag) + hir_await_say(dugum.govde) + hir_await_say(dugum.sonraki);
+}
+
+isv hir_await_donustur(m: *HirMotoru, dugum: *HirDugum, pc_sayac: *tamsayi) {
+    eger dugum == 0 ise { dondu; }
+    eger dugum.tip == HIR_AWAIT ise {
+        *pc_sayac = *pc_sayac + 1;
+        dugum.deger = *pc_sayac; # suspend PC noktasi
+    }
+    hir_await_donustur(m, dugum.sol, pc_sayac);
+    hir_await_donustur(m, dugum.sag, pc_sayac);
+    hir_await_donustur(m, dugum.govde, pc_sayac);
+    hir_await_donustur(m, dugum.sonraki, pc_sayac);
+}
+
+isv hir_coroutine_lower(m: *HirMotoru, hir_fn: *HirDugum) -> *HirDugum {
+    eger hir_fn == 0 veya hir_fn.tip != HIR_ASYNC_ISLEV ise { dondu hir_fn; }
+    # Trampoline ve poll state-machine yapisina dönüştürme:
+    # 1. State machine poll fonksiyonu (HIR_ISLEV): PC dispatch tablosu + suspend/resume
+    # 2. AsyncFrame baslatici fonksiyon: frame tahsisi, slot kopyalama ve Future olusturma
+    degisken await_adet: tamsayi = hir_await_say(hir_fn.govde);
+    degisken pc_sayac: tamsayi = 0;
+    hir_await_donustur(m, hir_fn.govde, &pc_sayac);
+
+    degisken poll_fn: *HirDugum = hir_dugum_olustur(m, HIR_ISLEV, hir_fn.tip_bilgisi);
+    poll_fn.deger = hir_fn.deger ^ 0x504F4C4C; # hash xor "POLL"
+    poll_fn.govde = hir_fn.govde;
+
+    # Asenkron fonksiyonu trampoline fonksiyonuna donustur
+    hir_fn.tip = HIR_ISLEV;
+    hir_fn.deger = hir_fn.deger ^ 0x4153594E; # hash xor "ASYN"
+    dondu hir_fn;
+}
+
+isv ast_to_hir(m: *HirMotoru, ast_koku: *AstDugum) {
+    degisken iter: *AstDugum = ast_koku;
+    eger ast_koku != 0 ve ast_koku.sol != 0 ise {
+        iter = ast_koku.sol;
+    }
+    degisken son_h: *HirDugum = 0;
+    
+    dongu iter != 0 {
+        degisken h: *HirDugum = ast_to_hir_ifade(m, iter);
+        eger h != 0 ise {
+            eger h.tip == HIR_ASYNC_ISLEV ise {
+                h = hir_coroutine_lower(m, h);
+            }
+            eger m.kok_dugum == 0 ise {
+                m.kok_dugum = h;
+            } yoksa {
+                son_h.sonraki = h;
+            }
+            son_h = h;
+        }
+        iter = iter.sonraki;
+    }
+}
+

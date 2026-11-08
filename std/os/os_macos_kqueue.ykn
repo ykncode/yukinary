@@ -1,0 +1,47 @@
+# ============================================================
+# std/os/os_macos_kqueue.ykn
+# FAZ 31: Saf macOS & BSD kqueue / kevent Asenkron Olay Surucusu
+# ============================================================
+
+# macOS ARM64 / x86_64 Sistem Cagri Numaralari
+degisken SYS_MACOS_KQUEUE = 362;
+degisken SYS_MACOS_KEVENT = 363;
+
+# kqueue Filtre Sabitleri
+degisken EVFILT_READ    = -1;
+degisken EVFILT_WRITE   = -2;
+degisken EVFILT_AIO     = -3;
+degisken EVFILT_VNODE   = -4;
+degisken EVFILT_PROC    = -5;
+degisken EVFILT_SIGNAL  = -6;
+degisken EVFILT_TIMER   = -7;
+
+# kqueue Olay Bayraklari (Actions & Flags)
+degisken EV_ADD         = 1;
+degisken EV_ENABLE      = 4;
+degisken EV_DISABLE     = 8;
+degisken EV_DELETE      = 2;
+degisken EV_ONESHOT     = 16;
+degisken EV_CLEAR       = 32;
+degisken EV_EOF         = 32768;
+degisken EV_ERROR       = 16384;
+
+# Standart 32-Bayt kevent Yapisi (64-bit BSD)
+yapi Kevent {
+    ident:   tamsayi; # u64 dosya veya soket tanimlayici
+    filter:  tamsayi; # i16 filtre turu (EVFILT_READ / WRITE)
+    flags:   tamsayi; # u16 olay bayraklari
+    fflags:  tamsayi; # u32 filtreye ozel bayraklar
+    data:    tamsayi; # i64 filtreye ozel veri (orn. hazir bayt sayisi)
+    udata:   *u8;     # u64 kullanici baglami (context)
+}
+
+isv macos_kevent_olustur(kev: *Kevent, fd: tamsayi, filtre: tamsayi, bayraklar: tamsayi, baglam: *u8) {
+    kev.ident = fd;
+    kev.filter = filtre;
+    kev.flags = bayraklar;
+    kev.fflags = 0;
+    kev.data = 0;
+    kev.udata = baglam;
+}
+

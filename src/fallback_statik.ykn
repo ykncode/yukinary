@@ -1,0 +1,306 @@
+# ============================================================
+# src/fallback_statik.ykn
+# FAZ 9.4 Fallback A: HARICI_STATIK
+# C header parser, statik linker flag ureteci
+# ============================================================
+#c-lib "kernel32";
+
+# C header'dan harici isv bildirimleri otomatik olustur
+# Basit C header satirlarini parse edip YKN harici isv karsiligini uretir
+
+yapi HeaderBildirim {
+    isim: *u8;
+    isim_uzn: tamsayi;
+    ykn_bildirim: [256]u8;
+    ykn_bildirim_uzn: tamsayi;
+}
+
+degisken g_statik_lib_yolu: *u8 = 0;
+degisken g_statik_link_bayraklari: [512]u8;
+degisken g_statik_bayrak_uzn: tamsayi = 0;
+
+# Statik linker bayragini kaydet
+isv statik_lib_ekle(lib_adi: *u8) {
+    eger lib_adi == 0 ise { dondu; }
+    # "-l" + lib_adi formatinda bayrak olustur
+    degisken prefix: *u8 = "-l".ptr;
+    degisken pi: tamsayi = 0;
+    dongu prefix[pi] != 0 ve g_statik_bayrak_uzn < 510 {
+        g_statik_link_bayraklari[g_statik_bayrak_uzn] = prefix[pi];
+        g_statik_bayrak_uzn = g_statik_bayrak_uzn + 1;
+        pi = pi + 1;
+    }
+    degisken li: tamsayi = 0;
+    dongu lib_adi[li] != 0 ve g_statik_bayrak_uzn < 510 {
+        g_statik_link_bayraklari[g_statik_bayrak_uzn] = lib_adi[li];
+        g_statik_bayrak_uzn = g_statik_bayrak_uzn + 1;
+        li = li + 1;
+    }
+    g_statik_link_bayraklari[g_statik_bayrak_uzn] = 32;
+    g_statik_bayrak_uzn = g_statik_bayrak_uzn + 1;
+    g_statik_link_bayraklari[g_statik_bayrak_uzn] = 0;
+}
+
+# Yardimci: cikis tamponuna string literal kopyalar, yeni pozisyon dondurur
+isv _str_yaz(hedef: *u8, pos: tamsayi, maks: tamsayi, kaynak: *u8) -> tamsayi {
+    degisken ki: tamsayi = 0;
+    dongu kaynak[ki] != 0 ve pos < maks - 1 {
+        hedef[pos] = kaynak[ki];
+        pos = pos + 1;
+        ki = ki + 1;
+    }
+    dondu pos;
+}
+
+# Yardimci: bellekten n byte kopyalar, yeni pozisyon dondurur
+isv _mem_yaz(hedef: *u8, pos: tamsayi, maks: tamsayi, kaynak: *u8, n: tamsayi) -> tamsayi {
+    degisken ki: tamsayi = 0;
+    dongu ki < n ve pos < maks - 1 {
+        hedef[pos] = kaynak[ki];
+        pos = pos + 1;
+        ki = ki + 1;
+    }
+    dondu pos;
+}
+
+# Yardimci: ptr[0..len) araliginda C tip tokenini tanimlayip YKN karsiligini dondurur
+# donus: ykn tip string pointer (null-terminated literal) veya 0 bilinmiyorsa
+isv c_tip_ykn_e_cevir(ptr: *u8, uzn: tamsayi) -> *u8 {
+    # "void" -> "bos"
+    eger uzn == 4 ve bellek_esit_mi(ptr, "void".ptr, 4) == 1 ise { dondu "bos".ptr; }
+    # "int" -> "tamsayi"
+    eger uzn == 3 ve bellek_esit_mi(ptr, "int".ptr, 3) == 1 ise { dondu "tamsayi".ptr; }
+    # "double" -> "gercek"
+    eger uzn == 6 ve bellek_esit_mi(ptr, "double".ptr, 6) == 1 ise { dondu "gercek".ptr; }
+    # "float" -> "gercek"
+    eger uzn == 5 ve bellek_esit_mi(ptr, "float".ptr, 5) == 1 ise { dondu "gercek".ptr; }
+    # "char" (pointer olmadan) -> "tamsayi" (fallback, char* icin ayri kontrol yapilir)
+    eger uzn == 4 ve bellek_esit_mi(ptr, "char".ptr, 4) == 1 ise { dondu "tamsayi".ptr; }
+    # Bilinmeyen -> "tamsayi" (fallback)
+    dondu "tamsayi".ptr;
+}
+
+# Yardimci: C parametre listesini parse edip YKN parametre stringi uretir
+# ic_ptr: '(' dan sonraki karakter, ic_uzn: ')' a kadar olan uzunluk
+# Donus: cikis tamponuna yazilan byte sayisi
+isv parametre_parse_et(ic_ptr: *u8, ic_uzn: tamsayi, cikis: *u8, maks: tamsayi) -> tamsayi {
+    degisken pos: tamsayi = 0;
+    # "void)" veya bos -> bos parametre listesi
+    eger ic_uzn <= 0 ise { dondu 0; }
+    eger ic_uzn >= 4 ve bellek_esit_mi(ic_ptr, "void".ptr, 4) == 1 ise {
+        # void parametresi: sonraki karakter ')' veya bosluk veya sonu
+        degisken sonraki: u8 = ic_ptr[4];
+        eger sonraki == 41 veya sonraki == 32 veya sonraki == 0 ise { dondu 0; }
+    }
+    # Parametreleri virgule gore parcala
+    degisken param_no: tamsayi = 0;
+    degisken p: tamsayi = 0;
+    dongu p <= ic_uzn {
+        # Mevcut parametrenin basini bul (bosluk atla)
+        dongu p < ic_uzn ve ic_ptr[p] == 32 { p = p + 1; }
+        eger p >= ic_uzn ise { p = ic_uzn + 1; }  # dongu sonu
+        # Virgul veya son bul
+        degisken param_bas: tamsayi = p;
+        dongu p < ic_uzn ve ic_ptr[p] != 44 { p = p + 1; }
+        degisken param_son: tamsayi = p;
+        # param_bas..param_son araligini isle
+        eger param_son > param_bas ise {
+            # Aralik icindeki tip + ad belirle
+            # Sondaki bosluk/parantez temizle
+            degisken ps: tamsayi = param_son - 1;
+            dongu ps > param_bas ve ic_ptr[ps] == 32 { ps = ps - 1; }
+            # Sondaki '*' var mi? (char* ic* vb.)
+            degisken yildiz: tamsayi = 0;
+            eger ic_ptr[ps] == 42 ise {
+                yildiz = 1;
+                ps = ps - 1;
+                dongu ps > param_bas ve ic_ptr[ps] == 32 { ps = ps - 1; }
+            }
+            # Son kelime = degisken adi, onceki = tip
+            # Son kelimenin baslangicini bul
+            degisken ad_son: tamsayi = ps + 1;
+            dongu ps > param_bas ve ic_ptr[ps] != 32 ve ic_ptr[ps] != 42 { ps = ps - 1; }
+            degisken ad_bas: tamsayi = ps;
+            eger ic_ptr[ps] == 32 veya ic_ptr[ps] == 42 ise { ad_bas = ps + 1; }
+            # Tip kismini bul (param_bas..ps arasi, bosluk atla)
+            degisken tip_bas: tamsayi = param_bas;
+            dongu tip_bas < ps ve ic_ptr[tip_bas] == 32 { tip_bas = tip_bas + 1; }
+            degisken tip_son: tamsayi = ps;
+            dongu tip_son > tip_bas ve ic_ptr[tip_son] == 32 { tip_son = tip_son - 1; }
+            # Tip uzunlugu
+            degisken tip_uzn: tamsayi = tip_son - tip_bas;
+            eger tip_uzn <= 0 ise { tip_uzn = 1; }
+            # YKN tipini belirle
+            degisken ykn_tip: *u8 = 0;
+            eger yildiz == 1 ve tip_uzn >= 4 ve bellek_esit_mi(ic_ptr + tip_bas, "char".ptr, 4) == 1 ise {
+                ykn_tip = "*u8".ptr;
+            }
+            eger ykn_tip == 0 ise {
+                ykn_tip = c_tip_ykn_e_cevir(ic_ptr + tip_bas, tip_son - tip_bas);
+            }
+            # Parametre adini belirle (bulunamazsa otomatik uret)
+            degisken ad_uzn: tamsayi = ad_son - ad_bas;
+            # Virgul oncesi yaz
+            eger param_no > 0 ise {
+                pos = _str_yaz(cikis, pos, maks, ", ".ptr);
+            }
+            # "ad: tip" formatinda yaz
+            eger ad_uzn > 0 ve ad_bas < ad_son ise {
+                pos = _mem_yaz(cikis, pos, maks, ic_ptr + ad_bas, ad_uzn);
+            }
+            eger ad_uzn <= 0 ise {
+                # Otomatik isim: p0, p1, ...
+                pos = _str_yaz(cikis, pos, maks, "p".ptr);
+                # param_no'yu ASCII olarak yaz (0-9 arasi)
+                eger pos < maks - 1 ise {
+                    cikis[pos] = 48 + param_no;
+                    pos = pos + 1;
+                }
+            }
+            pos = _str_yaz(cikis, pos, maks, ": ".ptr);
+            pos = _str_yaz(cikis, pos, maks, ykn_tip);
+            param_no = param_no + 1;
+        }
+        p = p + 1;  # virgulu atla
+    }
+    dondu pos;
+}
+
+# C header satirindan YKN harici isv bildirimi uret
+isv header_satirini_isle(satir: *u8, uzunluk: tamsayi, cikis: *u8, maks: tamsayi) -> tamsayi {
+    eger satir == 0 veya uzunluk <= 0 veya cikis == 0 ise { dondu 0; }
+
+    # 1. "extern " (7 karakter) araLIGINI bul
+    degisken extern_str: *u8 = "extern ".ptr;
+    degisken extern_pos: tamsayi = -1;
+    degisken i: tamsayi = 0;
+    dongu i + 7 <= uzunluk {
+        eger bellek_esit_mi(satir + i, extern_str, 7) == 1 ise {
+            extern_pos = i;
+            i = uzunluk;  # donguyu kes
+        }
+        i = i + 1;
+    }
+    eger extern_pos < 0 ise { dondu 0; }
+
+    # 2. "extern " sonrasindaki konumdan baslayarak donus tipini belirle
+    degisken sonra: tamsayi = extern_pos + 7;
+
+    # Bosluk atla
+    dongu sonra < uzunluk ve satir[sonra] == 32 { sonra = sonra + 1; }
+
+    # char* / char * kontrolu onceden yap
+    degisken ykn_donus: *u8 = 0;
+    degisken tip_atlama: tamsayi = 0;  # donus tipi sonrasi atlanacak karakter sayisi
+
+    # "void " kontrolu
+    eger sonra + 5 <= uzunluk ve bellek_esit_mi(satir + sonra, "void ".ptr, 5) == 1 ise {
+        ykn_donus = "bos".ptr;
+        tip_atlama = 5;
+    }
+    # "int " kontrolu
+    eger ykn_donus == 0 ve sonra + 4 <= uzunluk ve bellek_esit_mi(satir + sonra, "int ".ptr, 4) == 1 ise {
+        ykn_donus = "tamsayi".ptr;
+        tip_atlama = 4;
+    }
+    # "double " kontrolu
+    eger ykn_donus == 0 ve sonra + 7 <= uzunluk ve bellek_esit_mi(satir + sonra, "double ".ptr, 7) == 1 ise {
+        ykn_donus = "gercek".ptr;
+        tip_atlama = 7;
+    }
+    # "float " kontrolu
+    eger ykn_donus == 0 ve sonra + 6 <= uzunluk ve bellek_esit_mi(satir + sonra, "float ".ptr, 6) == 1 ise {
+        ykn_donus = "gercek".ptr;
+        tip_atlama = 6;
+    }
+    # "char* " veya "char *" kontrolu
+    eger ykn_donus == 0 ve sonra + 5 <= uzunluk ve bellek_esit_mi(satir + sonra, "char*".ptr, 5) == 1 ise {
+        ykn_donus = "*u8".ptr;
+        tip_atlama = 5;
+        # Sonrasinda bosluk varsa onu da atla
+        eger sonra + tip_atlama < uzunluk ve satir[sonra + tip_atlama] == 32 ise {
+            tip_atlama = tip_atlama + 1;
+        }
+    }
+    eger ykn_donus == 0 ve sonra + 6 <= uzunluk ve bellek_esit_mi(satir + sonra, "char *".ptr, 6) == 1 ise {
+        ykn_donus = "*u8".ptr;
+        tip_atlama = 6;
+        eger sonra + tip_atlama < uzunluk ve satir[sonra + tip_atlama] == 32 ise {
+            tip_atlama = tip_atlama + 1;
+        }
+    }
+    # Fallback: tamsayi, bosluga kadar atla
+    eger ykn_donus == 0 ise {
+        ykn_donus = "tamsayi".ptr;
+        dongu sonra + tip_atlama < uzunluk ve satir[sonra + tip_atlama] != 32 {
+            tip_atlama = tip_atlama + 1;
+        }
+        tip_atlama = tip_atlama + 1;  # bosluğu da atla
+    }
+
+    # 3. Fonksiyon adini bul: '(' oncesindeki token
+    degisken isim_bas: tamsayi = sonra + tip_atlama;
+    # Bosluk atla
+    dongu isim_bas < uzunluk ve satir[isim_bas] == 32 { isim_bas = isim_bas + 1; }
+    # '(' a kadar ilerle
+    degisken isim_son: tamsayi = isim_bas;
+    dongu isim_son < uzunluk ve satir[isim_son] != 40 ve satir[isim_son] != 32 { isim_son = isim_son + 1; }
+    degisken isim_uzn: tamsayi = isim_son - isim_bas;
+    eger isim_uzn <= 0 ise { dondu 0; }
+
+    # '(' pozisyonunu bul
+    degisken paran_ac: tamsayi = isim_son;
+    dongu paran_ac < uzunluk ve satir[paran_ac] != 40 { paran_ac = paran_ac + 1; }
+    eger paran_ac >= uzunluk ise { dondu 0; }
+
+    # ')' pozisyonunu bul
+    degisken paran_kap: tamsayi = paran_ac + 1;
+    dongu paran_kap < uzunluk ve satir[paran_kap] != 41 { paran_kap = paran_kap + 1; }
+    eger paran_kap >= uzunluk ise { dondu 0; }
+
+    # 4. Cikis tamponunu olustur
+    degisken pos: tamsayi = 0;
+
+    # #c-lib direktifi: lib_adi varsa yaz
+    eger g_statik_lib_yolu != 0 ise {
+        pos = _str_yaz(cikis, pos, maks, "#c-lib ".ptr);
+        eger pos < maks - 1 ise { cikis[pos] = 34; pos = pos + 1; }  # "
+        pos = _str_yaz(cikis, pos, maks, g_statik_lib_yolu);
+        eger pos < maks - 1 ise { cikis[pos] = 34; pos = pos + 1; }  # "
+        eger pos < maks - 1 ise { cikis[pos] = 59; pos = pos + 1; }  # ;
+        eger pos < maks - 1 ise { cikis[pos] = 10; pos = pos + 1; }  # \n
+    }
+
+    # "harici isv " yaz
+    pos = _str_yaz(cikis, pos, maks, "harici isv ".ptr);
+
+    # Fonksiyon adini yaz
+    pos = _mem_yaz(cikis, pos, maks, satir + isim_bas, isim_uzn);
+
+    # '(' yaz
+    eger pos < maks - 1 ise { cikis[pos] = 40; pos = pos + 1; }
+
+    # 5. Parametreleri parse et ve yaz
+    degisken ic_bas: tamsayi = paran_ac + 1;
+    degisken ic_uzn: tamsayi = paran_kap - ic_bas;
+    degisken param_tampon: [256]u8;
+    degisken param_uzn: tamsayi = parametre_parse_et(satir + ic_bas, ic_uzn, param_tampon, 256);
+    pos = _mem_yaz(cikis, pos, maks, param_tampon, param_uzn);
+
+    # ')' yaz
+    eger pos < maks - 1 ise { cikis[pos] = 41; pos = pos + 1; }
+
+    # " -> " yaz
+    pos = _str_yaz(cikis, pos, maks, " -> ".ptr);
+
+    # Donus tipini yaz
+    pos = _str_yaz(cikis, pos, maks, ykn_donus);
+
+    # ';' yaz
+    eger pos < maks - 1 ise { cikis[pos] = 59; pos = pos + 1; }
+
+    # null sonlandirici
+    eger pos < maks ise { cikis[pos] = 0; }
+
+    dondu pos;
+}

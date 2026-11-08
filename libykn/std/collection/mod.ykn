@@ -1,0 +1,7 @@
+# ============================================================
+# Yukinary (YKN) Koleksiyon Modulu (libykn/std/collection/mod.ykn)
+# Vec<T> ve HashMap<K,V> Veri Yapilari
+# ============================================================
+
+ice_aktar "vec.ykn";
+ice_aktar "hashmap.ykn";

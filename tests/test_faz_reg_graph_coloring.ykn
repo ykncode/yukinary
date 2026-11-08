@@ -1,0 +1,52 @@
+# ============================================================
+# Test: tests/test_faz_reg_graph_coloring.ykn
+# FAZ 4 Dogrulama: Chaitin-Briggs Graf Renklendirmeli Yazmac Tahsisi
+# ============================================================
+
+ice_aktar "std/opt/reg_graph.ykn";
+
+isv main() -> tamsayi {
+    # 4 degiskenli bir girisim grafi olustur
+    degisken g: *GirisimGrafi = girisim_grafi_olustur(4);
+    eger g == 0 ise { dondu 1; }
+
+    # Ucgen baglantisi: v0 - v1, v1 - v2, v2 - v0 (Kromatik sayi = 3)
+    # v3 sadece v2'ye bagli
+    girisim_kenari_ekle(g, 0, 1);
+    girisim_kenari_ekle(g, 1, 2);
+    girisim_kenari_ekle(g, 2, 0);
+    girisim_kenari_ekle(g, 2, 3);
+
+    # 1. Test: K = 3 yazmac ile renklendir (Sifir spill ile basarmali)
+    degisken spill_3: tamsayi = girisim_grafi_renklendir(g, 3);
+    eger spill_3 != 0 ise {
+        dondu 10; # 3 renk ile hic spill olmamaliydi
+    }
+
+    # Komsularin renklerinin farkli oldugunu dogrula
+    eger g.renkler[0] == g.renkler[1] veya g.renkler[1] == g.renkler[2] veya g.renkler[2] == g.renkler[0] ise {
+        dondu 11; # Komsular ayni rengi alamaz
+    }
+    eger g.renkler[2] == g.renkler[3] ise {
+        dondu 12;
+    }
+
+    girisim_grafi_serbest_birak(g);
+
+    # 2. Test: K = 2 yazmac ile ayni ucgeni renklendir (Ucgen 2 renge sigmaz => Spill olmali)
+    degisken g2: *GirisimGrafi = girisim_grafi_olustur(4);
+    girisim_kenari_ekle(g2, 0, 1);
+    girisim_kenari_ekle(g2, 1, 2);
+    girisim_kenari_ekle(g2, 2, 0);
+    girisim_kenari_ekle(g2, 2, 3);
+
+    degisken spill_2: tamsayi = girisim_grafi_renklendir(g2, 2);
+    eger spill_2 <= 0 ise {
+        dondu 20; # 2 renk ile ucgen renklendirilemez, spill tespit edilmeliydi
+    }
+
+    girisim_grafi_serbest_birak(g2);
+
+    dondu 0;
+}
+

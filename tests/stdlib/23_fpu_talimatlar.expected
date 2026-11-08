@@ -1,0 +1,16 @@
+TEST FPU: sqrt(4.0)=2 OK
+TEST FPU: sqrt(9.0)=3 OK
+TEST FPU: sqrt(16.0)=4 OK
+TEST FPU: sin(0)=0 OK
+TEST FPU: sin(pi/2)*10>=9 OK
+TEST FPU: cos(0)=1 OK
+TEST FPU: cos(pi) abs*10>=9 OK
+TEST FPU: fabs(-3.7)=3 OK
+TEST FPU: fabs(5.0)=5 OK
+TEST FPU: fmin(3,7)=3 OK
+TEST FPU: fmin(9.5,2.1)=2 OK
+TEST FPU: fmax(3,7)=7 OK
+TEST FPU: fmax(9.5,2.1)=9 OK
+TEST FPU: f64 carpma(pi*r*r)=78 OK
+TEST FPU: sqrt(25)+sqrt(4)=7 OK
+FPU-TALIMATLARI-PASS

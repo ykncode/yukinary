@@ -1,0 +1,110 @@
+# ============================================================
+# tests/incremental/03_cache_invalidation.ykn
+# FAZ 6.2 & 6.3: Cache Hit, Miss, Dependency & Concurrency Tests
+# ============================================================
+
+ice_aktar "src/cache.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv str_len_test(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv str_esit_test(a: *u8, b: *u8, len: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== TEST 03: CACHE HIT/MISS & INVALIDATION ===\n".ptr);
+    cache_istatistik_sifirla();
+
+    # 1. Dosya yollari ve fingerprintler
+    degisken fp_kaynak_v1: [68]u8;
+    degisken fp_kaynak_v2: [68]u8;
+    degisken kod_v1: *u8 = "isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }".ptr;
+    degisken kod_v2: *u8 = "isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b + 1; }".ptr;
+
+    fp_kaynak_hash(kod_v1, str_len_test(kod_v1), fp_kaynak_v1);
+    fp_kaynak_hash(kod_v2, str_len_test(kod_v2), fp_kaynak_v2);
+
+    degisken cache_yolu: [128]u8;
+    cache_dosya_yolu_olustur(cache_yolu, CACHE_ASAMA_PARSE, fp_kaynak_v1);
+    cache_dosya_sil(cache_yolu);
+
+    # 2. Ilk okuma (MISS beklenir - dosya henuz yok)
+    degisken okunan_buf: [1024]u8;
+    degisken okunan_boyut: tamsayi = 0;
+    degisken sonuc: tamsayi = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_PARSE, fp_kaynak_v1, okunan_buf, 1024, &okunan_boyut);
+    eger sonuc != CACHE_SONUC_MISS ise {
+        ekrana_yaz("FAIL: ilk okuma MISS olmaliydi\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Cache'e yazma (Parse verisi)
+    degisken sahte_ast_payload: *u8 = "AST_PARSE_TREE_DATA_TOPLA_FN_V1".ptr;
+    degisken yaz_res: tamsayi = cache_yaz(cache_yolu, CACHE_ASAMA_PARSE, fp_kaynak_v1, sahte_ast_payload, 31);
+    eger yaz_res != 1 ise {
+        ekrana_yaz("FAIL: cache_yaz basarisiz oldu\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Ikinci okuma (HIT beklenir - ayni fingerprint)
+    sonuc = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_PARSE, fp_kaynak_v1, okunan_buf, 1024, &okunan_boyut);
+    eger sonuc != CACHE_SONUC_HIT ise {
+        ekrana_yaz("FAIL: ikinci okuma HIT olmaliydi\n".ptr);
+        dondu 1;
+    }
+    eger okunan_boyut != 31 veya str_esit_test(okunan_buf, sahte_ast_payload, 31) == 0 ise {
+        ekrana_yaz("FAIL: okunan payload eslesmedi\n".ptr);
+        dondu 1;
+    }
+
+    # 5. Invalidation Testi (Kod degisti -> fp_kaynak_v2 bekleniyor, cache'de v1 var)
+    sonuc = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_PARSE, fp_kaynak_v2, okunan_buf, 1024, &okunan_boyut);
+    eger sonuc != CACHE_SONUC_MISS ise {
+        ekrana_yaz("FAIL: farkli fingerprint ile okuma MISS (invalidation) vermeli\n".ptr);
+        dondu 1;
+    }
+
+    # 6. Concurrency Lock Testi
+    degisken lock_yolu: [64]u8;
+    cache_dosya_yolu_olustur(lock_yolu, CACHE_ASAMA_KILIT, fp_kaynak_v1);
+    degisken l1: tamsayi = cache_kilitle(lock_yolu);
+    eger l1 == 0 ise {
+        ekrana_yaz("FAIL: ilk kilit alinabilmeliydi\n".ptr);
+        dondu 1;
+    }
+
+    # Ayni kilit dosyasi uzerinde kilit serbest birakilmadan once ikinci kilit basarisiz olmali
+    degisken l2: tamsayi = cache_kilitle(lock_yolu);
+    eger l2 != 0 ise {
+        # Not: Ayni process icinde Win32 CreateFile SHARE_NONE davranisi degisebilir,
+        # ancak handle kapatilinca serbest kalir.
+        cache_kilit_ac(l2);
+    }
+    cache_kilit_ac(l1);
+
+    # Kilit acildiktan sonra tekrar kilitlenebilmeli
+    degisken l3: tamsayi = cache_kilitle(lock_yolu);
+    eger l3 == 0 ise {
+        ekrana_yaz("FAIL: kilit acildiktan sonra tekrar alinabilmeliydi\n".ptr);
+        dondu 1;
+    }
+    cache_kilit_ac(l3);
+
+    # 7. Rapor yazdirma
+    cache_rapor_yazdir();
+
+    cache_dosya_sil(cache_yolu);
+    cache_dosya_sil(lock_yolu);
+
+    ekrana_yaz("FAZ6_CACHE_INVALIDATION_PASS\n".ptr);
+    dondu 0;
+}

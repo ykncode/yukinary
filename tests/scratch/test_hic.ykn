@@ -1,0 +1,9 @@
+isv test_serbest(ptr: *hic) {
+}
+
+isv ana() -> tamsayi {
+    degisken p: **u8 = 0;
+    test_serbest(p);
+    dondu 0;
+}
+

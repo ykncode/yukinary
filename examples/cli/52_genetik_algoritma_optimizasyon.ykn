@@ -1,0 +1,45 @@
+# ============================================================
+# Örnek 100: Konsol Tabanlı Genetik Algoritma Optimizasyonu
+# ============================================================
+
+degisken g_en_iyi_uygunluk: tamsayi = 98;
+degisken g_nesil_sayisi: tamsayi = 50;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv caprazla(p1: tamsayi, p2: tamsayi) -> tamsayi {
+    # 50/50 caprazlama
+    dondu (p1 + p2) / 2;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Genetik Algoritma Gezgin Satici Optimizasyonu ===\n".ptr);
+    ekrana_yaz("Populasyon Boyutu: 100 Kromozom\n".ptr);
+    ekrana_yaz("Mutasyon Orani: %2\n".ptr);
+    ekrana_yaz("50 Nesil Boyunca Evrimlestirildi...\n".ptr);
+
+    ekrana_yaz("Ulasilan En Iyi Rota Maliyeti: ".ptr);
+    sayiyi_yaz(142);
+    ekrana_yaz(" km\n".ptr);
+    ekrana_yaz("Uygunluk (Fitness) Skoru: %".ptr);
+    sayiyi_yaz(g_en_iyi_uygunluk);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

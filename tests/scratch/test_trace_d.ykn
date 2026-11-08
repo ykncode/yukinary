@@ -1,0 +1,22 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv test_uz<T>(d: *Dizi<T>) -> tamsayi {
+    degisken v: tamsayi = d;
+    ekrana_yaz("inside test_uz, d = \n".ptr);
+    sayiyi_yazdir(v);
+    ekrana_yaz("\n".ptr);
+    dondu v;
+}
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    degisken ptr_d: tamsayi = d;
+    ekrana_yaz("inside ana, d = \n".ptr);
+    sayiyi_yazdir(ptr_d);
+    ekrana_yaz("\n".ptr);
+    degisken ret: tamsayi = test_uz<tamsayi>(d);
+    ekrana_yaz("ret = \n".ptr);
+    sayiyi_yazdir(ret);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

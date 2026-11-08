@@ -1,0 +1,2 @@
+isv ekrana_yaz(mesaj: *u8) {}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi { degisken n: tamsayi = 9; eger n > 3 ise { ekrana_yaz("YES\n".ptr); } yoksa { ekrana_yaz("NO\n".ptr); } dondu 0; }

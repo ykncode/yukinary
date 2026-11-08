@@ -1,0 +1,37 @@
+# ============================================================
+# Yukinary std/ai/sampler.ykn
+# Deterministic inference sampler for fixed-point logits.
+# ============================================================
+
+# Q16.16 temperature ile argmax: temperature pozitifse siralamayi bozmaz,
+# fakat sifir/negatif sicaklik hatasini reddeder.
+isv bitnet_greedy_ornekle(logits: *tamsayi,
+                          token_sayisi: tamsayi,
+                          sicaklik_q16: tamsayi) -> tamsayi {
+    eger logits == 0 veya token_sayisi <= 0 veya sicaklik_q16 <= 0 ise { dondu 0 - 1; }
+    degisken en_iyi: tamsayi = 0;
+    degisken en_iyi_deger: tamsayi = logits[0];
+    degisken i: tamsayi = 1;
+    dongu i < token_sayisi {
+        degisken ayarlanmis: tamsayi = (logits[i] * 65536) / sicaklik_q16;
+        degisken ilk: tamsayi = (en_iyi_deger * 65536) / sicaklik_q16;
+        eger ayarlanmis > ilk ise {
+            en_iyi = i;
+            en_iyi_deger = logits[i];
+        }
+        i = i + 1;
+    }
+    dondu en_iyi;
+}
+
+# Sicakliksiz hizli yol; inference varsayilan greedy mod.
+isv bitnet_argmax(logits: *tamsayi, token_sayisi: tamsayi) -> tamsayi {
+    eger logits == 0 veya token_sayisi <= 0 ise { dondu 0 - 1; }
+    degisken en_iyi: tamsayi = 0;
+    degisken i: tamsayi = 1;
+    dongu i < token_sayisi {
+        eger logits[i] > logits[en_iyi] ise { en_iyi = i; }
+        i = i + 1;
+    }
+    dondu en_iyi;
+}

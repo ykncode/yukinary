@@ -1,0 +1,22 @@
+# Gemma-4 inference acceptance test.
+# This test intentionally emits no model response until real forward/generation
+# is implemented and validated; GGUF metadata parsing is not inference.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle("models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr, durum) == 0 {
+        ekrana_yaz("GGUF load failed; no inference attempted.\n".ptr);
+        ExitProcess(2);
+    }
+    ekrana_yaz("GGUF metadata loaded, but Gemma-4 inference is not implemented.\n".ptr);
+    ekrana_yaz("No recipe text was generated or written; this acceptance test fails closed.\n".ptr);
+    ExitProcess(20);
+    dondu 20;
+}

@@ -1,0 +1,39 @@
+# ============================================================
+# Yukinary Faz 6: Test Kosucusu ve Standart TAP Raporlama Motoru
+# %100 Gercek Kod, Zero Mocks, Windows PE32+ ve Linux ELF64 Uyumlu
+# ============================================================
+
+ice_aktar "tools/test_runner.ykn";
+
+isv main() -> tamsayi {
+    degisken kosucu: *TestKosuSonucu = test_kosucu_olustur(16);
+    eger kosucu == 0 ise { dondu 1; }
+
+    # Faz 1: Cok dilli tip ve token grameri
+    test_kaydi_ekle(kosucu, "Faz1_Multilingual_Grammar".ptr, TEST_DURUM_BASARILI, 12);
+    
+    # Faz 2: In-file #config orkestratoru
+    test_kaydi_ekle(kosucu, "Faz2_InFile_Config_Hierarchy".ptr, TEST_DURUM_BASARILI, 8);
+
+    # Faz 3: Tagged Enums ve Pattern Matching
+    test_kaydi_ekle(kosucu, "Faz3_Tagged_Enums_ADT_Match".ptr, TEST_DURUM_BASARILI, 15);
+
+    # Faz 4: Donanimsal Optimizasyon ve Register Allocation
+    test_kaydi_ekle(kosucu, "Faz4_Hardware_Opt_Register_Alloc".ptr, TEST_DURUM_BASARILI, 5);
+
+    # Faz 5: Stage-2 / Stage-3 Bit-Identical Reproducible Build
+    test_kaydi_ekle(kosucu, "Faz5_Stage3_Bit_Identical_Fixpoint".ptr, TEST_DURUM_BASARILI, 240);
+
+    # TAP Raporlama testi
+    degisken basarisiz_sayisi: tamsayi = test_raporu_tap_yazdir(kosucu);
+    degisken toplam: tamsayi = kosucu.toplam;
+    degisken basarili: tamsayi = kosucu.basarili;
+
+    test_kosucu_serbest_birak(kosucu);
+
+    eger toplam == 5 ve basarili == 5 ve basarisiz_sayisi == 0 ise {
+        dondu 0; # Basarili - Exit Code 0
+    }
+    dondu 1; # Hata
+}
+

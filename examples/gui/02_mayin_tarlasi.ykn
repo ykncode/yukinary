@@ -1,0 +1,65 @@
+# ============================================================
+# Örnek 2: Win32 Arayüzlü Mayın Tarlası Oyunu
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 4x4 Izgara = 16 hucre
+degisken g_mayinlar: [16]tamsayi;
+degisken g_acildi: [16]tamsayi;
+degisken g_oyun_bitti: tamsayi = 0;
+
+isv mayin_haritasi_olustur() {
+    degisken i: tamsayi = 0;
+    dongu (i < 16) {
+        g_mayinlar[i] = 0;
+        g_acildi[i] = 0;
+        i = i + 1;
+    }
+    # Belirli konumlara mayin yerlestir (Örn: 2, 7, 13 indisleri)
+    g_mayinlar[2] = 1;
+    g_mayinlar[7] = 1;
+    g_mayinlar[13] = 1;
+}
+
+isv hucre_tikla(indis: tamsayi) -> tamsayi {
+    eger indis < 0 veya indis >= 16 ise { dondu 0; }
+    eger g_oyun_bitti == 1 ise { dondu 0; }
+
+    g_acildi[indis] = 1;
+    eger g_mayinlar[indis] == 1 ise {
+        g_oyun_bitti = 1;
+        ekrana_yaz("GUM! Mayina bastiniz! Oyun bitti.\n".ptr);
+        dondu 0 - 1; # Mayin
+    }
+    ekrana_yaz("Guvenli hucre acildi.\n".ptr);
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Mayin Tarlasi".ptr, 340, 380);
+    eger p_h == 0 ise { dondu 1; }
+
+    mayin_haritasi_olustur();
+
+    # 4x4 Buton Izgarasi
+    degisken satir: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    degisken id: tamsayi = 1000;
+
+    dongu (satir < 4) {
+        sutun = 0;
+        dongu (sutun < 4) {
+            degisken x: tamsayi = 30 + (sutun * 65);
+            degisken y: tamsayi = 30 + (satir * 65);
+            buton_olustur(p_h, "?".ptr, id, x, y, 60, 60);
+            id = id + 1;
+            sutun = sutun + 1;
+        }
+        satir = satir + 1;
+    }
+
+    ekrana_yaz("Mayin tarlasi hazir. 4x4 16 buton olusturuldu.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

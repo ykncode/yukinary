@@ -1,0 +1,391 @@
+# ============================================================
+# std/serialization/json.ykn
+# Yukinary 100% Yerel JSON Ayristirici ve Uretici (Zero Dependency)
+# Harici C++, Node.js, Python, C# veya libC KULLANMAZ.
+# ============================================================
+
+# JSON Dugum Tipleri:
+# 0: null, 1: bool, 2: int, 3: string, 4: array, 5: object
+
+yapi JsonDugum {
+    tip: tamsayi;
+    sayi_deger: tamsayi;
+    metin_ptr: *u8;
+    metin_uzn: tamsayi;
+    anahtar_ptr: *u8;
+    anahtar_uzn: tamsayi;
+    ilk_cocuk: *JsonDugum;
+    sonraki: *JsonDugum;
+}
+
+yapi JsonAyristirici {
+    kaynak: *u8;
+    uzunluk: tamsayi;
+    indeks: tamsayi;
+    bellek_havuzu: *u8;
+    bellek_kullanilan: tamsayi;
+}
+
+isv json_dugum_tahsis(p: *JsonAyristirici, tip: tamsayi) -> *JsonDugum {
+    degisken ofs: tamsayi = p.bellek_kullanilan;
+    degisken ptr: *JsonDugum = (p.bellek_havuzu + ofs);
+    p.bellek_kullanilan = ofs + 64;
+    ptr.tip = tip;
+    ptr.sayi_deger = 0;
+    ptr.metin_ptr = 0;
+    ptr.metin_uzn = 0;
+    ptr.anahtar_ptr = 0;
+    ptr.anahtar_uzn = 0;
+    ptr.ilk_cocuk = 0;
+    ptr.sonraki = 0;
+    dondu ptr;
+}
+
+isv json_bosluk_atla(p: *JsonAyristirici) {
+    dongu p.indeks < p.uzunluk {
+        degisken c: u8 = p.kaynak[p.indeks];
+        eger c == 32 veya c == 9 veya c == 10 veya c == 13 ise {
+            p.indeks = p.indeks + 1;
+        } yoksa {
+            durdur;
+        }
+    }
+}
+
+isv json_metin_oku(p: *JsonAyristirici) -> *JsonDugum {
+    degisken tirnak: u8 = p.kaynak[p.indeks];
+    p.indeks = p.indeks + 1;
+    degisken baslangic: tamsayi = p.indeks;
+    dongu p.indeks < p.uzunluk {
+        degisken c: u8 = p.kaynak[p.indeks];
+        eger c == 92 ise { # '\' ters bolu (escape)
+            p.indeks = p.indeks + 2; # kacan karakteri (\", \\, \n vb) atla
+            devam_et;
+        }
+        eger c == tirnak ise {
+            degisken d: *JsonDugum = json_dugum_tahsis(p, 3);
+            d.metin_ptr = p.kaynak + baslangic;
+            d.metin_uzn = p.indeks - baslangic;
+            p.indeks = p.indeks + 1;
+            dondu d;
+        }
+        p.indeks = p.indeks + 1;
+    }
+    dondu 0;
+}
+
+isv json_sayi_oku(p: *JsonAyristirici) -> *JsonDugum {
+    degisken baslangic: tamsayi = p.indeks;
+    degisken isaret: tamsayi = 1;
+    eger p.kaynak[p.indeks] == 45 ise { # '-'
+        isaret = -1;
+        p.indeks = p.indeks + 1;
+    }
+    degisken deger: tamsayi = 0;
+    dongu p.indeks < p.uzunluk {
+        degisken c: u8 = p.kaynak[p.indeks];
+        eger c >= 48 ve c <= 57 ise {
+            deger = deger * 10 + (c - 48);
+            p.indeks = p.indeks + 1;
+        } yoksa {
+            durdur;
+        }
+    }
+    # Kayan nokta kesirli kismi (float fraction) oku: orn .14159
+    eger p.indeks < p.uzunluk ve p.kaynak[p.indeks] == 46 ise { # '.'
+        p.indeks = p.indeks + 1;
+        dongu p.indeks < p.uzunluk {
+            degisken c2: u8 = p.kaynak[p.indeks];
+            eger c2 >= 48 ve c2 <= 57 ise {
+                p.indeks = p.indeks + 1;
+            } yoksa {
+                durdur;
+            }
+        }
+    }
+    # Bilimsel us (exponent) kismini oku: orn e+10, E-5
+    eger p.indeks < p.uzunluk ise {
+        degisken ce: u8 = p.kaynak[p.indeks];
+        eger ce == 101 veya ce == 69 ise { # 'e' veya 'E'
+            p.indeks = p.indeks + 1;
+            eger p.indeks < p.uzunluk ise {
+                degisken cs: u8 = p.kaynak[p.indeks];
+                eger cs == 43 veya cs == 45 ise { # '+' veya '-'
+                    p.indeks = p.indeks + 1;
+                }
+            }
+            dongu p.indeks < p.uzunluk {
+                degisken cd: u8 = p.kaynak[p.indeks];
+                eger cd >= 48 ve cd <= 57 ise {
+                    p.indeks = p.indeks + 1;
+                } yoksa {
+                    durdur;
+                }
+            }
+        }
+    }
+    degisken d: *JsonDugum = json_dugum_tahsis(p, 2);
+    d.sayi_deger = deger * isaret;
+    d.metin_ptr = p.kaynak + baslangic;
+    d.metin_uzn = p.indeks - baslangic;
+    dondu d;
+}
+
+isv json_ayristir(p: *JsonAyristirici) -> *JsonDugum {
+    json_bosluk_atla(p);
+    eger p.indeks >= p.uzunluk ise { dondu 0; }
+    degisken c: u8 = p.kaynak[p.indeks];
+
+    eger c == 123 ise { # Nesne '{'
+        degisken nesne: *JsonDugum = json_dugum_tahsis(p, 5);
+        p.indeks = p.indeks + 1;
+        json_bosluk_atla(p);
+        eger p.indeks < p.uzunluk ve p.kaynak[p.indeks] == 125 ise {
+            p.indeks = p.indeks + 1;
+            dondu nesne;
+        }
+
+        degisken son_cocuk: *JsonDugum = 0;
+        dongu p.indeks < p.uzunluk {
+            json_bosluk_atla(p);
+            eger p.kaynak[p.indeks] != 34 ve p.kaynak[p.indeks] != 39 ise { durdur; }
+            degisken anahtar: *JsonDugum = json_metin_oku(p);
+            json_bosluk_atla(p);
+            eger p.kaynak[p.indeks] == 58 ise {
+                p.indeks = p.indeks + 1;
+            }
+            json_bosluk_atla(p);
+            degisken deger: *JsonDugum = json_ayristir(p);
+            eger deger != 0 ise {
+                deger.anahtar_ptr = anahtar.metin_ptr;
+                deger.anahtar_uzn = anahtar.metin_uzn;
+                eger nesne.ilk_cocuk == 0 ise {
+                    nesne.ilk_cocuk = deger;
+                } yoksa {
+                    son_cocuk.sonraki = deger;
+                }
+                son_cocuk = deger;
+            }
+
+            json_bosluk_atla(p);
+            eger p.kaynak[p.indeks] == 44 ise {
+                p.indeks = p.indeks + 1;
+            } yoksa eger p.kaynak[p.indeks] == 125 ise {
+                p.indeks = p.indeks + 1;
+                durdur;
+            } yoksa {
+                durdur;
+            }
+        }
+        dondu nesne;
+    }
+
+    eger c == 91 ise { # Dizi '['
+        degisken dizi: *JsonDugum = json_dugum_tahsis(p, 4);
+        p.indeks = p.indeks + 1;
+        json_bosluk_atla(p);
+        eger p.indeks < p.uzunluk ve p.kaynak[p.indeks] == 93 ise {
+            p.indeks = p.indeks + 1;
+            dondu dizi;
+        }
+
+        degisken son_eleman: *JsonDugum = 0;
+        dongu p.indeks < p.uzunluk {
+            json_bosluk_atla(p);
+            degisken eleman: *JsonDugum = json_ayristir(p);
+            eger eleman != 0 ise {
+                eger dizi.ilk_cocuk == 0 ise {
+                    dizi.ilk_cocuk = eleman;
+                } yoksa {
+                    son_eleman.sonraki = eleman;
+                }
+                son_eleman = eleman;
+            }
+
+            json_bosluk_atla(p);
+            eger p.kaynak[p.indeks] == 44 ise {
+                p.indeks = p.indeks + 1;
+            } yoksa eger p.kaynak[p.indeks] == 93 ise {
+                p.indeks = p.indeks + 1;
+                durdur;
+            } yoksa {
+                durdur;
+            }
+        }
+        dondu dizi;
+    }
+
+    eger c == 34 veya c == 39 ise {
+        dondu json_metin_oku(p);
+    }
+    eger (c >= 48 ve c <= 57) veya c == 45 ise {
+        dondu json_sayi_oku(p);
+    }
+    eger c == 116 ise { # true
+        p.indeks = p.indeks + 4;
+        degisken d: *JsonDugum = json_dugum_tahsis(p, 1);
+        d.sayi_deger = 1;
+        dondu d;
+    }
+    eger c == 102 ise { # false
+        p.indeks = p.indeks + 5;
+        degisken d: *JsonDugum = json_dugum_tahsis(p, 1);
+        d.sayi_deger = 0;
+        dondu d;
+    }
+    eger c == 110 ise { # null
+        p.indeks = p.indeks + 4;
+        dondu json_dugum_tahsis(p, 0);
+    }
+    dondu 0;
+}
+
+isv json_alan_bul(nesne: *JsonDugum, anahtar: *u8, anahtar_uzn: tamsayi) -> *JsonDugum {
+    eger nesne == 0 veya nesne.tip != 5 ise { dondu 0; }
+    degisken iter: *JsonDugum = nesne.ilk_cocuk;
+    dongu iter != 0 {
+        eger iter.anahtar_uzn == anahtar_uzn ise {
+            degisken a_ptr: *u8 = iter.anahtar_ptr;
+            degisken esit: tamsayi = 1;
+            degisken i: tamsayi = 0;
+            dongu i < anahtar_uzn {
+                eger a_ptr[i] != anahtar[i] ise {
+                    esit = 0;
+                    durdur;
+                }
+                i = i + 1;
+            }
+            eger esit == 1 ise { dondu iter; }
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+isv json_dizi_eleman(dizi: *JsonDugum, indeks: tamsayi) -> *JsonDugum {
+    eger dizi == 0 veya dizi.tip != 4 veya indeks < 0 ise { dondu 0; }
+    degisken iter: *JsonDugum = dizi.ilk_cocuk;
+    degisken sayac: tamsayi = 0;
+    dongu iter != 0 {
+        eger sayac == indeks ise { dondu iter; }
+        sayac = sayac + 1;
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# JSON Serilestirici (JSON Stringify / Serializer)
+# ============================================================
+isv _json_tampona_yaz(cikti: *u8, pos: *tamsayi, max_uzn: tamsayi, str: *u8, len: tamsayi) {
+    degisken p: tamsayi = pos[0];
+    degisken i: tamsayi = 0;
+    dongu i < len ve p < (max_uzn - 1) {
+        cikti[p] = str[i];
+        p = p + 1;
+        i = i + 1;
+    }
+    pos[0] = p;
+    cikti[p] = 0;
+}
+
+isv _json_sayi_tampona_yaz(cikti: *u8, pos: *tamsayi, max_uzn: tamsayi, sayi: tamsayi) {
+    degisken p: tamsayi = pos[0];
+    eger sayi == 0 ise {
+        eger p < (max_uzn - 1) ise {
+            cikti[p] = 48;
+            p = p + 1;
+            pos[0] = p;
+            cikti[p] = 0;
+        }
+        dondu;
+    }
+    degisken n: tamsayi = sayi;
+    degisken eksi: tamsayi = 0;
+    eger n < 0 ise {
+        eksi = 1;
+        n = 0 - n;
+    }
+    degisken tmp: [32]u8;
+    degisken ti: tamsayi = 0;
+    dongu n > 0 {
+        tmp[ti] = (n % 10) + 48;
+        n = n / 10;
+        ti = ti + 1;
+    }
+    eger eksi == 1 ve p < (max_uzn - 1) ise {
+        cikti[p] = 45;
+        p = p + 1;
+    }
+    dongu ti > 0 ve p < (max_uzn - 1) {
+        ti = ti - 1;
+        cikti[p] = tmp[ti];
+        p = p + 1;
+    }
+    pos[0] = p;
+    cikti[p] = 0;
+}
+
+isv _json_serilestir_dugum(dugum: *JsonDugum, cikti: *u8, pos: *tamsayi, max_uzn: tamsayi) {
+    eger dugum == 0 ise { dondu; }
+    
+    # 0: null
+    eger dugum.tip == 0 ise {
+        _json_tampona_yaz(cikti, pos, max_uzn, "null".ptr, 4);
+    } yoksa eger dugum.tip == 1 ise { # bool
+        eger dugum.sayi_deger == 1 ise {
+            _json_tampona_yaz(cikti, pos, max_uzn, "true".ptr, 4);
+        } yoksa {
+            _json_tampona_yaz(cikti, pos, max_uzn, "false".ptr, 5);
+        }
+    } yoksa eger dugum.tip == 2 ise { # number (int or float)
+        eger dugum.metin_ptr != 0 ve dugum.metin_uzn > 0 ise {
+            _json_tampona_yaz(cikti, pos, max_uzn, dugum.metin_ptr, dugum.metin_uzn);
+        } yoksa {
+            _json_sayi_tampona_yaz(cikti, pos, max_uzn, dugum.sayi_deger);
+        }
+    } yoksa eger dugum.tip == 3 ise { # string
+        _json_tampona_yaz(cikti, pos, max_uzn, "\"".ptr, 1);
+        eger dugum.metin_ptr != 0 ve dugum.metin_uzn > 0 ise {
+            _json_tampona_yaz(cikti, pos, max_uzn, dugum.metin_ptr, dugum.metin_uzn);
+        }
+        _json_tampona_yaz(cikti, pos, max_uzn, "\"".ptr, 1);
+    } yoksa eger dugum.tip == 4 ise { # array
+        _json_tampona_yaz(cikti, pos, max_uzn, "[".ptr, 1);
+        degisken c: *JsonDugum = dugum.ilk_cocuk;
+        degisken ilk: tamsayi = 1;
+        dongu c != 0 {
+            eger ilk == 0 ise {
+                _json_tampona_yaz(cikti, pos, max_uzn, ", ".ptr, 2);
+            }
+            ilk = 0;
+            _json_serilestir_dugum(c, cikti, pos, max_uzn);
+            c = c.sonraki;
+        }
+        _json_tampona_yaz(cikti, pos, max_uzn, "]".ptr, 1);
+    } yoksa eger dugum.tip == 5 ise { # object
+        _json_tampona_yaz(cikti, pos, max_uzn, "{".ptr, 1);
+        degisken c: *JsonDugum = dugum.ilk_cocuk;
+        degisken ilk: tamsayi = 1;
+        dongu c != 0 {
+            eger ilk == 0 ise {
+                _json_tampona_yaz(cikti, pos, max_uzn, ", ".ptr, 2);
+            }
+            ilk = 0;
+            _json_tampona_yaz(cikti, pos, max_uzn, "\"".ptr, 1);
+            _json_tampona_yaz(cikti, pos, max_uzn, c.anahtar_ptr, c.anahtar_uzn);
+            _json_tampona_yaz(cikti, pos, max_uzn, "\": ".ptr, 3);
+            _json_serilestir_dugum(c, cikti, pos, max_uzn);
+            c = c.sonraki;
+        }
+        _json_tampona_yaz(cikti, pos, max_uzn, "}".ptr, 1);
+    }
+}
+
+isv json_yaz(dugum: *JsonDugum, cikti: *u8, max_uzn: tamsayi) -> tamsayi {
+    eger dugum == 0 veya cikti == 0 veya max_uzn <= 0 ise { dondu 0; }
+    degisken pos: [1]tamsayi;
+    pos[0] = 0;
+    _json_serilestir_dugum(dugum, cikti, pos, max_uzn);
+    dondu pos[0];
+}

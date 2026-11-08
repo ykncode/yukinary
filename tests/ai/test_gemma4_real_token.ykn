@@ -1,0 +1,216 @@
+# Gemma4 real-weight decode harness; prompt IDs from llama.cpp chat template.
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 { rakamlar[adet] = 48 + n % 10; adet = adet + 1; n = n / 10; }
+    dongu adet > 0 { adet = adet - 1; degisken ch: [2]u8; ch[0] = rakamlar[adet]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv gemma_trace_dump(label: *u8, stage: tamsayi, count: tamsayi) {
+    degisken base: tamsayi = stage * 4 * 4096;
+    ekrana_yaz(label);
+    degisken i: tamsayi = 0;
+    dongu i < count { sayi_yaz(TRANSFORMER_TRACE_FULL[base + i]); ekrana_yaz(",".ptr); i = i + 1; }
+    ekrana_yaz("\n".ptr);
+}
+
+isv gemma_trace_dump_layers(stage: tamsayi, count: tamsayi) {
+    degisken layer: tamsayi = 0;
+    dongu layer < 4 {
+        ekrana_yaz("YKN_LAYER_STAGE=".ptr); sayi_yaz(stage);
+        ekrana_yaz("_L=".ptr); sayi_yaz(layer); ekrana_yaz(":".ptr);
+        degisken base: tamsayi = (stage * 4 + layer) * 4096;
+        degisken i: tamsayi = 0;
+        dongu i < count {
+            sayi_yaz(TRANSFORMER_TRACE_FULL[base + i]); ekrana_yaz(",".ptr);
+            i = i + 1;
+        }
+        ekrana_yaz("\n".ptr);
+        layer = layer + 1;
+    }
+}
+
+isv gemma_trace_stats(stage: tamsayi) {
+    ekrana_yaz("GEMMA_STATS_STAGE=".ptr); sayi_yaz(stage); ekrana_yaz(":".ptr);
+    degisken layer: tamsayi = 0;
+    dongu layer < 42 {
+        degisken slot: tamsayi = stage * 42 + layer;
+        sayi_yaz(TRANSFORMER_TRACE_SUM[slot]); ekrana_yaz(":".ptr);
+        sayi_yaz(TRANSFORMER_TRACE_MAX[slot]); ekrana_yaz(":".ptr);
+        sayi_yaz(TRANSFORMER_TRACE_SQSUM[slot]); ekrana_yaz(";".ptr);
+        layer = layer + 1;
+    }
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken path: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 { ExitProcess(1); }
+    gguf_durum_sifirla(durum);
+    eger gguf_yukle(path, durum) == 0 { ExitProcess(2); }
+    degisken gemma_profile: *GGUFGemma4Profile = durum->gemma4;
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, path, durum) == 0 { ExitProcess(3); }
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("GEMMA4_CUDA_INIT_FAIL=".ptr); sayi_yaz(YKN_CUDA_LAST_ERROR);
+        ekrana_yaz("\n".ptr); ExitProcess(12);
+    }
+    degisken spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&spec);
+    spec.model_adi = durum->mimari_adi;
+    spec.mimari = LLM_MIMARI_GEMMA;
+    spec.quant_tipi = durum->quant_tipi;
+    spec.vocab_boyutu = durum->vocab_boyutu;
+    spec.gizli_boyut = durum->gizli_boyut;
+    spec.katman_sayisi = durum->katman_sayisi;
+    spec.context_boyutu = durum->context_boyutu;
+    spec.kafa_sayisi = durum->kafa_sayisi;
+    spec.kv_kafa_sayisi = durum->kv_kafa_sayisi;
+    spec.kafa_boyutu = durum->kafa_boyutu;
+    spec.ffn_boyutu = durum->ffn_boyutu;
+    spec.rope_boyutu = durum->rope_boyutu;
+    spec.rope_freq_base_q16 = durum->rope_freq_base_q16;
+    spec.norm_eps_q16 = durum->norm_eps_q16;
+    spec.bos_token_id = durum->bos_token_id;
+    spec.eos_token_id = durum->eos_token_id;
+    eger llm_runtime_spec_dogrula(&spec) == 0 { ExitProcess(4); }
+    degisken adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(LLM_MIMARI_GEMMA, &adapter) == 0 { ExitProcess(5); }
+
+    degisken cache_capacity: tamsayi = 16;
+    # Gemma-4 also needs 10,752-wide PLE projection scratch, wider than Q.
+    degisken q_capacity: tamsayi = spec.kafa_sayisi * spec.kafa_boyutu;
+    eger q_capacity < 10752 { q_capacity = 10752; }
+    degisken kv_head_width: tamsayi = spec.kafa_boyutu;
+    eger gemma_profile != 0 { kv_head_width = gemma_profile->full_key_length; }
+    degisken kv_width: tamsayi = spec.kv_kafa_sayisi * kv_head_width;
+    degisken kv_bytes: tamsayi = cache_capacity * spec.katman_sayisi * kv_width * 8;
+    degisken hidden: *tamsayi = bellek_tahsis_et(spec.gizli_boyut * 8);
+    degisken residual: *tamsayi = bellek_tahsis_et(spec.gizli_boyut * 8);
+    degisken q: *tamsayi = bellek_tahsis_et(q_capacity * 8);
+    degisken key: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken value: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken attention: *tamsayi = bellek_tahsis_et(q_capacity * 8);
+    degisken ffn: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(spec.vocab_boyutu * 8);
+    degisken weights: *u8 = bellek_tahsis_et(8388608);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    eger hidden == 0 or residual == 0 or q == 0 or key == 0 or value == 0 or
+       attention == 0 or ffn == 0 or logits == 0 or weights == 0 or
+       key_cache == 0 or value_cache == 0 { ExitProcess(6); }
+
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &loader; paket.adapter = &adapter; paket.spec = &spec;
+    paket.hidden = hidden; paket.residual = residual; paket.q = q;
+    paket.key = key; paket.value = value; paket.attention = attention;
+    paket.ffn = ffn; paket.logits = logits; paket.logits_kapasitesi = spec.vocab_boyutu;
+    paket.agirlik_buffer = weights; paket.agirlik_kapasitesi = 8388608;
+    paket.kv_anahtar = key_cache; paket.kv_deger = value_cache;
+    paket.kafa_sayisi = spec.kafa_sayisi; paket.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = spec.kafa_boyutu; paket.kv_kapasitesi = cache_capacity;
+    paket.ffn_boyutu = spec.ffn_boyutu;
+    degisken icra: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra, &paket) == 0 {
+        ekrana_yaz("GEMMA4_SETUP_FAIL=".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz("\n".ptr); ExitProcess(7);
+    }
+
+    ekrana_yaz("GEMMA4_PROFILE_SWA_WINDOW_PRE=".ptr); sayi_yaz(durum->gemma4->swa_window); ekrana_yaz("\n".ptr);
+    # Exercise real-weight PLE input projection for the final prompt token.
+    degisken gemma_ple_token: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_token_embd.weight".ptr);
+    degisken gemma_ple_model: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_model_proj.weight".ptr);
+    degisken gemma_ple_norm: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, "per_layer_proj_norm.weight".ptr);
+    ekrana_yaz("GEMMA4_PLE_TYPES=".ptr); sayi_yaz(gemma_ple_token->ggml_type); ekrana_yaz(",".ptr);
+    sayi_yaz(gemma_ple_model->ggml_type); ekrana_yaz(",".ptr); sayi_yaz(gemma_ple_norm->ggml_type); ekrana_yaz("\n".ptr);
+    degisken gemma_embed_ok: tamsayi = llm_transformer_embedding_oku(&icra, durum, 107);
+    eger gemma_embed_ok == 0 { ekrana_yaz("GEMMA4_EMBED_FAIL\n".ptr); ExitProcess(10); }
+    degisken gemma_ple_ok: tamsayi = llm_transformer_gemma4_prepare_per_layer_input(&icra, durum, 107);
+    eger gemma_ple_ok == 0 {
+        ekrana_yaz("GEMMA4_PLE_INPUT_FAIL tensor_error=".ptr); sayi_yaz(TRANSFORMER_TENSOR_HATASI);
+        ekrana_yaz("\n".ptr); ExitProcess(11);
+    }
+    ekrana_yaz("GEMMA4_PLE_INPUT_PASS\n".ptr);
+
+    # Verify the learned full-attention RoPE mask from the actual GGUF payload.
+    degisken rope_pairs: tamsayi = llm_transformer_gemma4_full_rope_pairs(&icra, durum);
+    eger rope_pairs != 64 { ekrana_yaz("GEMMA4_ROPE_MASK_FAIL=".ptr); sayi_yaz(rope_pairs); ekrana_yaz("\n".ptr); ExitProcess(9); }
+    ekrana_yaz("GEMMA4_ROPE_ACTIVE_PAIRS=".ptr); sayi_yaz(rope_pairs);
+    ekrana_yaz(" SWA_WINDOW=".ptr); sayi_yaz(durum->gemma4->swa_window); ekrana_yaz("\n".ptr);
+
+    # llama.cpp Gemma4 chat-template prompt for user text "Say OK.".
+    degisken prompt: [11]tamsayi;
+    prompt[0] = 105; prompt[1] = 2364; prompt[2] = 107; prompt[3] = 37889;
+    prompt[4] = 16119; prompt[5] = 236761; prompt[6] = 106; prompt[7] = 107;
+    prompt[8] = 105; prompt[9] = 4368; prompt[10] = 107;
+    degisken output: [2]tamsayi;
+    degisken request: LLMGreedyGenerationRequest;
+    request.icra = &icra; request.durum = durum;
+    request.prompt_tokenleri = prompt; request.prompt_adedi = 11;
+    request.uretilen_tokenler = output; request.uretilen_kapasitesi = 2;
+    request.max_yeni_token = 2;
+    TRANSFORMER_TRACE_POSITION = 11;
+    degisken generated: tamsayi = llm_transformer_greedy_generate(&request);
+    gemma_trace_dump("YKN_STEP11_STAGE0=".ptr, 0, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE3=".ptr, 3, 512);
+    gemma_trace_dump("YKN_STEP11_STAGE12=".ptr, 12, 2048);
+    gemma_trace_dump("YKN_STEP11_STAGE5=".ptr, 5, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE4=".ptr, 4, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE6=".ptr, 6, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE7=".ptr, 7, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE10=".ptr, 10, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE11=".ptr, 11, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE16=".ptr, 16, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE18=".ptr, 18, 2560);
+    gemma_trace_dump("YKN_STEP11_STAGE21=".ptr, 21, 2560);
+    gemma_trace_dump_layers(0, 2560);
+    gemma_trace_dump_layers(1, 2048); gemma_trace_dump_layers(2, 512);
+    gemma_trace_dump_layers(3, 512); gemma_trace_dump_layers(5, 2560);
+    gemma_trace_dump_layers(4, 2560);
+    gemma_trace_dump_layers(6, 2560); gemma_trace_dump_layers(7, 2560);
+    gemma_trace_dump_layers(10, 2560); gemma_trace_dump_layers(16, 2560);
+    gemma_trace_dump_layers(18, 2560); gemma_trace_dump_layers(19, 2560);
+    gemma_trace_stats(0); gemma_trace_stats(3); gemma_trace_stats(4);
+    gemma_trace_stats(6); gemma_trace_stats(7); gemma_trace_stats(10);
+    gemma_trace_stats(16); gemma_trace_stats(18); gemma_trace_stats(19);
+    gemma_trace_stats(11); gemma_trace_stats(21);
+    eger generated != 2 {
+        ekrana_yaz("GEMMA4_FORWARD_COUNT=".ptr); sayi_yaz(generated);
+        ekrana_yaz(" token0=".ptr); sayi_yaz(output[0]);
+        ekrana_yaz(" token1=".ptr); sayi_yaz(output[1]);
+        ekrana_yaz(" GEMMA4_FORWARD_FAIL code=".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz(" pos=".ptr); sayi_yaz(icra.token_konumu);
+        ekrana_yaz(" heads=".ptr); sayi_yaz(g_llm_kv_kafa_sayisi);
+        ekrana_yaz(" dim=".ptr); sayi_yaz(g_llm_kv_kafa_boyutu);
+        ekrana_yaz(" head=".ptr); sayi_yaz(g_llm_kv_kafa);
+        ekrana_yaz(" cap=".ptr); sayi_yaz(g_llm_kv_kapasitesi);
+        ekrana_yaz(" win=".ptr); sayi_yaz(g_llm_kv_window_start);
+        ekrana_yaz("\n".ptr); ExitProcess(8);
+    }
+    ekrana_yaz("GEMMA4_TOKEN0=".ptr); sayi_yaz(output[0]); ekrana_yaz("\n".ptr);
+    ekrana_yaz("GEMMA4_TOKEN1=".ptr); sayi_yaz(output[1]); ekrana_yaz("\n".ptr);
+    dondu 0;
+}

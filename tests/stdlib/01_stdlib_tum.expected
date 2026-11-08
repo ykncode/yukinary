@@ -1,0 +1,12 @@
+=== FAZ 7 - std/matematik ===
+42 7 -10 5 100 0 50 1024 81 -1 0 1
+=== FAZ 7 - std/bellek ===
+Hi! esit=1 AAAAA -1 0 1
+=== FAZ 7 - std/metin ===
+8 1 0 Dunya 1234 -7 42 Hello, YKN!
+=== FAZ 7 - std/dosya ===
+22B (yazildi) var_mi=1 satir=1
+Okunan: Faz7-Test-Olusturuldu
+0 bayt.
+=== FAZ 7 - Tum testler bitti ===
+01_STDLIB_TUM_PASS

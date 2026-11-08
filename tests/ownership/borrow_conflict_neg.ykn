@@ -1,0 +1,11 @@
+# Ownership Test NEGATIF: borrow conflict — E041 beklenir.
+# Ayni anda ayni degiskenden birden fazla mutable borrow alinamaz.
+isv iki_borrow(a: *tamsayi, b: *tamsayi) {
+    a[0] = 99;
+    b[0] = 88;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 10;
+    iki_borrow(&x, &x);
+    dondu x;
+}

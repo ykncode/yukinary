@@ -1,0 +1,7 @@
+isv consume_nested(value: Future<Future<tamsayi>>) -> tamsayi {
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

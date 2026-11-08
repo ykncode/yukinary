@@ -1,0 +1,41 @@
+# Test: Karsilastirma Operatorleri (==, !=, <, >, <=, >=)
+# Beklenen EXIT kodu: 1 (tum testler gecerse)
+
+isv ana() -> tamsayi {
+    degisken a: tamsayi = 10;
+    degisken b: tamsayi = 20;
+    degisken sonuc: tamsayi = 0;
+
+    # Test 1: kucuk mu?  10 < 20 => 1 (dogru)
+    eger a < b ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Test 2: buyuk mu?  20 > 10 => 1 (dogru)
+    eger b > a ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Test 3: esit mi?  10 == 10 => 1 (dogru)
+    eger a == 10 ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Test 4: esit degil mi?  10 != 20 => 1 (dogru)
+    eger a != b ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Test 5: kucuk esit mi?  10 <= 10 => 1 (dogru)
+    eger a <= 10 ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Test 6: buyuk esit mi?  20 >= 20 => 1 (dogru)
+    eger b >= 20 ise {
+        sonuc = sonuc + 1;
+    }
+
+    # Tum 6 test gectiyse sonuc = 6
+    dondu sonuc;
+}

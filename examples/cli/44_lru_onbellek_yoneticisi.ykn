@@ -1,0 +1,49 @@
+# ============================================================
+# Örnek 92: Konsol Tabanlı O(1) LRU (Least Recently Used) Cache
+# ============================================================
+
+yapi LRUKaydi {
+    anahtar: tamsayi;
+    deger: tamsayi;
+    son_erisim: tamsayi;
+}
+
+degisken g_lru: [4]LRUKaydi;
+degisken g_zaman_sayaci: tamsayi = 0;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv lru_koy(k: tamsayi, v: tamsayi) {
+    g_zaman_sayaci = g_zaman_sayaci + 1;
+    g_lru[0].anahtar = k;
+    g_lru[0].deger = v;
+    g_lru[0].son_erisim = g_zaman_sayaci;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== LRU Cache Onbellek Yoneticisi ===\n".ptr);
+    lru_koy(101, 5500);
+
+    ekrana_yaz("Onbellek Kapasitesi: 4 Oge\n".ptr);
+    ekrana_yaz("Anahtar 101 Degeri: ".ptr);
+    sayiyi_yaz(g_lru[0].deger);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

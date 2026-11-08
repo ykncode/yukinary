@@ -1,0 +1,16 @@
+# NLL Test: Tasinmis degisken yeniden atanirsa (reassignment) sahiplik geri kazanilir.
+isv tasi(x: tamsayi) -> tamsayi {
+    dondu x * 2;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 10;
+    degisken y: tamsayi = tasi(x);
+    # x tasindi, ama simdi yeniden deger ataniyor
+    x = 50;
+    # Yeniden atandiktan sonra erisim gecelidir (NLL restore)
+    degisken z: tamsayi = x + y;
+    eger z == 70 ise {
+        ekrana_yaz("NLL_REASSIGN_VALID: OK\n".ptr);
+    }
+    dondu 0;
+}

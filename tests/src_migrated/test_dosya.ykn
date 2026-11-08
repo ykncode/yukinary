@@ -1,0 +1,12 @@
+isv ekrana_yaz(m: *u8) {}
+isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi { dondu 0; }
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken buf: *u8 = bellek_tahsis_et(65536);
+    eger buf == 0 ise { ekrana_yaz("bellek hata\n".ptr); dondu 1; }
+    degisken n: tamsayi = dosya_oku(argumanlar[1], buf, 65536);
+    eger n <= 0 ise { ekrana_yaz("dosya okunamadi\n".ptr); dondu 1; }
+    ekrana_yaz("dosya okundu\n".ptr);
+    dondu 0;
+}

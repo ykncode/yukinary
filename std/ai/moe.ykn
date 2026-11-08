@@ -1,0 +1,58 @@
+# ============================================================
+# std/ai/moe.ykn
+# FAZ 61: Mixture of Experts (MoE) Seyrek Yönlendirme ve Dinamik Softmax Motoru
+# Mixtral / DeepSeek Tarzı Top-2 Uzman Seçimi ve Dinamik Ağırlıklandırma
+# ============================================================
+
+yapi MoEResult {
+    uzman_1:    tamsayi;
+    uzman_2:    tamsayi;
+    agirlik_1:  tamsayi; # Dinamik % agirlik
+    agirlik_2:  tamsayi; # Dinamik % agirlik
+}
+
+isv moe_top2_gating(girdi: *tamsayi, dim: tamsayi, gate_w: *tamsayi, num_experts: tamsayi, sonuc: *MoEResult) {
+    degisken en_iyi_uzman: tamsayi = 0;
+    degisken en_iyi_skor: tamsayi = 0 - 999999;
+    degisken ikinci_uzman: tamsayi = 1;
+    degisken ikinci_skor: tamsayi = 0 - 999999;
+
+    degisken e: tamsayi = 0;
+    dongu e < num_experts {
+        degisken skor: tamsayi = 0;
+        degisken i: tamsayi = 0;
+        dongu i < dim {
+            skor = skor + (girdi[i] * gate_w[e * dim + i]);
+            i = i + 1;
+        }
+
+        eger skor > en_iyi_skor ise {
+            ikinci_skor = en_iyi_skor;
+            ikinci_uzman = en_iyi_uzman;
+            en_iyi_skor = skor;
+            en_iyi_uzman = e;
+        } yoksa {
+            eger skor > ikinci_skor ise {
+                ikinci_skor = skor;
+                ikinci_uzman = e;
+            }
+        }
+
+        e = e + 1;
+    }
+
+    sonuc.uzman_1 = en_iyi_uzman;
+    sonuc.uzman_2 = ikinci_uzman;
+
+    # Dinamik Softmax Ağırlık Normalizasyonu:
+    degisken delta: tamsayi = en_iyi_skor - ikinci_skor;
+    eger delta <= 0 ise {
+        sonuc.agirlik_1 = 50;
+        sonuc.agirlik_2 = 50;
+    } yoksa {
+        degisken w1: tamsayi = 50 + ((delta * 50) / (delta + 10));
+        eger w1 > 99 ise { w1 = 99; }
+        sonuc.agirlik_1 = w1;
+        sonuc.agirlik_2 = 100 - w1;
+    }
+}

@@ -1,0 +1,54 @@
+# ============================================================
+# Örnek 84: Konsol Tabanlı Disk Zamanlama (SSTF, SCAN, FCFS) Algoritmaları
+# ============================================================
+
+degisken g_istekler: [8]tamsayi;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv fcfs_hesapla(baslangic_kafa: tamsayi) -> tamsayi {
+    degisken toplam_hareket: tamsayi = 0;
+    degisken suanki: tamsayi = baslangic_kafa;
+    degisken i: tamsayi = 0;
+
+    dongu (i < 8) {
+        degisken fark: tamsayi = g_istekler[i] - suanki;
+        eger fark < 0 ise { fark = 0 - fark; }
+        toplam_hareket = toplam_hareket + fark;
+        suanki = g_istekler[i];
+        i = i + 1;
+    }
+    dondu toplam_hareket;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Disk Zamanlama Simulasyonu (FCFS & SCAN) ===\n".ptr);
+    g_istekler[0] = 98;  g_istekler[1] = 183;
+    g_istekler[2] = 37;  g_istekler[3] = 122;
+    g_istekler[4] = 14;  g_istekler[5] = 124;
+    g_istekler[6] = 65;  g_istekler[7] = 67;
+
+    degisken maliyet: tamsayi = fcfs_hesapla(53);
+    ekrana_yaz("Baslangic Iz: 53\n".ptr);
+    ekrana_yaz("FCFS Toplam Silindir Hareketi: ".ptr);
+    sayiyi_yaz(maliyet);
+    ekrana_yaz(" silindir\n".ptr);
+    dondu 0;
+}

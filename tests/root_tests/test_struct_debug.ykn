@@ -1,0 +1,14 @@
+yapi TestStruct {
+    f0: tamsayi;
+    f1: tamsayi;
+}
+
+isv test_plus(s: *TestStruct) -> tamsayi {
+    dondu s.f0 + 1;
+}
+
+isv ana() -> tamsayi {
+    degisken st: TestStruct;
+    st.f0 = 10;
+    dondu test_plus(&st);
+}

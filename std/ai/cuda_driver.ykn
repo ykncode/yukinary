@@ -1,0 +1,488 @@
+# ============================================================
+
+# YKN CUDA Driver API binding (Windows, dynamically loaded).
+# Includes real device discovery, VRAM buffers, PTX module loading, and
+# CUDA 12 cuLaunchKernelEx dispatch. This is a compute primitive, not yet a
+# Gemma-4 inference backend.
+# ============================================================
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> *u8;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_i64(function_ptr: *u8, first: tamsayi, second: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+
+degisken CUDA_SUCCESS: tamsayi = 0;
+degisken CUDA_ERROR_NO_DRIVER: tamsayi = 1001;
+degisken CUDA_ERROR_NO_DEVICE: tamsayi = 1002;
+degisken CUDA_ERROR_MISSING_SYMBOL: tamsayi = 1003;
+degisken CUDA_ERROR_INIT: tamsayi = 1004;
+degisken CUDA_ERROR_BAD_ARGUMENT: tamsayi = 1005;
+degisken CUDA_ERROR_LAUNCH_UNSUPPORTED: tamsayi = 1006;
+degisken CUDA_ERROR_NULL_CONTEXT: tamsayi = 1007;
+degisken CUDA_ERROR_NO_CURRENT_CONTEXT: tamsayi = 1008;
+degisken CUDA_ERROR_NULL_PTX: tamsayi = 1009;
+degisken CUDA_ERROR_NULL_ENTRY: tamsayi = 1010;
+degisken CUDA_ERROR_NULL_PARAMS: tamsayi = 1011;
+degisken CUDA_ERROR_BAD_LAUNCH_DIMENSIONS: tamsayi = 1012;
+degisken CUDA_ERROR_MISSING_LAUNCH_SYMBOL: tamsayi = 1013;
+degisken CUDA_ERROR_OUT_OF_MEMORY: tamsayi = 1014;
+
+yapi CudaDriverContext {
+    dll: tamsayi;
+    ready: tamsayi;
+    device_count: tamsayi;
+    error: tamsayi;
+    device: tamsayi;
+    cuda_context: tamsayi;
+    context_is_primary: tamsayi;
+    cu_init: *u8;
+    cu_device_get_count: *u8;
+    cu_device_get: *u8;
+    cu_device_get_name: *u8;
+    cu_device_total_mem: *u8;
+    cu_ctx_create: *u8;
+    cu_ctx_destroy: *u8;
+    cu_mem_alloc: *u8;
+    cu_mem_free: *u8;
+    cu_memcpy_htod: *u8;
+    cu_memcpy_dtoh: *u8;
+    cu_module_load_data: *u8;
+    cu_module_get_function: *u8;
+    cu_module_unload: *u8;
+    cu_launch_kernel_ex: *u8;
+    cu_ctx_synchronize: *u8;
+}
+
+degisken YKN_CUDA_CACHED_CONTEXT: *CudaDriverContext = 0;
+degisken YKN_CUDA_MOD_CACHE_COUNT: tamsayi = 0;
+degisken YKN_CUDA_MOD_CACHE_PTX: [32]*u8;
+degisken YKN_CUDA_MOD_CACHE_ENTRY: [32]*u8;
+degisken YKN_CUDA_MOD_CACHE_MODULE: [32]tamsayi;
+degisken YKN_CUDA_MOD_CACHE_KERNEL: [32]tamsayi;
+degisken YKN_CUDA_LAST_PTX: *u8 = 0;
+degisken YKN_CUDA_LAST_KERNEL: tamsayi = 0;
+degisken YKN_CUDA_FAST_CONFIG: [56]u8;
+degisken YKN_CUDA_CONFIG_READY: tamsayi = 0;
+degisken CU_STREAM_BEGIN_CAPTURE: *u8 = 0;
+degisken CU_STREAM_END_CAPTURE: *u8 = 0;
+degisken CU_GRAPH_INSTANTIATE: *u8 = 0;
+degisken CU_GRAPH_LAUNCH: *u8 = 0;
+degisken CU_GRAPH_EXEC_DESTROY: *u8 = 0;
+degisken CU_GRAPH_DESTROY: *u8 = 0;
+degisken CU_STREAM_CREATE: *u8 = 0;
+degisken CU_STREAM_DESTROY: *u8 = 0;
+degisken CU_MEMCPY_HTOD_ASYNC: *u8 = 0;
+
+isv cuda_driver_symbols_clear(ctx: *CudaDriverContext) {
+    ctx.cu_init = 0;
+    ctx.cu_device_get_count = 0;
+    ctx.cu_device_get = 0;
+    ctx.cu_device_get_name = 0;
+    ctx.cu_device_total_mem = 0;
+    ctx.cu_ctx_create = 0;
+    ctx.cu_ctx_destroy = 0;
+    ctx.cu_mem_alloc = 0;
+    ctx.cu_mem_free = 0;
+    ctx.cu_memcpy_htod = 0;
+    ctx.cu_memcpy_dtoh = 0;
+    ctx.cu_module_load_data = 0;
+    ctx.cu_module_get_function = 0;
+    ctx.cu_module_unload = 0;
+    ctx.cu_launch_kernel_ex = 0;
+    ctx.cu_ctx_synchronize = 0;
+}
+
+isv cuda_driver_init(ctx: *CudaDriverContext) -> tamsayi {
+    eger ctx == 0 ise { dondu CUDA_ERROR_NO_DRIVER; }
+    ctx.dll = 0;
+    ctx.ready = 0;
+    ctx.device_count = 0;
+    ctx.error = CUDA_SUCCESS;
+    ctx.device = 0;
+    ctx.cuda_context = 0;
+    ctx.context_is_primary = 0;
+    cuda_driver_symbols_clear(ctx);
+
+
+    degisken dll: tamsayi = LoadLibraryA("nvcuda.dll".ptr);
+    eger dll == 0 ise { ctx.error = CUDA_ERROR_NO_DRIVER; dondu ctx.error; }
+    ctx.dll = dll;
+    ctx.cu_init = GetProcAddress(dll, "cuInit".ptr);
+    ctx.cu_device_get_count = GetProcAddress(dll, "cuDeviceGetCount".ptr);
+    ctx.cu_device_get = GetProcAddress(dll, "cuDeviceGet".ptr);
+    ctx.cu_device_get_name = GetProcAddress(dll, "cuDeviceGetName".ptr);
+    ctx.cu_device_total_mem = GetProcAddress(dll, "cuDeviceTotalMem_v2".ptr);
+    ctx.cu_ctx_create = GetProcAddress(dll, "cuCtxCreate_v2".ptr);
+    ctx.cu_ctx_destroy = GetProcAddress(dll, "cuCtxDestroy_v2".ptr);
+    ctx.cu_mem_alloc = GetProcAddress(dll, "cuMemAlloc_v2".ptr);
+    ctx.cu_mem_free = GetProcAddress(dll, "cuMemFree_v2".ptr);
+    ctx.cu_memcpy_htod = GetProcAddress(dll, "cuMemcpyHtoD_v2".ptr);
+    ctx.cu_memcpy_dtoh = GetProcAddress(dll, "cuMemcpyDtoH_v2".ptr);
+    ctx.cu_module_load_data = GetProcAddress(dll, "cuModuleLoadData".ptr);
+    ctx.cu_module_get_function = GetProcAddress(dll, "cuModuleGetFunction".ptr);
+    ctx.cu_module_unload = GetProcAddress(dll, "cuModuleUnload".ptr);
+    ctx.cu_launch_kernel_ex = GetProcAddress(dll, "cuLaunchKernelEx".ptr);
+    ctx.cu_ctx_synchronize = GetProcAddress(dll, "cuCtxSynchronize".ptr);
+    CU_STREAM_BEGIN_CAPTURE = GetProcAddress(dll, "cuStreamBeginCapture_v2".ptr);
+    eger CU_STREAM_BEGIN_CAPTURE == 0 { CU_STREAM_BEGIN_CAPTURE = GetProcAddress(dll, "cuStreamBeginCapture".ptr); }
+    CU_STREAM_END_CAPTURE = GetProcAddress(dll, "cuStreamEndCapture".ptr);
+    CU_GRAPH_INSTANTIATE = GetProcAddress(dll, "cuGraphInstantiate_v2".ptr);
+    eger CU_GRAPH_INSTANTIATE == 0 { CU_GRAPH_INSTANTIATE = GetProcAddress(dll, "cuGraphInstantiate".ptr); }
+    CU_GRAPH_LAUNCH = GetProcAddress(dll, "cuGraphLaunch".ptr);
+    CU_GRAPH_EXEC_DESTROY = GetProcAddress(dll, "cuGraphExecDestroy".ptr);
+    CU_GRAPH_DESTROY = GetProcAddress(dll, "cuGraphDestroy".ptr);
+    CU_STREAM_CREATE = GetProcAddress(dll, "cuStreamCreate".ptr);
+    CU_STREAM_DESTROY = GetProcAddress(dll, "cuStreamDestroy_v2".ptr);
+    eger CU_STREAM_DESTROY == 0 { CU_STREAM_DESTROY = GetProcAddress(dll, "cuStreamDestroy".ptr); }
+    CU_MEMCPY_HTOD_ASYNC = GetProcAddress(dll, "cuMemcpyHtoDAsync_v2".ptr);
+    eger CU_MEMCPY_HTOD_ASYNC == 0 { CU_MEMCPY_HTOD_ASYNC = GetProcAddress(dll, "cuMemcpyHtoDAsync".ptr); }
+
+
+    eger ctx.cu_init == 0 veya ctx.cu_device_get_count == 0 veya
+       ctx.cu_device_get == 0 veya ctx.cu_device_get_name == 0 veya
+       ctx.cu_device_total_mem == 0 veya ctx.cu_ctx_create == 0 veya
+       ctx.cu_ctx_destroy == 0 veya ctx.cu_mem_alloc == 0 veya
+       ctx.cu_mem_free == 0 veya ctx.cu_memcpy_htod == 0 veya
+       ctx.cu_memcpy_dtoh == 0 veya ctx.cu_module_load_data == 0 veya
+       ctx.cu_module_get_function == 0 veya ctx.cu_module_unload == 0 ise {
+        FreeLibrary(dll); ctx.dll = 0; cuda_driver_symbols_clear(ctx);
+        ctx.error = CUDA_ERROR_MISSING_SYMBOL; dondu ctx.error;
+    }
+
+
+    degisken result: tamsayi = ykn_dyn_call_ptr_i64(ctx.cu_init, 0, 0);
+
+    eger result != CUDA_SUCCESS ise {
+        FreeLibrary(dll); ctx.dll = 0; cuda_driver_symbols_clear(ctx);
+        ctx.error = CUDA_ERROR_INIT; dondu ctx.error;
+    }
+    degisken count: tamsayi = 0;
+    result = ykn_dyn_call_ptr_i64(ctx.cu_device_get_count, &count, 0);
+
+    eger result != CUDA_SUCCESS {
+        FreeLibrary(dll); ctx.dll = 0; cuda_driver_symbols_clear(ctx);
+        ctx.error = result; dondu ctx.error;
+    }
+    eger count <= 0 ise {
+        FreeLibrary(dll); ctx.dll = 0; cuda_driver_symbols_clear(ctx);
+        ctx.error = CUDA_ERROR_NO_DEVICE; dondu ctx.error;
+    }
+    ctx.device_count = count;
+    ctx.ready = 1;
+    ctx.error = CUDA_SUCCESS;
+    dondu CUDA_SUCCESS;
+}
+
+isv cuda_device_query(ctx: *CudaDriverContext, ordinal: tamsayi,
+                      name: *u8, total_memory_bytes: *tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.ready == 0 veya name == 0 veya total_memory_bytes == 0 veya
+       ordinal < 0 veya ordinal >= ctx.device_count ise { dondu CUDA_ERROR_NO_DEVICE; }
+    degisken device: tamsayi = 0;
+    degisken result: tamsayi = ykn_dyn_call_ptr_i64(ctx.cu_device_get, &device, ordinal);
+    eger result != CUDA_SUCCESS ise { ctx.error = result; dondu result; }
+    result = ykn_dyn_call_ptr_4(ctx.cu_device_get_name, name, 256, device, 0);
+    eger result != CUDA_SUCCESS ise { ctx.error = result; dondu result; }
+    result = ykn_dyn_call_ptr_i64(ctx.cu_device_total_mem, total_memory_bytes, device);
+    eger result != CUDA_SUCCESS ise { ctx.error = result; dondu result; }
+    ctx.error = CUDA_SUCCESS;
+    dondu CUDA_SUCCESS;
+}
+
+# Select and initialize a CUDA context for the requested device.
+isv cuda_context_create(ctx: *CudaDriverContext, ordinal: tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.ready == 0 veya ordinal < 0 veya ordinal >= ctx.device_count ise {
+        dondu CUDA_ERROR_NO_DEVICE;
+    }
+    eger ctx.cuda_context != 0 ise { dondu CUDA_ERROR_BAD_ARGUMENT; }
+    # CUDA CUdevice is the ordinal itself; avoid writing it through a pointer
+    # to a nested struct field at the foreign-call boundary.
+    ctx.device = ordinal;
+    degisken result: tamsayi = CUDA_SUCCESS;
+    degisken retain_fn: *u8 = GetProcAddress(ctx.dll, "cuDevicePrimaryCtxRetain".ptr);
+    degisken set_current_fn: *u8 = GetProcAddress(ctx.dll, "cuCtxSetCurrent".ptr);
+    eger retain_fn == 0 veya set_current_fn == 0 {
+        ctx.error = CUDA_ERROR_MISSING_SYMBOL; dondu ctx.error;
+    }
+    degisken retained_context: tamsayi = 0;
+    result = ykn_dyn_call_ptr_i64(retain_fn, &retained_context, ordinal);
+    eger result != CUDA_SUCCESS { ctx.cuda_context = 0; ctx.error = result; dondu result; }
+    eger retained_context == 0 { ctx.cuda_context = 0; ctx.error = CUDA_ERROR_INIT; dondu ctx.error; }
+    result = ykn_dyn_call_ptr_i64(set_current_fn, retained_context, 0);
+    eger result != CUDA_SUCCESS {
+        degisken release_fn: *u8 = GetProcAddress(ctx.dll, "cuDevicePrimaryCtxRelease_v2".ptr);
+        eger release_fn != 0 { ykn_dyn_call_ptr_i64(release_fn, ordinal, 0); }
+        ctx.error = result; dondu result;
+    }
+    ctx.cuda_context = retained_context;
+    ctx.context_is_primary = 1;
+    ctx.error = CUDA_SUCCESS;
+    dondu CUDA_SUCCESS;
+}
+
+# Allocate/free device byte buffers. The caller owns the returned CUdeviceptr.
+isv cuda_buffer_alloc(ctx: *CudaDriverContext, byte_count: tamsayi,
+                      device_ptr: *tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.cuda_context == 0 veya device_ptr == 0 veya byte_count <= 0 ise {
+        dondu CUDA_ERROR_BAD_ARGUMENT;
+    }
+    device_ptr[0] = 0;
+    degisken result: tamsayi = ykn_dyn_call_ptr_i64(ctx.cu_mem_alloc, device_ptr, byte_count);
+    eger result != CUDA_SUCCESS ise { device_ptr[0] = 0; ctx.error = result; dondu result; }
+    ctx.error = CUDA_SUCCESS;
+    dondu CUDA_SUCCESS;
+}
+
+isv cuda_buffer_free(ctx: *CudaDriverContext, device_ptr: tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.cuda_context == 0 veya device_ptr == 0 ise { dondu CUDA_ERROR_BAD_ARGUMENT; }
+    degisken result: tamsayi = ykn_dyn_call_ptr_i64(ctx.cu_mem_free, device_ptr, 0);
+    ctx.error = result;
+    dondu result;
+}
+
+isv cuda_copy_to_device(ctx: *CudaDriverContext, device_dst: tamsayi,
+                        host_src: *u8, byte_count: tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.cuda_context == 0 veya device_dst == 0 veya
+       host_src == 0 veya byte_count <= 0 ise { dondu CUDA_ERROR_BAD_ARGUMENT; }
+    degisken result: tamsayi = ykn_dyn_call_ptr_4(ctx.cu_memcpy_htod,
+        device_dst, host_src, byte_count, 0);
+    ctx.error = result;
+    dondu result;
+}
+
+isv cuda_copy_to_device_async(ctx: *CudaDriverContext, device_dst: tamsayi,
+                              host_src: *u8, byte_count: tamsayi, stream: tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.cuda_context == 0 veya device_dst == 0 veya
+       host_src == 0 veya byte_count <= 0 ise { dondu CUDA_ERROR_BAD_ARGUMENT; }
+    eger CU_MEMCPY_HTOD_ASYNC != 0 {
+        degisken result: tamsayi = ykn_dyn_call_ptr_4(CU_MEMCPY_HTOD_ASYNC,
+            device_dst, host_src, byte_count, stream);
+        ctx.error = result;
+        dondu result;
+    }
+    dondu cuda_copy_to_device(ctx, device_dst, host_src, byte_count);
+}
+
+isv cuda_copy_to_host(ctx: *CudaDriverContext, host_dst: *u8,
+                      device_src: tamsayi, byte_count: tamsayi) -> tamsayi {
+    eger ctx == 0 veya ctx.cuda_context == 0 veya host_dst == 0 veya
+       device_src == 0 veya byte_count <= 0 ise { dondu CUDA_ERROR_BAD_ARGUMENT; }
+    degisken result: tamsayi = ykn_dyn_call_ptr_4(ctx.cu_memcpy_dtoh,
+        host_dst, device_src, byte_count, 0);
+    ctx.error = result;
+    dondu result;
+}
+
+isv cuda_make_1d_config(grid_x: tamsayi, block_x: tamsayi, out_cfg: *u8) {
+    degisken z: tamsayi = 0;
+    dongu z < 56 { out_cfg[z] = 0; z = z + 1; }
+    out_cfg[0] = grid_x % 256;
+    out_cfg[1] = (grid_x / 256) % 256;
+    out_cfg[2] = (grid_x / 65536) % 256;
+    out_cfg[4] = 1;
+    out_cfg[8] = 1;
+    out_cfg[12] = block_x % 256;
+    out_cfg[13] = (block_x / 256) % 256;
+    out_cfg[14] = (block_x / 65536) % 256;
+    out_cfg[16] = 1;
+    out_cfg[20] = 1;
+}
+
+isv cuda_make_1d_config_stream(grid_x: tamsayi, block_x: tamsayi, stream: tamsayi, out_cfg: *u8) {
+    cuda_make_1d_config(grid_x, block_x, out_cfg);
+    eger stream != 0 {
+        out_cfg[32] = stream % 256;
+        out_cfg[33] = (stream / 256) % 256;
+        out_cfg[34] = (stream / 65536) % 256;
+        out_cfg[35] = (stream / 16777216) % 256;
+        degisken hi: tamsayi = stream / 4294967296;
+        out_cfg[36] = hi % 256;
+        out_cfg[37] = (hi / 256) % 256;
+        out_cfg[38] = (hi / 65536) % 256;
+        out_cfg[39] = (hi / 16777216) % 256;
+    }
+}
+
+isv cuda_kernel_launch_config(ctx: *CudaDriverContext, kernel: tamsayi,
+                              kernel_params: *tamsayi, config_bytes: *u8) -> tamsayi {
+    eger ctx == 0 or kernel == 0 { dondu CUDA_ERROR_NULL_CONTEXT; }
+    degisken result: tamsayi = ykn_dyn_call_ptr_4(ctx.cu_launch_kernel_ex, config_bytes, kernel, kernel_params, 0);
+    dondu result;
+}
+
+# Launch a named entrypoint from in-memory PTX using CUDA 12+.
+# Kernel parameters are addresses of host-side parameter values, per Driver API.
+# grid/block dimensions are 1D; shared memory and stream are zero.
+isv cuda_kernel_launch_1d(ctx: *CudaDriverContext, kernel: tamsayi,
+                          kernel_params: *tamsayi, grid_x: tamsayi,
+                          block_x: tamsayi) -> tamsayi {
+    eger ctx == 0 { dondu CUDA_ERROR_NULL_CONTEXT; }
+    eger kernel == 0 { ctx.error = CUDA_ERROR_MISSING_LAUNCH_SYMBOL; dondu ctx.error; }
+    eger grid_x <= 0 { dondu CUDA_SUCCESS; }
+    eger YKN_CUDA_CONFIG_READY == 0 {
+        degisken z: tamsayi = 0;
+        dongu z < 56 { YKN_CUDA_FAST_CONFIG[z] = 0; z = z + 1; }
+        YKN_CUDA_FAST_CONFIG[4] = 1;
+        YKN_CUDA_FAST_CONFIG[8] = 1;
+        YKN_CUDA_FAST_CONFIG[16] = 1;
+        YKN_CUDA_FAST_CONFIG[20] = 1;
+        YKN_CUDA_CONFIG_READY = 1;
+    }
+    YKN_CUDA_FAST_CONFIG[0] = grid_x % 256;
+    YKN_CUDA_FAST_CONFIG[1] = (grid_x / 256) % 256;
+    YKN_CUDA_FAST_CONFIG[2] = (grid_x / 65536) % 256;
+    YKN_CUDA_FAST_CONFIG[12] = block_x % 256;
+    YKN_CUDA_FAST_CONFIG[13] = (block_x / 256) % 256;
+    YKN_CUDA_FAST_CONFIG[14] = (block_x / 65536) % 256;
+    degisken result: tamsayi = ykn_dyn_call_ptr_4(ctx.cu_launch_kernel_ex, YKN_CUDA_FAST_CONFIG, kernel, kernel_params, 0);
+    eger result != CUDA_SUCCESS { ctx.error = result; dondu result; }
+    ctx.error = CUDA_SUCCESS;
+    dondu CUDA_SUCCESS;
+}
+
+isv cuda_ptx_get_kernel(ctx: *CudaDriverContext, ptx: *u8, entry_name: *u8) -> tamsayi {
+    eger ctx == 0 or ctx.cuda_context == 0 or ptx == 0 or entry_name == 0 { dondu 0; }
+    eger YKN_CUDA_LAST_PTX == ptx and YKN_CUDA_CACHED_CONTEXT == ctx {
+        dondu YKN_CUDA_LAST_KERNEL;
+    }
+    eger YKN_CUDA_CACHED_CONTEXT == ctx {
+        degisken ci: tamsayi = 0;
+        dongu ci < YKN_CUDA_MOD_CACHE_COUNT {
+            eger YKN_CUDA_MOD_CACHE_PTX[ci] == ptx {
+                YKN_CUDA_LAST_PTX = ptx;
+                YKN_CUDA_LAST_KERNEL = YKN_CUDA_MOD_CACHE_KERNEL[ci];
+                dondu YKN_CUDA_LAST_KERNEL;
+            }
+            ci = ci + 1;
+        }
+    } yoksa {
+        degisken unload_i: tamsayi = 0;
+        dongu unload_i < YKN_CUDA_MOD_CACHE_COUNT {
+            eger YKN_CUDA_MOD_CACHE_MODULE[unload_i] != 0 {
+                ykn_dyn_call_ptr_i64(ctx.cu_module_unload, YKN_CUDA_MOD_CACHE_MODULE[unload_i], 0);
+            }
+            unload_i = unload_i + 1;
+        }
+        YKN_CUDA_MOD_CACHE_COUNT = 0;
+        YKN_CUDA_CACHED_CONTEXT = ctx;
+        YKN_CUDA_LAST_PTX = 0;
+        YKN_CUDA_LAST_KERNEL = 0;
+    }
+    degisken module: tamsayi = 0;
+    degisken kernel: tamsayi = 0;
+    degisken t_res1: tamsayi = ykn_dyn_call_ptr_i64(ctx.cu_module_load_data, &module, ptx);
+    eger t_res1 != CUDA_SUCCESS or module == 0 {
+        ctx.error = t_res1; dondu 0;
+    }
+    degisken t_res2: tamsayi = ykn_dyn_call_ptr_4(ctx.cu_module_get_function, &kernel, module, entry_name, 0);
+    eger t_res2 != CUDA_SUCCESS or kernel == 0 {
+        ykn_dyn_call_ptr_i64(ctx.cu_module_unload, module, 0);
+        ctx.error = t_res2; dondu 0;
+    }
+    eger YKN_CUDA_MOD_CACHE_COUNT < 32 {
+        degisken new_idx: tamsayi = YKN_CUDA_MOD_CACHE_COUNT;
+        YKN_CUDA_MOD_CACHE_PTX[new_idx] = ptx;
+        YKN_CUDA_MOD_CACHE_ENTRY[new_idx] = entry_name;
+        YKN_CUDA_MOD_CACHE_MODULE[new_idx] = module;
+        YKN_CUDA_MOD_CACHE_KERNEL[new_idx] = kernel;
+        YKN_CUDA_MOD_CACHE_COUNT = YKN_CUDA_MOD_CACHE_COUNT + 1;
+        YKN_CUDA_LAST_PTX = ptx;
+        YKN_CUDA_LAST_KERNEL = kernel;
+    }
+    dondu kernel;
+}
+
+isv cuda_ptx_launch_1d(ctx: *CudaDriverContext, ptx: *u8, entry_name: *u8,
+                       kernel_params: *tamsayi, grid_x: tamsayi,
+                       block_x: tamsayi) -> tamsayi {
+    degisken kernel: tamsayi = cuda_ptx_get_kernel(ctx, ptx, entry_name);
+    eger kernel == 0 { dondu CUDA_ERROR_MISSING_LAUNCH_SYMBOL; }
+    dondu cuda_kernel_launch_1d(ctx, kernel, kernel_params, grid_x, block_x);
+}
+
+isv cuda_ctx_synchronize(ctx: *CudaDriverContext) -> tamsayi {
+    eger ctx == 0 or ctx.cu_ctx_synchronize == 0 { dondu CUDA_ERROR_NULL_CONTEXT; }
+    dondu ykn_dyn_call_ptr_i64(ctx.cu_ctx_synchronize, 0, 0);
+}
+
+isv cuda_driver_close(ctx: *CudaDriverContext) {
+    eger ctx == 0 ise { dondu; }
+    eger YKN_CUDA_CACHED_CONTEXT == ctx {
+        degisken unload_i: tamsayi = 0;
+        dongu unload_i < YKN_CUDA_MOD_CACHE_COUNT {
+            eger YKN_CUDA_MOD_CACHE_MODULE[unload_i] != 0 {
+                ykn_dyn_call_ptr_i64(ctx.cu_module_unload, YKN_CUDA_MOD_CACHE_MODULE[unload_i], 0);
+            }
+            unload_i = unload_i + 1;
+        }
+        YKN_CUDA_MOD_CACHE_COUNT = 0;
+        YKN_CUDA_CACHED_CONTEXT = 0;
+    }
+    eger ctx.cuda_context != 0 ise {
+        eger ctx.context_is_primary == 1 {
+            degisken set_current_fn: *u8 = GetProcAddress(ctx.dll, "cuCtxSetCurrent".ptr);
+            degisken release_fn: *u8 = GetProcAddress(ctx.dll, "cuDevicePrimaryCtxRelease_v2".ptr);
+            eger set_current_fn != 0 { ykn_dyn_call_ptr_i64(set_current_fn, 0, 0); }
+            eger release_fn != 0 { ykn_dyn_call_ptr_i64(release_fn, ctx.device, 0); }
+        } yoksa {
+            ykn_dyn_call_ptr_i64(ctx.cu_ctx_destroy, ctx.cuda_context, 0);
+        }
+        ctx.cuda_context = 0;
+        ctx.context_is_primary = 0;
+    }
+    eger ctx.dll != 0 ise { FreeLibrary(ctx.dll); }
+    ctx.dll = 0;
+    ctx.ready = 0;
+    ctx.device_count = 0;
+    cuda_driver_symbols_clear(ctx);
+}
+
+isv cuda_graph_is_supported() -> tamsayi {
+    eger CU_STREAM_BEGIN_CAPTURE != 0 and CU_STREAM_END_CAPTURE != 0 and
+       CU_GRAPH_INSTANTIATE != 0 and CU_GRAPH_LAUNCH != 0 { dondu 1; }
+    dondu 0;
+}
+
+isv cuda_graph_begin_capture(stream: tamsayi) -> tamsayi {
+    eger CU_STREAM_BEGIN_CAPTURE == 0 { dondu 1; }
+    dondu ykn_dyn_call_ptr_i64(CU_STREAM_BEGIN_CAPTURE, stream, 2);
+}
+
+isv cuda_graph_end_capture(stream: tamsayi, out_graph: *tamsayi) -> tamsayi {
+    eger CU_STREAM_END_CAPTURE == 0 { dondu 1; }
+    dondu ykn_dyn_call_ptr_i64(CU_STREAM_END_CAPTURE, stream, out_graph);
+}
+
+isv cuda_graph_instantiate(out_graph_exec: *tamsayi, graph: tamsayi) -> tamsayi {
+    eger CU_GRAPH_INSTANTIATE == 0 { dondu 1; }
+    dondu ykn_dyn_call_ptr_3(CU_GRAPH_INSTANTIATE, out_graph_exec, graph, 0);
+}
+
+isv cuda_graph_launch(graph_exec: tamsayi, stream: tamsayi) -> tamsayi {
+    eger CU_GRAPH_LAUNCH == 0 { dondu 1; }
+    dondu ykn_dyn_call_ptr_i64(CU_GRAPH_LAUNCH, graph_exec, stream);
+}
+
+isv cuda_graph_destroy(graph: tamsayi) {
+    eger CU_GRAPH_DESTROY != 0 and graph != 0 {
+        ykn_dyn_call_ptr_i64(CU_GRAPH_DESTROY, graph, 0);
+    }
+}
+
+isv cuda_graph_exec_destroy(graph_exec: tamsayi) {
+    eger CU_GRAPH_EXEC_DESTROY != 0 and graph_exec != 0 {
+        ykn_dyn_call_ptr_i64(CU_GRAPH_EXEC_DESTROY, graph_exec, 0);
+    }
+}
+
+isv cuda_stream_create(out_stream: *tamsayi) -> tamsayi {
+    eger CU_STREAM_CREATE == 0 { dondu 1; }
+    dondu ykn_dyn_call_ptr_i64(CU_STREAM_CREATE, out_stream, 0);
+}
+
+isv cuda_stream_destroy(stream: tamsayi) {
+    eger CU_STREAM_DESTROY != 0 and stream != 0 {
+        ykn_dyn_call_ptr_i64(CU_STREAM_DESTROY, stream, 0);
+    }
+}

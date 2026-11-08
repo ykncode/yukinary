@@ -1,0 +1,64 @@
+{
+  "Sinif Tanimlama": {
+    "prefix": "sinif",
+    "body": [
+      "sinif ${1:SinifAdi} {",
+      "\tdegisken ${2:isim}: ${3:metin}",
+      "\t",
+      "\tislem baslat() {",
+      "\t\t${4:# baslangic kodlari}",
+      "\t}",
+      "}"
+    ],
+    "description": "Yeni bir Yukinary Sinifi olusturur."
+  },
+  "Islem Tanimlama": {
+    "prefix": ["islem", "isv"],
+    "body": [
+      "islem ${1:islem_adi}(${2:param}) dondu ${3:tamsayi} {",
+      "\t${4:# kodlar}",
+      "\tdon ${5:0}",
+      "}"
+    ],
+    "description": "Yeni bir islem (fonksiyon) olusturur."
+  },
+  "Eger Kosulu": {
+    "prefix": "eger",
+    "body": [
+      "eger ${1:kosul} ise {",
+      "\t${2:# dogruysa}",
+      "}",
+      "degil_eger ${3:baska_kosul} ise {",
+      "\t${4:# baska dogruysa}",
+      "}",
+      "yoksa {",
+      "\t${5:# hicbiri degilse}",
+      "}"
+    ],
+    "description": "If-Else if-Else blogu olusturur."
+  },
+  "Dongu": {
+    "prefix": "dongu",
+    "body": [
+      "dongu ${1:i} her ${2:liste} {",
+      "\t${3:# kodlar}",
+      "}"
+    ],
+    "description": "For-each dongusu olusturur."
+  },
+  "Deneme Yakalama": {
+    "prefix": "deneme",
+    "body": [
+      "deneme {",
+      "\t${1:# riskli kod}",
+      "}",
+      "yakala hata {",
+      "\t${2:# hata yonetimi}",
+      "}",
+      "nihayet {",
+      "\t${3:# her halukarda calisacak}",
+      "}"
+    ],
+    "description": "Try-Catch-Finally blogu olusturur."
+  }
+}

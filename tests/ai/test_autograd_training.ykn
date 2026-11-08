@@ -1,0 +1,66 @@
+# ============================================================
+# tests/ai/test_autograd_training.ykn
+# FAZ 34: Saf Yukinary Autograd & Egitim Testi
+# ============================================================
+
+ice_aktar "std/sayisal/tensor.ykn";
+ice_aktar "std/sayisal/autograd.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 34: Autograd & Sayisal Tensor Egitim Testi Basliyor...\n".ptr);
+
+    # Girdi: X (1x2) = [[2, 3]]
+    degisken X: *Tensor = tensor_olustur_2d(1, 2, 0); # Girdi gradyan istemez
+    tensor_koy_2d(X, 0, 0, 2);
+    tensor_koy_2d(X, 0, 1, 3);
+
+    # Agirlik: W (2x1) = [[4], [5]]
+    degisken W: *Tensor = tensor_olustur_2d(2, 1, 1); # Agirlik gradyan ister!
+    tensor_koy_2d(W, 0, 0, 4);
+    tensor_koy_2d(W, 1, 0, 5);
+
+    # Hedef Y = 20
+    degisken hedef_y: tamsayi = 20;
+
+    # 1. Ileri Gecis (Forward): Y_tahmin = X * W
+    # Y_tahmin = 2*4 + 3*5 = 8 + 15 = 23
+    degisken Y_tahmin: *Tensor = autograd_matmul(X, W);
+    degisken ilk_deger: tamsayi = tensor_al_2d(Y_tahmin, 0, 0);
+    eger ilk_deger != 23 ise {
+        ekrana_yaz("HATA: Ileri gecis sonucu hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # Kayip farki = Y_tahmin - Hedef = 23 - 20 = 3
+    degisken hata: tamsayi = ilk_deger - hedef_y;
+    tensor_grad_koy_2d(Y_tahmin, 0, 0, hata);
+
+    # 2. Geriye Yayilim (Backward): dL/dW = X^T * dL/dY
+    # dW[0,0] = X[0,0] * hata = 2 * 3 = 6
+    # dW[1,0] = X[0,1] * hata = 3 * 3 = 9
+    autograd_matmul_geriye(X, W, Y_tahmin);
+
+    degisken dw0: tamsayi = tensor_grad_al_2d(W, 0, 0);
+    degisken dw1: tamsayi = tensor_grad_al_2d(W, 1, 0);
+
+    eger dw0 != 6 veya dw1 != 9 ise {
+        ekrana_yaz("HATA: Autograd gradyan hesaplamasi hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. SGD Agirlik Guncellemesi: W = W - lr * grad (lr=1 alalim basitleme icin)
+    tensor_koy_2d(W, 0, 0, tensor_al_2d(W, 0, 0) - 1); # 4 - 1 = 3
+    tensor_koy_2d(W, 1, 0, tensor_al_2d(W, 1, 0) - 1); # 5 - 1 = 4
+
+    # 4. Guncelleme Sonrasi Ileri Gecis: Y_yeni = 2*3 + 3*4 = 6 + 12 = 18 (23'ten 18'e indi, hedefe yaklasti!)
+    degisken Y_yeni: *Tensor = autograd_matmul(X, W);
+    degisken yeni_deger: tamsayi = tensor_al_2d(Y_yeni, 0, 0);
+    eger yeni_deger != 18 ise {
+        ekrana_yaz("HATA: Egitim sonrasi tahmin beklenen degere ulasmadi!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("AUTOGRAD_TENSOR_TRAIN_PASS\n".ptr);
+    dondu 0;
+}
+

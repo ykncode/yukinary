@@ -1,0 +1,111 @@
+# ============================================================
+# tests/guvenlik/06_affine_ownership.ykn
+# GOREV 4.3 - Affine Tip Sahiplik Semantigi Testi
+#
+# Senaryolar:
+# 1. Pointer kaydet → move_kaydet → affine_kontrol (double-use tespit)
+# 2. Henuz move edilmemis → affine_kontrol (temiz)
+# 3. Yeniden_aktiflestir → affine_kontrol (temiz)
+# 4. hata_sayisi artisi
+# 5. affine_raporu ciktisi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(n: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken v: tamsayi = n; eger v < 0 ise { v = 0 - v; }
+    dongu v > 0 { buf[i] = (v % 10) + 48; v = v / 10; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../src/safety.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    degisken motor: *GuvenlikMotoru = guvenlik_motoru_olustur();
+    eger motor == 0 ise { ekrana_yaz("FAIL: motor\n".ptr); dondu 1; }
+
+    # -------------------------------------------------------
+    # Test 1: Henuz tasinmamis pointer — temiz
+    # -------------------------------------------------------
+    degisken isim_p: [8]u8;
+    isim_p[0] = 112; isim_p[1] = 116; isim_p[2] = 114; # "ptr"
+    degisken p_isim: *u8 = isim_p;
+
+    degisken temiz1: tamsayi = affine_kontrol(motor, p_isim, 3);
+    eger temiz1 != 0 ise {
+        ekrana_yaz("FAIL: tasinmamis pointer temiz olmali\n".ptr);
+        dondu 1;
+    }
+    eger motor.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: hata_sayisi 0 olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 06 AFFINE: Temiz erisim OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 2: Pointer move edildi → double-use tespit
+    # -------------------------------------------------------
+    affine_move_kaydet(p_isim, 3);
+
+    eger affine_tukenmis_mi(p_isim, 3) != 1 ise {
+        ekrana_yaz("FAIL: tuketilmis olmali\n".ptr);
+        dondu 1;
+    }
+
+    degisken ihlal1: tamsayi = affine_kontrol(motor, p_isim, 3);
+    eger ihlal1 != 1 ise {
+        ekrana_yaz("FAIL: double-use ihlali tespit edilmeli\n".ptr);
+        dondu 1;
+    }
+    eger motor.hata_sayisi != 1 ise {
+        ekrana_yaz("FAIL: hata_sayisi 1 olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 06 AFFINE: Double-use tespit OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 3: Yeniden aktiflestir → temiz
+    # -------------------------------------------------------
+    affine_yeniden_aktiflestir(p_isim, 3);
+
+    eger affine_tukenmis_mi(p_isim, 3) != 0 ise {
+        ekrana_yaz("FAIL: yeniden aktif olmali\n".ptr);
+        dondu 1;
+    }
+
+    motor.hata_sayisi = 0;
+    degisken temiz2: tamsayi = affine_kontrol(motor, p_isim, 3);
+    eger temiz2 != 0 ise {
+        ekrana_yaz("FAIL: yeniden aktif pointer temiz olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 06 AFFINE: Yeniden aktif OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 4: Birden fazla tuketilmis degisken
+    # -------------------------------------------------------
+    degisken isim_q: [8]u8;
+    isim_q[0] = 113; isim_q[1] = 49; # "q1"
+    degisken q_isim: *u8 = isim_q;
+
+    affine_move_kaydet(p_isim, 3);
+    affine_move_kaydet(q_isim, 2);
+
+    eger g_tukenmis_adet != 2 ise {
+        ekrana_yaz("FAIL: tukenmis_adet 2 olmali\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("TEST 06 AFFINE: Coklu tuketilmis OK\n".ptr);
+
+    # -------------------------------------------------------
+    # Test 5: Rapor
+    # -------------------------------------------------------
+    guvenlik_affine_raporu(motor);
+
+    ekrana_yaz("FAZ14-AFFINE2-PASS\n".ptr);
+    dondu 0;
+}

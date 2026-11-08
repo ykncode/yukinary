@@ -1,0 +1,338 @@
+# ============================================================
+# Yukinary (YKN) Standart Kutuphanesi - Isletim Sistemi Birlesik Modulu
+# Modul: std/os/common.ykn
+# Tum platformlar (Windows, Linux, macOS) icin sabitler ve soyutlamalar.
+# NOT: Sub-import kullanilmaz; tum Win32 sabitleri ve wrappers burada inline.
+#
+# PLATFORM DESTEK MATRISI (FIX 11):
+#   DESTEKLENIYOR  : Windows x86_64 (PE32+, Win32 IAT) - runtime dogrulanmis
+#   KISMI NATIVE   : Linux x86_64 (ELF64) - mmap + temel dosya/audit syscall'lari dogrulandi
+#   PLANLI          : macOS x86_64 (Mach-O 64) - native execution manual-gated
+#   PLANLI          : Linux ARM64 (ELF64) - native execution manual-gated
+#   PLANLI          : macOS ARM64 (Mach-O 64) - native execution manual-gated
+#
+# NOT: "Destekleniyor" = gercek native runtime execution dogrulanmis.
+#       "Deneysel artifact backend" = header/opcode dogru uretilir
+#       ama native calistirma belirli bir platformda dogrulanmamistir.
+#       Bkz: PLATFORM_SUPPORT.md
+# ============================================================
+
+# Platform Numaralandirma Sabitleri (Derleyici / Runtime)
+degisken PLATFORM_WINDOWS          = 0;
+degisken PLATFORM_LINUX_X86_64     = 1;
+degisken PLATFORM_MACOS_X86_64     = 2;
+degisken PLATFORM_LINUX_ARM64      = 3;
+degisken PLATFORM_MACOS_ARM64      = 4;
+
+# Ortak Dosya Arama / Konumlandirma
+degisken OS_SEEK_BASLANGIC         = 0;
+degisken OS_SEEK_SUANKI            = 1;
+degisken OS_SEEK_SON               = 2;
+
+# Ortak Standart Akislar
+degisken OS_STDIN                  = 0;
+degisken OS_STDOUT                 = 1;
+degisken OS_STDERR                 = 2;
+
+# Ortak Dosya Erisim Modlari
+degisken OS_DOSYA_OKU              = 1;
+degisken OS_DOSYA_YAZ              = 2;
+degisken OS_DOSYA_OKU_YAZ          = 3;
+degisken OS_DOSYA_EKLE             = 4;
+degisken OS_DOSYA_YARAT_YENI       = 5;
+degisken OS_DOSYA_YARAT_USTUNE     = 6;
+
+# Ortak Bellek ve Sayfalama Sabitleri
+degisken OS_SAYFA_BOYUTU           = 4096;
+degisken OS_VARSAYILAN_TAMPON      = 65536;
+degisken OS_MAKS_DOSYA_TAMPON      = 67108864;
+
+# Ortak Hata / Durum Kodlari
+degisken OS_BASARILI               = 0;
+degisken OS_HATA_GENEL             = -1;
+degisken OS_HATA_BULUNAMADI        = -2;
+degisken OS_HATA_ERISIM_ENGEL      = -3;
+degisken OS_HATA_YETERSIZ_BELLEK   = -4;
+degisken OS_HATA_TAMPON_ASIMI      = -5;
+
+# ============================================================
+# Win32 Sabitleri (IAT tabanli syscall stubs icin)
+# ============================================================
+degisken WIN_STD_INPUT_HANDLE      = 0xfffffff6;
+degisken WIN_STD_OUTPUT_HANDLE     = 0xfffffff5;
+degisken WIN_STD_ERROR_HANDLE      = 0xfffffff4;
+degisken WIN_GENERIC_READ          = 0x80000000;
+degisken WIN_GENERIC_WRITE         = 0x40000000;
+degisken WIN_FILE_SHARE_NONE       = 0;
+degisken WIN_FILE_SHARE_READ       = 1;
+degisken WIN_FILE_SHARE_WRITE      = 2;
+degisken WIN_CREATE_NEW            = 1;
+degisken WIN_CREATE_ALWAYS         = 2;
+degisken WIN_OPEN_EXISTING         = 3;
+degisken WIN_OPEN_ALWAYS           = 4;
+degisken WIN_TRUNCATE_EXISTING     = 5;
+degisken WIN_FILE_ATTRIBUTE_NORMAL = 0x80;
+degisken WIN_MEM_COMMIT            = 0x1000;
+degisken WIN_MEM_RESERVE           = 0x2000;
+degisken WIN_MEM_COMMIT_RESERVE    = 0x3000;
+degisken WIN_MEM_RELEASE           = 0x8000;
+degisken WIN_PAGE_READWRITE        = 0x04;
+degisken WIN_INVALID_HANDLE_VALUE  = 0xffffffffffffffff;
+degisken WIN_FILE_BEGIN            = 0;
+degisken WIN_FILE_CURRENT          = 1;
+degisken WIN_FILE_END              = 2;
+
+# ============================================================
+# Win32 IAT Syscall Stubs (yalnizca imza; codegen patcler)
+# ============================================================
+isv VirtualAlloc(lpAddress: *u8, dwSize: tamsayi, flAllocationType: tamsayi, flProtect: tamsayi) -> *u8 { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv VirtualFree(lpAddress: *u8, dwSize: tamsayi, dwFreeType: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv ExitProcess(uExitCode: tamsayi) {} # reality-audit: allow class=empty_body reason=IAT-signature-patched-by-target-codegen
+isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv CreateFileA(lpFileName: *u8, dwDesiredAccess: tamsayi, dwShareMode: tamsayi, lpSecurityAttributes: *u8, dwCreationDisposition: tamsayi, dwFlagsAndAttributes: tamsayi, hTemplateFile: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv ReadFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToRead: tamsayi, lpNumberOfBytesRead: *tamsayi, lpOverlapped: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToWrite: tamsayi, lpNumberOfBytesWritten: *tamsayi, lpOverlapped: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv CloseHandle(hObject: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv SetFilePointerEx(hFile: tamsayi, liDistanceToMove: tamsayi, lpNewFilePointer: *tamsayi, dwMoveMethod: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv GetCommandLineA() -> *u8 { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv FreeLibrary(hModule: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv WaitForSingleObject(hHandle: tamsayi, dwMilliseconds: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv CreateThread(lpThreadAttributes: *u8, dwStackSize: tamsayi, lpStartAddress: *u8, lpParameter: *u8, dwCreationFlags: tamsayi, lpThreadId: *tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+isv Sleep(dwMilliseconds: tamsayi) {} # reality-audit: allow class=empty_body reason=IAT-signature-patched-by-target-codegen
+isv GetTickCount64() -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=IAT-signature-patched-by-target-codegen
+
+# Cekirdek ve dinamik ABI intrinsic stubs (codegen dogrudan opcode yerlestirir)
+isv ykn_dyn_call_ptr_3(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_dyn_call_ptr_4(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomik_artir64(ptr: *tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_cmpxchg64(ptr: *tamsayi, expected: tamsayi, new_val: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomic_inc_i64(ptr: *tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomic_dec_i64(ptr: *tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomic_load_i64(ptr: *tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomic_store_i64(ptr: *tamsayi, deger: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv ykn_atomic_cas_i64(ptr: *tamsayi, beklenen: tamsayi, yeni_deger: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+isv komut_satiri_arg1() -> *u8 { dondu 0; } # reality-audit: allow class=constant_success_body reason=intrinsic-stub-codegen-lowered
+
+# ============================================================
+# Win32 Yuksek Seviye Wrappers
+# ============================================================
+isv win32_bellek_tahsis(boyut: tamsayi) -> *u8 {
+    dondu VirtualAlloc(0, boyut, 0x3000, 0x04);
+}
+
+isv win32_bellek_serbest(ptr: *hic) {
+    eger ptr != 0 ise {
+        VirtualFree(ptr, 0, 0x8000);
+    }
+}
+
+isv win32_sureci_sonlandir(kod: tamsayi) {
+    ExitProcess(kod);
+}
+
+isv win32_dosya_yarat(dosya_adi: *u8, erisim: tamsayi, paylasim: tamsayi, yaratma: tamsayi, nitelikler: tamsayi) -> tamsayi {
+    dondu CreateFileA(dosya_adi, erisim, paylasim, 0, yaratma, nitelikler, 0);
+}
+
+isv win32_dosya_yaz(handle: tamsayi, buffer: *u8, boyut: tamsayi, yazilan: *tamsayi) -> tamsayi {
+    dondu WriteFile(handle, buffer, boyut, yazilan, 0);
+}
+
+isv win32_dosya_oku(handle: tamsayi, buffer: *u8, boyut: tamsayi, okunan: *tamsayi) -> tamsayi {
+    dondu ReadFile(handle, buffer, boyut, okunan, 0);
+}
+
+isv win32_dosya_kapat(handle: tamsayi) -> tamsayi {
+    dondu CloseHandle(handle);
+}
+
+isv win32_dosya_konum_ayarla(handle: tamsayi, mesafe: tamsayi, yeni_konum: *tamsayi, mod: tamsayi) -> tamsayi {
+    dondu SetFilePointerEx(handle, mesafe, yeni_konum, mod);
+}
+
+isv win32_standart_handle_al(std_handle: tamsayi) -> tamsayi {
+    dondu GetStdHandle(std_handle);
+}
+
+isv win32_komut_satiri_argumanlari() -> *u8 {
+    dondu GetCommandLineA();
+}
+
+# ============================================================
+# Platform Bagimsiz OS Sarmalayicilari (Yuksek Seviye)
+# Bellek primitive'i hedefe gore codegen tarafinda gercek Windows/Linux/macOS
+# backend'ine iner; syscall dagilimi g_os_aktif_platform ile yonetilir.
+# ============================================================
+degisken g_os_aktif_platform: tamsayi = 0;
+
+isv os_hedef_platform_ayarla(p: tamsayi) {
+    g_os_aktif_platform = p;
+}
+
+isv os_hedef_platform_al() -> tamsayi {
+    dondu g_os_aktif_platform;
+}
+
+# ============================================================
+# POSIX / Linux / Darwin Soyutlama Katmani
+# ============================================================
+isv open(yol: *u8, bayraklar: tamsayi, mod: tamsayi) -> tamsayi { dondu 0 - 1; } # reality-audit: allow class=constant_success_body reason=POSIX-syscall-patched-by-target-codegen
+isv read(fd: tamsayi, buf: *u8, boyut: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=POSIX-syscall-patched-by-target-codegen
+isv write(fd: tamsayi, buf: *u8, boyut: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=POSIX-syscall-patched-by-target-codegen
+isv close(fd: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=POSIX-syscall-patched-by-target-codegen
+isv lseek(fd: tamsayi, mesafe: tamsayi, nereden: tamsayi) -> tamsayi { dondu 0; } # reality-audit: allow class=constant_success_body reason=POSIX-syscall-patched-by-target-codegen
+isv _exit(kod: tamsayi) {} # reality-audit: allow class=empty_body reason=POSIX-syscall-patched-by-target-codegen
+
+isv posix_bellek_serbest(ptr: *hic) {
+    # POSIX arena bump allocator: surec cikisinda veya munmap ile iade edilir
+}
+
+isv posix_sureci_sonlandir(kod: tamsayi) {
+    _exit(kod);
+}
+
+isv posix_dosya_yarat(dosya_adi: *u8, erisim: tamsayi, paylasim: tamsayi, yaratma: tamsayi, nitelikler: tamsayi) -> tamsayi {
+    eger dosya_adi == 0 ise { dondu 0 - 1; }
+    # Win32 GENERIC_WRITE (0x40000000) -> O_WRONLY|O_CREAT|O_TRUNC (577), aksi halde O_RDONLY (0)
+    degisken flags: tamsayi = 0;
+    eger erisim == WIN_GENERIC_WRITE ise {
+        eger yaratma == WIN_OPEN_ALWAYS ise {
+            flags = 1089; # O_WRONLY(1) | O_CREAT(64) | O_APPEND(1024)
+        } yoksa {
+            flags = 577;  # O_WRONLY(1) | O_CREAT(64) | O_TRUNC(512)
+        }
+    }
+    dondu open(dosya_adi, flags, 493); # 0755 octal = 493 (rwxr-xr-x)
+}
+
+isv posix_dosya_yaz(handle: tamsayi, buffer: *u8, boyut: tamsayi, yazilan: *tamsayi) -> tamsayi {
+    eger buffer == 0 veya boyut <= 0 ise {
+        eger yazilan != 0 ise { yazilan[0] = 0; }
+        dondu 0;
+    }
+    degisken n: tamsayi = write(handle, buffer, boyut);
+    eger n < 0 ise {
+        eger yazilan != 0 ise { yazilan[0] = 0; }
+        dondu 0;
+    }
+    eger yazilan != 0 ise { yazilan[0] = n; }
+    dondu 1;
+}
+
+isv posix_dosya_oku(handle: tamsayi, buffer: *u8, boyut: tamsayi, okunan: *tamsayi) -> tamsayi {
+    eger buffer == 0 veya boyut <= 0 ise {
+        eger okunan != 0 ise { okunan[0] = 0; }
+        dondu 0;
+    }
+    degisken n: tamsayi = read(handle, buffer, boyut);
+    eger n < 0 ise {
+        eger okunan != 0 ise { okunan[0] = 0; }
+        dondu 0;
+    }
+    eger okunan != 0 ise { okunan[0] = n; }
+    dondu 1;
+}
+
+isv posix_dosya_kapat(handle: tamsayi) -> tamsayi {
+    eger close(handle) == 0 ise { dondu 1; }
+    dondu 0;
+}
+
+isv posix_dosya_konum_ayarla(handle: tamsayi, mesafe: tamsayi, yeni_konum: *tamsayi, mod: tamsayi) -> tamsayi {
+    degisken pos: tamsayi = lseek(handle, mesafe, mod);
+    eger pos < 0 ise { dondu 0; }
+    eger yeni_konum != 0 ise { yeni_konum[0] = pos; }
+    dondu 1;
+}
+
+isv posix_standart_handle_al(std_handle: tamsayi) -> tamsayi {
+    # Win32 handle'larini POSIX file descriptor'a esle:
+    # WIN_STD_INPUT_HANDLE  (0xfffffff6) -> 0 (STDIN)
+    # WIN_STD_OUTPUT_HANDLE (0xfffffff5) -> 1 (STDOUT)
+    # WIN_STD_ERROR_HANDLE  (0xfffffff4) -> 2 (STDERR)
+    eger std_handle == WIN_STD_INPUT_HANDLE veya std_handle == OS_STDIN ise { dondu 0; }
+    eger std_handle == WIN_STD_OUTPUT_HANDLE veya std_handle == OS_STDOUT ise { dondu 1; }
+    eger std_handle == WIN_STD_ERROR_HANDLE veya std_handle == OS_STDERR ise { dondu 2; }
+    dondu std_handle;
+}
+
+isv os_bellek_tahsis(boyut: tamsayi) -> *hic {
+    # Platform secimini compiler'in gercek bellek primitive'i yapar:
+    # Windows'ta VirtualAlloc, Linux/macOS'ta mmap kullanilir.
+    dondu bellek_tahsis_et(boyut);
+}
+
+isv os_bellek_serbest(ptr: *hic) {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        win32_bellek_serbest(ptr);
+    } yoksa {
+        posix_bellek_serbest(ptr);
+    }
+}
+
+isv os_sureci_sonlandir(kod: tamsayi) {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        win32_sureci_sonlandir(kod);
+    } yoksa {
+        posix_sureci_sonlandir(kod);
+    }
+}
+
+isv os_dosya_yarat(dosya_adi: *u8, erisim: tamsayi, paylasim: tamsayi, yaratma: tamsayi, nitelikler: tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_dosya_yarat(dosya_adi, erisim, paylasim, yaratma, nitelikler);
+    } yoksa {
+        dondu posix_dosya_yarat(dosya_adi, erisim, paylasim, yaratma, nitelikler);
+    }
+}
+
+isv os_dosya_yaz(handle: tamsayi, buffer: *u8, boyut: tamsayi, yazilan: *tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_dosya_yaz(handle, buffer, boyut, yazilan);
+    } yoksa {
+        dondu posix_dosya_yaz(handle, buffer, boyut, yazilan);
+    }
+}
+
+isv os_dosya_oku(handle: tamsayi, buffer: *u8, boyut: tamsayi, okunan: *tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_dosya_oku(handle, buffer, boyut, okunan);
+    } yoksa {
+        dondu posix_dosya_oku(handle, buffer, boyut, okunan);
+    }
+}
+
+isv os_dosya_kapat(handle: tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_dosya_kapat(handle);
+    } yoksa {
+        dondu posix_dosya_kapat(handle);
+    }
+}
+
+isv os_dosya_konum_ayarla(handle: tamsayi, mesafe: tamsayi, yeni_konum: *tamsayi, mod: tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_dosya_konum_ayarla(handle, mesafe, yeni_konum, mod);
+    } yoksa {
+        dondu posix_dosya_konum_ayarla(handle, mesafe, yeni_konum, mod);
+    }
+}
+
+isv os_standart_handle_al(std_handle: tamsayi) -> tamsayi {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_standart_handle_al(std_handle);
+    } yoksa {
+        dondu posix_standart_handle_al(std_handle);
+    }
+}
+
+isv os_komut_satiri_argumanlari() -> *u8 {
+    eger g_os_aktif_platform == PLATFORM_WINDOWS ise {
+        dondu win32_komut_satiri_argumanlari();
+    } yoksa {
+        # POSIX ortaminda argumanlar ana(argc, argv) parametrelerinden dogrudan alinir
+        dondu 0;
+    }
+}

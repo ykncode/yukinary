@@ -1,0 +1,10 @@
+# NLL Negatif Test: Coklu cakisik borrow — E041 beklenir.
+isv mutate_conflict(p1: *tamsayi, p2: *tamsayi) {
+    p1[0] = p1[0] + 1;
+    p2[0] = p2[0] + 2;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken num: tamsayi = 100;
+    mutate_conflict(&num, &num);
+    dondu num;
+}

@@ -1,0 +1,477 @@
+# ============================================================
+# Yukinary Codegen - macOS Mach-O 64 (x86_64 & ARM64) Uretici
+# Modul: src/codegen/output_macho.ykn
+# FAZ 4: Modern Mach-O, LC_BUILD_VERSION, LC_MAIN & Apple Silicon Ad-Hoc Kod Imzasi
+# ============================================================
+
+# ============================================================
+# Platform Sabitleri - macOS / Darwin (g_target_platform == 2 & 4)
+# ============================================================
+# macOS x86_64 BSD Syscall Numaralari (0x2000000 tabanli)
+degisken CG_DARWIN_SYS_EXIT           = 0x2000001; # exit(status)
+degisken CG_DARWIN_SYS_READ           = 0x2000003; # read(fd, buf, size)
+degisken CG_DARWIN_SYS_WRITE          = 0x2000004; # write(fd, buf, size)
+degisken CG_DARWIN_SYS_OPEN           = 0x2000005; # open(path, flags, mode)
+degisken CG_DARWIN_SYS_CLOSE          = 0x2000006; # close(fd)
+degisken CG_DARWIN_SYS_LSEEK          = 0x20000C7; # lseek(fd, offset, whence) = 199
+degisken CG_DARWIN_SYS_MMAP           = 0x20000C5; # mmap(...)               = 197
+
+# macOS ARM64 Apple Silicon Syscall Numaralari (X16 yazmaci)
+degisken CG_DARWIN_ARM64_SYS_EXIT     = 1;         # SYS_exit
+degisken CG_DARWIN_ARM64_SYS_READ     = 3;         # SYS_read
+degisken CG_DARWIN_ARM64_SYS_WRITE    = 4;         # SYS_write
+degisken CG_DARWIN_ARM64_SYS_OPEN     = 5;         # SYS_open
+degisken CG_DARWIN_ARM64_SYS_CLOSE    = 6;         # SYS_close
+degisken CG_DARWIN_ARM64_SYS_MMAP     = 197;       # SYS_mmap
+
+# macOS mmap argumanlari
+degisken CG_DARWIN_PROT_READ_WRITE    = 3;         # PROT_READ | PROT_WRITE
+degisken CG_DARWIN_MAP_PRIVATE_ANON   = 0x1002;    # MAP_PRIVATE(2) | MAP_ANON(0x1000)
+degisken CG_DARWIN_MMAP_FD_NONE       = 0xFFFFFFFF;# fd = -1 (MAP_ANON icin)
+
+# macOS Dosya Bayraklari
+degisken CG_DARWIN_O_RDONLY           = 0;         # O_RDONLY
+degisken CG_DARWIN_O_WRCREAT_TRUNC    = 0x601;     # O_WRONLY(1) | O_CREAT(0x200) | O_TRUNC(0x400)
+degisken CG_DARWIN_MODE_644           = 420;       # 0644 octal = rw-r--r--
+degisken CG_DARWIN_SEEK_SET           = 0;         # SEEK_SET
+
+# macOS Standart Akis FD'leri
+degisken CG_DARWIN_STDOUT             = 1;
+degisken CG_DARWIN_STDERR             = 2;
+
+# Mach-O Yükleme Komutları (Load Commands)
+degisken LC_SEGMENT_64_CMD            = 0x19;
+degisken LC_UNIXTHREAD_CMD            = 0x05;
+degisken LC_CODE_SIGNATURE_CMD        = 0x1D;
+degisken LC_BUILD_VERSION_CMD         = 0x32;
+degisken LC_MAIN_CMD                  = 0x80000028;
+
+# Big-Endian Byte Yazicilari (Mach-O Code Directory ve Imza Icin)
+isv be32_yaz(a: *MakineKoduArenasi, val: tamsayi) {
+    degisken v: tamsayi = val;
+    dongu v < 0 { v = v + 4294967296; }
+    byte_yaz(a, (v / 16777216) % 256);
+    byte_yaz(a, (v / 65536) % 256);
+    byte_yaz(a, (v / 256) % 256);
+    byte_yaz(a, v % 256);
+}
+
+isv be64_yaz(a: *MakineKoduArenasi, val: tamsayi) {
+    degisken hi: tamsayi = (val / 4294967296) % 4294967296;
+    degisken lo: tamsayi = val % 4294967296;
+    be32_yaz(a, hi);
+    be32_yaz(a, lo);
+}
+
+# ============================================================
+# macOS x86_64 Baslangic Thunk'i (LC_MAIN ve LC_UNIXTHREAD Uyumlu)
+# ============================================================
+isv macos_baslangic_thunk_uret(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # Modern dyld (LC_MAIN): RDI = argc, RSI = argv
+    # Fallback dogrudan cekirdek: [RSP] = argc, [RSP+8] = argv
+    byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xFF);         # TEST RDI, RDI
+    byte_yaz(a, 0x75); byte_yaz(a, 0x0C);                         # JNZ +12 (has_args)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x7C); byte_yaz(a, 0x24); byte_yaz(a, 0x00); # MOV RDI, [RSP]
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # LEA RSI, [RSP+8]
+    # has_args:
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xF9);         # MOV RCX, RDI (Yukinary RCX = argc)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xF2);         # MOV RDX, RSI (Yukinary RDX = argv)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20);  # SUB RSP, 32
+    byte_yaz(a, 0xE8);  # CALL ana_adres (rel32 patch)
+    degisken cagri_poz: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    # Patch: ana_adres - (cagri_poz + 4)
+    degisken rel32: tamsayi = ana_adres - (cagri_poz + 4);
+    degisken u: tamsayi = rel32;
+    dongu u < 0 { u = u + 4294967296; }
+    a.bellek[cagri_poz] = u % 256;
+    a.bellek[cagri_poz + 1] = (u / 256) % 256;
+    a.bellek[cagri_poz + 2] = (u / 65536) % 256;
+    a.bellek[cagri_poz + 3] = (u / 16777216) % 256;
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20);  # ADD RSP, 32
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);  # MOV RDI, RAX
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x2000001);  # MOV RAX, 0x2000001 (SYS_exit)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);  # SYSCALL
+    dondu bas;
+}
+
+# ============================================================
+# macOS ARM64 (Apple Silicon) Baslangic Thunk'i
+# ============================================================
+isv macos_arm64_baslangic_thunk_uret(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # dyld LC_MAIN: X0 = argc, X1 = argv
+    # Dogrudan cekirdek acilisi fallback: [SP] = argc, [SP+8] = argv
+    # CMP X0, #0 (0xF100001F)
+    byte_yaz(a, 0x1F); byte_yaz(a, 0x00); byte_yaz(a, 0x00); byte_yaz(a, 0xF1);
+    # B.NE +16 (0x54000081)
+    byte_yaz(a, 0x81); byte_yaz(a, 0x00); byte_yaz(a, 0x00); byte_yaz(a, 0x54);
+    # LDR X0, [SP] (0xF94003E0)
+    byte_yaz(a, 0xE0); byte_yaz(a, 0x03); byte_yaz(a, 0x40); byte_yaz(a, 0xF9);
+    # ADD X1, SP, #8 (0x910023E1)
+    byte_yaz(a, 0xE1); byte_yaz(a, 0x23); byte_yaz(a, 0x00); byte_yaz(a, 0x91);
+    # BL ana_adres (rel26)
+    degisken bl_pos: tamsayi = a.kullanilan;
+    degisken rel_inst: tamsayi = (ana_adres - bl_pos) / 4;
+    degisken imm26: tamsayi = rel_inst;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x94000000 + (imm26 % 67108864);
+    int32_yaz(a, opcode);
+    # MOVZ X16, #1 (0xD2800030) (macOS ARM64 SYS_exit=1 in X16)
+    byte_yaz(a, 0x30); byte_yaz(a, 0x00); byte_yaz(a, 0x80); byte_yaz(a, 0xD2);
+    # SVC #0x80 (0xD4001001)
+    byte_yaz(a, 0x01); byte_yaz(a, 0x10); byte_yaz(a, 0x00); byte_yaz(a, 0xD4);
+    dondu bas;
+}
+
+# ============================================================
+# Modern Mach-O 64 (x86_64 macOS) Uretici
+# LC_BUILD_VERSION + LC_MAIN + __PAGEZERO Destegi
+# ============================================================
+isv macho64_macos_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    degisken MACH_HEADER_S:     tamsayi = 32;
+    degisken LC_PAGEZERO_S:     tamsayi = 72;
+    degisken LC_SEGMENT_TEXT_S: tamsayi = 152; # 72 segment + 80 (1 section)
+    degisken LC_BUILD_VER_S:    tamsayi = 24;
+    degisken LC_MAIN_S:         tamsayi = 24;
+    degisken SIZEOF_CMDS:       tamsayi = LC_PAGEZERO_S + LC_SEGMENT_TEXT_S + LC_BUILD_VER_S + LC_MAIN_S; # 272
+    degisken CODE_OFF:          tamsayi = MACH_HEADER_S + SIZEOF_CMDS; # 304
+    degisken VMADDR_BASE:       tamsayi = 4294967296; # 0x100000000 (4GB)
+    degisken code_s:            tamsayi = kod.kullanilan;
+    degisken file_s:            tamsayi = CODE_OFF + code_s;
+
+    yamalari_uygula(kod);
+
+    # 1. Mach-O 64 Header (32 bytes)
+    int32_yaz(os_arena, 0xFEEDFACF); # MH_MAGIC_64
+    int32_yaz(os_arena, 0x01000007); # CPU_TYPE_X86_64
+    int32_yaz(os_arena, 0x80000003); # CPU_SUBTYPE_X86_64_ALL
+    int32_yaz(os_arena, 2);          # MH_EXECUTE
+    int32_yaz(os_arena, 4);          # ncmds = 4 (PAGEZERO, TEXT, BUILD_VERSION, MAIN)
+    int32_yaz(os_arena, SIZEOF_CMDS); # sizeofcmds = 272
+    int32_yaz(os_arena, 0x00200085); # flags: MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE
+    int32_yaz(os_arena, 0);          # reserved
+
+    # 2. LC_SEGMENT_64 (__PAGEZERO) (72 bytes)
+    int32_yaz(os_arena, LC_SEGMENT_64_CMD);
+    int32_yaz(os_arena, LC_PAGEZERO_S);
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x50); byte_yaz(os_arena, 0x41);
+    byte_yaz(os_arena, 0x47); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x5A); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x52); byte_yaz(os_arena, 0x4F); sifir_doldur(os_arena, 6); # "__PAGEZERO\0..."
+    int64_yaz(os_arena, 0);           # vmaddr = 0
+    int64_yaz(os_arena, VMADDR_BASE); # vmsize = 4GB
+    int64_yaz(os_arena, 0);           # fileoff = 0
+    int64_yaz(os_arena, 0);           # filesize = 0
+    int32_yaz(os_arena, 0);           # maxprot = 0
+    int32_yaz(os_arena, 0);           # initprot = 0
+    int32_yaz(os_arena, 0);           # nsects = 0
+    int32_yaz(os_arena, 0);           # flags = 0
+
+    # 3. LC_SEGMENT_64 (__TEXT) (152 bytes)
+    int32_yaz(os_arena, LC_SEGMENT_64_CMD);
+    int32_yaz(os_arena, LC_SEGMENT_TEXT_S);
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x54); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x58); byte_yaz(os_arena, 0x54); sifir_doldur(os_arena, 10); # "__TEXT\0..."
+    int64_yaz(os_arena, VMADDR_BASE);
+    int64_yaz(os_arena, hizala_yukari(file_s, 4096));
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, file_s);
+    int32_yaz(os_arena, 7);           # maxprot (rwx)
+    int32_yaz(os_arena, 7);           # initprot (rwx)
+    int32_yaz(os_arena, 1);           # nsects = 1
+    int32_yaz(os_arena, 0);           # flags
+
+    # Section 1: __text (80 bytes)
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x74); byte_yaz(os_arena, 0x65);
+    byte_yaz(os_arena, 0x78); byte_yaz(os_arena, 0x74); sifir_doldur(os_arena, 10); # "__text\0..."
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x54); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x58); byte_yaz(os_arena, 0x54); sifir_doldur(os_arena, 10); # "__TEXT\0..."
+    int64_yaz(os_arena, VMADDR_BASE + CODE_OFF);
+    int64_yaz(os_arena, code_s);
+    int32_yaz(os_arena, CODE_OFF);
+    int32_yaz(os_arena, 4);           # align (2^4 = 16)
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0x80000400);  # S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+
+    # 4. LC_BUILD_VERSION (24 bytes) - macOS 11.0+ Big Sur / Monterey / Sonoma / Sequoia
+    int32_yaz(os_arena, LC_BUILD_VERSION_CMD);
+    int32_yaz(os_arena, LC_BUILD_VER_S);
+    int32_yaz(os_arena, 1);           # PLATFORM_MACOS = 1
+    int32_yaz(os_arena, 0x000B0000);  # minos = 11.0.0
+    int32_yaz(os_arena, 0x000B0000);  # sdk = 11.0.0
+    int32_yaz(os_arena, 0);           # ntools = 0
+
+    # 5. LC_MAIN (24 bytes) - Modern macOS giris noktasi komutu
+    int32_yaz(os_arena, LC_MAIN_CMD);
+    int32_yaz(os_arena, LC_MAIN_S);
+    int64_yaz(os_arena, CODE_OFF + entry_offset); # entryoff
+    int64_yaz(os_arena, 0);                       # stacksize = 0 (varsayilan)
+
+    # 6. Kodu yapistir
+    degisken k_m: tamsayi = 0;
+    dongu k_m < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k_m]);
+        k_m = k_m + 1;
+    }
+}
+
+# ============================================================
+# Apple Silicon Icin Standart SHA-256 Sayfa Hashing Yardimcisi
+# ============================================================
+isv macho_sayfa_sha256(veri: *u8, len: tamsayi, os_arena: *MakineKoduArenasi) {
+    degisken pad_len: tamsayi = len + 1 + 8;
+    degisken rem: tamsayi = pad_len % 64;
+    eger rem != 0 ise { pad_len = pad_len + (64 - rem); }
+    degisken buf: *u8 = os_bellek_tahsis(pad_len);
+    degisken bi: tamsayi = 0;
+    dongu bi < len { buf[bi] = veri[bi]; bi = bi + 1; }
+    buf[len] = 0x80;
+    bi = len + 1;
+    dongu bi < pad_len - 8 { buf[bi] = 0; bi = bi + 1; }
+    degisken bit_len: tamsayi = len * 8;
+    buf[pad_len - 8] = ((bit_len >> 56) & 0xff);
+    buf[pad_len - 7] = ((bit_len >> 48) & 0xff);
+    buf[pad_len - 6] = ((bit_len >> 40) & 0xff);
+    buf[pad_len - 5] = ((bit_len >> 32) & 0xff);
+    buf[pad_len - 4] = ((bit_len >> 24) & 0xff);
+    buf[pad_len - 3] = ((bit_len >> 16) & 0xff);
+    buf[pad_len - 2] = ((bit_len >> 8) & 0xff);
+    buf[pad_len - 1] = (bit_len & 0xff);
+
+    degisken h0: tamsayi = 0x6a09e667;
+    degisken h1: tamsayi = 0xbb67ae85;
+    degisken h2: tamsayi = 0x3c6ef372;
+    degisken h3: tamsayi = 0xa54ff53a;
+    degisken h4: tamsayi = 0x510e527f;
+    degisken h5: tamsayi = 0x9b05688c;
+    degisken h6: tamsayi = 0x1f83d9ab;
+    degisken h7: tamsayi = 0x5be0cd19;
+
+    degisken K: [64]tamsayi;
+    K[0]=0x428a2f98; K[1]=0x71374491; K[2]=0xb5c0fbcf; K[3]=0xe9b5dba5;
+    K[4]=0x3956c25b; K[5]=0x59f111f1; K[6]=0x923f82a4; K[7]=0xab1c5ed5;
+    K[8]=0xd807aa98; K[9]=0x12835b01; K[10]=0x243185be; K[11]=0x550c7dc3;
+    K[12]=0x72be5d74; K[13]=0x80deb1fe; K[14]=0x9bdc06a7; K[15]=0xc19bf174;
+    K[16]=0xe49b69c1; K[17]=0xefbe4786; K[18]=0x0fc19dc6; K[19]=0x240ca1cc;
+    K[20]=0x2de92c6f; K[21]=0x4a7484aa; K[22]=0x5cb0a9dc; K[23]=0x76f988da;
+    K[24]=0x983e5152; K[25]=0xa831c66d; K[26]=0xb00327c8; K[27]=0xbf597fc7;
+    K[28]=0xc6e00bf3; K[29]=0xd5a79147; K[30]=0x06ca6351; K[31]=0x14292967;
+    K[32]=0x27b70a85; K[33]=0x2e1b2138; K[34]=0x4d2c6dfc; K[35]=0x53380d13;
+    K[36]=0x650a7354; K[37]=0x766a0abb; K[38]=0x81c2c92e; K[39]=0x92722c85;
+    K[40]=0xa2bfe8a1; K[41]=0xa81a664b; K[42]=0xc24b8b70; K[43]=0xc76c51a3;
+    K[44]=0xd192e819; K[45]=0xd6990624; K[46]=0xf40e3585; K[47]=0x106aa070;
+    K[48]=0x19a4c116; K[49]=0x1e376c08; K[50]=0x2748774c; K[51]=0x34b0bcb5;
+    K[52]=0x391c0cb3; K[53]=0x4ed8aa4a; K[54]=0x5b9cca4f; K[55]=0x682e6ff3;
+    K[56]=0x748f82ee; K[57]=0x78a5636f; K[58]=0x84c87814; K[59]=0x8cc70208;
+    K[60]=0x90befffa; K[61]=0xa4506ceb; K[62]=0xbef9a3f7; K[63]=0xc67178f2;
+
+    degisken w: [64]tamsayi;
+    degisken blk: tamsayi = 0;
+    dongu blk < pad_len {
+        degisken t: tamsayi = 0;
+        dongu t < 16 {
+            degisken idx: tamsayi = blk + t * 4;
+            w[t] = ((buf[idx] & 0xff) << 24) | ((buf[idx + 1] & 0xff) << 16) | ((buf[idx + 2] & 0xff) << 8) | (buf[idx + 3] & 0xff);
+            t = t + 1;
+        }
+        dongu t < 64 {
+            degisken x15: tamsayi = w[t - 2] & 0xffffffff;
+            degisken s1: tamsayi = (((x15 >> 17) | (x15 << 15)) ^ ((x15 >> 19) | (x15 << 13)) ^ (x15 >> 10)) & 0xffffffff;
+            degisken x2: tamsayi = w[t - 15] & 0xffffffff;
+            degisken s0: tamsayi = (((x2 >> 7) | (x2 << 25)) ^ ((x2 >> 18) | (x2 << 14)) ^ (x2 >> 3)) & 0xffffffff;
+            w[t] = (w[t - 16] + s0 + w[t - 7] + s1) & 0xffffffff;
+            t = t + 1;
+        }
+        degisken a: tamsayi = h0; degisken b: tamsayi = h1; degisken c: tamsayi = h2; degisken d: tamsayi = h3;
+        degisken e: tamsayi = h4; degisken f: tamsayi = h5; degisken g: tamsayi = h6; degisken h: tamsayi = h7;
+        t = 0;
+        dongu t < 64 {
+            degisken e32: tamsayi = e & 0xffffffff;
+            degisken s1_e: tamsayi = (((e32 >> 6) | (e32 << 26)) ^ ((e32 >> 11) | (e32 << 21)) ^ ((e32 >> 25) | (e32 << 7))) & 0xffffffff;
+            degisken ch: tamsayi = ((e & f) ^ ((e ^ 0xffffffff) & g)) & 0xffffffff;
+            degisken temp1: tamsayi = (h + s1_e + ch + K[t] + w[t]) & 0xffffffff;
+            degisken a32: tamsayi = a & 0xffffffff;
+            degisken s0_a: tamsayi = (((a32 >> 2) | (a32 << 30)) ^ ((a32 >> 13) | (a32 << 19)) ^ ((a32 >> 22) | (a32 << 10))) & 0xffffffff;
+            degisken maj: tamsayi = ((a & b) ^ (a & c) ^ (b & c)) & 0xffffffff;
+            degisken temp2: tamsayi = (s0_a + maj) & 0xffffffff;
+            h = g; g = f; f = e; e = (d + temp1) & 0xffffffff;
+            d = c; c = b; b = a; a = (temp1 + temp2) & 0xffffffff;
+            t = t + 1;
+        }
+        h0 = (h0 + a) & 0xffffffff; h1 = (h1 + b) & 0xffffffff; h2 = (h2 + c) & 0xffffffff; h3 = (h3 + d) & 0xffffffff;
+        h4 = (h4 + e) & 0xffffffff; h5 = (h5 + f) & 0xffffffff; h6 = (h6 + g) & 0xffffffff; h7 = (h7 + h) & 0xffffffff;
+        blk = blk + 64;
+    }
+    os_bellek_serbest(buf);
+
+    # 32 baytlik ham SHA-256 ozetini arena'ya big-endian olarak yaz
+    be32_yaz(os_arena, h0); be32_yaz(os_arena, h1); be32_yaz(os_arena, h2); be32_yaz(os_arena, h3);
+    be32_yaz(os_arena, h4); be32_yaz(os_arena, h5); be32_yaz(os_arena, h6); be32_yaz(os_arena, h7);
+}
+
+# ============================================================
+# Modern Mach-O 64 (Apple Silicon ARM64) Uretici
+# LC_BUILD_VERSION + LC_MAIN + Ad-Hoc Kod Imzasi (CS_SuperBlob)
+# ============================================================
+isv macho64_arm64_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    degisken MACH_HEADER_S:     tamsayi = 32;
+    degisken LC_PAGEZERO_S:     tamsayi = 72;
+    degisken LC_SEGMENT_TEXT_S: tamsayi = 152;
+    degisken LC_BUILD_VER_S:    tamsayi = 24;
+    degisken LC_MAIN_S:         tamsayi = 24;
+    degisken LC_CODE_SIGN_S:    tamsayi = 16;
+    degisken SIZEOF_CMDS:       tamsayi = LC_PAGEZERO_S + LC_SEGMENT_TEXT_S + LC_BUILD_VER_S + LC_MAIN_S + LC_CODE_SIGN_S; # 288
+    degisken CODE_OFF:          tamsayi = MACH_HEADER_S + SIZEOF_CMDS; # 320
+    degisken VMADDR_BASE:       tamsayi = 4294967296; # 0x100000000 (4GB)
+    degisken code_s:            tamsayi = kod.kullanilan;
+
+    # Imza ofseti: kodun bitiminde 16-bayt hizali konum
+    degisken sig_offset:        tamsayi = hizala_yukari(CODE_OFF + code_s, 16);
+    degisken num_pages:         tamsayi = (sig_offset + 4095) / 4096;
+    degisken cd_ident_len:      tamsayi = 12; # "yukinary\0" + 3 pad
+    degisken cd_hash_offset:    tamsayi = 88 + cd_ident_len; # 100
+    degisken cd_size:           tamsayi = cd_hash_offset + num_pages * 32;
+    degisken sig_size:          tamsayi = 12 + 8 + cd_size; # SuperBlob(12) + BlobIndex(8) + CD
+    degisken total_file_s:      tamsayi = sig_offset + sig_size;
+
+    yamalari_uygula(kod);
+
+    # 1. Mach-O Header ARM64 (32 bytes)
+    int32_yaz(os_arena, 0xFEEDFACF); # MH_MAGIC_64
+    int32_yaz(os_arena, 0x0100000C); # CPU_TYPE_ARM64
+    int32_yaz(os_arena, 0x00000000); # CPU_SUBTYPE_ARM64_ALL
+    int32_yaz(os_arena, 2);          # MH_EXECUTE
+    int32_yaz(os_arena, 5);          # ncmds = 5 (PAGEZERO, TEXT, BUILD_VER, MAIN, CODE_SIGN)
+    int32_yaz(os_arena, SIZEOF_CMDS); # sizeofcmds = 288
+    int32_yaz(os_arena, 0x00200085); # flags: MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE
+    int32_yaz(os_arena, 0);          # reserved
+
+    # 2. LC_SEGMENT_64 (__PAGEZERO) (72 bytes)
+    int32_yaz(os_arena, LC_SEGMENT_64_CMD);
+    int32_yaz(os_arena, LC_PAGEZERO_S);
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x50); byte_yaz(os_arena, 0x41);
+    byte_yaz(os_arena, 0x47); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x5A); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x52); byte_yaz(os_arena, 0x4F); sifir_doldur(os_arena, 6);
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, VMADDR_BASE);
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+
+    # 3. LC_SEGMENT_64 (__TEXT) (152 bytes)
+    int32_yaz(os_arena, LC_SEGMENT_64_CMD);
+    int32_yaz(os_arena, LC_SEGMENT_TEXT_S);
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x54); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x58); byte_yaz(os_arena, 0x54); sifir_doldur(os_arena, 10);
+    int64_yaz(os_arena, VMADDR_BASE);
+    int64_yaz(os_arena, hizala_yukari(total_file_s, 16384)); # Apple Silicon 16KB sayfa boyutu
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, total_file_s);
+    int32_yaz(os_arena, 7);           # maxprot (rwx)
+    int32_yaz(os_arena, 7);           # initprot (rwx)
+    int32_yaz(os_arena, 1);           # nsects = 1
+    int32_yaz(os_arena, 0);           # flags
+
+    # Section 1: __text (80 bytes)
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x74); byte_yaz(os_arena, 0x65);
+    byte_yaz(os_arena, 0x78); byte_yaz(os_arena, 0x74); sifir_doldur(os_arena, 10);
+    byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x5F); byte_yaz(os_arena, 0x54); byte_yaz(os_arena, 0x45);
+    byte_yaz(os_arena, 0x58); byte_yaz(os_arena, 0x54); sifir_doldur(os_arena, 10);
+    int64_yaz(os_arena, VMADDR_BASE + CODE_OFF);
+    int64_yaz(os_arena, code_s);
+    int32_yaz(os_arena, CODE_OFF);
+    int32_yaz(os_arena, 4);           # align = 16
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0x80000400);  # S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+    int32_yaz(os_arena, 0);
+
+    # 4. LC_BUILD_VERSION (24 bytes) - macOS 11.0+ (ARM64 Apple Silicon)
+    int32_yaz(os_arena, LC_BUILD_VERSION_CMD);
+    int32_yaz(os_arena, LC_BUILD_VER_S);
+    int32_yaz(os_arena, 1);           # PLATFORM_MACOS = 1
+    int32_yaz(os_arena, 0x000B0000);  # minos = 11.0.0
+    int32_yaz(os_arena, 0x000B0000);  # sdk = 11.0.0
+    int32_yaz(os_arena, 0);           # ntools = 0
+
+    # 5. LC_MAIN (24 bytes)
+    int32_yaz(os_arena, LC_MAIN_CMD);
+    int32_yaz(os_arena, LC_MAIN_S);
+    int64_yaz(os_arena, CODE_OFF + entry_offset);
+    int64_yaz(os_arena, 0);
+
+    # 6. LC_CODE_SIGNATURE (16 bytes) - Apple Silicon Gatekeeper Zorunlulugu
+    int32_yaz(os_arena, LC_CODE_SIGNATURE_CMD);
+    int32_yaz(os_arena, LC_CODE_SIGN_S);
+    int32_yaz(os_arena, sig_offset);
+    int32_yaz(os_arena, sig_size);
+
+    # 7. Kod alanini yerlestir
+    degisken k_ma: tamsayi = 0;
+    dongu k_ma < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k_ma]);
+        k_ma = k_ma + 1;
+    }
+
+    # Imza ofsetine kadar sifir ile hizala
+    sifir_doldur(os_arena, sig_offset - os_arena.kullanilan);
+
+    # 8. Ad-Hoc CS_SuperBlob (Apple Silicon Kod Imzasi)
+    # SuperBlob Header (12 bytes)
+    be32_yaz(os_arena, 0xFADE0CC0);   # magic: CSMAGIC_EMBEDDED_SIGNATURE
+    be32_yaz(os_arena, sig_size);     # total superblob length
+    be32_yaz(os_arena, 1);            # count = 1 blob
+
+    # BlobIndex[0] (8 bytes)
+    be32_yaz(os_arena, 0);            # type = CSSLOT_CODEDIRECTORY (0)
+    be32_yaz(os_arena, 20);           # offset = 20 (SuperBlob header sonrasi)
+
+    # CS_CodeDirectory (cd_size bytes)
+    be32_yaz(os_arena, 0xFADE0C02);   # magic: CSMAGIC_CODEDIRECTORY
+    be32_yaz(os_arena, cd_size);      # length
+    be32_yaz(os_arena, 0x00020400);   # version = 0x20400 (execSeg fields destekli)
+    be32_yaz(os_arena, 0x00020002);   # flags = CS_ADHOC (2) | CS_LINKER_SIGNED (0x20000)
+    be32_yaz(os_arena, cd_hash_offset); # hashOffset
+    be32_yaz(os_arena, 88);           # identOffset
+    be32_yaz(os_arena, 0);            # nSpecialSlots = 0
+    be32_yaz(os_arena, num_pages);    # nCodeSlots
+    be32_yaz(os_arena, sig_offset);   # codeLimit = signed bytes
+    byte_yaz(os_arena, 32);           # hashSize = 32 (SHA-256)
+    byte_yaz(os_arena, 2);            # hashType = CS_HASHTYPE_SHA256 (2)
+    byte_yaz(os_arena, 0);            # platform = 0
+    byte_yaz(os_arena, 12);           # pageSize = 12 (2^12 = 4096 bytes)
+    be32_yaz(os_arena, 0);            # spare2 = 0
+    be32_yaz(os_arena, 0);            # scatterOffset = 0
+    be32_yaz(os_arena, 0);            # teamIDOffset = 0
+    be32_yaz(os_arena, 0);            # spare3 = 0
+    be64_yaz(os_arena, 0);            # codeLimit64 = 0
+    be64_yaz(os_arena, 0);            # execSegBase = 0
+    be64_yaz(os_arena, sig_offset);   # execSegLimit
+    be64_yaz(os_arena, 1);            # execSegFlags = CS_EXECSEG_MAIN_BINARY (1)
+
+    # Ident string: "yukinary\0" (12 bytes aligned)
+    byte_yaz(os_arena, 121); byte_yaz(os_arena, 117); byte_yaz(os_arena, 107); byte_yaz(os_arena, 105);
+    byte_yaz(os_arena, 110); byte_yaz(os_arena, 97);  byte_yaz(os_arena, 114); byte_yaz(os_arena, 121);
+    byte_yaz(os_arena, 0);   byte_yaz(os_arena, 0);   byte_yaz(os_arena, 0);   byte_yaz(os_arena, 0);
+
+    # Apple Silicon Gatekeeper uyumlu gercek SHA-256 sayfa ozetleri
+    degisken p: tamsayi = 0;
+    dongu p < num_pages {
+        degisken page_start: tamsayi = p * 4096;
+        degisken page_end: tamsayi = page_start + 4096;
+        eger page_end > sig_offset ise { page_end = sig_offset; }
+        degisken page_len: tamsayi = page_end - page_start;
+        macho_sayfa_sha256(os_arena.bellek + page_start, page_len, os_arena);
+        p = p + 1;
+    }
+}

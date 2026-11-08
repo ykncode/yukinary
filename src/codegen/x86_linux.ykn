@@ -1,0 +1,205 @@
+# ============================================================
+# Yukinary Codegen - Linux x86_64 Syscall & Thunk Yardimcilari
+# Modul: src/codegen/x86_linux.ykn
+# ============================================================
+
+# ============================================================
+# Platform Sabitleri - Linux (g_target_platform == 1)
+# ============================================================
+# Linux x86_64 Syscall Numaralari
+degisken CG_LINUX_SYS_READ            = 0;   # read(fd, buf, size)
+degisken CG_LINUX_SYS_WRITE           = 1;   # write(fd, buf, size)
+degisken CG_LINUX_SYS_OPEN            = 2;   # open(path, flags, mode)
+degisken CG_LINUX_SYS_CLOSE           = 3;   # close(fd)
+degisken CG_LINUX_SYS_LSEEK           = 8;   # lseek(fd, offset, whence)
+degisken CG_LINUX_SYS_MMAP            = 9;   # mmap(addr, len, prot, flags, fd, off)
+degisken CG_LINUX_SYS_MUNMAP          = 11;  # munmap(addr, len)
+degisken CG_LINUX_SYS_EXIT            = 60;  # exit(status)
+degisken CG_LINUX_SYS_PIPE            = 22;  # pipe(pipefd)
+degisken CG_LINUX_SYS_DUP             = 32;  # dup(oldfd)
+degisken CG_LINUX_SYS_DUP2            = 33;  # dup2(oldfd, newfd)
+degisken CG_LINUX_SYS_FORK            = 57;  # fork()
+degisken CG_LINUX_SYS_EXECVE          = 59;  # execve(path, argv, envp)
+degisken CG_LINUX_SYS_WAIT4           = 61;  # wait4(pid, status, options, rusage)
+degisken CG_LINUX_SYS_SOCKET          = 41;  # socket(domain,type,protocol)
+degisken CG_LINUX_SYS_CONNECT         = 42;  # connect(fd,addr,len)
+degisken CG_LINUX_SYS_ACCEPT          = 43;  # accept(fd,addr,len)
+degisken CG_LINUX_SYS_SENDTO          = 44;  # sendto(fd,buf,len,flags,addr,alen)
+degisken CG_LINUX_SYS_RECVFROM        = 45;  # recvfrom(fd,buf,len,flags,addr,alen)
+degisken CG_LINUX_SYS_BIND            = 49;  # bind(fd,addr,len)
+degisken CG_LINUX_SYS_LISTEN          = 50;  # listen(fd,backlog)
+degisken CG_LINUX_SYS_SETSOCKOPT      = 54;  # setsockopt(fd,level,opt,val,len)
+degisken CG_LINUX_SYS_FCNTL           = 72;  # fcntl(fd,cmd,arg)
+degisken CG_LINUX_SYS_EPOLL_CREATE1   = 291; # epoll_create1(flags)
+degisken CG_LINUX_SYS_EPOLL_CTL       = 233; # epoll_ctl(epfd,op,fd,event)
+degisken CG_LINUX_SYS_EPOLL_WAIT      = 232; # epoll_wait(epfd,events,maxevents,timeout)
+
+# Linux Standart Akis FD'leri
+degisken CG_LINUX_STDOUT              = 1;
+degisken CG_LINUX_STDERR              = 2;
+
+# Linux mmap argumanlari
+degisken CG_LINUX_PROT_READ_WRITE     = 3;   # PROT_READ | PROT_WRITE
+degisken CG_LINUX_MAP_PRIVATE_ANON    = 34;  # MAP_PRIVATE(2) | MAP_ANONYMOUS(32)
+degisken CG_LINUX_MMAP_FD_NONE        = 0xFFFFFFFF; # fd = -1 (MAP_ANONYMOUS icin)
+
+# Linux Dosya Bayraklari
+degisken CG_LINUX_O_RDONLY            = 0;   # O_RDONLY
+degisken CG_LINUX_O_WRCREAT_TRUNC     = 577; # O_WRONLY(1) | O_CREAT(64) | O_TRUNC(512)
+degisken CG_LINUX_MODE_644            = 420; # 0644 octal = rw-r--r--
+degisken CG_LINUX_SEEK_SET            = 0;   # SEEK_SET
+
+isv linux_baslangic_thunk_uret(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    # Linux _start ABI: [RSP] = argc, [RSP+8] = argv[0]
+    # RCX=argc, RDX=argv olarak YKN ana() fonksiyonuna aktar.
+    # Donus degeri (RAX) -> RDI, SYS_exit(60) ile bitir.
+    degisken bas: tamsayi = a.kullanilan;
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x0C); byte_yaz(a, 0x24);  # MOV RCX,[RSP]
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8D); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x08);  # LEA RDX,[RSP+8]
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20);  # SUB RSP, 32
+    byte_yaz(a, 0xE8);  # CALL ana_adres (rel32 patch)
+    degisken cagri_poz: tamsayi = a.kullanilan;
+    int32_yaz(a, 0);
+    # Patch: ana_adres - (cagri_poz + 4)
+    degisken rel32: tamsayi = ana_adres - (cagri_poz + 4);
+    degisken u: tamsayi = rel32;
+    dongu u < 0 { u = u + 4294967296; }
+    a.bellek[cagri_poz] = u % 256;
+    a.bellek[cagri_poz + 1] = (u / 256) % 256;
+    a.bellek[cagri_poz + 2] = (u / 65536) % 256;
+    a.bellek[cagri_poz + 3] = (u / 16777216) % 256;
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20);  # ADD RSP, 32
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);  # MOV RDI,RAX
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 60);  # MOV RAX, 60 (SYS_exit)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);  # SYSCALL
+    dondu bas;
+}
+
+# POSIX / Linux x86_64 Sistem Cagrilari Emitter'i (Glibc-free)
+# Linux x86_64 ABI: RAX=Syscall, RDI=arg0, RSI=arg1, RDX=arg2, R10=arg3
+isv linux_posix_cagrisi(a: *MakineKoduArenasi, f_isim: *u8, f_uzn: tamsayi, arg_sayisi: tamsayi) -> tamsayi {
+    eger f_isim == 0 veya f_uzn <= 0 ise { dondu 0; }
+
+    # 1. pipe(pipefd: *tamsayi) -> tamsayi (SYS_pipe = 22)
+    eger f_uzn == 4 ve bellek_esit_mi(f_isim, "pipe".ptr, 4) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_PIPE); # MOV RAX, 22
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0); # TEST RAX, RAX
+        byte_yaz(a, 0x75); byte_yaz(a, 19);                      # JNZ +19
+        byte_yaz(a, 0x48); byte_yaz(a, 0x63); byte_yaz(a, 0x57); byte_yaz(a, 0x04); # MOVSXD RDX, [RDI+4]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x57); byte_yaz(a, 0x08); # MOV [RDI+8], RDX
+        byte_yaz(a, 0x48); byte_yaz(a, 0x63); byte_yaz(a, 0x17);                      # MOVSXD RDX, [RDI]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x17);                      # MOV [RDI], RDX
+        dondu 1;
+    }
+
+    # 2. fork() -> tamsayi (SYS_fork = 57)
+    eger f_uzn == 4 ve bellek_esit_mi(f_isim, "fork".ptr, 4) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_FORK); # MOV RAX, 57
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 3. dup2(oldfd: tamsayi, newfd: tamsayi) -> tamsayi (SYS_dup2 = 33)
+    eger f_uzn == 4 ve bellek_esit_mi(f_isim, "dup2".ptr, 4) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_DUP2); # MOV RAX, 33
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 4. execve(path: *u8, argv: **u8, envp: **u8) -> tamsayi (SYS_execve = 59)
+    eger f_uzn == 6 ve bellek_esit_mi(f_isim, "execve".ptr, 6) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_EXECVE); # MOV RAX, 59
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 5. waitpid(pid: tamsayi, status: *tamsayi, options: tamsayi) -> tamsayi (SYS_wait4 = 61)
+    eger f_uzn == 7 ve bellek_esit_mi(f_isim, "waitpid".ptr, 7) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xD2); # XOR R10, R10 (rusage = 0)
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_WAIT4); # MOV RAX, 61
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 6. _exit(status: tamsayi) (SYS_exit = 60)
+    eger f_uzn == 5 ve bellek_esit_mi(f_isim, "_exit".ptr, 5) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_EXIT); # MOV RAX, 60
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 7. close(fd: tamsayi) -> tamsayi (SYS_close = 3)
+    eger f_uzn == 5 ve bellek_esit_mi(f_isim, "close".ptr, 5) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_CLOSE); # MOV RAX, 3
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 8. read(fd: tamsayi, buf: *u8, count: tamsayi) -> tamsayi (SYS_read = 0)
+    eger f_uzn == 4 ve bellek_esit_mi(f_isim, "read".ptr, 4) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_READ); # MOV RAX, 0
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 9. write(fd: tamsayi, buf: *u8, count: tamsayi) -> tamsayi (SYS_write = 1)
+    eger f_uzn == 5 ve bellek_esit_mi(f_isim, "write".ptr, 5) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_WRITE); # MOV RAX, 1
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 10. open(path: *u8, flags: tamsayi, mode: tamsayi) -> tamsayi (SYS_open = 2)
+    eger f_uzn == 4 ve bellek_esit_mi(f_isim, "open".ptr, 4) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_OPEN); # MOV RAX, 2
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # 11. lseek(fd: tamsayi, offset: tamsayi, whence: tamsayi) -> tamsayi (SYS_lseek = 8)
+    eger f_uzn == 5 ve bellek_esit_mi(f_isim, "lseek".ptr, 5) == 1 ise {
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x3C); byte_yaz(a, 0x24); # MOV RDI, [RSP]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x74); byte_yaz(a, 0x24); byte_yaz(a, 0x08); # MOV RSI, [RSP+8]
+        byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x54); byte_yaz(a, 0x24); byte_yaz(a, 0x10); # MOV RDX, [RSP+16]
+        byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, CG_LINUX_SYS_LSEEK); # MOV RAX, 8
+        byte_yaz(a, 0x0F); byte_yaz(a, 0x05); # SYSCALL
+        dondu 1;
+    }
+
+    # Win32 functions safely return 0 on Linux
+    eger (f_uzn == 12 ve bellek_esit_mi(f_isim, "LoadLibraryA".ptr, 12) == 1) veya
+         (f_uzn == 14 ve bellek_esit_mi(f_isim, "GetProcAddress".ptr, 14) == 1) veya
+         (f_uzn == 11 ve bellek_esit_mi(f_isim, "FreeLibrary".ptr, 11) == 1) veya
+         (f_uzn == 14 ve bellek_esit_mi(f_isim, "CreateProcessA".ptr, 14) == 1) veya
+         (f_uzn == 10 ve bellek_esit_mi(f_isim, "CreatePipe".ptr, 10) == 1) veya
+         (f_uzn == 11 ve bellek_esit_mi(f_isim, "CloseHandle".ptr, 11) == 1) veya
+         (f_uzn == 8 ve bellek_esit_mi(f_isim, "ReadFile".ptr, 8) == 1) veya
+         (f_uzn == 19 ve bellek_esit_mi(f_isim, "WaitForSingleObject".ptr, 19) == 1) veya
+         (f_uzn == 18 ve bellek_esit_mi(f_isim, "GetExitCodeProcess".ptr, 18) == 1) ise {
+        emit_xor_rax_rax(a);
+        dondu 1;
+    }
+
+    dondu 0;
+}

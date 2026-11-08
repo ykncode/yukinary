@@ -1,0 +1,340 @@
+# ============================================================
+# YKN std/ai/architecture_adapter.ykn
+# Llama/Mistral/Qwen/Gemma/Phi tensor layout profilleri.
+# ============================================================
+
+yapi LLMArchitectureAdapter {
+    mimari: tamsayi;
+    blok_on_eki: *u8;
+    q_adi: *u8;
+    k_adi: *u8;
+    v_adi: *u8;
+    cikis_adi: *u8;
+    ffn_up_adi: *u8;
+    ffn_down_adi: *u8;
+    norm_adi: *u8;
+    output_adi: *u8;
+    alt_blok_on_eki: *u8;
+    q_adi_alt: *u8;
+    k_adi_alt: *u8;
+    v_adi_alt: *u8;
+    cikis_adi_alt: *u8;
+    ffn_gate_adi: *u8;
+    ffn_gate_adi_alt: *u8;
+    ffn_norm_adi: *u8;
+    embedding_adi: *u8;
+}
+
+yapi LLMLayerTensorleri {
+    q: *GGUFTensorInfo;
+    k: *GGUFTensorInfo;
+    v: *GGUFTensorInfo;
+    cikis: *GGUFTensorInfo;
+    ffn_up: *GGUFTensorInfo;
+    ffn_gate: *GGUFTensorInfo;
+    ffn_down: *GGUFTensorInfo;
+    attn_norm: *GGUFTensorInfo;
+    ffn_norm: *GGUFTensorInfo;
+    # Qwen3 grouped-query attention başına uygulanan RMSNorm tensorleri.
+    q_norm: *GGUFTensorInfo;
+    k_norm: *GGUFTensorInfo;
+}
+
+# Tensor-name helper'ları dört argümanla sınırlandırılır; beşinci stack
+# argümanı YKN Windows ABI'sinde güvenilir değildir.
+degisken g_llm_arch_scratch: [128]u8;
+degisken g_llm_arch_alt_suffix: *u8 = 0;
+degisken g_llm_layer_tensorleri: LLMLayerTensorleri;
+
+isv llm_architecture_adapter_sifirla(adapter: *LLMArchitectureAdapter) {
+    eger adapter == 0 ise { dondu; }
+    adapter->mimari = LLM_MIMARI_BILINMIYOR;
+    adapter->blok_on_eki = 0;
+    adapter->q_adi = 0;
+    adapter->k_adi = 0;
+    adapter->v_adi = 0;
+    adapter->cikis_adi = 0;
+    adapter->ffn_up_adi = 0;
+    adapter->ffn_down_adi = 0;
+    adapter->norm_adi = 0;
+    adapter->output_adi = 0;
+    adapter->alt_blok_on_eki = 0;
+    adapter->q_adi_alt = 0;
+    adapter->k_adi_alt = 0;
+    adapter->v_adi_alt = 0;
+    adapter->cikis_adi_alt = 0;
+    adapter->ffn_gate_adi = 0;
+    adapter->ffn_gate_adi_alt = 0;
+    adapter->ffn_norm_adi = 0;
+    adapter->embedding_adi = 0;
+}
+
+# GGUF tensor adlarının ortak subset'i. Bu profiller, gerçek tensor loader'ın
+# isim çözümlemesinde kullanılmak üzere sabit string adreslerini taşır.
+isv llm_architecture_adapter_kur(mimari: tamsayi,
+                                 adapter: *LLMArchitectureAdapter) -> tamsayi {
+    llm_architecture_adapter_sifirla(adapter);
+    eger adapter == 0 veya (llm_runtime_backend_bul(mimari) != LLM_BACKEND_ARCH_ADAPTER ve
+       mimari != LLM_MIMARI_BITNET ve mimari != LLM_MIMARI_BITNET_MOE) ise { dondu 0; }
+    adapter->mimari = mimari;
+    adapter->blok_on_eki = "blk.".ptr;
+    adapter->q_adi = ".attn_q.weight".ptr;
+    adapter->k_adi = ".attn_k.weight".ptr;
+    adapter->v_adi = ".attn_v.weight".ptr;
+    adapter->cikis_adi = ".attn_output.weight".ptr;
+    adapter->ffn_up_adi = ".ffn_up.weight".ptr;
+    adapter->ffn_down_adi = ".ffn_down.weight".ptr;
+    adapter->norm_adi = ".attn_norm.weight".ptr;
+    adapter->ffn_norm_adi = ".ffn_norm.weight".ptr;
+    adapter->ffn_gate_adi = ".ffn_gate.weight".ptr;
+    adapter->embedding_adi = "token_embd.weight".ptr;
+    adapter->output_adi = "output.weight".ptr;
+    # HuggingFace/GGUF adlandırması: model.layers.<n>.*
+    adapter->alt_blok_on_eki = "model.layers.".ptr;
+    adapter->q_adi_alt = "self_attn.q_proj.weight".ptr;
+    adapter->k_adi_alt = "self_attn.k_proj.weight".ptr;
+    adapter->v_adi_alt = "self_attn.v_proj.weight".ptr;
+    adapter->cikis_adi_alt = "self_attn.o_proj.weight".ptr;
+    adapter->ffn_gate_adi_alt = "mlp.gate_proj.weight".ptr;
+    dondu 1;
+}
+
+# `blk.<katman><suffix>` adını caller buffer'ına üretir.
+isv llm_architecture_tensor_adi_yaz(adapter: *LLMArchitectureAdapter,
+                                    katman: tamsayi,
+                                    suffix: *u8,
+                                    cikti: *u8) -> tamsayi {
+    eger adapter == 0 veya adapter->blok_on_eki == 0 veya suffix == 0 veya
+       cikti == 0 veya katman < 0 ise { dondu 0; }
+    degisken on_uzunluk: tamsayi = 0;
+    dongu adapter->blok_on_eki[on_uzunluk] != 0 { on_uzunluk = on_uzunluk + 1; }
+    degisken suffix_uzunluk: tamsayi = 0;
+    dongu suffix[suffix_uzunluk] != 0 { suffix_uzunluk = suffix_uzunluk + 1; }
+    degisken rakamlar: [20]u8;
+    degisken rakam_adedi: tamsayi = 0;
+    degisken sayi: tamsayi = katman;
+    eger sayi == 0 ise { rakamlar[0] = 48; rakam_adedi = 1; }
+    yoksa {
+        dongu sayi > 0 {
+            rakamlar[rakam_adedi] = 48 + (sayi % 10);
+            rakam_adedi = rakam_adedi + 1;
+            sayi = sayi / 10;
+        }
+    }
+    eger on_uzunluk + rakam_adedi + suffix_uzunluk + 1 > 127 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < on_uzunluk { cikti[pos] = adapter->blok_on_eki[i]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    dongu i < rakam_adedi {
+        cikti[pos] = rakamlar[rakam_adedi - i - 1]; pos = pos + 1; i = i + 1;
+    }
+    i = 0;
+    dongu i < suffix_uzunluk { cikti[pos] = suffix[i]; pos = pos + 1; i = i + 1; }
+    cikti[pos] = 0;
+    dondu pos;
+}
+
+# Farklı prefix düzenlerini tek arama noktasında birleştirir.
+isv llm_architecture_tensor_prefix_adi_yaz(prefix: *u8,
+                                           katman: tamsayi,
+                                           suffix: *u8,
+                                           cikti: *u8) -> tamsayi {
+    eger prefix == 0 veya suffix == 0 veya cikti == 0 veya katman < 0 ise { dondu 0; }
+    degisken on_uzunluk: tamsayi = 0;
+    dongu prefix[on_uzunluk] != 0 { on_uzunluk = on_uzunluk + 1; }
+    degisken suffix_uzunluk: tamsayi = 0;
+    dongu suffix[suffix_uzunluk] != 0 { suffix_uzunluk = suffix_uzunluk + 1; }
+    degisken rakamlar: [20]u8;
+    degisken rakam_adedi: tamsayi = 0;
+    degisken sayi: tamsayi = katman;
+    eger sayi == 0 ise { rakamlar[0] = 48; rakam_adedi = 1; }
+    yoksa { dongu sayi > 0 { rakamlar[rakam_adedi] = 48 + (sayi % 10); rakam_adedi = rakam_adedi + 1; sayi = sayi / 10; } }
+    eger on_uzunluk + rakam_adedi + suffix_uzunluk + 1 > 127 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < on_uzunluk { cikti[pos] = prefix[i]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    dongu i < rakam_adedi { cikti[pos] = rakamlar[rakam_adedi - i - 1]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    dongu i < suffix_uzunluk { cikti[pos] = suffix[i]; pos = pos + 1; i = i + 1; }
+    cikti[pos] = 0;
+    dondu pos;
+}
+
+# Legacy lookup API; yeni forward yolu aşağıdaki dört argümanlı helper'ı
+# kullanır. Eski imza geriye dönük kaynak uyumluluğu için tutulur.
+isv llm_architecture_tensor_bul(durum: *GGUFDurum, adapter: *LLMArchitectureAdapter,
+                                katman: tamsayi, suffix: *u8, suffix_alt: *u8,
+                                tampon: *u8, kapasite: tamsayi) -> *GGUFTensorInfo {
+    eger llm_architecture_tensor_adi_yaz(adapter, katman, suffix, tampon) > 0 ise {
+        degisken bulunan: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, tampon);
+        eger bulunan != 0 ise { dondu bulunan; }
+    }
+    eger adapter->alt_blok_on_eki != 0 ve suffix_alt != 0 ve
+       llm_architecture_tensor_prefix_adi_yaz(adapter->alt_blok_on_eki, katman, suffix_alt, tampon) > 0 ise {
+        dondu gguf_tensor_bul_adi_ile(durum, tampon);
+    }
+    dondu 0;
+}
+
+# ABI-stabil ad üretici: çıktı buffer'ı çağrı argümanı değildir; helper kendi
+# heap buffer'ını döndürür. Böylece Windows x64 stack argümanı sapması önlenir.
+isv llm_architecture_tensor_adi_uret(adapter: *LLMArchitectureAdapter,
+                                     katman: tamsayi, suffix: *u8) -> *u8 {
+    eger adapter == 0 veya adapter->blok_on_eki == 0 veya suffix == 0 veya katman < 0 ise { dondu 0; }
+    degisken cikti: *u8 = bellek_tahsis_et(128);
+    eger cikti == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu adapter->blok_on_eki[i] != 0 { cikti[pos] = adapter->blok_on_eki[i]; pos = pos + 1; i = i + 1; }
+    degisken sayi: tamsayi = katman;
+    degisken rakamlar: [20]u8;
+    degisken adet: tamsayi = 0;
+    eger sayi == 0 ise { rakamlar[0] = 48; adet = 1; }
+    yoksa { dongu sayi > 0 { rakamlar[adet] = 48 + (sayi % 10); adet = adet + 1; sayi = sayi / 10; } }
+    i = 0;
+    dongu i < adet { cikti[pos] = rakamlar[adet - i - 1]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    dongu suffix[i] != 0 { cikti[pos] = suffix[i]; pos = pos + 1; i = i + 1; }
+    cikti[pos] = 0;
+    dondu cikti;
+}
+
+isv llm_architecture_tensor_prefix_adi_uret(prefix: *u8,
+                                             katman: tamsayi, suffix: *u8) -> *u8 {
+    eger prefix == 0 veya suffix == 0 veya katman < 0 ise { dondu 0; }
+    degisken cikti: *u8 = bellek_tahsis_et(128);
+    eger cikti == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu prefix[i] != 0 { cikti[pos] = prefix[i]; pos = pos + 1; i = i + 1; }
+    degisken sayi: tamsayi = katman;
+    degisken rakamlar: [20]u8;
+    degisken adet: tamsayi = 0;
+    eger sayi == 0 ise { rakamlar[0] = 48; adet = 1; }
+    yoksa { dongu sayi > 0 { rakamlar[adet] = 48 + (sayi % 10); adet = adet + 1; sayi = sayi / 10; } }
+    i = 0;
+    dongu i < adet { cikti[pos] = rakamlar[adet - i - 1]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    dongu suffix[i] != 0 { cikti[pos] = suffix[i]; pos = pos + 1; i = i + 1; }
+    cikti[pos] = 0;
+    dondu cikti;
+}
+
+isv llm_architecture_tensor_bul_sade(durum: *GGUFDurum,
+                                     adapter: *LLMArchitectureAdapter,
+                                     katman: tamsayi,
+                                     suffix: *u8) -> *GGUFTensorInfo {
+    # Lookup yalnızca GGUF tensor tablosu ve canonical prefix kullanır;
+    # adapter nesnesine erişmesi gerekmez. Bu, nested pointer ABI riskini kaldırır.
+    eger durum == 0 veya suffix == 0 veya durum->tensor_list == 0 ise { dondu 0; }
+    degisken ti: tamsayi = 0;
+    dongu ti < durum->tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum->tensor_list + ti * GGUF_TENSOR_STRIDE;
+        degisken ad: *u8 = tensor->isim;
+        eger ad != 0 ise {
+            # GGML native: blk.<katman><suffix>
+            eger ad[0] == 98 ve ad[1] == 108 ve ad[2] == 107 ve ad[3] == 46 ise {
+                degisken p: tamsayi = 4;
+                degisken sayi: tamsayi = 0;
+                eger ad[p] >= 48 ve ad[p] <= 57 ise {
+                    dongu ad[p] >= 48 ve ad[p] <= 57 {
+                        sayi = sayi * 10 + (ad[p] - 48);
+                        p = p + 1;
+                    }
+                    eger sayi == katman ve ad[p] == 46 ise {
+                        degisken suffix_i: tamsayi = 0;
+                        degisken esit: tamsayi = 1;
+                        dongu suffix[suffix_i] != 0 {
+                            eger ad[p + suffix_i] != suffix[suffix_i] ise { esit = 0; durdur; }
+                            suffix_i = suffix_i + 1;
+                        }
+                        eger esit == 1 ve ad[p + suffix_i] == 0 ise { dondu tensor; }
+                    }
+                }
+            }
+            # HF/GGUF: model.layers.<katman>.<suffix>
+            eger ad[0] == 109 ve ad[1] == 111 ve ad[2] == 100 ve ad[3] == 101 ve
+               ad[4] == 108 ve ad[5] == 46 ve ad[6] == 108 ve ad[7] == 97 ve
+               ad[8] == 121 ve ad[9] == 101 ve ad[10] == 114 ve ad[11] == 115 ve ad[12] == 46 ise {
+                degisken hp: tamsayi = 13;
+                degisken hsayi: tamsayi = 0;
+                eger ad[hp] >= 48 ve ad[hp] <= 57 ise {
+                    dongu ad[hp] >= 48 ve ad[hp] <= 57 {
+                        hsayi = hsayi * 10 + (ad[hp] - 48);
+                        hp = hp + 1;
+                    }
+                    eger hsayi == katman ve ad[hp] == 46 ve g_llm_arch_alt_suffix != 0 ise {
+                        degisken ai: tamsayi = 0;
+                        degisken esit_alt: tamsayi = 1;
+                        dongu g_llm_arch_alt_suffix[ai] != 0 {
+                            eger ad[hp + 1 + ai] != g_llm_arch_alt_suffix[ai] ise { esit_alt = 0; durdur; }
+                            ai = ai + 1;
+                        }
+                        eger esit_alt == 1 ve ad[hp + 1 + ai] == 0 ise { dondu tensor; }
+                    }
+                }
+            }
+        }
+        ti = ti + 1;
+    }
+    dondu 0;
+}
+
+# Bir layer'ın ortak tensor ailesini GGUF tablosunda çözer.
+isv llm_architecture_katman_tensorlerini_bul(durum: *GGUFDurum,
+                                             adapter: *LLMArchitectureAdapter,
+                                             katman: tamsayi,
+                                             sonuc: *LLMLayerTensorleri) -> tamsayi {
+    eger durum == 0 veya adapter == 0 veya sonuc == 0 ise { dondu 0; }
+    # Scanner, adapter struct içindeki nested suffix pointer'larına bağımlı
+    # değildir; bu alanlar Win64 Stage-1 ABI'sinde ilerleyen field offsetlerinde
+    # bozulabiliyordu. Her canonical layout literal olarak doğrulanır.
+    g_llm_arch_alt_suffix = "self_attn.q_proj.weight".ptr;
+    sonuc->q = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_q.weight".ptr);
+    g_llm_arch_alt_suffix = "self_attn.k_proj.weight".ptr;
+    sonuc->k = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_k.weight".ptr);
+    g_llm_arch_alt_suffix = "self_attn.v_proj.weight".ptr;
+    sonuc->v = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_v.weight".ptr);
+    g_llm_arch_alt_suffix = "self_attn.o_proj.weight".ptr;
+    sonuc->cikis = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_output.weight".ptr);
+    g_llm_arch_alt_suffix = "mlp.up_proj.weight".ptr;
+    sonuc->ffn_up = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".ffn_up.weight".ptr);
+    g_llm_arch_alt_suffix = "mlp.gate_proj.weight".ptr;
+    sonuc->ffn_gate = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".ffn_gate.weight".ptr);
+    g_llm_arch_alt_suffix = "mlp.down_proj.weight".ptr;
+    sonuc->ffn_down = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".ffn_down.weight".ptr);
+    g_llm_arch_alt_suffix = "input_layernorm.weight".ptr;
+    sonuc->attn_norm = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_norm.weight".ptr);
+    g_llm_arch_alt_suffix = "post_attention_layernorm.weight".ptr;
+    sonuc->ffn_norm = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".ffn_norm.weight".ptr);
+    g_llm_arch_alt_suffix = "self_attn.q_norm.weight".ptr;
+    sonuc->q_norm = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_q_norm.weight".ptr);
+    g_llm_arch_alt_suffix = "self_attn.k_norm.weight".ptr;
+    sonuc->k_norm = llm_architecture_tensor_bul_sade(durum, adapter, katman, ".attn_k_norm.weight".ptr);
+    eger sonuc->q == 0 veya sonuc->k == 0 veya sonuc->v == 0 veya sonuc->cikis == 0 veya
+       sonuc->ffn_up == 0 veya sonuc->ffn_gate == 0 veya sonuc->ffn_down == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# Adapter profili ile raw tensor payload'ını ortak F16/F32 forward kernel'ine
+# bağlar. Tensor layout çözümü caller'da yapılır; kernel quant tipine göre seçilir.
+isv llm_architecture_adapter_ileri(adapter: *LLMArchitectureAdapter,
+                                   quant_tipi: tamsayi,
+                                   agirlik: *u8,
+                                   agirlik_bayti: tamsayi,
+                                   aktivasyon: *tamsayi,
+                                   cikti: *tamsayi,
+                                   M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    eger adapter == 0 veya adapter->mimari == LLM_MIMARI_BILINMIYOR veya
+       agirlik == 0 veya aktivasyon == 0 veya cikti == 0 veya
+       agirlik_bayti <= 0 ise { dondu 0; }
+    eger quant_tipi == LLM_QUANT_F32 ise {
+        dondu llm_f32_matris_carp(agirlik, aktivasyon, cikti, M, K, N);
+    }
+    eger quant_tipi == LLM_QUANT_F16 ise {
+        dondu llm_f16_matris_carp(agirlik, aktivasyon, cikti, M, K, N);
+    }
+    dondu 0;
+}

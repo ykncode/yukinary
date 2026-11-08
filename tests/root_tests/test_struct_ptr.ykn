@@ -1,0 +1,36 @@
+yapi TestStruct {
+    f0: tamsayi;
+    f1: tamsayi;
+    f2: tamsayi;
+    f3: tamsayi;
+    f4: tamsayi;
+    f5: tamsayi;
+    f6: tamsayi;
+    f7: tamsayi;
+    f8: tamsayi;
+    f9: tamsayi;
+}
+
+isv doldur(s: *TestStruct) {
+    s.f0 = 1;
+    s.f1 = 2;
+    s.f2 = 3;
+    s.f3 = 4;
+    s.f4 = 5;
+    s.f5 = 6;
+    s.f6 = 7;
+    s.f7 = 8;
+    s.f8 = 9;
+    s.f9 = 10;
+}
+
+isv topla(s: *TestStruct) -> tamsayi {
+    dondu s.f0 + s.f1 + s.f2 + s.f3 + s.f4 + s.f5 + s.f6 + s.f7 + s.f8 + s.f9;
+}
+
+isv ana() -> tamsayi {
+    degisken st: TestStruct;
+    doldur(&st);
+    degisken res: tamsayi = topla(&st);
+    dondu res;
+}

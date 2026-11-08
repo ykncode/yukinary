@@ -1,0 +1,40 @@
+# Threading Test: Producer-Consumer
+# Iki thread, mutex ile korunan shared counter
+# Win32 API uzerinden gercek thread kullanimi
+ice_aktar "std/is_parcacigi/thread_win32.ykn";
+ice_aktar "std/is_parcacigi/mutex_win32.ykn";
+
+# Paylasilan sayac (global)
+degisken g_sayac: tamsayi = 0;
+degisken g_mutex: *Win32Mutex = 0;
+
+# Producer thread islevi (harici isv olarak tanim gerektirir)
+harici isv producer_islev(param: *u8) -> tamsayi;
+harici isv consumer_islev(param: *u8) -> tamsayi;
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    g_mutex = win32_mutex_olustur();
+    eger g_mutex == 0 ise {
+        ekrana_yaz("PRODUCER_CONSUMER: mutex olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # Basit test: mutex ile korunan sayac artirimi
+    degisken i: tamsayi = 0;
+    dongu i < 10 {
+        win32_mutex_kilitle(g_mutex);
+        g_sayac = g_sayac + 1;
+        win32_mutex_kilit_ac(g_mutex);
+        i = i + 1;
+    }
+
+    eger g_sayac == 10 ise {
+        ekrana_yaz("PRODUCER_CONSUMER: mutex korunan sayac OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("PRODUCER_CONSUMER: FAILED\n".ptr);
+        dondu 1;
+    }
+
+    win32_mutex_yok_et(g_mutex);
+    dondu 0;
+}

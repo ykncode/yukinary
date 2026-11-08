@@ -1,0 +1,7 @@
+# Negatif Test: Tamsayidan pointer'a ortuk (implicit) atama yasaktir (E003)
+isv ana() -> tamsayi {
+    degisken sayi: tamsayi = 42;
+    degisken p: *tamsayi = sayi;
+    dondu 0;
+}
+

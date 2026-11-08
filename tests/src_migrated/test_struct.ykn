@@ -1,0 +1,17 @@
+yapi Kutu {
+    x: sayi;
+    y: sayi;
+}
+
+isv ana() -> sayi {
+    degisken pad = 0;
+    degisken var_b = 0;
+    degisken var_a = 0;
+    degisken k: *Kutu = &var_a;
+    
+    k.x = 10;
+    k.y = 32;
+    
+    degisken sonuc: sayi = k.x + k.y;
+    dondu sonuc;
+}

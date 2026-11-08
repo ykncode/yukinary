@@ -1,0 +1,40 @@
+# ============================================================
+# std/os/kernel_real/gdt.ykn
+# FAZ 63: Saf x86_64 Long Mode Global Descriptor Table (GDT)
+# Null, Ring-0 Kernel Code (0x08), Kernel Data (0x10) ve TSS Tanımlayıcıları
+# ============================================================
+
+degisken GDT_KERNEL_CODE_SEL = 8;   # 0x08 (Index 1, RPL 0)
+degisken GDT_KERNEL_DATA_SEL = 16;  # 0x10 (Index 2, RPL 0)
+degisken GDT_USER_DATA_SEL   = 24;  # 0x18
+degisken GDT_USER_CODE_SEL   = 32;  # 0x20
+
+yapi GdtTablosu {
+    girdiler:   *tamsayi; # 64-bitlik 8 GDT girdisi
+    gdt_ptr:    *u8;      # 10-baytlık GDTR yapısı (2-bayt limit + 8-bayt taban)
+}
+
+isv gdt_olustur() -> *GdtTablosu {
+    degisken g: *GdtTablosu = bellek_tahsis_et(24);
+    degisken arr: *tamsayi = bellek_tahsis_et(64); # 8 * 8 bayt
+    degisken ptr: *u8 = bellek_tahsis_et(16);
+
+    g.girdiler = arr;
+    g.gdt_ptr = ptr;
+
+    # GDT 0: Null Descriptor
+    arr[0] = 0;
+
+    # GDT 1 (0x08): 64-Bit Kernel Code (Access: 0x9A = Present, Ring-0, Exec/Read, Flags: 0xA = 64-bit Long Mode)
+    arr[1] = 0x00209A0000000000;
+
+    # GDT 2 (0x10): 64-Bit Kernel Data (Access: 0x92 = Present, Ring-0, Read/Write, Flags: 0xC = 4KB Granularity)
+    arr[2] = 0x0000920000000000;
+
+    # GDTR (Limit: 3 * 8 - 1 = 23)
+    degisken limit: tamsayi = 23;
+    ptr[0] = limit & 255;
+    ptr[1] = (limit >> 8) & 255;
+
+    dondu g;
+}

@@ -1,0 +1,135 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/bellek.ykn
+# Dusuk seviye bellek islemleri: kopyalama, doldurma, karsilastirma, arama
+#
+# BELLEK SOZLESMESI (Memory Contract):
+#   - Tum fonksiyonlar null pointer'a karsi guvencelidir; 0/hedef doner.
+#   - Cakisan bolgeler icin bellek_kopyala GUVENLI DEGILDIR; bellek_tasi kullan.
+#   - boyut <= 0 ise islem yapilmaz, hedef / 0 doner.
+# ============================================================
+
+# Bellek kopyalama (memcpy): kaynak'tan hedefe 'boyut' bayt kopyalar.
+# Cakisan bolgeler ICIN GUVENLI DEGILDIR (memmove degil).
+isv bellek_kopyala(hedef: *u8, kaynak: *u8, boyut: tamsayi) -> *u8 {
+    eger hedef == 0 veya kaynak == 0 veya boyut <= 0 ise {
+        dondu hedef;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    dondu hedef;
+}
+# i18n alias
+isv memcpy(hedef: *u8, kaynak: *u8, boyut: tamsayi) -> *u8 { dondu bellek_kopyala(hedef, kaynak, boyut); }
+
+# Bellek doldurma (memset): hedef alani 'deger' byte'i ile 'boyut' kez doldur.
+isv bellek_doldur(hedef: *u8, deger: u8, boyut: tamsayi) -> *u8 {
+    eger hedef == 0 veya boyut <= 0 ise {
+        dondu hedef;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        hedef[i] = deger;
+        i = i + 1;
+    }
+    dondu hedef;
+}
+# i18n alias
+isv memset(hedef: *u8, deger: u8, boyut: tamsayi) -> *u8 { dondu bellek_doldur(hedef, deger, boyut); }
+
+# Bellek esit mi? (memcmp benzeri - ilk boyut bayt ayni mi?)
+# 1 -> ayni, 0 -> farkli
+isv bellek_esit_mi(a: *u8, b: *u8, boyut: tamsayi) -> tamsayi {
+    eger a == 0 veya b == 0 ise {
+        eger a == 0 ve b == 0 ise { dondu 1; }
+        dondu 0;
+    }
+    eger boyut <= 0 ise { dondu 1; }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        eger a[i] != b[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+# i18n alias
+isv memeq(a: *u8, b: *u8, boyut: tamsayi) -> tamsayi { dondu bellek_esit_mi(a, b, boyut); }
+
+# Bellek karsilastirma (memcmp): -1/0/1
+# a < b  => -1
+# a == b => 0
+# a > b  => 1
+isv bellek_karsilastir(a: *u8, b: *u8, boyut: tamsayi) -> tamsayi {
+    eger a == 0 veya b == 0 ise {
+        eger a == 0 ve b == 0 ise { dondu 0; }
+        eger a == 0 ise { dondu 0 - 1; }
+        dondu 1;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        eger a[i] < b[i] ise { dondu 0 - 1; }
+        eger a[i] > b[i] ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+isv memcmp(a: *u8, b: *u8, boyut: tamsayi) -> tamsayi { dondu bellek_karsilastir(a, b, boyut); }
+
+# Bellekte byte ara (memchr): 'aranan' degeri 'boyut' araliginda ilk buldugu adresi doner.
+# Bulamazsa 0 (NULL) doner.
+isv bellek_ara(baslangic: *u8, aranan: u8, boyut: tamsayi) -> *u8 {
+    eger baslangic == 0 veya boyut <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        eger baslangic[i] == aranan ise {
+            dondu baslangic + i;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+isv memchr(baslangic: *u8, aranan: u8, boyut: tamsayi) -> *u8 { dondu bellek_ara(baslangic, aranan, boyut); }
+
+# Cakisan bolgeler icin guvenli kopyalama (memmove).
+isv bellek_tasi(hedef: *u8, kaynak: *u8, boyut: tamsayi) -> *u8 {
+    eger hedef == 0 veya kaynak == 0 veya boyut <= 0 ise { dondu hedef; }
+    # Eger hedef, kaynaktan SONRA ve cakisiyorsa: sondan basa dogru kopyala
+    eger hedef > kaynak ve hedef < kaynak + boyut ise {
+        # Sagdan sola kopyala
+        degisken i: tamsayi = boyut - 1;
+        dongu i >= 0 {
+            hedef[i] = kaynak[i];
+            i = i - 1;
+        }
+    } yoksa {
+        # Soldan saga kopyala (memcpy gibi)
+        degisken i2: tamsayi = 0;
+        dongu i2 < boyut {
+            hedef[i2] = kaynak[i2];
+            i2 = i2 + 1;
+        }
+    }
+    dondu hedef;
+}
+isv memmove(hedef: *u8, kaynak: *u8, boyut: tamsayi) -> *u8 { dondu bellek_tasi(hedef, kaynak, boyut); }
+
+# Bellek sifirla (butun baytlari 0x00 yap).
+isv bellek_sifirla(adres: *u8, boyut: tamsayi) {
+    bellek_doldur(adres, 0, boyut);
+}
+isv bzero(adres: *u8, boyut: tamsayi) { bellek_doldur(adres, 0, boyut); }
+
+
+# NUL-sonlu bir metnin bayt uzunlugu. src/main.ykn ve src/ai_micro_engine.ykn
+# bu isimle cagirir; tanimsiz kalirsa Stage-1 derlemesi yamalanamayan cagri
+# nedeniyle artifact yazmaz.
+isv metin_uzunlugu(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}

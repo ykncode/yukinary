@@ -1,0 +1,39 @@
+# ============================================================
+# tests/generics/08_send_sync_traits.ykn
+# FAZ 8.3: Send ve Sync (Gonder / Paylas) Trait Sozlesmesi Testi
+# ============================================================
+
+# 1. Turkce Trait Kisitlari: <T: Gonder> ve <T: Paylas>
+isv is_parcacigina_gonder<T: Gonder>(veri: T) -> T {
+    dondu veri;
+}
+
+isv eszamanli_paylas<T: Paylas>(veri: T) -> T {
+    dondu veri;
+}
+
+# 2. Uluslararasi Trait Kisitlari: <T: Send> ve <T: Sync>
+isv thread_send<T: Send>(veri: T) -> T {
+    dondu veri;
+}
+
+isv thread_sync<T: Sync>(veri: T) -> T {
+    dondu veri;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # Deger tipleri (tamsayi, gercek, metin, mantik, u8) dogal olarak Send ve Sync sozlesmesini saglar
+    degisken s1: tamsayi = is_parcacigina_gonder<tamsayi>(100);
+    degisken s2: tamsayi = eszamanli_paylas<tamsayi>(200);
+    degisken s3: tamsayi = thread_send<tamsayi>(300);
+    degisken s4: tamsayi = thread_sync<tamsayi>(400);
+
+    eger s1 == 100 ve s2 == 200 ve s3 == 300 ve s4 == 400 ise {
+        ekrana_yaz("SEND_SYNC_TRAIT_CONTRACT_PASS\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz("SEND_SYNC_TRAIT_CONTRACT_FAIL\n".ptr);
+    dondu 1;
+}
+

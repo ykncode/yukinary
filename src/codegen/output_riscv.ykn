@@ -1,0 +1,279 @@
+# ============================================================
+# src/codegen/output_riscv.ykn
+# FAZ 55: Saf RISC-V 64 (RV64GC) Makine Kodu Ureticisi ve Program Simülatörü
+# Harici baglayici olmadan dogrudan RV64 makine komutlari ve program bloklari uretir.
+# ============================================================
+
+# RISC-V Standart Register Numaralari (x0 - x31)
+degisken RV_ZERO = 0;   # Sifir Sabiti
+degisken RV_RA   = 1;   # Donus Adresi (Return Address)
+degisken RV_SP   = 2;   # Yigin Isaretcisi (Stack Pointer)
+degisken RV_GP   = 3;   # Kuresel Isaretci (Global Pointer)
+degisken RV_TP   = 4;   # Is Parcacigi Isaretcisi (Thread Pointer)
+degisken RV_T0   = 5;   # Gecici 0
+degisken RV_T1   = 6;
+degisken RV_T2   = 7;
+degisken RV_S0   = 8;   # Kayitli / Cerceve Isaretcisi (FP)
+degisken RV_S1   = 9;
+degisken RV_A0   = 10;  # Arguman / Donus Degeri 0
+degisken RV_A1   = 11;  # Arguman / Donus Degeri 1
+degisken RV_A2   = 12;
+degisken RV_A3   = 13;
+degisken RV_A4   = 14;
+degisken RV_A5   = 15;
+degisken RV_A6   = 16;
+degisken RV_A7   = 17;  # Linux Syscall Numarasi
+degisken RV_S2   = 18;
+degisken RV_S3   = 19;
+degisken RV_T3   = 28;
+degisken RV_T4   = 29;
+degisken RV_T5   = 30;
+degisken RV_T6   = 31;
+
+# RISC-V Opcode Sabitleri
+degisken RV_OP_LOAD    = 3;   # 0x03 (LB, LH, LW, LD, LBU, LHU, LWU)
+degisken RV_OP_IMM     = 19;  # 0x13 (ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI)
+degisken RV_OP_AUIPC   = 23;  # 0x17
+degisken RV_OP_STORE   = 35;  # 0x23 (SB, SH, SW, SD)
+degisken RV_OP_REG     = 51;  # 0x33 (ADD, SUB, SLL, SLT, XOR, SRL, SRA, OR, AND, MUL, DIV)
+degisken RV_OP_LUI     = 55;  # 0x37
+degisken RV_OP_BRANCH  = 99;  # 0x63 (BEQ, BNE, BLT, BGE, BLTU, BGEU)
+degisken RV_OP_JALR    = 103; # 0x67
+degisken RV_OP_JAL     = 111; # 0x6F
+degisken RV_OP_SYSTEM  = 115; # 0x73 (ECALL, EBREAK)
+
+# RISC-V 32-bit R-Tipi Komut Kodlama: [funct7(7) | rs2(5) | rs1(5) | funct3(3) | rd(5) | opcode(7)]
+isv riscv_encode_r_type(opcode: tamsayi, funct3: tamsayi, funct7: tamsayi, rd: tamsayi, rs1: tamsayi, rs2: tamsayi) -> tamsayi {
+    degisken f7_part: tamsayi = (funct7 & 127) << 25;
+    degisken rs2_part: tamsayi = (rs2 & 31) << 20;
+    degisken rs1_part: tamsayi = (rs1 & 31) << 15;
+    degisken f3_part: tamsayi = (funct3 & 7) << 12;
+    degisken rd_part: tamsayi = (rd & 31) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (f7_part | rs2_part | rs1_part | f3_part | rd_part | op_part);
+}
+
+# RISC-V 32-bit I-Tipi Komut Kodlama: [imm(12) | rs1(5) | funct3(3) | rd(5) | opcode(7)]
+isv riscv_encode_i_type(opcode: tamsayi, funct3: tamsayi, rd: tamsayi, rs1: tamsayi, imm: tamsayi) -> tamsayi {
+    degisken imm12: tamsayi = (imm & 4095) << 20;
+    degisken rs1_part: tamsayi = (rs1 & 31) << 15;
+    degisken f3_part: tamsayi = (funct3 & 7) << 12;
+    degisken rd_part: tamsayi = (rd & 31) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (imm12 | rs1_part | f3_part | rd_part | op_part);
+}
+
+# RISC-V 32-bit S-Tipi Komut Kodlama: [imm[11:5](7) | rs2(5) | rs1(5) | funct3(3) | imm[4:0](5) | opcode(7)]
+isv riscv_encode_s_type(opcode: tamsayi, funct3: tamsayi, rs1: tamsayi, rs2: tamsayi, imm: tamsayi) -> tamsayi {
+    degisken imm_hi: tamsayi = ((imm >> 5) & 127) << 25;
+    degisken rs2_part: tamsayi = (rs2 & 31) << 20;
+    degisken rs1_part: tamsayi = (rs1 & 31) << 15;
+    degisken f3_part: tamsayi = (funct3 & 7) << 12;
+    degisken imm_lo: tamsayi = (imm & 31) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (imm_hi | rs2_part | rs1_part | f3_part | imm_lo | op_part);
+}
+
+# RISC-V 32-bit B-Tipi Komut Kodlama: [imm[12]|imm[10:5] | rs2 | rs1 | funct3 | imm[4:1]|imm[11] | opcode]
+isv riscv_encode_b_type(opcode: tamsayi, funct3: tamsayi, rs1: tamsayi, rs2: tamsayi, imm: tamsayi) -> tamsayi {
+    degisken b12: tamsayi = ((imm >> 12) & 1) << 31;
+    degisken b10_5: tamsayi = ((imm >> 5) & 63) << 25;
+    degisken rs2_part: tamsayi = (rs2 & 31) << 20;
+    degisken rs1_part: tamsayi = (rs1 & 31) << 15;
+    degisken f3_part: tamsayi = (funct3 & 7) << 12;
+    degisken b4_1: tamsayi = ((imm >> 1) & 15) << 8;
+    degisken b11: tamsayi = ((imm >> 11) & 1) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (b12 | b10_5 | rs2_part | rs1_part | f3_part | b4_1 | b11 | op_part);
+}
+
+# RISC-V 32-bit U-Tipi Komut Kodlama: [imm[31:12](20) | rd(5) | opcode(7)]
+isv riscv_encode_u_type(opcode: tamsayi, rd: tamsayi, imm20: tamsayi) -> tamsayi {
+    degisken imm_part: tamsayi = (imm20 & 1048575) << 12;
+    degisken rd_part: tamsayi = (rd & 31) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (imm_part | rd_part | op_part);
+}
+
+# RISC-V 32-bit J-Tipi Komut Kodlama: [imm[20]|imm[10:1]|imm[11]|imm[19:12] | rd | opcode]
+isv riscv_encode_j_type(opcode: tamsayi, rd: tamsayi, imm: tamsayi) -> tamsayi {
+    degisken j20: tamsayi = ((imm >> 20) & 1) << 31;
+    degisken j10_1: tamsayi = ((imm >> 1) & 1023) << 21;
+    degisken j11: tamsayi = ((imm >> 11) & 1) << 20;
+    degisken j19_12: tamsayi = ((imm >> 12) & 255) << 12;
+    degisken rd_part: tamsayi = (rd & 31) << 7;
+    degisken op_part: tamsayi = (opcode & 127);
+    dondu (j20 | j10_1 | j11 | j19_12 | rd_part | op_part);
+}
+
+# ECALL: 0x00000073
+isv riscv_ecall() -> tamsayi {
+    dondu 115; # 0x00000073
+}
+
+# EBREAK: 0x00100073
+isv riscv_ebreak() -> tamsayi {
+    dondu 1048691; # 0x00100073
+}
+
+# Program ve Fonksiyon Yonetimi
+yapi RiscvProgram {
+    komutlar:     *tamsayi;
+    kapasite:     tamsayi;
+    komut_sayisi: tamsayi;
+}
+
+isv riscv_program_olustur(kapasite: tamsayi) -> *RiscvProgram {
+    degisken p: *RiscvProgram = bellek_tahsis_et(32);
+    p.komutlar = bellek_tahsis_et(kapasite * 8);
+    p.kapasite = kapasite;
+    p.komut_sayisi = 0;
+    dondu p;
+}
+
+isv riscv_komut_ekle(p: *RiscvProgram, komut: tamsayi) {
+    eger p.komut_sayisi < p.kapasite ise {
+        p.komutlar[p.komut_sayisi] = komut;
+        p.komut_sayisi = p.komut_sayisi + 1;
+    }
+}
+
+# Fonksiyon Giris (Prologue) Olusturucu: Stack frame ayirir, RA ve S0 saklar
+isv riscv_emit_prologue(p: *RiscvProgram, frame_boyutu: tamsayi) {
+    # 1. ADDI sp, sp, -frame_boyutu
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_IMM, 0, RV_SP, RV_SP, 0 - frame_boyutu));
+    # 2. SD ra, frame_boyutu - 8(sp)
+    riscv_komut_ekle(p, riscv_encode_s_type(RV_OP_STORE, 3, RV_SP, RV_RA, frame_boyutu - 8));
+    # 3. SD s0, frame_boyutu - 16(sp)
+    riscv_komut_ekle(p, riscv_encode_s_type(RV_OP_STORE, 3, RV_SP, RV_S0, frame_boyutu - 16));
+    # 4. ADDI s0, sp, frame_boyutu
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_IMM, 0, RV_S0, RV_SP, frame_boyutu));
+}
+
+# Fonksiyon Cikis (Epilogue) Olusturucu: RA ve S0 geri yukler, stack'i temizler, doner
+isv riscv_emit_epilogue(p: *RiscvProgram, frame_boyutu: tamsayi) {
+    # 1. LD ra, frame_boyutu - 8(sp)
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_LOAD, 3, RV_RA, RV_SP, frame_boyutu - 8));
+    # 2. LD s0, frame_boyutu - 16(sp)
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_LOAD, 3, RV_S0, RV_SP, frame_boyutu - 16));
+    # 3. ADDI sp, sp, frame_boyutu
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_IMM, 0, RV_SP, RV_SP, frame_boyutu));
+    # 4. JALR zero, ra, 0
+    riscv_komut_ekle(p, riscv_encode_i_type(RV_OP_JALR, 0, RV_ZERO, RV_RA, 0));
+}
+
+# RISC-V 64 Sanal Yurutucu / Simülatör (Doğrulama Motoru)
+# Uretilen komutlarin dogrulugunu 32 register ve sanal bellek uzerinde gercek zamanli test eder
+isv riscv_program_simule_et(p: *RiscvProgram, giris_a0: tamsayi, giris_a1: tamsayi) -> tamsayi {
+    # 32 adet 64-bit yazmac (x0..x31)
+    degisken regs: *tamsayi = bellek_tahsis_et(256);
+    degisken i: tamsayi = 0;
+    dongu i < 32 {
+        regs[i] = 0;
+        i = i + 1;
+    }
+    # Sanal Stack alani (1024 bayt)
+    degisken stack: *tamsayi = bellek_tahsis_et(1024);
+    regs[RV_SP] = 1000; # stack pointer baslangic
+    regs[RV_A0] = giris_a0;
+    regs[RV_A1] = giris_a1;
+    regs[RV_RA] = 999999; # ozel cikis donus adresi
+
+    degisken pc: tamsayi = 0;
+    degisken adim: tamsayi = 0;
+    degisken calisiyor: tamsayi = 1;
+
+    dongu calisiyor == 1 ve pc < p.komut_sayisi ve adim < 10000 {
+        degisken ins: tamsayi = p.komutlar[pc];
+        degisken op: tamsayi = ins & 127;
+        regs[RV_ZERO] = 0; # x0 her zaman 0'dir
+
+        eger op == RV_OP_IMM ise { # I-tipi aritmetik (ADDI vb.)
+            degisken rd: tamsayi = (ins >> 7) & 31;
+            degisken f3: tamsayi = (ins >> 12) & 7;
+            degisken rs1: tamsayi = (ins >> 15) & 31;
+            degisken imm: tamsayi = (ins >> 20);
+            # 12-bit isaret genislemesi
+            eger (imm & 2048) != 0 ise {
+                imm = imm - 4096;
+            }
+            eger f3 == 0 ise { # ADDI
+                eger rd != RV_ZERO ise { regs[rd] = regs[rs1] + imm; }
+            } yoksa eger f3 == 4 ise { # XORI
+                eger rd != RV_ZERO ise { regs[rd] = regs[rs1] ^ imm; }
+            } yoksa eger f3 == 6 ise { # ORI
+                eger rd != RV_ZERO ise { regs[rd] = regs[rs1] | imm; }
+            } yoksa eger f3 == 7 ise { # ANDI
+                eger rd != RV_ZERO ise { regs[rd] = regs[rs1] & imm; }
+            }
+            pc = pc + 1;
+        } yoksa eger op == RV_OP_REG ise { # R-tipi (ADD, SUB, MUL, XOR vb.)
+            degisken rd: tamsayi = (ins >> 7) & 31;
+            degisken f3: tamsayi = (ins >> 12) & 7;
+            degisken rs1: tamsayi = (ins >> 15) & 31;
+            degisken rs2: tamsayi = (ins >> 20) & 31;
+            degisken f7: tamsayi = (ins >> 25) & 127;
+
+            eger f7 == 0 ise {
+                eger f3 == 0 ise { # ADD
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] + regs[rs2]; }
+                } yoksa eger f3 == 4 ise { # XOR
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] ^ regs[rs2]; }
+                } yoksa eger f3 == 6 ise { # OR
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] | regs[rs2]; }
+                } yoksa eger f3 == 7 ise { # AND
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] & regs[rs2]; }
+                }
+            } yoksa eger f7 == 32 ise { # SUB (0x20)
+                eger f3 == 0 ise {
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] - regs[rs2]; }
+                }
+            } yoksa eger f7 == 1 ise { # RV64M extension (MUL)
+                eger f3 == 0 ise {
+                    eger rd != RV_ZERO ise { regs[rd] = regs[rs1] * regs[rs2]; }
+                }
+            }
+            pc = pc + 1;
+        } yoksa eger op == RV_OP_STORE ise { # S-tipi (SD, SW)
+            degisken f3: tamsayi = (ins >> 12) & 7;
+            degisken rs1: tamsayi = (ins >> 15) & 31;
+            degisken rs2: tamsayi = (ins >> 20) & 31;
+            degisken imm_lo: tamsayi = (ins >> 7) & 31;
+            degisken imm_hi: tamsayi = (ins >> 25) & 127;
+            degisken imm: tamsayi = (imm_hi << 5) | imm_lo;
+            eger (imm & 2048) != 0 ise { imm = imm - 4096; }
+
+            degisken adres: tamsayi = (regs[rs1] + imm) / 8;
+            eger adres >= 0 ve adres < 128 ise {
+                stack[adres] = regs[rs2];
+            }
+            pc = pc + 1;
+        } yoksa eger op == RV_OP_LOAD ise { # I-tipi LOAD (LD, LW)
+            degisken rd: tamsayi = (ins >> 7) & 31;
+            degisken f3: tamsayi = (ins >> 12) & 7;
+            degisken rs1: tamsayi = (ins >> 15) & 31;
+            degisken imm: tamsayi = (ins >> 20);
+            eger (imm & 2048) != 0 ise { imm = imm - 4096; }
+
+            degisken adres: tamsayi = (regs[rs1] + imm) / 8;
+            eger rd != RV_ZERO ise {
+                eger adres >= 0 ve adres < 128 ise {
+                    regs[rd] = stack[adres];
+                }
+            }
+            pc = pc + 1;
+        } yoksa eger op == RV_OP_JALR ise { # JALR (fonksiyon donusu)
+            degisken rs1: tamsayi = (ins >> 15) & 31;
+            eger regs[rs1] == 999999 ise { # ana fonksiyondan donus
+                calisiyor = 0;
+            } yoksa {
+                pc = regs[rs1] / 4;
+            }
+        } yoksa {
+            pc = pc + 1;
+        }
+        adim = adim + 1;
+    }
+
+    dondu regs[RV_A0]; # A0'daki sonuc degerini dondur
+}

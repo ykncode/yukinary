@@ -1,0 +1,54 @@
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi; eger n < 0 ise { n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger sayi < 0 ise { buf[i] = 45; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+# ============================================================
+# GOREV 5.2 - Built-in Macro Seti Testi
+# ============================================================
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    # Test 1: ayikla!(deger) — sayiyi_yazdir'a genisler
+    degisken x: tamsayi = 42;
+    ayikla(x);
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("TEST BUILTIN: ayikla OK\n".ptr);
+
+    # Test 2: boyut!(tamsayi) — 8 dondurmeli
+    degisken byt: tamsayi = boyut(tamsayi);
+    eger byt == 8 ise {
+        ekrana_yaz("TEST BUILTIN: boyut(tamsayi)=8 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST BUILTIN: boyut FAILED byt=".ptr);
+        sayiyi_yazdir(byt);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Test 3: boyut!(u8) — 1 dondurmeli
+    degisken byt_u8: tamsayi = boyut(u8);
+    eger byt_u8 == 1 ise {
+        ekrana_yaz("TEST BUILTIN: boyut(u8)=1 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST BUILTIN: boyut(u8) FAILED byt=".ptr);
+        sayiyi_yazdir(byt_u8);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Test 4: dogrula!(kosul) — kosul true ise devam et
+    degisken deger: tamsayi = 10;
+    dogrula(deger > 0);
+    ekrana_yaz("TEST BUILTIN: dogrula OK (devam etti)\n".ptr);
+
+    ekrana_yaz("BUILTIN-MACRO-PASS\n".ptr);
+    dondu 0;
+}

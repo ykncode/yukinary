@@ -1,0 +1,71 @@
+# ============================================================
+# tests/stdlib/08_f64_aritmetik.ykn
+# f64 / SSE2 Gercek Kayan Nokta Aritmetigi ve Donusum Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+isv ana() -> tamsayi {
+    degisken pi: f64 = 3.14;
+    degisken r: f64 = 5.0;
+    
+    # 1. Carpma & Alan hesabi (3.14 * 5.0 * 5.0 = 78.5)
+    degisken alan: f64 = pi * r * r;
+    degisken alan_tam: tamsayi = tamsayi(alan);
+    eger alan_tam != 78 ise {
+        ekrana_yaz("FAIL: alan carpimi yanlis (deger != 78)\n".ptr);
+        dondu 1;
+    }
+    
+    # 2. Toplama (1.5 + 2.5 = 4.0)
+    degisken t1: f64 = 1.5;
+    degisken t2: f64 = 2.5;
+    degisken topla_sonuc: f64 = t1 + t2;
+    eger tamsayi(topla_sonuc) != 4 ise {
+        ekrana_yaz("FAIL: toplama yanlis\n".ptr);
+        dondu 1;
+    }
+    
+    # 3. Cikarma (10.5 - 3.25 = 7.25)
+    degisken c1: f64 = 10.5;
+    degisken c2: f64 = 3.25;
+    degisken cikar_sonuc: f64 = c1 - c2;
+    eger tamsayi(cikar_sonuc) != 7 ise {
+        ekrana_yaz("FAIL: cikarma yanlis\n".ptr);
+        dondu 1;
+    }
+    
+    # 4. Bolme (15.0 / 2.0 = 7.5)
+    degisken b1: f64 = 15.0;
+    degisken b2: f64 = 2.0;
+    degisken bol_sonuc: f64 = b1 / b2;
+    eger tamsayi(bol_sonuc) != 7 ise {
+        ekrana_yaz("FAIL: bolme yanlis\n".ptr);
+        dondu 1;
+    }
+    
+    # 5. Karsilastirmalar
+    eger c1 <= c2 ise {
+        ekrana_yaz("FAIL: <= karsilastirma yanlis\n".ptr);
+        dondu 1;
+    }
+    eger c2 >= c1 ise {
+        ekrana_yaz("FAIL: >= karsilastirma yanlis\n".ptr);
+        dondu 1;
+    }
+    eger topla_sonuc != 4.0 ise {
+        ekrana_yaz("FAIL: == karsilastirma yanlis\n".ptr);
+        dondu 1;
+    }
+    
+    # 6. Tamsayidan f64'e donusum
+    degisken sayi: tamsayi = 42;
+    degisken sayi_f64: f64 = f64(sayi) + 0.5;
+    eger tamsayi(sayi_f64) != 42 ise {
+        ekrana_yaz("FAIL: tamsayi -> f64 donusum yanlis\n".ptr);
+        dondu 1;
+    }
+    
+    ekrana_yaz("f64-ARITMETIK-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,236 @@
+# ============================================================
+# YKNLLM Typed Gateway - saf YKN urun protokolu
+#
+# Bu modul JSON, Python, Node, shell veya harici process kullanmaz.
+# Harici LLM'den gelen typed intent'i ve YKNLLM'nin YKN-only cevabini
+# bounded bir binary frame olarak tasir. Model agirliklari bu sozlesmeye
+# dahil edilmez; model secimi ayri, read-only GGUF loader katmanindadir.
+# ============================================================
+
+degisken YKNLLM_GATEWAY_MAGIC: tamsayi = 0x594B4E47;
+degisken YKNLLM_GATEWAY_VERSION: tamsayi = 1;
+degisken YKNLLM_ROLE_CODE_ONLY: tamsayi = 1;
+degisken YKNLLM_KIND_CODE: tamsayi = 1;
+degisken YKNLLM_KIND_PATCH: tamsayi = 2;
+degisken YKNLLM_MAX_TEXT: tamsayi = 1048576;
+degisken YKNLLM_MAX_CODE: tamsayi = 4194304;
+degisken YKNLLM_Q16_ONE: tamsayi = 65536;
+degisken YKNLLM_DECODE_HATA_HEADER: tamsayi = 2;
+degisken YKNLLM_DECODE_HATA_SINIR: tamsayi = 3;
+degisken YKNLLM_DECODE_HATA_ARTIK: tamsayi = 4;
+degisken YKNLLM_DECODE_HATA_TIP: tamsayi = 5;
+
+yapi YKNLLMIntent {
+    kullanici_metni: *u8;
+    islem: *u8;
+    calisma_alani: *u8;
+    kisitlar: *u8;
+}
+
+yapi YKNLLMResponse {
+    tur: tamsayi;
+    kod: *u8;
+    model_surumu: *u8;
+    guven_q16: tamsayi;
+}
+
+yapi YKNLLMCapabilityPolicy {
+    dosya_yazma: tamsayi;
+    kabuk: tamsayi;
+    ag: tamsayi;
+    azami_kod_bayti: tamsayi;
+}
+
+yapi YKNLLMModelProfile {
+    model_yolu: *u8;
+    mimari: *u8;
+    gguf_versiyonu: tamsayi;
+    tensor_sayisi: tamsayi;
+    quant_tipi: tamsayi;
+    read_only: tamsayi;
+}
+
+yapi YKNLLMBinaryFrame {
+    veri: *u8;
+    kapasite: tamsayi;
+    uzunluk: tamsayi;
+}
+
+yapi YKNLLMDecodedRequest {
+    surum: tamsayi;
+    rol: tamsayi;
+    kullanici_metni: *u8;
+    islem: *u8;
+    calisma_alani: *u8;
+    kisitlar: *u8;
+    model_yolu: *u8;
+    mimari: *u8;
+    gguf_versiyonu: tamsayi;
+    tensor_sayisi: tamsayi;
+    quant_tipi: tamsayi;
+    read_only: tamsayi;
+}
+
+isv yknllm_gateway_uzunluk(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv yknllm_gateway_esit(a: *u8, b: *u8) -> tamsayi {
+    eger a == 0 veya b == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu a[i] != 0 veya b[i] != 0 {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# C-string icinde bounded alt metin arama. Kod NUL icermedigi icin
+# compiler'a gecmeden once hem uzunluk hem de marker kontrolu yapilir.
+isv yknllm_gateway_icerir(metin: *u8, aranan: *u8) -> tamsayi {
+    eger metin == 0 veya aranan == 0 ise { dondu 0; }
+    degisken metin_uzn: tamsayi = yknllm_gateway_uzunluk(metin);
+    degisken aranan_uzn: tamsayi = yknllm_gateway_uzunluk(aranan);
+    eger aranan_uzn <= 0 veya metin_uzn < aranan_uzn ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i <= metin_uzn - aranan_uzn {
+        degisken eslesme: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < aranan_uzn {
+            degisken mc: tamsayi = metin[i + j];
+            degisken ac: tamsayi = aranan[j];
+            eger mc >= 65 ve mc <= 90 ise { mc = mc + 32; }
+            eger ac >= 65 ve ac <= 90 ise { ac = ac + 32; }
+            eger mc != ac ise { eslesme = 0; j = aranan_uzn; }
+            j = j + 1;
+        }
+        eger eslesme == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv yknllm_gateway_intent_dogrula(intent: *YKNLLMIntent) -> tamsayi {
+    eger intent == 0 veya intent->kullanici_metni == 0 veya
+       intent->islem == 0 veya intent->calisma_alani == 0 veya
+       intent->kisitlar == 0 ise { dondu 0; }
+    eger yknllm_gateway_uzunluk(intent->kullanici_metni) <= 0 veya
+       yknllm_gateway_uzunluk(intent->kullanici_metni) > YKNLLM_MAX_TEXT ise { dondu 0; }
+    eger yknllm_gateway_uzunluk(intent->islem) <= 0 veya
+       yknllm_gateway_uzunluk(intent->islem) > 128 ise { dondu 0; }
+    eger yknllm_gateway_icerir(intent->calisma_alani, "..".ptr) == 1 ise { dondu 0; }
+    eger yknllm_gateway_icerir(intent->calisma_alani, "\\".ptr) == 1 ise { dondu 0; }
+    eger yknllm_gateway_icerir(intent->calisma_alani, "/".ptr) == 1 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_gateway_politika_dogrula(politika: *YKNLLMCapabilityPolicy) -> tamsayi {
+    eger politika == 0 ise { dondu 0; }
+    eger politika->dosya_yazma != 0 veya politika->kabuk != 0 veya
+       politika->ag != 0 ise { dondu 0; }
+    eger politika->azami_kod_bayti <= 0 veya
+       politika->azami_kod_bayti > YKNLLM_MAX_CODE ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_gateway_model_profili_dogrula(profil: *YKNLLMModelProfile) -> tamsayi {
+    eger profil == 0 veya profil->model_yolu == 0 veya profil->mimari == 0 ise { dondu 0; }
+    eger profil->gguf_versiyonu != 3 veya profil->tensor_sayisi <= 0 veya
+       profil->quant_tipi < 0 veya profil->read_only != 1 ise { dondu 0; }
+    eger yknllm_gateway_uzunluk(profil->model_yolu) <= 0 veya
+       yknllm_gateway_uzunluk(profil->mimari) <= 0 veya
+       yknllm_gateway_uzunluk(profil->model_yolu) > YKNLLM_MAX_TEXT veya
+       yknllm_gateway_uzunluk(profil->mimari) > 256 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_gateway_ykn_mi(kod: *u8) -> tamsayi {
+    eger kod == 0 veya yknllm_gateway_uzunluk(kod) <= 0 ise { dondu 0; }
+    eger yknllm_gateway_icerir(kod, "```".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "#include".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "import ".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "def ".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "function ".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "<html".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "powershell".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "cmd.exe".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "bash -c".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "os.system".ptr) == 1 veya
+       yknllm_gateway_icerir(kod, "subprocess.".ptr) == 1 ise { dondu 0; }
+    eger yknllm_gateway_icerir(kod, "isv ".ptr) == 0 ve
+       yknllm_gateway_icerir(kod, "degisken ".ptr) == 0 ve
+       yknllm_gateway_icerir(kod, "yapi ".ptr) == 0 ve
+       yknllm_gateway_icerir(kod, "ice_aktar ".ptr) == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_gateway_response_dogrula(response: *YKNLLMResponse,
+                                    politika: *YKNLLMCapabilityPolicy) -> tamsayi {
+    eger response == 0 veya yknllm_gateway_politika_dogrula(politika) == 0 ise { dondu 0; }
+    eger response->tur != YKNLLM_KIND_CODE ve
+       response->tur != YKNLLM_KIND_PATCH ise { dondu 0; }
+    eger response->kod == 0 veya response->model_surumu == 0 ise { dondu 0; }
+    degisken kod_uzn: tamsayi = yknllm_gateway_uzunluk(response->kod);
+    eger kod_uzn <= 0 veya kod_uzn > politika->azami_kod_bayti veya
+       kod_uzn > YKNLLM_MAX_CODE veya response->guven_q16 < 0 veya
+       response->guven_q16 > YKNLLM_Q16_ONE ise { dondu 0; }
+    eger yknllm_gateway_uzunluk(response->model_surumu) <= 0 veya
+       yknllm_gateway_ykn_mi(response->kod) == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# Little-endian frame primitive'leri. Her alan bounded kapasiteye karsi
+# yazilir; tasma halinde 0 doner ve caller frame'i gecerli kabul etmez.
+isv yknllm_gateway_u64_yaz(buf: *u8, kapasite: tamsayi, pos: *tamsayi, deger: tamsayi) -> tamsayi {
+    eger buf == 0 veya pos == 0 veya *pos < 0 veya *pos + 8 > kapasite ise { dondu 0; }
+    degisken v: tamsayi = deger;
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        buf[*pos + i] = v & 255;
+        v = v >> 8;
+        i = i + 1;
+    }
+    *pos = *pos + 8;
+    dondu 1;
+}
+
+isv yknllm_gateway_metin_yaz(buf: *u8, kapasite: tamsayi, pos: *tamsayi, metin: *u8) -> tamsayi {
+    eger metin == 0 veya yknllm_gateway_u64_yaz(buf, kapasite, pos,
+       yknllm_gateway_uzunluk(metin)) == 0 ise { dondu 0; }
+    degisken uzunluk: tamsayi = yknllm_gateway_uzunluk(metin);
+    eger *pos + uzunluk > kapasite ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk { buf[*pos + i] = metin[i]; i = i + 1; }
+    *pos = *pos + uzunluk;
+    dondu 1;
+}
+
+isv yknllm_gateway_istek_kodla(buf: *u8, kapasite: tamsayi,
+                               intent: *YKNLLMIntent,
+                               profil: *YKNLLMModelProfile,
+                               frame: *YKNLLMBinaryFrame) -> tamsayi {
+    eger buf == 0 veya frame == 0 veya
+       yknllm_gateway_intent_dogrula(intent) == 0 veya
+       yknllm_gateway_model_profili_dogrula(profil) == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    eger yknllm_gateway_u64_yaz(buf, kapasite, &pos, YKNLLM_GATEWAY_MAGIC) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, YKNLLM_GATEWAY_VERSION) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, YKNLLM_ROLE_CODE_ONLY) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, intent->kullanici_metni) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, intent->islem) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, intent->calisma_alani) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, intent->kisitlar) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, profil->model_yolu) == 0 veya
+       yknllm_gateway_metin_yaz(buf, kapasite, &pos, profil->mimari) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, profil->gguf_versiyonu) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, profil->tensor_sayisi) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, profil->quant_tipi) == 0 veya
+       yknllm_gateway_u64_yaz(buf, kapasite, &pos, profil->read_only) == 0 ise { dondu 0; }
+    frame->veri = buf;
+    frame->kapasite = kapasite;
+    frame->uzunluk = pos;
+    dondu 1;
+}

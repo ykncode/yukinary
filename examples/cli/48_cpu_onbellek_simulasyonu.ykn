@@ -1,0 +1,35 @@
+# ============================================================
+# Örnek 96: Konsol Tabanlı CPU L1/L2 Donanım Önbellek Simülasyonu
+# ============================================================
+
+degisken g_hit_sayisi: tamsayi = 85;
+degisken g_miss_sayisi: tamsayi = 15;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== CPU L1/L2 Cache Hit/Miss Simulasyonu ===\n".ptr);
+    ekrana_yaz("Onbellek Modeli: 64KB L1 Data Cache (4-Way Set Associative)\n".ptr);
+    ekrana_yaz("Toplam Bellek Erisimi: 100\n".ptr);
+    ekrana_yaz("Cache Hit : ".ptr); sayiyi_yaz(g_hit_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Cache Miss: ".ptr); sayiyi_yaz(g_miss_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Basari Orani: %85\n".ptr);
+    dondu 0;
+}

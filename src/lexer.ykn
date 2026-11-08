@@ -1,0 +1,1500 @@
+# Yukinary (YKN) Lexer v4 - 100% Syscall Tabanl Zero-Copy Lexical Analysis
+# Bamllk: SIFIR (libc yok). mmap syscall ve ham bellek okumas kullanr.
+
+# ============================================================
+# YKN Lexer Token Types — shared by lexer and keyword registry
+# ============================================================
+degisken TIP_ISLEV          = 1;
+degisken TIP_DEGISKEN       = 2;
+degisken TIP_DONDUR         = 3;
+degisken TIP_EGER           = 4;
+degisken TIP_ISE            = 5;
+degisken TIP_YOKSA          = 6;
+degisken TIP_DONGU          = 7;
+degisken TIP_HER            = 8;
+degisken TIP_KIMLIK         = 9;
+degisken TIP_TAMSAYI        = 10;
+degisken TIP_GERCEK_SAYI    = 11;
+degisken TIP_METIN          = 12;
+degisken TIP_YAPI           = 13;
+degisken TIP_DURDUR         = 14;
+degisken TIP_DEVAM_ET       = 15;
+degisken TIP_ICE_AKTAR      = 16;
+degisken TIP_DOGRU          = 17;
+degisken TIP_YANLIS          = 18;
+degisken TIP_VE             = 19;
+degisken TIP_VEYA           = 20;
+degisken TIP_ESLES          = 22;
+degisken TIP_MODUL          = 23;
+degisken TIP_OLARAK         = 24;
+degisken TIP_GENEL          = 25;
+degisken TIP_ENUM           = 28;
+degisken TIP_VARSAYILAN     = 27;
+degisken TIP_ARTI           = 30;
+degisken TIP_EKSI           = 31;
+degisken TIP_CARPI          = 32;
+degisken TIP_BOLME          = 33;
+degisken TIP_ATAMA          = 34;
+degisken TIP_ESIT_MI        = 35;
+degisken TIP_ESIT_DEGIL     = 36;
+degisken TIP_KUCUK_MU       = 37;
+degisken TIP_BUYUK_MU       = 38;
+degisken TIP_KUCUK_ESIT     = 39;
+degisken TIP_BUYUK_ESIT     = 40;
+degisken TIP_MODULO         = 41;
+degisken TIP_SORU_ISLEMI    = 42;
+degisken TIP_XOR            = 43;
+degisken TIP_SOL_KAYDIR     = 45;  # << bitwise sol kaydir
+degisken TIP_SAG_KAYDIR     = 46;  # >> bitwise sag kaydir
+degisken TIP_TILDE          = 47;  # ~  bitwise NOT
+degisken TIP_DIKEY_CUBUK    = 48;  # |  bitwise OR
+degisken TIP_ASM            = 49;  # asm { } inline assembly blogu
+degisken TIP_SOL_PARANTEZ   = 50;
+degisken TIP_SAG_PARANTEZ   = 51;
+degisken TIP_SOL_KUSLU      = 52;
+degisken TIP_SAG_KUSLU      = 53;
+degisken TIP_SOL_KOSE       = 54;
+degisken TIP_SAG_KOSE       = 55;
+degisken TIP_NOKTA          = 56;
+degisken TIP_NOKTALI_VIRGUL = 57;
+degisken TIP_VIRGUL         = 58;
+degisken TIP_KOLON          = 59;
+degisken TIP_OK             = 60;
+degisken TIP_AMPERSAND      = 61;
+degisken TIP_KALIN_OK       = 62;
+degisken TIP_CIFT_IKINOKTA  = 63;
+degisken TIP_BOS            = 64;  # bos / nil / null
+degisken TIP_DIREKTIF_CONVERT = 65; # #C-convert, #PY-convert, etc.
+degisken TIP_DIREKTIF_CONFIG  = 66; # #config, #yapilandir, etc.
+degisken TIP_EOF            = 99;
+degisken TIP_BILINMEYEN     = 100;
+degisken TIP_FSTRING        = 101;  # f"..." f-string interpolasyonu
+degisken TIP_ASYNC          = 102;  # async function declaration
+degisken TIP_AWAIT          = 103;  # await expression
+degisken TIP_TRAIT          = 104;  # ozellik / trait
+degisken TIP_UYGULA         = 105;  # uygula / impl
+degisken TIP_DYN            = 106;  # dyn
+degisken TIP_DEGIL          = 107;  # ! (mantiksal degil)
+degisken TIP_SABIT          = 108;  # sabit / const (immutable binding)
+degisken TIP_COMPTIME       = 109;  # comptime derleme zamani yurutme
+
+# ============================================================
+# Faz 3: String Interning (Identifier Havuzu) ve Bellek Optimizasyonu
+# ============================================================
+yapi HavuzGirdisi {
+    hash: tamsayi;
+    veri_ptr: *u8;
+    uzunluk: tamsayi;
+}
+
+yapi StringPool {
+    tablo: *HavuzGirdisi;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+    arena_bellek: *u8;
+    arena_offset: tamsayi;
+}
+
+# djb2_hash fonksiyonu src/utils.ykn icinden saglanir.
+degisken g_string_pool_arena_kapasite: tamsayi = 16777216;
+
+isv havuz_olustur(baslangic_kapasite: tamsayi, arena_boyutu: tamsayi) -> *StringPool {
+    degisken kap: tamsayi = baslangic_kapasite;
+    eger kap < 1024 ise { kap = 1024; }
+    degisken a_boyut: tamsayi = arena_boyutu;
+    eger a_boyut < 65536 ise { a_boyut = 65536; }
+    g_string_pool_arena_kapasite = a_boyut;
+
+    degisken pool: *StringPool = compiler_tahsis_et(40);
+    eger pool == 0 ise { dondu 0; }
+    pool.tablo = compiler_tahsis_et(kap * 24);
+    pool.kapasite = kap;
+    pool.kullanilan = 0;
+    pool.arena_bellek = compiler_tahsis_et(a_boyut);
+    pool.arena_offset = 0;
+    dondu pool;
+}
+
+isv havuz_buyut(pool: *StringPool) -> tamsayi {
+    eger pool == 0 ise { dondu 0; }
+    degisken eski_kapasite: tamsayi = pool.kapasite;
+    degisken eski_tablo: *HavuzGirdisi = pool.tablo;
+    degisken yeni_kapasite: tamsayi = eski_kapasite * 2;
+    eger yeni_kapasite < 1024 ise { yeni_kapasite = 1024; }
+
+    degisken yeni_tablo: *HavuzGirdisi = compiler_tahsis_et(yeni_kapasite * 24);
+    eger yeni_tablo == 0 ise { dondu 0; }
+
+    degisken i: tamsayi = 0;
+    dongu i < eski_kapasite {
+        eger eski_tablo != 0 ve eski_tablo[i].veri_ptr != 0 ise {
+            degisken h: tamsayi = eski_tablo[i].hash;
+            degisken idx: tamsayi = h % yeni_kapasite;
+            eger idx < 0 ise { idx = 0 - idx; }
+            dongu yeni_tablo[idx].veri_ptr != 0 {
+                idx = (idx + 1) % yeni_kapasite;
+            }
+            yeni_tablo[idx].hash = h;
+            yeni_tablo[idx].veri_ptr = eski_tablo[i].veri_ptr;
+            yeni_tablo[idx].uzunluk = eski_tablo[i].uzunluk;
+        }
+        i = i + 1;
+    }
+
+    pool.tablo = yeni_tablo;
+    pool.kapasite = yeni_kapasite;
+    dondu 1;
+}
+
+isv havuz_ekle_veya_bul(pool: *StringPool, kelime_ptr: *u8, uzunluk: tamsayi) -> *u8 {
+    eger pool == 0 veya kelime_ptr == 0 veya uzunluk <= 0 ise {
+        dondu kelime_ptr;
+    }
+    eger pool.kapasite <= 0 veya (pool.kullanilan + 1) * 10 >= pool.kapasite * 7 ise {
+        havuz_buyut(pool);
+    }
+    eger pool.kapasite <= 0 veya pool.tablo == 0 ise {
+        dondu kelime_ptr;
+    }
+
+    degisken hash: tamsayi = djb2_hash(kelime_ptr, uzunluk);
+    degisken indeks: tamsayi = hash % pool.kapasite;
+    eger indeks < 0 ise {
+        indeks = 0 - indeks;
+    }
+    
+    # Linear Probing (Acik Adresleme) ile akma (Collision) zm
+    degisken adim: tamsayi = 0;
+    dongu adim < pool.kapasite ve pool.tablo[indeks].veri_ptr != 0 {
+        # Eger hashler eslesiyorsa ve uzunluklar ayniysa bellege bak
+        eger pool.tablo[indeks].hash == hash ve pool.tablo[indeks].uzunluk == uzunluk ise {
+            degisken i: tamsayi = 0;
+            degisken esit_mi: tamsayi = 1;
+            dongu i < uzunluk {
+                eger pool.tablo[indeks].veri_ptr[i] != kelime_ptr[i] ise {
+                    esit_mi = 0;
+                }
+                i = i + 1;
+            }
+            eger esit_mi == 1 ise {
+                # Zaten havuzda var! Sifir kopyalama, var olan adresi dondu (O(1))
+                dondu pool.tablo[indeks].veri_ptr; 
+            }
+        }
+        # Cakisma var, bir sonraki slota bak
+        indeks = (indeks + 1) % pool.kapasite;
+        adim = adim + 1;
+    }
+    
+    # Tabloda yok, hafiza arenasindan (Arena Allocator) yer alp kopyalayalim (Sadece lk Grldnde!)
+    eger pool.arena_bellek == 0 veya (pool.arena_offset + uzunluk + 1) > g_string_pool_arena_kapasite ise {
+        degisken yeni_arena_boyut: tamsayi = g_string_pool_arena_kapasite;
+        eger yeni_arena_boyut < 65536 ise { yeni_arena_boyut = 16777216; }
+        eger uzunluk + 4096 > yeni_arena_boyut ise { yeni_arena_boyut = uzunluk + 4096; }
+        degisken yeni_arena: *u8 = compiler_tahsis_et(yeni_arena_boyut);
+        eger yeni_arena == 0 ise {
+            dondu kelime_ptr;
+        }
+        pool.arena_bellek = yeni_arena;
+        pool.arena_offset = 0;
+        g_string_pool_arena_kapasite = yeni_arena_boyut;
+    }
+    degisken yeni_ptr: *u8 = pool.arena_bellek + pool.arena_offset;
+    degisken k: tamsayi = 0;
+    dongu k < uzunluk {
+        yeni_ptr[k] = kelime_ptr[k];
+        k = k + 1;
+    }
+    yeni_ptr[uzunluk] = 0;
+    pool.arena_offset = pool.arena_offset + uzunluk + 1;
+    
+    # Yeni pointer'i Hash Tablosuna kaydet
+    pool.tablo[indeks].hash = hash;
+    pool.tablo[indeks].veri_ptr = yeni_ptr;
+    pool.tablo[indeks].uzunluk = uzunluk;
+    pool.kullanilan = pool.kullanilan + 1;
+    
+    dondu yeni_ptr;
+}
+
+# ============================================================
+# Bellek Yaplar (Zero-Copy)
+# ============================================================
+yapi Jeton {
+    tip: tamsayi;
+    baslangic: *u8;   # Dorudan RAM'deki mmap'lenmi adresi iaret eder
+    uzunluk: tamsayi; # String kopyas yok, sadece adres + uzunluk
+    satir: tamsayi;
+    sutun: tamsayi;
+}
+
+# Dinamik Dizi yerine manuel dizi ynetimi (Syscall ile allocate edilmeli)
+# imdilik Jeton listesi bir kapasite snr ile yt/heap zerinde tahsis edilir
+yapi LexerState {
+    kaynak: *u8;
+    dosya_boyutu: tamsayi;
+    guncel_offset: tamsayi;
+    satir: tamsayi;
+    sutun: tamsayi;
+    jetonlar: *Jeton; 
+    jeton_sayisi: tamsayi;
+    jeton_kapasite: tamsayi;
+    pool: *StringPool; # Faz 3: Interning Havuzu 
+}
+
+# UTF-8 hata durumu global tutulur; LexerState ABI'si sabit kalır.
+degisken g_lexer_hata_sayisi: tamsayi = 0;
+degisken g_lexer_ilk_hata_satir: tamsayi = 0;
+degisken g_lexer_ilk_hata_sutun: tamsayi = 0;
+degisken g_lexer_ilk_hata_offset: tamsayi = 0;
+degisken g_lexer_ilk_hata_kodu: tamsayi = 0;
+
+# ============================================================
+# UTF-8 Yardımcıları
+# ============================================================
+# Dönüş 1..4 byte uzunluğu, 0 = geçersiz başlangıç byte'ı.
+isv utf8_bayt_sayisi(ilk: u8) -> tamsayi {
+    eger ilk <= 127 ise { dondu 1; }
+    eger ilk >= 194 ve ilk <= 223 ise { dondu 2; }
+    eger ilk >= 224 ve ilk <= 239 ise { dondu 3; }
+    eger ilk >= 240 ve ilk <= 244 ise { dondu 4; }
+    dondu 0;
+}
+
+isv utf8_devam_bayti_mi(b: u8) -> tamsayi {
+    eger b >= 128 ve b <= 191 ise { dondu 1; }
+    dondu 0;
+}
+
+# Geçerli Unicode scalar değerini döndürür; -1 geçersiz dizidir.
+isv utf8_kod_noktasi_oku(kaynak: *u8, boyut: tamsayi, ofset: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya ofset < 0 veya ofset >= boyut ise { dondu -1; }
+    degisken ilk: u8 = kaynak[ofset];
+    degisken n: tamsayi = utf8_bayt_sayisi(ilk);
+    eger n == 0 veya ofset + n > boyut ise { dondu -1; }
+    eger n == 1 ise { dondu ilk; }
+    eger utf8_devam_bayti_mi(kaynak[ofset + 1]) == 0 ise { dondu -1; }
+    eger n >= 3 ve utf8_devam_bayti_mi(kaynak[ofset + 2]) == 0 ise { dondu -1; }
+    eger n == 4 ve utf8_devam_bayti_mi(kaynak[ofset + 3]) == 0 ise { dondu -1; }
+
+    degisken cp: tamsayi = 0;
+    eger n == 2 ise {
+        cp = ((ilk - 192) * 64) + (kaynak[ofset + 1] - 128);
+        eger cp < 128 ise { dondu -1; } # overlong
+    } yoksa eger n == 3 ise {
+        cp = ((ilk - 224) * 4096) + ((kaynak[ofset + 1] - 128) * 64) + (kaynak[ofset + 2] - 128);
+        eger cp < 2048 ise { dondu -1; } # overlong
+        eger cp >= 55296 ve cp <= 57343 ise { dondu -1; } # surrogate
+    } yoksa {
+        cp = ((ilk - 240) * 262144) + ((kaynak[ofset + 1] - 128) * 4096) + ((kaynak[ofset + 2] - 128) * 64) + (kaynak[ofset + 3] - 128);
+        eger cp < 65536 veya cp > 1114111 ise { dondu -1; } # overlong / sınır dışı
+    }
+    dondu cp;
+}
+
+# YKN'nin identifier politikası: ASCII alfanümerik ve geçerli non-ASCII
+# scalar'lar. Tam Unicode XID tablosu ayrıca veri dosyası gerektirdiğinden
+# bu aşamada tüm geçerli scalar'lar kabul edilir; invalid UTF-8 kabul edilmez.
+isv utf8_kimlik_kodu_mi(cp: tamsayi) -> tamsayi {
+    eger cp >= 65 ve cp <= 90 ise { dondu 1; }
+    eger cp >= 97 ve cp <= 122 ise { dondu 1; }
+    eger cp >= 48 ve cp <= 57 ise { dondu 1; }
+    eger cp == 95 veya cp >= 128 ise { dondu 1; }
+    dondu 0;
+}
+
+# Byte aralığını Unicode scalar sayısına çevirir; token sütunları için.
+isv utf8_scalar_sayisi(kaynak: *u8, bas: tamsayi, son: tamsayi) -> tamsayi {
+    degisken i: tamsayi = bas;
+    degisken sayi: tamsayi = 0;
+    dongu i < son {
+        degisken n: tamsayi = utf8_bayt_sayisi(kaynak[i]);
+        eger n <= 0 veya i + n > son ise { n = 1; }
+        i = i + n;
+        sayi = sayi + 1;
+    }
+    dondu sayi;
+}
+
+# LSP standardı UTF-16 code unit kullanır; BMP dışı scalar iki birimdir.
+isv utf8_utf16_birim_sayisi(kaynak: *u8, bas: tamsayi, son: tamsayi) -> tamsayi {
+    degisken i: tamsayi = bas;
+    degisken sayi: tamsayi = 0;
+    dongu i < son {
+        degisken n: tamsayi = utf8_bayt_sayisi(kaynak[i]);
+        degisken cp: tamsayi = utf8_kod_noktasi_oku(kaynak, son, i);
+        eger n <= 0 veya i + n > son veya cp < 0 ise { n = 1; }
+        i = i + n;
+        eger cp > 65535 ise { sayi = sayi + 2; } yoksa { sayi = sayi + 1; }
+    }
+    dondu sayi;
+}
+
+isv utf8_kimlik_baslangici(kaynak: *u8, boyut: tamsayi, ofset: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = ofset;
+    dongu bas > 0 {
+        degisken p: tamsayi = bas - 1;
+        dongu p > 0 ve utf8_devam_bayti_mi(kaynak[p]) == 1 { p = p - 1; }
+        degisken cp: tamsayi = utf8_kod_noktasi_oku(kaynak, boyut, p);
+        eger cp < 0 veya utf8_kimlik_kodu_mi(cp) == 0 ise { durdur; }
+        bas = p;
+    }
+    dondu bas;
+}
+
+isv utf8_kimlik_sonu(kaynak: *u8, boyut: tamsayi, ofset: tamsayi) -> tamsayi {
+    degisken son: tamsayi = ofset;
+    dongu son < boyut {
+        degisken cp: tamsayi = utf8_kod_noktasi_oku(kaynak, boyut, son);
+        eger cp < 0 veya utf8_kimlik_kodu_mi(cp) == 0 ise { durdur; }
+        degisken n: tamsayi = utf8_bayt_sayisi(kaynak[son]);
+        eger n <= 0 ise { durdur; }
+        son = son + n;
+    }
+    dondu son;
+}
+
+isv utf8_hata_konumunu_kaydet(lx: *LexerState, ofset: tamsayi) {
+    eger g_lexer_hata_sayisi == 0 ise {
+        degisken i: tamsayi = 0;
+        degisken satir: tamsayi = 1;
+        degisken sutun: tamsayi = 1;
+        dongu i < ofset {
+            eger lx.kaynak[i] == 10 ise {
+                satir = satir + 1;
+                sutun = 1;
+            } yoksa {
+                degisken n: tamsayi = utf8_bayt_sayisi(lx.kaynak[i]);
+                eger n <= 0 veya i + n > ofset veya utf8_kod_noktasi_oku(lx.kaynak, lx.dosya_boyutu, i) < 0 ise { n = 1; }
+                i = i + n - 1;
+                sutun = sutun + 1;
+            }
+            i = i + 1;
+        }
+        g_lexer_ilk_hata_satir = satir;
+        g_lexer_ilk_hata_sutun = sutun;
+        g_lexer_ilk_hata_offset = ofset;
+        g_lexer_ilk_hata_kodu = 7;
+    }
+    g_lexer_hata_sayisi = g_lexer_hata_sayisi + 1;
+}
+
+isv utf8_kaynagi_dogrula(lx: *LexerState) {
+    degisken i: tamsayi = 0;
+    dongu i < lx.dosya_boyutu {
+        degisken n: tamsayi = utf8_bayt_sayisi(lx.kaynak[i]);
+        eger n == 0 veya i + n > lx.dosya_boyutu veya utf8_kod_noktasi_oku(lx.kaynak, lx.dosya_boyutu, i) < 0 ise {
+            utf8_hata_konumunu_kaydet(lx, i);
+            i = i + 1;
+        } yoksa {
+            i = i + n;
+        }
+    }
+}
+
+# ============================================================
+# Yardmc Aralar (Karakter Snflar)
+# ============================================================
+isv harf_mi(k: u8) -> tamsayi {
+    eger k == 0 ise {
+        dondu 0;
+    }
+    eger (k >= 65 ve k <= 90) veya (k >= 97 ve k <= 122) veya (k > 127) ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Hata Yonetimi (Error Reporter)
+# ============================================================
+# Lexer hatalari artik saydamca yutulmaz. Her hata diagnostics motoruna
+# aktarilir; tokenize_et caller'a donmeden once hata sayacini korur.
+isv lexer_konum_hesapla(lx: *LexerState, ofset: tamsayi) {
+    degisken i: tamsayi = 0;
+    degisken satir: tamsayi = 1;
+    degisken sutun: tamsayi = 1;
+    eger ofset < 0 ise { ofset = 0; }
+    eger ofset > lx.dosya_boyutu ise { ofset = lx.dosya_boyutu; }
+    dongu i < ofset {
+        eger lx.kaynak[i] == 10 ise {
+            satir = satir + 1;
+            sutun = 1;
+            i = i + 1;
+        } yoksa {
+            degisken n: tamsayi = utf8_bayt_sayisi(lx.kaynak[i]);
+            degisken cp: tamsayi = utf8_kod_noktasi_oku(lx.kaynak, lx.dosya_boyutu, i);
+            eger n <= 0 veya cp < 0 veya i + n > ofset ise { n = 1; }
+            i = i + n;
+            sutun = sutun + 1;
+        }
+    }
+    g_lexer_ilk_hata_satir = satir;
+    g_lexer_ilk_hata_sutun = sutun;
+    g_lexer_ilk_hata_offset = ofset;
+}
+
+isv lexer_hata_raporla(lx: *LexerState, kod: tamsayi, mesaj: *u8, ofset: tamsayi, uzunluk: tamsayi) {
+    eger g_lexer_hata_sayisi == 0 ise {
+        lexer_konum_hesapla(lx, ofset);
+        g_lexer_ilk_hata_kodu = kod;
+    }
+    g_lexer_hata_sayisi = g_lexer_hata_sayisi + 1;
+
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, kod, g_lexer_ilk_hata_satir, g_lexer_ilk_hata_sutun, mesaj, 0);
+    hk.isaret_uzunluk = uzunluk;
+    eger hk.isaret_uzunluk <= 0 ise { hk.isaret_uzunluk = 1; }
+    hata_kaydi_yazdir(&hk);
+}
+
+isv hata_bas_ve_kapat(lx: *LexerState, kod: tamsayi, mesaj: *u8, ofset: tamsayi, uzunluk: tamsayi) {
+    lexer_hata_raporla(lx, kod, mesaj, ofset, uzunluk);
+}
+
+
+isv rakam_mi(k: u8) -> tamsayi {
+    eger k == 0 ise {
+        dondu 0;
+    }
+    eger k >= 48 ve k <= 57 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv kimlik_karakteri_mi(k: u8) -> tamsayi {
+    degisken h: tamsayi = harf_mi(k);
+    degisken r: tamsayi = rakam_mi(k);
+    degisken alt_cizgi: tamsayi = k == 95;
+    
+    eger h == 1 veya r == 1 veya alt_cizgi == 1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# Basit bellek karlatrmas (String Pool ncesi fallback)
+isv bellek_esit_mi(a: *u8, b: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken c_a: u8 = a[i];
+        degisken c_b: u8 = b[i];
+        eger c_a != c_b ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ============================================================
+# Anahtar Kelime Tarayc (Syscall ve Pointer ile)
+# ============================================================
+isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger adres == 0 veya uzunluk <= 0 ise {
+        dondu TIP_KIMLIK;
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 2
+    # --------------------------------------------------------
+    eger uzunluk == 2 ise {
+        # TR: "ve"
+        eger adres[0] == 118 ve adres[1] == 101 ise { dondu TIP_VE; }
+        eger adres[0] == 97 ve adres[1] == 115 ise { dondu TIP_OLARAK; } # EN: "as"
+        # EN: "or"
+        eger adres[0] == 111 ve adres[1] == 114 ise { dondu TIP_VEYA; }
+        # EN: "if"
+        eger adres[0] == 105 ve adres[1] == 102 ise { dondu TIP_EGER; }
+        # EN: "fn"
+        eger adres[0] == 102 ve adres[1] == 110 ise { dondu TIP_ISLEV; }
+        # FR: "et", "ou", "si"
+        eger adres[0] == 101 ve adres[1] == 116 ise { dondu TIP_VE; }
+        eger adres[0] == 111 ve adres[1] == 117 ise { dondu TIP_VEYA; }
+        eger adres[0] == 115 ve adres[1] == 105 ise { dondu TIP_EGER; }
+        # RU: "и" (D0 B8)
+        eger adres[0] == 208 ve adres[1] == 184 ise { dondu TIP_VE; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 3
+    # --------------------------------------------------------
+    eger uzunluk == 3 ise {
+        # TR/EN: "bos" / "nil" (null)
+        eger bellek_esit_mi(adres, "bos".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        eger bellek_esit_mi(adres, "nil".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        # FR: "nul" (null)
+        eger bellek_esit_mi(adres, "nul".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        # ZH: "空" (null)
+        eger bellek_esit_mi(adres, "空".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        # TR: "ise", "isv", "her"
+        eger adres[0] == 105 ve adres[1] == 115 ve adres[2] == 101 ise { dondu TIP_ISE; }
+        eger adres[0] == 105 ve adres[1] == 115 ve adres[2] == 118 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "her".ptr, 3) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "asm".ptr, 3) == 1 ise { dondu TIP_ASM; } # inline assembly
+        eger bellek_esit_mi(adres, "pub".ptr, 3) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "dyn".ptr, 3) == 1 ise { dondu TIP_DYN; }
+        # EN: "and", "var", "let", "mut", "for", "use"
+        eger bellek_esit_mi(adres, "and".ptr, 3) == 1 ise { dondu TIP_VE; }
+        eger bellek_esit_mi(adres, "var".ptr, 3) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "let".ptr, 3) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "mut".ptr, 3) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "for".ptr, 3) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "use".ptr, 3) == 1 ise { dondu TIP_ICE_AKTAR; }
+        # ZH: "则", "真", "假"
+        eger bellek_esit_mi(adres, "则".ptr, 3) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "真".ptr, 3) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "假".ptr, 3) == 1 ise { dondu TIP_YANLIS; }
+        # JA: "他", "間", "偽"
+        eger bellek_esit_mi(adres, "他".ptr, 3) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "間".ptr, 3) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "偽".ptr, 3) == 1 ise { dondu TIP_YANLIS; }
+        # KO: "참"
+        eger bellek_esit_mi(adres, "참".ptr, 3) == 1 ise { dondu TIP_DOGRU; }
+        # Multilingual Operators & Nulls: not, 非, 無, 널
+        eger bellek_esit_mi(adres, "not".ptr, 3) == 1 ise { dondu TIP_DEGIL; }
+        eger bellek_esit_mi(adres, "非".ptr, 3) == 1 ise { dondu TIP_DEGIL; }
+        eger bellek_esit_mi(adres, "無".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        eger bellek_esit_mi(adres, "널".ptr, 3) == 1 ise { dondu TIP_BOS; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 4
+    # --------------------------------------------------------
+    eger uzunluk == 4 ise {
+        # TR: "bos" (ASCII fallback for boş)
+        eger bellek_esit_mi(adres, "bos".ptr, 3) == 0 ve adres[0] == 98 ve adres[1] == 111 ve adres[2] == 197 ve adres[3] == 159 ise { dondu TIP_BOS; }
+        # EN/KO: "null"
+        eger bellek_esit_mi(adres, "null".ptr, 4) == 1 ise { dondu TIP_BOS; }
+        # TR: "eger", "yapi", "veya"
+        eger adres[0] == 101 ve adres[1] == 103 ve adres[2] == 101 ve adres[3] == 114 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "yapi".ptr, 4) == 1 ise { dondu TIP_YAPI; }
+        eger bellek_esit_mi(adres, "veya".ptr, 4) == 1 ise { dondu TIP_VEYA; }
+        # EN: "then", "else", "loop", "each", "type", "true", "func"
+        eger bellek_esit_mi(adres, "then".ptr, 4) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "else".ptr, 4) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "loop".ptr, 4) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "each".ptr, 4) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "type".ptr, 4) == 1 ise { dondu TIP_YAPI; }
+        eger bellek_esit_mi(adres, "true".ptr, 4) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "enum".ptr, 4) == 1 ise { dondu TIP_ENUM; }
+        eger bellek_esit_mi(adres, "func".ptr, 4) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "impl".ptr, 4) == 1 ise { dondu TIP_UYGULA; }
+        # FR: "soit", "pour", "vrai", "faux"
+        eger bellek_esit_mi(adres, "soit".ptr, 4) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "pour".ptr, 4) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "vrai".ptr, 4) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "faux".ptr, 4) == 1 ise { dondu TIP_YANLIS; }
+        # RU: "то", "да", "фн", "не"
+        eger bellek_esit_mi(adres, "то".ptr, 4) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "да".ptr, 4) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "фн".ptr, 4) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "не".ptr, 4) == 1 ise { dondu TIP_DEGIL; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 5
+    # --------------------------------------------------------
+    eger uzunluk == 5 ise {
+        # TR: "islev", "dondu", "yoksa", "dongu", "dogru", "devam", "esles"
+        eger bellek_esit_mi(adres, "islev".ptr, 5) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "dondu".ptr, 5) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "yoksa".ptr, 5) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "dongu".ptr, 5) == 1 ise { dondu TIP_DONGU; }
+        # EN: async/await are reserved compiler syntax, not identifiers.
+        eger bellek_esit_mi(adres, "async".ptr, 5) == 1 ise { dondu TIP_ASYNC; }
+        eger bellek_esit_mi(adres, "await".ptr, 5) == 1 ise { dondu TIP_AWAIT; }
+        eger bellek_esit_mi(adres, "trait".ptr, 5) == 1 ise { dondu TIP_TRAIT; }
+        eger bellek_esit_mi(adres, "dogru".ptr, 5) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "degil".ptr, 5) == 1 ise { dondu TIP_DEGIL; }
+        eger bellek_esit_mi(adres, "esles".ptr, 5) == 1 ise { dondu TIP_ESLES; }
+        eger bellek_esit_mi(adres, "sayim".ptr, 5) == 1 ise { dondu TIP_ENUM; }
+        eger bellek_esit_mi(adres, "modul".ptr, 5) == 1 ise { dondu TIP_MODUL; }
+        eger bellek_esit_mi(adres, "genel".ptr, 5) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "sabit".ptr, 5) == 1 ise { dondu TIP_SABIT; }
+        eger bellek_esit_mi(adres, "const".ptr, 5) == 1 ise { dondu TIP_SABIT; }
+        # EN: "while", "break", "false", "match"
+        eger bellek_esit_mi(adres, "while".ptr, 5) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "break".ptr, 5) == 1 ise { dondu TIP_DURDUR; }
+        eger bellek_esit_mi(adres, "false".ptr, 5) == 1 ise { dondu TIP_YANLIS; }
+        eger bellek_esit_mi(adres, "match".ptr, 5) == 1 ise { dondu TIP_ESLES; }
+        # FR: "sinon", "alors"
+        eger bellek_esit_mi(adres, "sinon".ptr, 5) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "alors".ptr, 5) == 1 ise { dondu TIP_ISE; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 6
+    # --------------------------------------------------------
+    eger uzunluk == 6 ise {
+        # JA: "ヌル" (null) - E3 83 8C E3 83 AB
+        eger adres[0] == 227 ve adres[1] == 131 ve adres[2] == 140 ve
+             adres[3] == 227 ve adres[4] == 131 ve adres[5] == 171 ise { dondu TIP_BOS; }
+        # TR: "yanlis", "durdur", "dondur"
+        eger bellek_esit_mi(adres, "yanlis".ptr, 6) == 1 ise { dondu TIP_YANLIS; }
+        eger bellek_esit_mi(adres, "durdur".ptr, 6) == 1 ise { dondu TIP_DURDUR; }
+        eger bellek_esit_mi(adres, "dondur".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "uygula".ptr, 6) == 1 ise { dondu TIP_UYGULA; }
+        eger bellek_esit_mi(adres, "olarak".ptr, 6) == 1 ise { dondu TIP_OLARAK; }
+        # EN: "return", "struct", "import"
+        eger bellek_esit_mi(adres, "return".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "struct".ptr, 6) == 1 ise { dondu TIP_YAPI; }
+        eger bellek_esit_mi(adres, "import".ptr, 6) == 1 ise { dondu TIP_ICE_AKTAR; }
+        eger bellek_esit_mi(adres, "public".ptr, 6) == 1 ise { dondu TIP_GENEL; }
+        # FR: "retour", "boucle"
+        eger bellek_esit_mi(adres, "retour".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "boucle".ptr, 6) == 1 ise { dondu TIP_DONGU; }
+        # RU: "для", "или", "нет"
+        eger bellek_esit_mi(adres, "для".ptr, 6) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "или".ptr, 6) == 1 ise { dondu TIP_VEYA; }
+        eger bellek_esit_mi(adres, "нет".ptr, 6) == 1 ise { dondu TIP_YANLIS; }
+        # JA: "関数", "変数", "返す", "戻る", "もし", "なら", "停止", "次へ"
+        eger bellek_esit_mi(adres, "関数".ptr, 6) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "変数".ptr, 6) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "定数".ptr, 6) == 1 ise { dondu TIP_SABIT; }
+        eger bellek_esit_mi(adres, "常量".ptr, 6) == 1 ise { dondu TIP_SABIT; }
+        eger bellek_esit_mi(adres, "상수".ptr, 6) == 1 ise { dondu TIP_SABIT; }
+        eger bellek_esit_mi(adres, "返す".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "戻る".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "もし".ptr, 6) == 1 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "なら".ptr, 6) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "停止".ptr, 6) == 1 ise { dondu TIP_DURDUR; }
+        eger bellek_esit_mi(adres, "次へ".ptr, 6) == 1 ise { dondu TIP_DEVAM_ET; }
+        # ZH: "函数", "变量", "返回", "如果", "否则", "循环", "结构"
+        eger bellek_esit_mi(adres, "函数".ptr, 6) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "变量".ptr, 6) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "返回".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "अगर".ptr, 6) == 1 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "如果".ptr, 6) == 1 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "否则".ptr, 6) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "循环".ptr, 6) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "结构".ptr, 6) == 1 ise { dondu TIP_YAPI; }
+        # KO: "함수", "변수", "반환", "만약", "라면", "반복", "거짓"
+        eger bellek_esit_mi(adres, "함수".ptr, 6) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "변수".ptr, 6) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "반환".ptr, 6) == 1 ise { dondu TIP_DONDUR; }
+        eger bellek_esit_mi(adres, "만약".ptr, 6) == 1 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "라면".ptr, 6) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "반복".ptr, 6) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "거짓".ptr, 6) == 1 ise { dondu TIP_YANLIS; }
+        # Multilingual Operators: かつ, 并且, または, 或者, 또는, 否定
+        eger bellek_esit_mi(adres, "かつ".ptr, 6) == 1 ise { dondu TIP_VE; }
+        eger bellek_esit_mi(adres, "并且".ptr, 6) == 1 ise { dondu TIP_VE; }
+        eger bellek_esit_mi(adres, "或者".ptr, 6) == 1 ise { dondu TIP_VEYA; }
+        eger bellek_esit_mi(adres, "또는".ptr, 6) == 1 ise { dondu TIP_VEYA; }
+        eger bellek_esit_mi(adres, "否定".ptr, 6) == 1 ise { dondu TIP_DEGIL; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 7
+    # --------------------------------------------------------
+    eger uzunluk == 7 ise {
+        # TR: "ozellik"
+        eger bellek_esit_mi(adres, "ozellik".ptr, 7) == 1 ise { dondu TIP_TRAIT; }
+        # EN: "default", "include"
+        eger bellek_esit_mi(adres, "default".ptr, 7) == 1 ise { dondu TIP_VARSAYILAN; }
+        eger bellek_esit_mi(adres, "include".ptr, 7) == 1 ise { dondu TIP_ICE_AKTAR; }
+        # FR: "tantque", "arreter"
+        eger bellek_esit_mi(adres, "tantque".ptr, 7) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "arreter".ptr, 7) == 1 ise { dondu TIP_DURDUR; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 8
+    # --------------------------------------------------------
+    eger uzunluk == 8 ise {
+        # RU: "нуль" (null) - D0 BD D1 83 D0 BB D1 8C
+        eger adres[0] == 208 ve adres[1] == 189 ve
+             adres[2] == 209 ve adres[3] == 131 ve
+             adres[4] == 208 ve adres[5] == 187 ve
+             adres[6] == 209 ve adres[7] == 140 ise { dondu TIP_BOS; }
+        # TR: "degisken", "devam_et", "dahil_et"
+        eger bellek_esit_mi(adres, "degisken".ptr, 8) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "comptime".ptr, 8) == 1 ise { dondu TIP_COMPTIME; }
+        eger bellek_esit_mi(adres, "devam_et".ptr, 8) == 1 ise { dondu TIP_DEVAM_ET; }
+        eger bellek_esit_mi(adres, "dahil_et".ptr, 8) == 1 ise { dondu TIP_ICE_AKTAR; }
+        # EN: "function", "continue"
+        eger bellek_esit_mi(adres, "function".ptr, 8) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "continue".ptr, 8) == 1 ise { dondu TIP_DEVAM_ET; }
+        # FR: "fonction", "importer"
+        eger bellek_esit_mi(adres, "fonction".ptr, 8) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "importer".ptr, 8) == 1 ise { dondu TIP_ICE_AKTAR; }
+        # RU: "если", "пока", "цикл", "ложь"
+        eger bellek_esit_mi(adres, "если".ptr, 8) == 1 ise { dondu TIP_EGER; }
+        eger bellek_esit_mi(adres, "пока".ptr, 8) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "цикл".ptr, 8) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "ложь".ptr, 8) == 1 ise { dondu TIP_YANLIS; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 9
+    # --------------------------------------------------------
+    eger uzunluk == 9 ise {
+        # TR: "ice_aktar"
+        eger bellek_esit_mi(adres, "ice_aktar".ptr, 9) == 1 ise { dondu TIP_ICE_AKTAR; }
+        # FR: "structure", "continuer", "retourner"
+        eger bellek_esit_mi(adres, "structure".ptr, 9) == 1 ise { dondu TIP_YAPI; }
+        eger bellek_esit_mi(adres, "continuer".ptr, 9) == 1 ise { dondu TIP_DEVAM_ET; }
+        eger bellek_esit_mi(adres, "retourner".ptr, 9) == 1 ise { dondu TIP_DONDUR; }
+        # JA: "ループ", "構造体"
+        eger bellek_esit_mi(adres, "ループ".ptr, 9) == 1 ise { dondu TIP_DONGU; }
+        eger bellek_esit_mi(adres, "構造体".ptr, 9) == 1 ise { dondu TIP_YAPI; }
+        # KO: "아니면"
+        eger bellek_esit_mi(adres, "아니면".ptr, 9) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "그리고".ptr, 9) == 1 ise { dondu TIP_VE; }
+        eger bellek_esit_mi(adres, "または".ptr, 9) == 1 ise { dondu TIP_VEYA; }
+        eger bellek_esit_mi(adres, "아니다".ptr, 9) == 1 ise { dondu TIP_DEGIL; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 10
+    # --------------------------------------------------------
+    eger uzunluk == 10 ise {
+        # TR: "varsayilan"
+        eger bellek_esit_mi(adres, "varsayilan".ptr, 10) == 1 ise { dondu TIP_VARSAYILAN; }
+        # RU: "пусть", "перем", "иначе"
+        eger bellek_esit_mi(adres, "пусть".ptr, 10) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "перем".ptr, 10) == 1 ise { dondu TIP_DEGISKEN; }
+        eger bellek_esit_mi(adres, "иначе".ptr, 10) == 1 ise { dondu TIP_YOKSA; }
+        eger bellek_esit_mi(adres, "пусто".ptr, 10) == 1 ise { dondu TIP_BOS; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 12
+    # --------------------------------------------------------
+    eger uzunluk == 12 ise {
+        # JA: "それ以外"
+        eger bellek_esit_mi(adres, "それ以外".ptr, 12) == 1 ise { dondu TIP_YOKSA; }
+        # RU: "импорт", "истина"
+        eger bellek_esit_mi(adres, "импорт".ptr, 12) == 1 ise { dondu TIP_ICE_AKTAR; }
+        eger bellek_esit_mi(adres, "истина".ptr, 12) == 1 ise { dondu TIP_DOGRU; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 14
+    # --------------------------------------------------------
+    eger uzunluk == 14 ise {
+        # RU: "функция", "вернуть"
+        eger bellek_esit_mi(adres, "функция".ptr, 14) == 1 ise { dondu TIP_ISLEV; }
+        eger bellek_esit_mi(adres, "вернуть".ptr, 14) == 1 ise { dondu TIP_DONDUR; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 16
+    # --------------------------------------------------------
+    eger uzunluk == 16 ise {
+        # RU: "прервать"
+        eger bellek_esit_mi(adres, "прервать".ptr, 16) == 1 ise { dondu TIP_DURDUR; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 18
+    # --------------------------------------------------------
+    eger uzunluk == 18 ise {
+        # RU: "структура", "константа"
+        eger bellek_esit_mi(adres, "структура".ptr, 18) == 1 ise { dondu TIP_YAPI; }
+        eger bellek_esit_mi(adres, "константа".ptr, 18) == 1 ise { dondu TIP_SABIT; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 20
+    # --------------------------------------------------------
+    eger uzunluk == 20 ise {
+        # RU: "продолжить"
+        eger bellek_esit_mi(adres, "продолжить".ptr, 20) == 1 ise { dondu TIP_DEVAM_ET; }
+    }
+
+    dondu TIP_KIMLIK;
+}
+
+# ============================================================
+# Syscall Okuyucu ve lerletici
+# ============================================================
+isv onaltilik_mi(c: u8) -> tamsayi {
+    eger c >= 48 ve c <= 57 ise { dondu 1; }
+    eger c >= 97 ve c <= 102 ise { dondu 1; }
+    eger c >= 65 ve c <= 70 ise { dondu 1; }
+    dondu 0;
+}
+
+isv karakter_oku(lx: *LexerState) -> u8 {
+    eger lx.guncel_offset >= lx.dosya_boyutu ise { dondu 0; }
+    degisken c: u8 = lx.kaynak[lx.guncel_offset];
+    lx.guncel_offset = lx.guncel_offset + 1;
+    # UTF-8 continuation byte'ları yeni kullanıcı karakteri değildir.
+    eger c < 128 veya c > 191 ise { lx.sutun = lx.sutun + 1; }
+
+    dondu c;
+}
+
+isv goz_at(lx: *LexerState) -> u8 {
+    eger lx.guncel_offset >= lx.dosya_boyutu ise { dondu 0; }
+    degisken c: u8 = lx.kaynak[lx.guncel_offset];
+    dondu c;
+}
+
+isv jeton_ekle(lx: *LexerState, tip: tamsayi, baslangic: *u8, uzunluk: tamsayi) {
+    eger lx.jeton_sayisi >= lx.jeton_kapasite ise {
+        panik("HATA [E013] [ERR_TOKEN_LIMIT] [class=compiler]: Token kapasitesi asildi".ptr);
+    }
+    degisken j_ptr: *u8 = lx.jetonlar;
+    degisken ofs: tamsayi = lx.jeton_sayisi * 40;
+    j_ptr = j_ptr + ofs;
+    degisken hedef: *Jeton = j_ptr;
+    hedef.tip = tip;
+    hedef.baslangic = baslangic;
+    hedef.uzunluk = uzunluk;
+    hedef.satir = lx.satir;
+    degisken token_scalar: tamsayi = utf8_scalar_sayisi(lx.kaynak, lx.guncel_offset - uzunluk, lx.guncel_offset);
+    eger token_scalar <= 0 ise { token_scalar = uzunluk; }
+    hedef.sutun = lx.sutun - token_scalar;
+    lx.jeton_sayisi = lx.jeton_sayisi + 1;
+}
+
+# ============================================================
+# Faz 8 & 9: Direktif ismi tanı (sıfır bağımlılık, ham byte karşılaştırma)
+# Sabitler: 21=PROMPT/AI, 23=C_LIB, 24=CPP_LIB, 25=PY_LIB, 26=RS_LIB
+# donus: 0 = yorum satiri (direktif degil), 21..26 arasi = TIP_DIREKTIF_*
+# ============================================================
+isv direktif_ismi_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger uzunluk <= 1 ise { dondu 0; }
+
+    # TR & EN: ai (2)
+    eger uzunluk == 2 ve adres[0] == 97 ve adres[1] == 105 ise { dondu 21; }
+
+    # c-lib (5 karakter = c - l i b)
+    eger uzunluk == 5 ise {
+        eger bellek_esit_mi(adres, "c-lib".ptr, 5) == 1 ise { dondu 23; }
+    }
+    # prompt (6) | py-lib (6) | rs-lib (6)
+    eger uzunluk == 6 ise {
+        eger bellek_esit_mi(adres, "prompt".ptr, 6) == 1 ise { dondu 21; }
+        eger bellek_esit_mi(adres, "py-lib".ptr, 6) == 1 ise { dondu 25; }
+        eger bellek_esit_mi(adres, "rs-lib".ptr, 6) == 1 ise { dondu 26; }
+    }
+    # cpp-lib (7)
+    eger uzunluk == 7 ise {
+        eger bellek_esit_mi(adres, "cpp-lib".ptr, 7) == 1 ise { dondu 24; }
+    }
+    # rust-lib (8)
+    eger uzunluk == 8 ve bellek_esit_mi(adres, "rust-lib".ptr, 8) == 1 ise { dondu 26; }
+    # python-lib (10) | yapay_zeka (10)
+    eger uzunluk == 10 ise {
+        eger bellek_esit_mi(adres, "python-lib".ptr, 10) == 1 ise { dondu 25; }
+        eger bellek_esit_mi(adres, "yapay_zeka".ptr, 10) == 1 ise { dondu 21; }
+    }
+
+    # TR uzun isimler (kutuphanesi suffix)
+    eger uzunluk == 13 ve bellek_esit_mi(adres, "c-kutuphanesi".ptr, 13) == 1 ise { dondu 23; }
+    eger uzunluk == 15 ve bellek_esit_mi(adres, "cpp-kutuphanesi".ptr, 15) == 1 ise { dondu 24; }
+    eger uzunluk == 14 ve bellek_esit_mi(adres, "py-kutuphanesi".ptr, 14) == 1 ise { dondu 25; }
+    eger uzunluk == 15 ve bellek_esit_mi(adres, "rust-kutuphanesi".ptr, 15) == 1 ise { dondu 26; }
+
+    eger uzunluk == 7 ise {
+        eger bellek_esit_mi(adres, "convert".ptr, 7) == 1 veya bellek_esit_mi(adres, "CONVERT".ptr, 7) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+    }
+
+    # Faz 9.2: Convert Direktifleri (#C-convert, #PY-convert, #JS-convert, #CS-convert, #RB-convert)
+    eger uzunluk == 9 ise {
+        eger bellek_esit_mi(adres, "c-convert".ptr, 9) == 1 veya bellek_esit_mi(adres, "C-convert".ptr, 9) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+    }
+    eger uzunluk == 10 ise {
+        eger bellek_esit_mi(adres, "py-convert".ptr, 10) == 1 veya bellek_esit_mi(adres, "PY-convert".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+        eger bellek_esit_mi(adres, "js-convert".ptr, 10) == 1 veya bellek_esit_mi(adres, "JS-convert".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+        eger bellek_esit_mi(adres, "rs-convert".ptr, 10) == 1 veya bellek_esit_mi(adres, "RS-convert".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+        eger bellek_esit_mi(adres, "cs-convert".ptr, 10) == 1 veya bellek_esit_mi(adres, "CS-convert".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+        eger bellek_esit_mi(adres, "rb-convert".ptr, 10) == 1 veya bellek_esit_mi(adres, "RB-convert".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONVERT; }
+    }
+
+    # Faz 5: Konfigurasyon Direktifleri (#config, #yapilandir, #ayar, #konfig, etc.)
+    eger uzunluk == 4 ve bellek_esit_mi(adres, "ayar".ptr, 4) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    eger uzunluk == 6 ise {
+        eger bellek_esit_mi(adres, "config".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "konfig".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "設定".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "配置".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "설정".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
+    eger uzunluk == 7 ve bellek_esit_mi(adres, "ayarlar".ptr, 7) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    eger uzunluk == 9 ve bellek_esit_mi(adres, "configure".ptr, 9) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    eger uzunluk == 10 ve bellek_esit_mi(adres, "yapilandir".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    eger uzunluk == 12 ise {
+        eger bellek_esit_mi(adres, "конфиг".ptr, 12) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "yapılandır".ptr, 12) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
+    eger uzunluk == 13 ise {
+        eger bellek_esit_mi(adres, "configuration".ptr, 13) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "konfiguration".ptr, 13) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
+    eger uzunluk == 18 ve bellek_esit_mi(adres, "настройка".ptr, 18) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+
+    dondu 0;
+}
+
+# Sayisal literal doğrulaması. Dönüş: 0=geçerli, 1=overflow,
+# 2=eksik/bozuk literal. tamsayi ABI'si signed 64-bit kabul edilir.
+isv sayi_basamak_degeri(c: u8, taban: tamsayi) -> tamsayi {
+    eger c >= 48 ve c <= 57 ise {
+        eger c - 48 < taban ise { dondu c - 48; }
+    }
+    eger c >= 97 ve c <= 102 ise {
+        eger (c - 97) + 10 < taban ise { dondu (c - 97) + 10; }
+    }
+    eger c >= 65 ve c <= 70 ise {
+        eger (c - 65) + 10 < taban ise { dondu (c - 65) + 10; }
+    }
+    dondu 0 - 1;
+}
+
+isv sayi_literal_durumu(veri: *u8, uzn: tamsayi, taban: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    degisken baslangic: tamsayi = 0;
+    eger uzn >= 2 ve veri[0] == 48 ve (
+        (taban == 16 ve (veri[1] == 120 veya veri[1] == 88)) veya
+        (taban == 2  ve (veri[1] == 98  veya veri[1] == 66)) veya
+        (taban == 8  ve (veri[1] == 111 veya veri[1] == 79))
+    ) ise {
+        i = 2;
+        baslangic = 2;
+    }
+    degisken basamak_sayisi: tamsayi = 0;
+    degisken b_idx: tamsayi = baslangic;
+    dongu b_idx < uzn {
+        eger veri[b_idx] != 95 ise {
+            basamak_sayisi = basamak_sayisi + 1;
+        }
+        b_idx = b_idx + 1;
+    }
+    eger basamak_sayisi == 0 ise { dondu 2; }
+
+    i = baslangic;
+    dongu i < uzn {
+        eger veri[i] != 95 ise {
+            eger sayi_basamak_degeri(veri[i], taban) < 0 ise { dondu 2; }
+        }
+        i = i + 1;
+    }
+
+    # 64-bit signed maksimumu runtime aritmetigiyle hesaplamak yerine
+    # uzunluk ve lexical karsilastirma ile kontrol et. Boylece kontrolun
+    # kendisi de tasma uretemez.
+    eger taban == 10 ise {
+        # 20 hane ve uzeri signed 64-bit alana sigmaz.
+        eger basamak_sayisi > 19 ise { dondu 1; }
+        # Gorev 1.3: 19 basamakli sayilarda 9223372036854775807 (INT64_MAX) sinir kontrolu
+        eger basamak_sayisi == 19 ise {
+            degisken max_str: *u8 = "9223372036854775807".ptr;
+            degisken mi: tamsayi = 0;
+            dongu mi < 19 {
+                degisken dc: u8 = veri[baslangic + mi];
+                degisken mc: u8 = max_str[mi];
+                eger dc > mc ise { dondu 1; }
+                eger dc < mc ise { durdur; }
+                mi = mi + 1;
+            }
+        }
+    } yoksa eger taban == 16 ise {
+        # Hex literal'ler Win32/POSIX bit maskelerini de tasir;
+        # 16 hex hane tam 64-bit bit desenidir ve gecerlidir.
+        eger basamak_sayisi > 16 ise { dondu 1; }
+    } yoksa eger taban == 2 ise {
+        eger basamak_sayisi > 64 ise { dondu 1; }
+    } yoksa eger taban == 8 ise {
+        eger basamak_sayisi > 22 ise { dondu 1; }
+    }
+
+    dondu 0;
+}
+
+# ============================================================
+# Ana Dongu
+# ============================================================
+isv tokenize_et(lx: *LexerState) -> tamsayi {
+    g_lexer_hata_sayisi = 0;
+    g_lexer_ilk_hata_satir = 0;
+    g_lexer_ilk_hata_sutun = 0;
+    g_lexer_ilk_hata_offset = 0;
+    g_lexer_ilk_hata_kodu = 0;
+    utf8_kaynagi_dogrula(lx);
+    eger g_lexer_hata_sayisi > 0 ise { dondu 0; }
+
+    # UTF-8 BOM Atlama (\xEF\xBB\xBF = 239, 187, 191)
+    eger lx.guncel_offset == 0 ve lx.dosya_boyutu >= 3 ise {
+        degisken k_ptr: *u8 = lx.kaynak;
+        eger k_ptr[0] == 239 ve k_ptr[1] == 187 ve k_ptr[2] == 191 ise {
+            lx.guncel_offset = 3;
+            lx.sutun = 1;
+        }
+    }
+
+    dongu 1 == 1 {
+        eger lx.guncel_offset >= lx.dosya_boyutu ise {
+            durdur;
+        }
+        degisken c: u8 = karakter_oku(lx);
+
+        # Bosluk
+        eger c == 32 veya c == 9 veya c == 13 ise { devam_et; }
+        eger c == 10 ise {
+            lx.satir = lx.satir + 1;
+            lx.sutun = 1;
+            devam_et;
+        }
+        # Yorum VEYA Direktif (#)
+        eger c == 35 ise {
+            # Faz 8 & 9: # sonrasi kelimeyi oku, direktif mi kontrol et
+            degisken kaydet_ofs: tamsayi = lx.guncel_offset;
+            degisken d_baslangic_ptr: *u8 = lx.kaynak + (kaydet_ofs - 1);  # '#' konumu
+            degisken sonraki_c: u8 = goz_at(lx);
+            degisken h_mi2: tamsayi = harf_mi(sonraki_c);
+            degisken c_esit2: tamsayi = sonraki_c == 95;
+            eger h_mi2 == 1 veya c_esit2 == 1 ise {
+                # Bir kelime oku
+                degisken d_k_uzn: tamsayi = 1;
+                karakter_oku(lx);  # ilk harfi tuket
+                dongu kimlik_karakteri_mi(goz_at(lx)) == 1 veya goz_at(lx) == 45 {
+                    karakter_oku(lx);
+                    d_k_uzn = d_k_uzn + 1;
+                }
+                degisken d_kelime_ptr: *u8 = lx.kaynak + kaydet_ofs;  # #'den SONRAKI kelime
+                degisken d_tip: tamsayi = direktif_ismi_tipini_bul(d_kelime_ptr, d_k_uzn);
+                eger (d_tip >= 21 ve d_tip <= 26) veya d_tip == 64 veya d_tip == TIP_DIREKTIF_CONVERT veya d_tip == TIP_DIREKTIF_CONFIG ise {
+                    jeton_ekle(lx, d_tip, d_baslangic_ptr, d_k_uzn + 1);
+                    devam_et;
+                }
+            }
+            # Direktif DEGIL: klasik yorum satiri, sonuna kadar atla
+            dongu goz_at(lx) != 10 ve goz_at(lx) != 0 { karakter_oku(lx); }
+            devam_et;
+        }
+
+        # Tek karakterler
+        degisken curr_ptr: *u8 = lx.kaynak + (lx.guncel_offset - 1);
+        
+        eger c == 40 ise { jeton_ekle(lx, TIP_SOL_PARANTEZ, curr_ptr, 1); devam_et; }
+        eger c == 41 ise { jeton_ekle(lx, TIP_SAG_PARANTEZ, curr_ptr, 1); devam_et; }
+        eger c == 123 ise { jeton_ekle(lx, TIP_SOL_KUSLU, curr_ptr, 1); devam_et; }
+        eger c == 125 ise { jeton_ekle(lx, TIP_SAG_KUSLU, curr_ptr, 1); devam_et; }
+        eger c == 91  ise { jeton_ekle(lx, TIP_SOL_KOSE, curr_ptr, 1); devam_et; }
+        eger c == 93  ise { jeton_ekle(lx, TIP_SAG_KOSE, curr_ptr, 1); devam_et; }
+        eger c == 59  ise { jeton_ekle(lx, TIP_NOKTALI_VIRGUL, curr_ptr, 1); devam_et; }
+        eger c == 44  ise { jeton_ekle(lx, TIP_VIRGUL, curr_ptr, 1); devam_et; }
+        eger c == 43  ise { jeton_ekle(lx, TIP_ARTI, curr_ptr, 1); devam_et; }
+        eger c == 42  ise { jeton_ekle(lx, TIP_CARPI, curr_ptr, 1); devam_et; }
+        eger c == 94  ise { jeton_ekle(lx, TIP_XOR, curr_ptr, 1); devam_et; }
+            # Slash ya bolme ya da blok yorum baslangicidir.
+        eger c == 47 ise {
+            eger goz_at(lx) == 42 ise {
+                karakter_oku(lx); # '/*'
+                degisken yorum_kapandi: tamsayi = 0;
+                dongu lx.guncel_offset < lx.dosya_boyutu {
+                    degisken yorum_c: u8 = karakter_oku(lx);
+                    eger yorum_c == 10 ise {
+                        lx.satir = lx.satir + 1;
+                        lx.sutun = 1;
+                    }
+                    eger yorum_c == 42 ve goz_at(lx) == 47 ise {
+                        karakter_oku(lx);
+                        yorum_kapandi = 1;
+                        durdur;
+                    }
+                }
+                eger yorum_kapandi == 0 ise {
+                    hata_bas_ve_kapat(lx, 10, "Kapanmamis yorum".ptr, lx.guncel_offset, 1);
+                }
+                devam_et;
+            }
+            jeton_ekle(lx, TIP_BOLME, curr_ptr, 1);
+            devam_et;
+        }
+        eger c == 37  ise { jeton_ekle(lx, TIP_MODULO, curr_ptr, 1); devam_et; }
+        eger c == 46  ise { jeton_ekle(lx, TIP_NOKTA, curr_ptr, 1); devam_et; }
+        eger c == 58  ise {
+            eger goz_at(lx) == 58 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_CIFT_IKINOKTA, curr_ptr, 2);
+            } yoksa {
+                jeton_ekle(lx, TIP_KOLON, curr_ptr, 1);
+            }
+            devam_et;
+        }
+        eger c == 38  ise { jeton_ekle(lx, TIP_AMPERSAND, curr_ptr, 1); devam_et; }
+
+        # Eksi veya ok (->)
+        eger c == 45 ise {
+            eger goz_at(lx) == 62 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_OK, curr_ptr, 2);
+            } yoksa {
+                jeton_ekle(lx, TIP_EKSI, curr_ptr, 1);
+            }
+            devam_et;
+        }
+
+        # Esit mi (==), ok (=>), veya atama (=)
+        eger c == 61 ise {
+            eger goz_at(lx) == 61 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_ESIT_MI, curr_ptr, 2);
+            } yoksa eger goz_at(lx) == 62 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_KALIN_OK, curr_ptr, 2);
+            } yoksa {
+                jeton_ekle(lx, TIP_ATAMA, curr_ptr, 1);
+            }
+            devam_et;
+        }
+        # Soru islemi (?) - hata yayilimi
+        eger c == 63 ise {
+            jeton_ekle(lx, TIP_SORU_ISLEMI, curr_ptr, 1);
+            devam_et;
+        }
+
+        # Kk m (<) veya kk eit (<=) veya sol kaydir (<<)
+        eger c == 60 ise {
+            eger goz_at(lx) == 61 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_KUCUK_ESIT, curr_ptr, 2);
+            } yoksa eger goz_at(lx) == 60 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_SOL_KAYDIR, curr_ptr, 2); # <<
+            } yoksa {
+                jeton_ekle(lx, TIP_KUCUK_MU, curr_ptr, 1);
+            }
+            devam_et;
+        }
+
+        # Byk m (>) veya byk eit (>=) veya sag kaydir (>>)
+        eger c == 62 ise {
+            eger goz_at(lx) == 61 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_BUYUK_ESIT, curr_ptr, 2);
+            } yoksa eger goz_at(lx) == 62 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_SAG_KAYDIR, curr_ptr, 2); # >>
+            } yoksa {
+                jeton_ekle(lx, TIP_BUYUK_MU, curr_ptr, 1);
+            }
+            devam_et;
+        }
+
+        # Eit deil (!=)
+        eger c == 33 ise {
+            eger goz_at(lx) == 61 ise {
+                karakter_oku(lx);
+                jeton_ekle(lx, TIP_ESIT_DEGIL, curr_ptr, 2);
+            } yoksa {
+                jeton_ekle(lx, TIP_DEGIL, curr_ptr, 1);
+            }
+            devam_et;
+        }
+
+        # Gorev 1.3: Karakter literali ('a', '\n', '\0', '\t', '\\', '\'')
+        eger c == 39 ise {
+            degisken ch_kod: tamsayi = 0;
+            degisken ch_hata: tamsayi = 0;
+            eger goz_at(lx) == 0 veya goz_at(lx) == 10 veya goz_at(lx) == 39 ise {
+                hata_bas_ve_kapat(lx, 8, "Gecersiz karakter literali".ptr, lx.guncel_offset - 1, 1);
+                ch_hata = 1;
+            } yoksa eger goz_at(lx) == 92 ise {
+                karakter_oku(lx); # '\'
+                degisken esc_c: u8 = karakter_oku(lx);
+                eger esc_c == 110 ise { ch_kod = 10; }       # \n
+                yoksa eger esc_c == 116 ise { ch_kod = 9; }  # \t
+                yoksa eger esc_c == 114 ise { ch_kod = 13; } # \r
+                yoksa eger esc_c == 48  ise { ch_kod = 0; }  # \0
+                yoksa eger esc_c == 92  ise { ch_kod = 92; } # \\
+                yoksa eger esc_c == 39  ise { ch_kod = 39; } # \'
+                yoksa eger esc_c == 34  ise { ch_kod = 34; } # \"
+                yoksa { ch_kod = esc_c; }
+            } yoksa {
+                ch_kod = karakter_oku(lx);
+            }
+            eger ch_hata == 0 ise {
+                eger goz_at(lx) == 39 ise {
+                    karakter_oku(lx); # kapanis '''
+                    degisken ch_buf: *u8 = compiler_tahsis_et(8);
+                    degisken ch_uzn: tamsayi = 0;
+                    eger ch_kod >= 100 ise {
+                        ch_buf[0] = 48 + (ch_kod / 100);
+                        ch_buf[1] = 48 + ((ch_kod / 10) % 10);
+                        ch_buf[2] = 48 + (ch_kod % 10);
+                        ch_buf[3] = 0;
+                        ch_uzn = 3;
+                    } yoksa eger ch_kod >= 10 ise {
+                        ch_buf[0] = 48 + (ch_kod / 10);
+                        ch_buf[1] = 48 + (ch_kod % 10);
+                        ch_buf[2] = 0;
+                        ch_uzn = 2;
+                    } yoksa {
+                        ch_buf[0] = 48 + ch_kod;
+                        ch_buf[1] = 0;
+                        ch_uzn = 1;
+                    }
+                    jeton_ekle(lx, TIP_TAMSAYI, ch_buf, ch_uzn);
+                } yoksa {
+                    hata_bas_ve_kapat(lx, 8, "Kapanmamis karakter literali".ptr, lx.guncel_offset - 1, 1);
+                }
+            }
+            devam_et;
+        }
+
+        # Kimlik veya Anahtar kelime (UTF-8 scalar sınırlarıyla)
+        degisken ilk_cp: tamsayi = utf8_kod_noktasi_oku(lx.kaynak, lx.dosya_boyutu, lx.guncel_offset - 1);
+        degisken h_mi: tamsayi = harf_mi(c);
+        degisken c_esit: tamsayi = c == 95;
+        eger (h_mi == 1 veya c_esit == 1 veya ilk_cp >= 128) ise {
+            degisken k_uzn: tamsayi = 1;
+            eger ilk_cp >= 128 ise {
+                degisken ilk_n: tamsayi = utf8_bayt_sayisi(c);
+                degisken ilk_bi: tamsayi = 1;
+                dongu ilk_bi < ilk_n {
+                    karakter_oku(lx);
+                    ilk_bi = ilk_bi + 1;
+                }
+                k_uzn = ilk_n;
+            }
+            dongu 1 == 1 {
+                degisken sonraki_cp: tamsayi = utf8_kod_noktasi_oku(lx.kaynak, lx.dosya_boyutu, lx.guncel_offset);
+                eger sonraki_cp < 0 veya utf8_kimlik_kodu_mi(sonraki_cp) == 0 ise { durdur; }
+                degisken sonraki_n: tamsayi = utf8_bayt_sayisi(goz_at(lx));
+                eger sonraki_n <= 0 ise { durdur; }
+                degisken bi: tamsayi = 0;
+                dongu bi < sonraki_n {
+                    karakter_oku(lx);
+                    bi = bi + 1;
+                    k_uzn = k_uzn + 1;
+                }
+            }
+            degisken k_tip: tamsayi = kelime_tipini_bul(curr_ptr, k_uzn);
+            
+            # F-String Tespiti: 'f' tek harfli kimlik ve hemen ardindan '"' varsa TIP_FSTRING uret
+            eger k_uzn == 1 ve curr_ptr[0] == 102 ve goz_at(lx) == 34 ise {
+                # 'f' harfini yutmus olduk, simdi '"' ile baslayan string icerigini oku
+                karakter_oku(lx); # acilis tirnak isaret
+                degisken fs_uzn: tamsayi = 0;
+                degisken fs_hata: tamsayi = 0;
+                degisken fs_ptr: *u8 = lx.kaynak + lx.guncel_offset; # tirnak sonrasini goster
+                dongu goz_at(lx) != 34 ve goz_at(lx) != 0 {
+                    eger goz_at(lx) == 10 ise {
+                        lx.satir = lx.satir + 1;
+                        lx.sutun = 1;
+                        karakter_oku(lx);
+                        fs_uzn = fs_uzn + 1;
+                        devam_et;
+                    }
+                    eger goz_at(lx) == 92 ise {
+                        karakter_oku(lx);
+                        fs_uzn = fs_uzn + 1;
+                        eger lx.guncel_offset < lx.dosya_boyutu ise {
+                            karakter_oku(lx);
+                            fs_uzn = fs_uzn + 1;
+                        }
+                    } yoksa {
+                        karakter_oku(lx);
+                        fs_uzn = fs_uzn + 1;
+                    }
+                }
+                eger fs_hata == 1 ise { devam_et; }
+                eger lx.guncel_offset >= lx.dosya_boyutu ise {
+                    hata_bas_ve_kapat(lx, 9, "Kapanmamis f-string".ptr, lx.guncel_offset, 1);
+                    devam_et;
+                }
+                karakter_oku(lx); # kapanma tirnak isaret
+                jeton_ekle(lx, TIP_FSTRING, fs_ptr, fs_uzn);
+                devam_et;
+            }
+            
+            # Faz 3 Optimizasyonu: Eger TIP_KIMLIK (degisken ismi vs) ise,
+            # string pool'dan cek. Aynisi daha once gorulduyse O(1) hafiza adresi donecek!
+            degisken kayitli_ptr: *u8 = curr_ptr;
+            eger k_tip == TIP_KIMLIK ve lx.pool != 0 ise {
+                kayitli_ptr = havuz_ekle_veya_bul(lx.pool, curr_ptr, k_uzn);
+            }
+            
+            jeton_ekle(lx, k_tip, kayitli_ptr, k_uzn);
+            devam_et;
+        }
+
+        # Sayi (tamsayi, gercek sayi, bilimsel 1e-5, 0x onaltilik, 0b ikili, 0o sekizli)
+        eger rakam_mi(c) == 1 ise {
+            degisken s_uzn: tamsayi = 1;
+            eger c == 48 ve (goz_at(lx) == 120 veya goz_at(lx) == 88) ise { # 0x veya 0X
+                karakter_oku(lx);
+                s_uzn = s_uzn + 1;
+                dongu onaltilik_mi(goz_at(lx)) == 1 veya goz_at(lx) == 95 {
+                    karakter_oku(lx);
+                    s_uzn = s_uzn + 1;
+                }
+                degisken hex_durum: tamsayi = sayi_literal_durumu(curr_ptr, s_uzn, 16);
+                eger hex_durum == 1 ise {
+                    hata_bas_ve_kapat(lx, 11, "Tamsayi tasmasi".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa eger hex_durum == 2 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa {
+                    jeton_ekle(lx, TIP_TAMSAYI, curr_ptr, s_uzn);
+                }
+                eger kimlik_karakteri_mi(goz_at(lx)) == 1 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset, 1);
+                }
+            } yoksa eger c == 48 ve (goz_at(lx) == 98 veya goz_at(lx) == 66) ise { # 0b veya 0B
+                karakter_oku(lx);
+                s_uzn = s_uzn + 1;
+                dongu goz_at(lx) == 48 veya goz_at(lx) == 49 veya goz_at(lx) == 95 {
+                    karakter_oku(lx);
+                    s_uzn = s_uzn + 1;
+                }
+                degisken bin_durum: tamsayi = sayi_literal_durumu(curr_ptr, s_uzn, 2);
+                eger bin_durum == 1 ise {
+                    hata_bas_ve_kapat(lx, 11, "Tamsayi tasmasi".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa eger bin_durum == 2 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa {
+                    jeton_ekle(lx, TIP_TAMSAYI, curr_ptr, s_uzn);
+                }
+                eger kimlik_karakteri_mi(goz_at(lx)) == 1 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset, 1);
+                }
+            } yoksa eger c == 48 ve (goz_at(lx) == 111 veya goz_at(lx) == 79) ise { # 0o veya 0O
+                karakter_oku(lx);
+                s_uzn = s_uzn + 1;
+                dongu (goz_at(lx) >= 48 ve goz_at(lx) <= 55) veya goz_at(lx) == 95 {
+                    karakter_oku(lx);
+                    s_uzn = s_uzn + 1;
+                }
+                degisken oct_durum: tamsayi = sayi_literal_durumu(curr_ptr, s_uzn, 8);
+                eger oct_durum == 1 ise {
+                    hata_bas_ve_kapat(lx, 11, "Tamsayi tasmasi".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa eger oct_durum == 2 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                } yoksa {
+                    jeton_ekle(lx, TIP_TAMSAYI, curr_ptr, s_uzn);
+                }
+                eger kimlik_karakteri_mi(goz_at(lx)) == 1 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset, 1);
+                }
+            } yoksa {
+                dongu rakam_mi(goz_at(lx)) == 1 veya goz_at(lx) == 95 {
+                    karakter_oku(lx);
+                    s_uzn = s_uzn + 1;
+                }
+                degisken gercek_mi: tamsayi = 0;
+                degisken sayi_hatali: tamsayi = 0;
+                # Ondalik nokta varsa gercek sayi
+                eger goz_at(lx) == 46 ve lx.guncel_offset + 1 < lx.dosya_boyutu ve rakam_mi(lx.kaynak[lx.guncel_offset + 1]) == 1 ise {
+                    karakter_oku(lx);
+                    s_uzn = s_uzn + 1;
+                    degisken kesir_baslangic: tamsayi = s_uzn;
+                    dongu rakam_mi(goz_at(lx)) == 1 veya goz_at(lx) == 95 {
+                        karakter_oku(lx);
+                        s_uzn = s_uzn + 1;
+                    }
+                    eger s_uzn == kesir_baslangic ise {
+                        hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                        sayi_hatali = 1;
+                    } yoksa {
+                        gercek_mi = 1;
+                    }
+                }
+                # Bilimsel gosterim: e veya E (orn: 1e-5, 2.5e+3, 1E6)
+                eger sayi_hatali == 0 ve (goz_at(lx) == 101 veya goz_at(lx) == 69) ise {
+                    karakter_oku(lx); # 'e' veya 'E'
+                    s_uzn = s_uzn + 1;
+                    eger goz_at(lx) == 43 veya goz_at(lx) == 45 ise {
+                        karakter_oku(lx); # '+' veya '-'
+                        s_uzn = s_uzn + 1;
+                    }
+                    degisken us_baslangic: tamsayi = s_uzn;
+                    dongu rakam_mi(goz_at(lx)) == 1 veya goz_at(lx) == 95 {
+                        karakter_oku(lx);
+                        s_uzn = s_uzn + 1;
+                    }
+                    eger s_uzn == us_baslangic ise {
+                        hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                        sayi_hatali = 1;
+                    } yoksa {
+                        gercek_mi = 1;
+                    }
+                }
+                eger sayi_hatali == 0 ise {
+                    eger gercek_mi == 1 ise {
+                        jeton_ekle(lx, TIP_GERCEK_SAYI, curr_ptr, s_uzn);
+                    } yoksa {
+                        degisken ondalik_durum: tamsayi = sayi_literal_durumu(curr_ptr, s_uzn, 10);
+                        eger ondalik_durum == 1 ise {
+                            hata_bas_ve_kapat(lx, 11, "Tamsayi tasmasi".ptr, lx.guncel_offset - s_uzn, s_uzn);
+                        } yoksa {
+                            jeton_ekle(lx, TIP_TAMSAYI, curr_ptr, s_uzn);
+                        }
+                    }
+                }
+                eger kimlik_karakteri_mi(goz_at(lx)) == 1 ise {
+                    hata_bas_ve_kapat(lx, 12, "Hatali sayi literali".ptr, lx.guncel_offset, 1);
+                }
+            }
+            devam_et;
+        }
+        
+        # Metin Stringleri (Syscall uzerinden okundugu icin dorudan bellek pointer'i gonderilir)
+        eger c == 34 ise {
+            degisken m_uzn: tamsayi = 0;
+            degisken string_hatasi: tamsayi = 0;
+            curr_ptr = lx.kaynak + lx.guncel_offset; # Cift tirnagi atla
+            dongu goz_at(lx) != 34 ve goz_at(lx) != 0 {
+                eger goz_at(lx) == 10 ise {
+                    lx.satir = lx.satir + 1;
+                    lx.sutun = 1;
+                    karakter_oku(lx);
+                    m_uzn = m_uzn + 1;
+                    devam_et;
+                }
+                # Basit escape desteği: escaped quote stringi kapatmaz.
+                eger goz_at(lx) == 92 ise {
+                    karakter_oku(lx);
+                    m_uzn = m_uzn + 1;
+                    eger lx.guncel_offset < lx.dosya_boyutu ise {
+                        karakter_oku(lx);
+                        m_uzn = m_uzn + 1;
+                    }
+                } yoksa {
+                    karakter_oku(lx);
+                    m_uzn = m_uzn + 1;
+                }
+            }
+            
+            eger string_hatasi == 1 ise { devam_et; }
+            eger lx.guncel_offset >= lx.dosya_boyutu ise {
+                hata_bas_ve_kapat(lx, 9, "Kapanmamis string".ptr, lx.guncel_offset, 1);
+                devam_et;
+            }
+            
+            karakter_oku(lx); # Kapanis tirnagi
+            
+            jeton_ekle(lx, TIP_METIN, curr_ptr, m_uzn);
+            devam_et;
+        }
+
+        # Hicbir sarta uymayan karakter: karakter zaten tuketildi, dolayisiyla
+        # hata sonrasi dongu mutlaka ilerler.
+
+        # Bitwise NOT: ~ (tilde, ASCII 126)
+        eger c == 126 ise {
+            jeton_ekle(lx, TIP_TILDE, curr_ptr, 1);
+            devam_et;
+        }
+
+        # Bitwise OR: | (pipe, ASCII 124)
+        eger c == 124 ise {
+            jeton_ekle(lx, TIP_DIKEY_CUBUK, curr_ptr, 1);
+            devam_et;
+        }
+
+        hata_bas_ve_kapat(lx, 8, "Gecersiz karakter".ptr, lx.guncel_offset - 1, 1);
+        devam_et;
+    }
+    
+    # Dosya sonu
+    jeton_ekle(lx, TIP_EOF, lx.kaynak + lx.dosya_boyutu, 0);
+    dondu lx.jeton_sayisi;
+}

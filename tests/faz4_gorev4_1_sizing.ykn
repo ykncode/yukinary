@@ -1,0 +1,106 @@
+# ============================================================
+# Faz 4 Gorev 4.1 Testi: Dinamik Tip/Eleman Boyutu ve Hizalama Sistemi
+# ============================================================
+
+yapi HizalamaTesti {
+    b: u8;
+    w: u16;
+    d: u32;
+    q: tamsayi;
+}
+
+yapi DiziVeDegerTesti {
+    tampon: [10]u8;
+    deger: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    # 1. Stack u8 array testi
+    degisken bayt_dizi: [16]u8;
+    degisken bi: tamsayi = 0;
+    dongu bi < 16 {
+        bayt_dizi[bi] = (bi + 10) as u8;
+        bi = bi + 1;
+    }
+    bi = 0;
+    dongu bi < 16 {
+        degisken beklenen: tamsayi = bi + 10;
+        degisken okunan: tamsayi = bayt_dizi[bi] as tamsayi;
+        eger okunan != beklenen ise {
+            ekrana_yaz("HATA: bayt_dizi okuma hatasi!\n".ptr);
+            dondu 1;
+        }
+        bi = bi + 1;
+    }
+
+    # 2. Struct ici dizi ve ardil alan testi (bellek bozulmasi olmamali)
+    degisken dvd: DiziVeDegerTesti;
+    dvd.deger = 987654321;
+    degisken di: tamsayi = 0;
+    dongu di < 10 {
+        dvd.tampon[di] = 255 as u8;
+        di = di + 1;
+    }
+    # dvd.deger bozulmamali!
+    eger dvd.deger != 987654321 ise {
+        ekrana_yaz("HATA: dvd.deger bozuldu!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Stack u16 array testi
+    degisken kelime_dizi: [8]u16;
+    degisken wi: tamsayi = 0;
+    dongu wi < 8 {
+        kelime_dizi[wi] = (wi * 100 + 500) as u16;
+        wi = wi + 1;
+    }
+    wi = 0;
+    dongu wi < 8 {
+        degisken beklenen_w: tamsayi = wi * 100 + 500;
+        degisken okunan_w: tamsayi = kelime_dizi[wi] as tamsayi;
+        eger okunan_w != beklenen_w ise {
+            ekrana_yaz("HATA: kelime_dizi okuma hatasi!\n".ptr);
+            dondu 3;
+        }
+        wi = wi + 1;
+    }
+
+    # 4. Stack u32 array testi
+    degisken dword_dizi: [4]u32;
+    degisken dwi: tamsayi = 0;
+    dongu dwi < 4 {
+        dword_dizi[dwi] = (dwi * 10000 + 70000) as u32;
+        dwi = dwi + 1;
+    }
+    dwi = 0;
+    dongu dwi < 4 {
+        degisken beklenen_dw: tamsayi = dwi * 10000 + 70000;
+        degisken okunan_dw: tamsayi = dword_dizi[dwi] as tamsayi;
+        eger okunan_dw != beklenen_dw ise {
+            ekrana_yaz("HATA: dword_dizi okuma hatasi!\n".ptr);
+            dondu 4;
+        }
+        dwi = dwi + 1;
+    }
+
+    # 5. Dizi eleman adresi (&arr[i]) testi
+    degisken ptr_dizi: [4]tamsayi;
+    ptr_dizi[0] = 11;
+    ptr_dizi[1] = 22;
+    ptr_dizi[2] = 33;
+    ptr_dizi[3] = 44;
+
+    degisken p: *tamsayi = &ptr_dizi[2];
+    eger *p != 33 ise {
+        ekrana_yaz("HATA: &ptr_dizi[2] okuma hatasi!\n".ptr);
+        dondu 5;
+    }
+    *p = 999;
+    eger ptr_dizi[2] != 999 ise {
+        ekrana_yaz("HATA: *p = 999 yazma hatasi!\n".ptr);
+        dondu 6;
+    }
+
+    ekrana_yaz("FAZ 4.1 DINAMIK TIP BOYUTU VE HIZALAMA DOGRULANDI: Basarili!\n".ptr);
+    dondu 0;
+}

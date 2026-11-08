@@ -1,0 +1,5 @@
+# IR Verifier Negatif Testi: tanimlanmamis sembol — derleme hatasi beklenir
+# Bu fixture derleyici hata uretmeli (undefined symbol)
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    dondu tanimsiz_fonksiyon(42);
+}

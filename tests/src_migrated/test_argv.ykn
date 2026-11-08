@@ -1,0 +1,12 @@
+﻿isv ekrana_yaz(m: *u8) {}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger arguman_sayisi < 2 ise {
+        ekrana_yaz("Kullanim\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("Arguman OK\n".ptr);
+    degisken kaynak_dosya: *u8 = argumanlar[1];
+    ekrana_yaz("Array OK\n".ptr);
+    dondu 0;
+}

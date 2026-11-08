@@ -1,0 +1,37 @@
+# ============================================================
+# Faz 3 Gorev 3.4: Komut Siniri Duyarli Peephole Optimizatoru Testi
+# ============================================================
+
+isv peephole_test_fonk(x: tamsayi) -> tamsayi {
+    degisken a: tamsayi = x;
+    degisken b: tamsayi = a + 0;
+    degisken c: tamsayi = b - 0;
+    degisken d: tamsayi = c * 1;
+    dondu d;
+}
+
+isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = peephole_test_fonk(12345);
+    eger sonuc != 12345 ise {
+        ekrana_yaz("HATA: peephole_test_fonk degeri hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # Donusumlerin ve ardil komutlarin semantigi bozulmamalidir
+    degisken i: tamsayi = 0;
+    degisken top: tamsayi = 0;
+    dongu i < 100 {
+        top = top + peephole_test_fonk(i);
+        i = i + 1;
+    }
+
+    # Toplam: 0..99 = 99 * 100 / 2 = 4950
+    eger top != 4950 ise {
+        ekrana_yaz("HATA: Dongu toplami hatali!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("FAZ 3.4 KOMUT SINIRI DUYARLI PEEPHOLE DOGRULANDI: Basarili!\n".ptr);
+    dondu 0;
+}
+

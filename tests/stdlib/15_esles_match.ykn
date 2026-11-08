@@ -1,0 +1,54 @@
+# ============================================================
+# tests/stdlib/15_esles_match.ykn
+# YKN esles / match Desen Esleme Sozdizimi ve Calisma Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+isv derece_hesapla(notu: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+    esles notu {
+        100 => {
+            sonuc = 5;
+        }
+        90 => {
+            sonuc = 4;
+        }
+        80 => {
+            sonuc = 3;
+        }
+        varsayilan => {
+            sonuc = 1;
+        }
+    }
+    dondu sonuc;
+}
+
+isv ana() -> tamsayi {
+    # 1. 100 -> 5
+    eger derece_hesapla(100) != 5 ise {
+        ekrana_yaz("FAIL: esles 100 != 5\n".ptr);
+        dondu 1;
+    }
+
+    # 2. 90 -> 4
+    eger derece_hesapla(90) != 4 ise {
+        ekrana_yaz("FAIL: esles 90 != 4\n".ptr);
+        dondu 1;
+    }
+
+    # 3. 80 -> 3
+    eger derece_hesapla(80) != 3 ise {
+        ekrana_yaz("FAIL: esles 80 != 3\n".ptr);
+        dondu 1;
+    }
+
+    # 4. default -> 1
+    eger derece_hesapla(45) != 1 ise {
+        ekrana_yaz("FAIL: esles 45 != 1\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("ESLES-MATCH-PASS\n".ptr);
+    dondu 0;
+}

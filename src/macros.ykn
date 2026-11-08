@@ -1,0 +1,382 @@
+# ============================================================
+# Yukinary (YKN) Makro Geniletici (Macro Expander) - %100 YKN
+# GOREV 5.1: Macro Tanimi ve Cagri Codegen
+# GOREV 5.2: Built-in Macro Seti (dogrula, ayikla, panik, boyut)
+# GOREV 5.3: Macro Hygiene (isimlendirme yalitimi)
+# ============================================================
+
+degisken AST_MAKRO_TANIMI = 22;
+degisken AST_MAKRO_CAGRISI = 23;
+
+# Macro hygiene sayaci ve tablosu (global)
+degisken g_macro_hygiene_n: tamsayi = 0;
+degisken g_hygiene_eski_hash: [512]tamsayi;
+degisken g_hygiene_eski_isim: [512]*u8;
+degisken g_hygiene_eski_uzn: [512]tamsayi;
+degisken g_hygiene_yeni_jeton: [512]*Jeton;
+degisken g_hygiene_sayisi: tamsayi = 0;
+degisken g_hygiene_baslangic: tamsayi = 0;
+degisken MAKRO_GENISLETME_BUTCESI: tamsayi = 4096;
+degisken MAKRO_MAKS_DERINLIK: tamsayi = 32;
+degisken g_makro_genisletme_sayaci: tamsayi = 0;
+degisken g_makro_derinlik: tamsayi = 0;
+
+# MakroKural linked list dugumu
+yapi MakroKural {
+    isim_hash: tamsayi;
+    parametre_sayisi: tamsayi;
+    parametre_hashleri: *tamsayi;
+    sablon_koku: *AstDugum;
+    sonraki: *MakroKural;
+}
+
+yapi MakroMotoru {
+    kurallar: *MakroKural;      # Linked list basi
+    kapasite: tamsayi;          # Geriye donuk uyumluluk
+    kayitli_sayi: tamsayi;
+    arena: *AstArena;
+}
+
+isv motor_olustur(arena: *AstArena, kural_bellek: *MakroKural, kapasite: tamsayi) -> MakroMotoru {
+    degisken motor: MakroMotoru;
+    motor.kurallar = 0;
+    motor.kapasite = kapasite;
+    motor.kayitli_sayi = 0;
+    motor.arena = arena;
+    dondu motor;
+}
+
+# ============================================================
+# 1. Makro Kaydetme — linked list ile
+# ============================================================
+isv makro_kaydet(motor: *MakroMotoru, isim_ptr: *u8, isim_uzunluk: tamsayi, params: *tamsayi, param_sayisi: tamsayi, govde: *AstDugum) {
+    degisken yeni: *MakroKural = compiler_tahsis_et(48);
+    yeni.isim_hash = djb2_makro(isim_ptr, isim_uzunluk);
+    yeni.parametre_sayisi = param_sayisi;
+    yeni.parametre_hashleri = params;
+    yeni.sablon_koku = govde;
+    yeni.sonraki = motor.kurallar;
+    motor.kurallar = yeni;
+    motor.kayitli_sayi = motor.kayitli_sayi + 1;
+}
+
+isv kural_bul(motor: *MakroMotoru, isim_hash: tamsayi) -> *MakroKural {
+    degisken iter: *MakroKural = motor.kurallar;
+    dongu iter != 0 {
+        eger iter.isim_hash == isim_hash ise {
+            dondu iter;
+        }
+        iter = iter.sonraki;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# 2. AST Kopyalama ve Parametre Ikamesi
+# GOREV 5.3: Hygiene — ic degisken isimlerine __mN_ prefix
+# ============================================================
+isv arguman_bul(kural: *MakroKural, argumanlar: *AstDugum, hedef_hash: tamsayi) -> *AstDugum {
+    degisken i: tamsayi = 0;
+    degisken gec_arg: *AstDugum = argumanlar;
+    dongu i < kural.parametre_sayisi ve gec_arg != 0 {
+        degisken p_hash: *tamsayi = kural.parametre_hashleri;
+        eger p_hash[i] == hedef_hash ise {
+            dondu gec_arg;
+        }
+        gec_arg = gec_arg.sonraki;
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Yeni prefix'li jeton olustur (hygiene icin)
+isv hygiene_jeton_olustur(motor: *MakroMotoru, orijinal: *Jeton, n: tamsayi) -> *Jeton {
+    eger orijinal == 0 ise { dondu 0; }
+    degisken n_str: *u8 = disc_to_str(n);
+    degisken n_uzn: tamsayi = disc_str_uzunluk(n);
+    degisken prefix_uzn: tamsayi = 4 + n_uzn; # "__m" + sayi + "_"
+    degisken yeni_uzn: tamsayi = prefix_uzn + orijinal.uzunluk;
+    degisken yeni_ptr: *u8 = compiler_tahsis_et(yeni_uzn + 1);
+    # "__m"
+    yeni_ptr[0] = 95; yeni_ptr[1] = 95; yeni_ptr[2] = 109; # "__m"
+    degisken bi: tamsayi = 3;
+    degisken ni: tamsayi = 0;
+    dongu ni < n_uzn {
+        yeni_ptr[bi] = n_str[ni];
+        bi = bi + 1;
+        ni = ni + 1;
+    }
+    yeni_ptr[bi] = 95; bi = bi + 1; # "_"
+    degisken oi: tamsayi = 0;
+    dongu oi < orijinal.uzunluk {
+        yeni_ptr[bi] = orijinal.baslangic[oi];
+        bi = bi + 1; oi = oi + 1;
+    }
+    yeni_ptr[bi] = 0;
+    degisken yeni_j: *Jeton = compiler_tahsis_et(40);
+    yeni_j.tip = orijinal.tip;
+    yeni_j.baslangic = yeni_ptr;
+    yeni_j.uzunluk = yeni_uzn;
+    yeni_j.satir = orijinal.satir;
+    yeni_j.sutun = orijinal.sutun;
+    dondu yeni_j;
+}
+
+isv hygiene_jeton_bul(isim: *u8, uzn: tamsayi, hash: tamsayi) -> *Jeton {
+    degisken i: tamsayi = g_hygiene_sayisi - 1;
+    dongu i >= g_hygiene_baslangic {
+        eger g_hygiene_eski_hash[i] == hash ve g_hygiene_eski_uzn[i] == uzn ise {
+            eger bellek_esit_mi(g_hygiene_eski_isim[i], isim, uzn) == 1 ise {
+                dondu g_hygiene_yeni_jeton[i];
+            }
+        }
+        i = i - 1;
+    }
+    dondu 0;
+}
+
+isv ast_kopyala_ve_degistir(motor: *MakroMotoru, kural: *MakroKural, sablon: *AstDugum, argumanlar: *AstDugum) -> *AstDugum {
+    eger sablon == 0 ise { dondu 0; }
+
+    # AST_KIMLIK = 4: parametre mi veya hygiene-yeniden-adlandirilmis lokal degisken mi?
+    eger sablon.tip == 4 ve kural != 0 ise {
+        eger sablon.ilk_jeton != 0 ise {
+            degisken ident_hash: tamsayi = djb2_makro(sablon.ilk_jeton.baslangic, sablon.ilk_jeton.uzunluk);
+            degisken bulunan_arg: *AstDugum = arguman_bul(kural, argumanlar, ident_hash);
+            eger bulunan_arg != 0 ise {
+                degisken arg_kopya: *AstDugum = arena_dugum_yarat(motor.arena, bulunan_arg.tip, bulunan_arg.ilk_jeton);
+                arg_kopya.son_jeton = bulunan_arg.son_jeton;
+                arg_kopya.tip_adi = bulunan_arg.tip_adi;
+                arg_kopya.tip_adi_uzunluk = bulunan_arg.tip_adi_uzunluk;
+                arg_kopya.cozumlenmis_tip = bulunan_arg.cozumlenmis_tip;
+                arg_kopya.dizi_boyutu = bulunan_arg.dizi_boyutu;
+                arg_kopya.gorunurluk = bulunan_arg.gorunurluk;
+                arg_kopya.nullable = bulunan_arg.nullable;
+                arg_kopya.tip_arg_sayisi = bulunan_arg.tip_arg_sayisi;
+                arg_kopya.sol = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.sol, 0);
+                arg_kopya.sag = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.sag, 0);
+                arg_kopya.govde = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.govde, 0);
+                arg_kopya.yoksa_govde = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.yoksa_govde, 0);
+                arg_kopya.parametreler = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.parametreler, 0);
+                arg_kopya.tip_arglari = ast_kopyala_ve_degistir(motor, 0, bulunan_arg.tip_arglari, 0);
+                dondu arg_kopya;
+            }
+            degisken hyg_j: *Jeton = hygiene_jeton_bul(sablon.ilk_jeton.baslangic, sablon.ilk_jeton.uzunluk, ident_hash);
+            eger hyg_j != 0 ise {
+                degisken hyg_kopya: *AstDugum = arena_dugum_yarat(motor.arena, sablon.tip, hyg_j);
+                hyg_kopya.son_jeton = hyg_j;
+                hyg_kopya.tip_adi = sablon.tip_adi;
+                hyg_kopya.tip_adi_uzunluk = sablon.tip_adi_uzunluk;
+                hyg_kopya.cozumlenmis_tip = sablon.cozumlenmis_tip;
+                hyg_kopya.dizi_boyutu = sablon.dizi_boyutu;
+                hyg_kopya.gorunurluk = sablon.gorunurluk;
+                hyg_kopya.nullable = sablon.nullable;
+                hyg_kopya.tip_arg_sayisi = sablon.tip_arg_sayisi;
+                hyg_kopya.sol = ast_kopyala_ve_degistir(motor, kural, sablon.sol, argumanlar);
+                hyg_kopya.sag = ast_kopyala_ve_degistir(motor, kural, sablon.sag, argumanlar);
+                eger sablon.sonraki != 0 ise {
+                    hyg_kopya.sonraki = ast_kopyala_ve_degistir(motor, kural, sablon.sonraki, argumanlar);
+                }
+                dondu hyg_kopya;
+            }
+        }
+    }
+
+    degisken kopyalanan: *AstDugum = arena_dugum_yarat(motor.arena, sablon.tip, sablon.ilk_jeton);
+    kopyalanan.son_jeton = sablon.son_jeton;
+    kopyalanan.tip_adi = sablon.tip_adi;
+    kopyalanan.tip_adi_uzunluk = sablon.tip_adi_uzunluk;
+    kopyalanan.cozumlenmis_tip = sablon.cozumlenmis_tip;
+    kopyalanan.dizi_boyutu = sablon.dizi_boyutu;
+    kopyalanan.gorunurluk = sablon.gorunurluk;
+    kopyalanan.nullable = sablon.nullable;
+    kopyalanan.tip_arg_sayisi = sablon.tip_arg_sayisi;
+
+    # Once baslangic ifadesini (sag) mevcut kapsamda klonla, sonra yeni lokal degiskeni hygiene tablosuna ekle
+    kopyalanan.sol = ast_kopyala_ve_degistir(motor, kural, sablon.sol, argumanlar);
+    kopyalanan.sag = ast_kopyala_ve_degistir(motor, kural, sablon.sag, argumanlar);
+
+    # GOREV 1.6 / 5.3: AST_DEGISKEN_TANIMI icin hygiene prefix ve tablo kaydi
+    eger sablon.tip == 7 ve kural != 0 ve sablon.ilk_jeton != 0 ve g_macro_hygiene_n > 0 ise {
+        degisken yeni_j: *Jeton = hygiene_jeton_olustur(motor, sablon.ilk_jeton, g_macro_hygiene_n);
+        eger yeni_j != 0 ise {
+            kopyalanan.ilk_jeton = yeni_j;
+            eger g_hygiene_sayisi < 512 ise {
+                g_hygiene_eski_hash[g_hygiene_sayisi] = djb2_makro(sablon.ilk_jeton.baslangic, sablon.ilk_jeton.uzunluk);
+                g_hygiene_eski_isim[g_hygiene_sayisi] = sablon.ilk_jeton.baslangic;
+                g_hygiene_eski_uzn[g_hygiene_sayisi] = sablon.ilk_jeton.uzunluk;
+                g_hygiene_yeni_jeton[g_hygiene_sayisi] = yeni_j;
+                g_hygiene_sayisi = g_hygiene_sayisi + 1;
+            }
+        }
+    }
+
+    kopyalanan.govde = ast_kopyala_ve_degistir(motor, kural, sablon.govde, argumanlar);
+    kopyalanan.yoksa_govde = ast_kopyala_ve_degistir(motor, kural, sablon.yoksa_govde, argumanlar);
+    kopyalanan.parametreler = ast_kopyala_ve_degistir(motor, kural, sablon.parametreler, argumanlar);
+    kopyalanan.tip_arglari = ast_kopyala_ve_degistir(motor, kural, sablon.tip_arglari, argumanlar);
+    eger sablon.sonraki != 0 ise {
+        kopyalanan.sonraki = ast_kopyala_ve_degistir(motor, kural, sablon.sonraki, argumanlar);
+    }
+    dondu kopyalanan;
+}
+
+# ============================================================
+# 3. Ana Makro Tarayici
+# ============================================================
+isv makro_tek_dugum(motor: *MakroMotoru, kok: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+    eger motor == 0 ise { dondu kok; }
+
+    # Makro tanimlari codegen'e gitmez
+    eger kok.tip == AST_MAKRO_TANIMI ise {
+        dondu 0;
+    }
+
+    # Makro cagri kontrolu: hem AST_MAKRO_CAGRISI hem AST_ISLEV_CAGRISI
+    degisken cagri_hash: tamsayi = 0;
+    degisken makro_kural: *MakroKural = 0;
+    eger kok.tip == AST_MAKRO_CAGRISI ise {
+        eger kok.ilk_jeton != 0 ise {
+            cagri_hash = djb2_makro(kok.ilk_jeton.baslangic, kok.ilk_jeton.uzunluk);
+            makro_kural = kural_bul(motor, cagri_hash);
+        }
+    } yoksa eger kok.tip == 11 ise { # AST_ISLEV_CAGRISI
+        eger kok.sol != 0 ve kok.sol.ilk_jeton != 0 ise {
+            cagri_hash = djb2_makro(kok.sol.ilk_jeton.baslangic, kok.sol.ilk_jeton.uzunluk);
+            makro_kural = kural_bul(motor, cagri_hash);
+        }
+    }
+
+    eger makro_kural != 0 ise {
+        eger g_makro_genisletme_sayaci >= MAKRO_GENISLETME_BUTCESI ise {
+            makro_limit_hatasi(1, 1, "Makro genisletme butcesi asildi".ptr);
+            os_sureci_sonlandir(1);
+        }
+        eger g_makro_derinlik >= MAKRO_MAKS_DERINLIK ise {
+            ozyineleme_derinlik_hatasi(1, 1, "Makro ozyineleme derinlik limiti asildi".ptr);
+            os_sureci_sonlandir(1);
+        }
+        g_makro_genisletme_sayaci = g_makro_genisletme_sayaci + 1;
+        g_makro_derinlik = g_makro_derinlik + 1;
+        # Once argumanlari mevcut kapsamda genislet
+        eger kok.sag != 0 ise {
+            kok.sag = makrolari_genislet(motor, kok.sag);
+        }
+        # GOREV 1.6 / 5.3: Hygiene sayacini ve kapsam penceresini ayarla
+        degisken onceki_hyg_bas: tamsayi = g_hygiene_baslangic;
+        degisken onceki_hyg_say: tamsayi = g_hygiene_sayisi;
+        degisken onceki_hyg_n: tamsayi = g_macro_hygiene_n;
+        g_hygiene_baslangic = g_hygiene_sayisi;
+        g_macro_hygiene_n = g_macro_hygiene_n + 1;
+        degisken genisletilmis_agac: *AstDugum = ast_kopyala_ve_degistir(motor, makro_kural, makro_kural.sablon_koku, kok.sag);
+        g_hygiene_sayisi = onceki_hyg_say;
+        g_hygiene_baslangic = onceki_hyg_bas;
+        # Tek ifadeli makro blogunu (orn: makro kare(x) { x * x }) ifade baglaminda dogrudan kullanilabilmesi icin ac
+        eger genisletilmis_agac != 0 ve (genisletilmis_agac.tip == AST_BLOK veya genisletilmis_agac.tip == 15) ve
+            genisletilmis_agac.sol != 0 ve genisletilmis_agac.sol.sonraki == 0 ve
+            genisletilmis_agac.sol.tip != 7 ise {
+            genisletilmis_agac = genisletilmis_agac.sol;
+        }
+        genisletilmis_agac = makro_tek_dugum(motor, genisletilmis_agac);
+        g_makro_derinlik = g_makro_derinlik - 1;
+        degisken iter: *AstDugum = genisletilmis_agac;
+        dongu iter != 0 ve iter.sonraki != 0 {
+            iter = iter.sonraki;
+        }
+        eger iter != 0 ise {
+            iter.sonraki = kok.sonraki;
+        }
+        dondu genisletilmis_agac;
+    } yoksa eger cagri_hash != 0 ise {
+        degisken h_dogrula: tamsayi = djb2_makro("dogrula".ptr, 7);
+        degisken h_ayikla: tamsayi = djb2_makro("ayikla".ptr, 6);
+        degisken h_panik: tamsayi = djb2_makro("panik".ptr, 5);
+        degisken h_boyut: tamsayi = djb2_makro("boyut".ptr, 5);
+        degisken args2: *AstDugum = kok.sag;
+        eger cagri_hash == h_dogrula ve args2 != 0 ise {
+            dondu kok;
+        }
+        eger cagri_hash == h_ayikla ve args2 != 0 ise {
+            degisken yeni_j: *Jeton = compiler_tahsis_et(40);
+            yeni_j.tip = TIP_KIMLIK;
+            yeni_j.baslangic = "sayiyi_yazdir".ptr;
+            yeni_j.uzunluk = 13;
+            eger kok.sol != 0 ise { kok.sol.ilk_jeton = yeni_j; }
+            dondu kok;
+        }
+        eger cagri_hash == h_panik ve args2 != 0 ise {
+            degisken yeni_j2: *Jeton = compiler_tahsis_et(40);
+            yeni_j2.tip = TIP_KIMLIK;
+            yeni_j2.baslangic = "ekrana_yaz".ptr;
+            yeni_j2.uzunluk = 10;
+            eger kok.sol != 0 ise { kok.sol.ilk_jeton = yeni_j2; }
+            dondu kok;
+        }
+        eger cagri_hash == h_boyut ise {
+            degisken bsz: tamsayi = 8;
+            eger args2 != 0 ve args2.ilk_jeton != 0 ise {
+                degisken tp: *u8 = args2.ilk_jeton.baslangic;
+                degisken tl: tamsayi = args2.ilk_jeton.uzunluk;
+                eger tl == 2 ve bellek_esit_mi(tp, "u8".ptr, 2) == 1 ise { bsz = 1; }
+            }
+            degisken bj: *Jeton = compiler_tahsis_et(40);
+            degisken bstr: *u8 = compiler_tahsis_et(4);
+            eger bsz == 1 ise { bstr[0] = 49; } yoksa { bstr[0] = 56; }
+            bstr[1] = 0;
+            bj.tip = TIP_TAMSAYI;
+            bj.baslangic = bstr;
+            bj.uzunluk = 1;
+            degisken bnum: *AstDugum = arena_dugum_yarat(motor.arena, 1, bj);
+            bnum.sonraki = kok.sonraki;
+            dondu bnum;
+        }
+    }
+
+    # Alt agaclari recursive tara
+    eger kok.sag != 0 ise {
+        degisken yeni_sag: *AstDugum = makrolari_genislet(motor, kok.sag);
+        eger yeni_sag != 0 ise { kok.sag = yeni_sag; }
+    }
+    eger kok.sol != 0 ise {
+        degisken yeni_sol: *AstDugum = makrolari_genislet(motor, kok.sol);
+        eger yeni_sol != 0 ise { kok.sol = yeni_sol; }
+    }
+    eger kok.govde != 0 ise { kok.govde = makrolari_genislet(motor, kok.govde); }
+    eger kok.yoksa_govde != 0 ise { kok.yoksa_govde = makrolari_genislet(motor, kok.yoksa_govde); }
+    eger kok.parametreler != 0 ise { kok.parametreler = makrolari_genislet(motor, kok.parametreler); }
+
+    dondu kok;
+}
+
+isv makrolari_genislet(motor: *MakroMotoru, kok: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+    eger motor == 0 ise { dondu kok; }
+    eger g_makro_derinlik == 0 ise {
+        g_makro_genisletme_sayaci = 0;
+    }
+    degisken yeni_kok: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+    degisken iter: *AstDugum = kok;
+    dongu iter != 0 {
+        degisken siradaki: *AstDugum = iter.sonraki;
+        iter.sonraki = 0;
+        degisken genis: *AstDugum = makro_tek_dugum(motor, iter);
+        eger genis == 0 ise {
+            iter = siradaki;
+            devam_et;
+        }
+        eger yeni_kok == 0 ise {
+            yeni_kok = genis;
+            son = genis;
+        } yoksa {
+            son.sonraki = genis;
+        }
+        dongu son != 0 ve son.sonraki != 0 {
+            son = son.sonraki;
+        }
+        iter = siradaki;
+    }
+    eger yeni_kok == 0 ise { dondu kok; }
+    dondu yeni_kok;
+}

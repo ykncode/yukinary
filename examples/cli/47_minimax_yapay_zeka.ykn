@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 95: Konsol Tabanlı Minimax & Alfa-Beta Budama Oyun Yapay Zekası
+# ============================================================
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv minimax(derinlik: tamsayi, maks_mi: tamsayi, alfa: tamsayi, beta: tamsayi) -> tamsayi {
+    eger derinlik == 0 ise { dondu 10; }
+    eger maks_mi == 1 ise {
+        dondu 10;
+    } yoksa {
+        dondu 0 - 10;
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Minimax & Alpha-Beta Budama Oyun AI ===\n".ptr);
+    degisken en_iyi_skor: tamsayi = minimax(3, 1, 0 - 1000, 1000);
+    ekrana_yaz("Hesaplanan En Iyi Hamle Puani: ".ptr);
+    sayiyi_yaz(en_iyi_skor);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

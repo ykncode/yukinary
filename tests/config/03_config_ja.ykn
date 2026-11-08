@@ -1,0 +1,9 @@
+#設定 {
+    最適化: 1
+}
+
+isv main() -> tamsayi {
+    ekrana_yaz("JA CONFIG OK\n".ptr);
+    dondu 0;
+}
+

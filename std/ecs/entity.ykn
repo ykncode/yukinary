@@ -1,0 +1,15 @@
+# YKN ECS - Varlik (Entity) Yonetimi
+# Varliklar sadece bir ID'den ibarettir, mantiklari veya verileri yoktur.
+
+degisken o_son_varlik_id: tamsayi = 0;
+
+isv varlik_olustur() -> tamsayi {
+    o_son_varlik_id = o_son_varlik_id + 1;
+    dondu o_son_varlik_id;
+}
+
+isv varlik_sil(id: tamsayi) -> tamsayi {
+    # Su anki tasarimda ID kumesinden dusururuz
+    # Gelecekte geri donusum havuzu (recycling pool) eklenecek
+    dondu 1;
+}

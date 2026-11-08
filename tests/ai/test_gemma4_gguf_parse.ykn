@@ -1,0 +1,362 @@
+# ============================================================
+# tests/ai/test_gemma4_gguf_parse.ykn
+# Gemma-4-E4B-it Q4_K_M GGUF modelini YKN ile parse et ve dogrula.
+# Hedef: models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv str_yaz_n(s: *u8, max_n: tamsayi) {
+    eger s == 0 ise { ekrana_yaz("<null>".ptr); dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < max_n ve s[i] != 0 {
+        degisken ch: [2]u8;
+        ch[0] = s[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+        i = i + 1;
+    }
+}
+
+isv gemma4_tensor_boyutu_dogrula(durum: *GGUFDurum, katman: tamsayi,
+                                  suffix: *u8, dim0: tamsayi,
+                                  dim1: tamsayi) -> tamsayi {
+    degisken tensor: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum, 0, katman, suffix);
+    eger tensor == 0 veya tensor->ndim != 2 veya
+       tensor->dim_0 != dim0 veya tensor->dim_1 != dim1 { dondu 0; }
+    dondu 1;
+}
+
+isv gemma4_tensor_vektor_dogrula(durum: *GGUFDurum, katman: tamsayi,
+                                  suffix: *u8, boyut: tamsayi) -> tamsayi {
+    degisken tensor: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum, 0, katman, suffix);
+    eger tensor == 0 veya tensor->ndim != 1 veya tensor->dim_0 != boyut { dondu 0; }
+    dondu 1;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YKN Gemma-4-E4B-it GGUF Parse & Dogrulama Testi\n".ptr);
+    ekrana_yaz("  Model: models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf\n".ptr);
+    ekrana_yaz("============================================================\n\n".ptr);
+
+    # --- 1. GGUF Header Parse ---
+    ekrana_yaz("[1/5] GGUF Header Parse (ilk 64MB okunuyor)...\n".ptr);
+
+    degisken durum_bellek: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_bellek == 0 ise {
+        ekrana_yaz("  BASARISIZ: GGUFDurum icin bellek tahsis edilemedi!\n".ptr);
+        ExitProcess(1);
+    }
+    gguf_durum_sifirla(durum_bellek);
+
+    degisken model_yolu: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken parse_sonuc: tamsayi = gguf_yukle(model_yolu, durum_bellek);
+
+    eger parse_sonuc == 0 ise {
+        ekrana_yaz("  BASARISIZ: GGUF parse basarisiz! Hata kodu: ".ptr);
+        sayi_yaz(GGUF_SON_HATA);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(2);
+    }
+    ekrana_yaz("  BASARILI: GGUF header parse edildi.\n\n".ptr);
+
+    # --- 2. GGUF Versiyon Dogrulama ---
+    ekrana_yaz("[2/5] GGUF Versiyon Dogrulamasi...\n".ptr);
+    degisken versiyon: tamsayi = durum_bellek->versiyon;
+    ekrana_yaz("  GGUF Versiyon : ".ptr); sayi_yaz(versiyon); ekrana_yaz("\n".ptr);
+
+    eger versiyon != 3 ise {
+        ekrana_yaz("  BASARISIZ: Beklenen GGUF v3, bulunan: ".ptr);
+        sayi_yaz(versiyon);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(3);
+    }
+    ekrana_yaz("  BASARILI: GGUF v3 onaylandi.\n\n".ptr);
+
+    # --- 3. Model Mimarisi ve Metadata Ozeti ---
+    ekrana_yaz("[3/5] Model Mimarisi ve Metadata...\n".ptr);
+    degisken tensor_sayisi: tamsayi = durum_bellek->tensor_sayisi;
+    degisken vocab_boyutu: tamsayi = durum_bellek->vocab_boyutu;
+    degisken gizli_boyut: tamsayi = durum_bellek->gizli_boyut;
+    degisken katman_sayisi: tamsayi = durum_bellek->katman_sayisi;
+    degisken kafa_sayisi: tamsayi = durum_bellek->kafa_sayisi;
+    degisken kv_kafa_sayisi: tamsayi = durum_bellek->kv_kafa_sayisi;
+    degisken context_boyutu: tamsayi = durum_bellek->context_boyutu;
+    degisken quant_tipi: tamsayi = durum_bellek->quant_tipi;
+    degisken metadata_hazir: tamsayi = durum_bellek->metadata_model_hazir;
+
+    ekrana_yaz("  Mimari           : ".ptr);
+    eger durum_bellek->mimari_adi != 0 ise {
+        str_yaz_n(durum_bellek->mimari_adi, 64);
+    } yoksa {
+        ekrana_yaz("<metadata yok>".ptr);
+    }
+    ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("  Tensor Sayisi    : ".ptr); sayi_yaz(tensor_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Vocab Boyutu     : ".ptr); sayi_yaz(vocab_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Gizli Boyut      : ".ptr); sayi_yaz(gizli_boyut); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Katman Sayisi    : ".ptr); sayi_yaz(katman_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Kafa Sayisi      : ".ptr); sayi_yaz(kafa_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  KV Kafa Sayisi   : ".ptr); sayi_yaz(kv_kafa_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Context Boyutu   : ".ptr); sayi_yaz(context_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Quant Tipi (id)  : ".ptr); sayi_yaz(quant_tipi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Metadata Hazir   : ".ptr); sayi_yaz(metadata_hazir); ekrana_yaz("\n".ptr);
+
+    eger tensor_sayisi != 720 ise {
+        ekrana_yaz("  BASARISIZ: Gemma-4 tensor adedi 720 degil.\n".ptr);
+        ExitProcess(4);
+    }
+
+    degisken gemma_profile: *GGUFGemma4Profile = durum_bellek->gemma4;
+    eger gemma_profile == 0 veya
+       gemma_profile->shared_kv_layers != 18 veya
+       gemma_profile->swa_window != 512 veya
+       gemma_profile->swa_key_length != 256 veya
+       gemma_profile->swa_value_length != 256 veya
+       gemma_profile->full_key_length != 512 or
+       gemma_profile->full_value_length != 512 or
+       gemma_profile->swa_rope_dimension != 256 or
+       gemma_profile->per_layer_input_length != 256 or
+       durum_bellek->rope_boyutu != 512 or
+       durum_bellek->rope_freq_base_q16 != 65536000000 or
+       gemma_profile->sliding_window_pattern_count != 42 or
+       gemma_profile->sliding_window_pattern_bits != 2164118124511 veya
+       gemma_profile->rope_freq_base_swa_q16 != 655360000 veya
+       gemma_profile->logit_softcap_q16 != 1966080 ise {
+        ekrana_yaz("  BASARISIZ: Gemma-4 architecture metadata profili uyusmuyor.\n".ptr);
+        ExitProcess(13);
+    }
+    degisken ple_token: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum_bellek, "per_layer_token_embd.weight".ptr);
+    degisken ple_model_proj: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum_bellek, "per_layer_model_proj.weight".ptr);
+    degisken ple_proj_norm: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum_bellek, "per_layer_proj_norm.weight".ptr);
+    degisken rope_freqs: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum_bellek, "rope_freqs.weight".ptr);
+    eger ple_token == 0 veya ple_token->dim_0 != 10752 or
+       ple_token->dim_1 != vocab_boyutu or ple_token->ggml_type != GGML_TYPE_Q6_K or
+       ple_model_proj == 0 veya ple_model_proj->dim_0 != gizli_boyut or
+       ple_model_proj->dim_1 != 10752 or ple_model_proj->ggml_type != GGML_TYPE_BF16 or
+       ple_proj_norm == 0 veya ple_proj_norm->dim_0 != 256 or
+       ple_proj_norm->ggml_type != GGML_TYPE_F32 or rope_freqs == 0 or
+       rope_freqs->dim_0 != 256 or rope_freqs->ggml_type != GGML_TYPE_F32 {
+        ekrana_yaz("  BASARISIZ: Gemma PLE/RoPE global tensor kontrati hatali.\n".ptr);
+        ExitProcess(20);
+    }
+    degisken swa_katman_sayisi: tamsayi = 0;
+    degisken katman_kontrol: tamsayi = 0;
+    degisken q_width: tamsayi = 0;
+    degisken kv_width: tamsayi = 0;
+    degisken head_width: tamsayi = 0;
+    dongu katman_kontrol < 42 {
+        degisken is_swa: tamsayi = gguf_gemma4_katman_swa_mi(durum_bellek, katman_kontrol);
+        eger is_swa < 0 { ExitProcess(14); }
+        eger is_swa == 1 { swa_katman_sayisi = swa_katman_sayisi + 1; }
+        eger gguf_gemma4_katman_geometrisi(durum_bellek, katman_kontrol,
+            &q_width, &kv_width, &head_width) == 0 {
+            ekrana_yaz("  BASARISIZ: Katman geometri metadata'si hatali.\n".ptr);
+            ExitProcess(16);
+        }
+        eger is_swa == 1 ve (head_width != 256 veya q_width != 2048 veya kv_width != 512) {
+            ExitProcess(16);
+        }
+        eger is_swa == 0 ve (head_width != 512 veya q_width != 4096 veya kv_width != 1024) {
+            ExitProcess(17);
+        }
+        eger gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".attn_q.weight".ptr, gizli_boyut, q_width) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".attn_k.weight".ptr, gizli_boyut, kv_width) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".attn_v.weight".ptr, gizli_boyut, kv_width) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".attn_output.weight".ptr, q_width, gizli_boyut) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".ffn_up.weight".ptr, gizli_boyut, 10240) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".ffn_gate.weight".ptr, gizli_boyut, 10240) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".ffn_down.weight".ptr, 10240, gizli_boyut) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".inp_gate.weight".ptr, gizli_boyut, gemma_profile->per_layer_input_length) == 0 veya
+           gemma4_tensor_boyutu_dogrula(durum_bellek, katman_kontrol,
+            ".proj.weight".ptr, gemma_profile->per_layer_input_length, gizli_boyut) == 0 {
+            ekrana_yaz("  BASARISIZ: Gercek Gemma katman projection tensor sekli uyusmuyor.\n".ptr);
+            ExitProcess(18);
+        }
+        eger gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".attn_q_norm.weight".ptr, head_width) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".attn_k_norm.weight".ptr, head_width) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".attn_norm.weight".ptr, gizli_boyut) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".post_attention_norm.weight".ptr, gizli_boyut) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".ffn_norm.weight".ptr, gizli_boyut) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".post_ffw_norm.weight".ptr, gizli_boyut) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".post_norm.weight".ptr, gizli_boyut) == 0 veya
+           gemma4_tensor_vektor_dogrula(durum_bellek, katman_kontrol,
+            ".layer_output_scale.weight".ptr, 1) == 0 {
+            ekrana_yaz("  BASARISIZ: Gercek Gemma katman norm/scale tensor sekli uyusmuyor.\n".ptr);
+            ExitProcess(19);
+        }
+        katman_kontrol = katman_kontrol + 1;
+    }
+    eger swa_katman_sayisi != 35 veya
+       gguf_gemma4_katman_swa_mi(durum_bellek, 5) != 0 veya
+       gguf_gemma4_katman_swa_mi(durum_bellek, 41) != 0 or
+       gguf_gemma4_katman_swa_mi(durum_bellek, 42) != (0 - 1) or
+       gguf_gemma4_kv_yazan_katman_mi(durum_bellek, 23) != 1 or
+       gguf_gemma4_kv_yazan_katman_mi(durum_bellek, 24) != 0 or
+       gguf_gemma4_kv_yazan_katman_mi(durum_bellek, 42) != (0 - 1) {
+        ekrana_yaz("  BASARISIZ: Katman bazli Gemma attention/KV plani hatali.\n".ptr);
+        ExitProcess(15);
+    }
+    ekrana_yaz("  Gemma-4 metadata: pattern ve katman projection geometrileri dogrulandi.\n".ptr);
+    degisken f32_adet: tamsayi = 0;
+    degisken q4k_adet: tamsayi = 0;
+    degisken q6k_adet: tamsayi = 0;
+    degisken bf16_adet: tamsayi = 0;
+    degisken ti: tamsayi = 0;
+    dongu ti < tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum_bellek->tensor_list + ti * GGUF_TENSOR_STRIDE;
+        eger tensor->bayt_sayisi <= 0 ise {
+            ekrana_yaz("  BASARISIZ: Tensor byte boyutu gecersiz.\n".ptr);
+            ExitProcess(5);
+        }
+        eger tensor->ggml_type == GGML_TYPE_F32 ise { f32_adet = f32_adet + 1; }
+        eger tensor->ggml_type == GGML_TYPE_Q4_K ise { q4k_adet = q4k_adet + 1; }
+        eger tensor->ggml_type == GGML_TYPE_Q6_K ise { q6k_adet = q6k_adet + 1; }
+        eger tensor->ggml_type == GGML_TYPE_BF16 ise { bf16_adet = bf16_adet + 1; }
+        ti = ti + 1;
+    }
+    eger f32_adet != 339 veya q4k_adet != 336 veya q6k_adet != 44 veya bf16_adet != 1 ise {
+        ekrana_yaz("  BASARISIZ: GGML tensor tur dagilimi beklenenden farkli.\n".ptr);
+        ExitProcess(6);
+    }
+    ekrana_yaz("  GGML dagilimi: F32=339 Q4_K=336 Q6_K=44 BF16=1\n".ptr);
+    ekrana_yaz("  BASARILI: Tensor tablosu ve quant byte boyutlari gecerli.\n\n".ptr);
+
+    # --- 4. Runtime Mimari Tanima ---
+    ekrana_yaz("[4/5] Runtime Mimari Tanima (llm_runtime_mimari_bul)...\n".ptr);
+    degisken rt_mimari: tamsayi = llm_runtime_mimari_bul(model_yolu, 54);
+    ekrana_yaz("  Runtime Mimari ID: ".ptr); sayi_yaz(rt_mimari); ekrana_yaz("\n".ptr);
+
+    eger rt_mimari == LLM_MIMARI_GEMMA ise {
+        ekrana_yaz("  BASARILI: Gemma mimarisi dogru tanimlandi (ID=".ptr);
+        sayi_yaz(LLM_MIMARI_GEMMA);
+        ekrana_yaz(").\n\n".ptr);
+    } yoksa {
+        ekrana_yaz("  UYARI: Mimari path'ten Gemma taninamadi. ID: ".ptr);
+        sayi_yaz(rt_mimari);
+        ekrana_yaz(" (GGUF mimari_adi ile kontrol edin)\n\n".ptr);
+    }
+
+    # --- 5. Ilk Tensor Bilgisi ---
+    ekrana_yaz("[5/5] Ilk Tensor Bilgisi Kontrolu...\n".ptr);
+    eger durum_bellek->tensor_list != 0 ve tensor_sayisi > 0 ise {
+        degisken t0: *GGUFTensorInfo = durum_bellek->tensor_list;
+        ekrana_yaz("  Tensor[0] isim   : ".ptr);
+        eger t0->isim != 0 ise {
+            str_yaz_n(t0->isim, 64);
+        } yoksa {
+            ekrana_yaz("<isim yok>".ptr);
+        }
+        ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] ndim   : ".ptr); sayi_yaz(t0->ndim); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] dim_0  : ".ptr); sayi_yaz(t0->dim_0); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] dim_1  : ".ptr); sayi_yaz(t0->dim_1); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] tip    : ".ptr); sayi_yaz(t0->ggml_type); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] boyut  : ".ptr); sayi_yaz(t0->bayt_sayisi); ekrana_yaz(" bayt\n".ptr);
+        ekrana_yaz("  BASARILI: Tensor bilgisi okundu.\n\n".ptr);
+    } yoksa {
+        ekrana_yaz("  UYARI: Tensor listesi bos veya null. (Tensor sayisi: ".ptr);
+        sayi_yaz(tensor_sayisi);
+        ekrana_yaz(")\n\n".ptr);
+    }
+
+    # Read and dequantize one real Q6_K token embedding through the same
+    # bounded range-loader path used by inference (BOS token ID 2).
+    degisken embedding: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(
+        durum_bellek, "token_embd.weight".ptr);
+    eger embedding == 0 veya embedding->ggml_type != GGML_TYPE_Q6_K veya
+       embedding->dim_0 != gizli_boyut veya embedding->dim_1 != vocab_boyutu ise {
+        ekrana_yaz("  BASARISIZ: Q6_K token embedding tensor bulunamadi.\n".ptr);
+        ExitProcess(7);
+    }
+    degisken model_loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&model_loader, model_yolu, durum_bellek) == 0 ise {
+        ekrana_yaz("  BASARISIZ: Gercek tensor range loader baslatilamadi.\n".ptr);
+        ExitProcess(8);
+    }
+    degisken execution: LLMTransformerExecution;
+    execution.loader = &model_loader;
+    execution.agirlik_buffer = bellek_tahsis_et(4096);
+    execution.agirlik_kapasitesi = 4096;
+    eger execution.agirlik_buffer == 0 ise { ExitProcess(9); }
+    degisken hidden: *tamsayi = bellek_tahsis_et(gizli_boyut * 8);
+    eger hidden == 0 ise { ExitProcess(10); }
+    degisken token_satir_bayti: tamsayi = embedding->bayt_sayisi / embedding->dim_1;
+    eger llm_transformer_tensor_vektor_oku(&execution, embedding,
+        embedding->veri_offset + 2 * token_satir_bayti, hidden, gizli_boyut) != gizli_boyut ise {
+        ekrana_yaz("  BASARISIZ: Gercek Q6_K embedding satiri okunamadi/dequantize edilemedi.\n".ptr);
+        ExitProcess(11);
+    }
+    degisken nonzero: tamsayi = 0;
+    degisken vi: tamsayi = 0;
+    dongu vi < gizli_boyut {
+        eger hidden[vi] != 0 ise { nonzero = nonzero + 1; }
+        vi = vi + 1;
+    }
+    eger nonzero == 0 ise {
+        ekrana_yaz("  BASARISIZ: Gercek BOS embedding vektoru sifir.\n".ptr);
+        ExitProcess(12);
+    }
+    ekrana_yaz("  BASARILI: BOS embedding gercek Q6_K payload'undan range-read + dequant edildi.\n".ptr);
+
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz(">>> [SONUC] Gemma-4 GGUF ve Q6_K embedding testi BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

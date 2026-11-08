@@ -1,0 +1,18 @@
+ice_aktar "../../src/fallback_shell.ykn";
+
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv shell_strlen(metin: *u8) -> tamsayi {
+    degisken uzunluk: tamsayi = 0;
+    dongu metin[uzunluk] != 0 { uzunluk = uzunluk + 1; }
+    dondu uzunluk;
+}
+
+isv ana() -> tamsayi {
+    degisken komut: *u8 = "cmd.exe /c echo YKN_SHELL_NATIVE_PASS".ptr;
+    degisken sonuc: *ShellSonuc = shell_calistir(komut, shell_strlen(komut));
+    eger sonuc == 0 veya sonuc.basarili != 1 ise { dondu 2; }
+    ekrana_yaz(sonuc.stdout_tampon);
+    eger sonuc.cikis_kodu != 0 ise { dondu 3; }
+    dondu 0;
+}

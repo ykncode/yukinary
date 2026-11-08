@@ -1,0 +1,8 @@
+# FIX-13: nullable pointer-to-pointer guard testi.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?**u8 = bos;
+    eger p != bos ise {
+        p[0][0] = 1;
+    }
+    dondu 0;
+}

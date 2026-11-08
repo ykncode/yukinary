@@ -1,0 +1,15 @@
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("BEGIN\n".ptr);
+    degisken s: tamsayi = istemci_olustur(ipv4_adres(127, 0, 0, 1), 18081, -1);
+    eger s < 0 ise { ekrana_yaz("CONNECT_FAIL\n".ptr); dondu 30; }
+    ekrana_yaz("CONNECT_OK\n".ptr);
+    degisken istek: *u8 = "GET /durum HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".ptr;
+    degisken g: tamsayi = soket_gonder_tam(s, istek, 59);
+    eger g != 59 ise { ekrana_yaz("SEND_FAIL\n".ptr); soket_kapat(s); dondu 31; }
+    ekrana_yaz("SEND_OK\n".ptr);
+    degisken cevap: [8192]u8;
+    degisken n: tamsayi = soket_al(s, cevap, 8191);
+    dondu 0;
+}

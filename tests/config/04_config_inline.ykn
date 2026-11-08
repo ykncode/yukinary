@@ -1,0 +1,7 @@
+#ayar opt: 1;
+
+isv main() -> tamsayi {
+    ekrana_yaz("INLINE AYAR OK\n".ptr);
+    dondu 0;
+}
+

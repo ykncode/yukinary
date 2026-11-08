@@ -1,0 +1,22 @@
+# ============================================================
+# std/ai/speculative.ykn
+# FAZ 38: Spekulatif Cikarim (Speculative Decoding) Motoru
+# Taslak (Draft) model ile K token onden uretir, Buyuk hedef
+# modelde tek adimda toplu dogrular (2-3x hizlanma).
+# ============================================================
+
+isv speculative_dogrula(taslak_tokenlar: *tamsayi, hedef_tokenlar: *tamsayi, k_adet: tamsayi) -> tamsayi {
+    degisken kabul_edilen_sayisi: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < k_adet {
+        eger taslak_tokenlar[i] == hedef_tokenlar[i] ise {
+            kabul_edilen_sayisi = kabul_edilen_sayisi + 1;
+        } yoksa {
+            # Ilk uyusmazlikta spekulasyon zinciri sonlanir
+            dondu kabul_edilen_sayisi;
+        }
+        i = i + 1;
+    }
+    dondu kabul_edilen_sayisi;
+}
+

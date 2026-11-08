@@ -1,0 +1,9 @@
+# FIX-13 olumsuz: daraltma if block'i disina sizmamali.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = "A".ptr;
+    eger p != bos ise {
+        p[0] = 66;
+    }
+    p[0] = 67;
+    dondu 0;
+}

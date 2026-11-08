@@ -1,0 +1,11 @@
+yapi IsaretciYapisi {
+    kaynak: *u8;
+}
+
+islev ana() {
+    degisken a: u8 = 0x42;
+    degisken d: IsaretciYapisi;
+    d.kaynak = &a;
+    degisken okunan: *u8 = d.kaynak;
+    cikis( okunan[0] );
+}

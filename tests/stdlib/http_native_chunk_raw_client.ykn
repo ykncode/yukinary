@@ -1,0 +1,13 @@
+ice_aktar "../../std/ag/soket.ykn";
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken s: tamsayi = istemci_olustur(ipv4_adres(127, 0, 0, 1), 18084, -1);
+    eger s < 0 ise { dondu 110; }
+    degisken istek: *u8 = "GET /chunk HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".ptr;
+    degisken g: tamsayi = soket_gonder_tam(s, istek, 60);
+    eger g != 60 ise { soket_kapat(s); dondu 111; }
+    degisken buf: [8192]u8;
+    degisken n: tamsayi = soket_al(s, buf, 8191);
+    eger n <= 0 ise { soket_kapat(s); dondu 112; }
+    soket_kapat(s);
+    dondu 0;
+}

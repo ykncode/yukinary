@@ -1,0 +1,14 @@
+ice_aktar "../../tools/reality_audit.ykn";
+
+isv ana() -> tamsayi {
+    degisken kaynak: *u8 = "# mock placeholder dummy sahte MOCK SAHTE\n# stub TODO FIXME iskelet ToDo Stub\ndondu 0; return 0; dondu   0 ; return  0 ;\ng_handle = 1; handle=1; handle  =  1 ; handle = 10; handler = 1;\n/* TODO mock\n stub placeholder\n*/\n".ptr;
+    degisken sayac: RealityAuditCounts;
+    eger reality_audit_tara(kaynak, &sayac) != 1 ise { dondu 1; }
+    eger sayac.mock_marker != 0 veya sayac.stub_marker != 0 ise { dondu 2; }
+    eger sayac.constant_success != 4 veya sayac.fake_handle != 3 ise { dondu 3; }
+    eger reality_audit_say("abcabc".ptr, "abc".ptr) != 2 ise { dondu 4; }
+    eger reality_audit_say("abc".ptr, "".ptr) != 0 ise { dondu 5; }
+    eger reality_audit_tara(0, &sayac) != 0 ise { dondu 6; }
+    eger reality_audit_tara(kaynak, 0) != 0 ise { dondu 7; }
+    dondu 0;
+}

@@ -1,0 +1,236 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/matematik.ykn
+# Temel matematiksel islevler: mutlak deger, min, max, clamp, us alma
+# Dildeki cok dilli isimlerle de cagrilabilir (i18n uyumlu)
+# ============================================================
+
+# Mutlak deger (abs)
+isv mutlak_deger(x: tamsayi) -> tamsayi {
+    eger x < 0 ise {
+        dondu 0 - x;
+    }
+    dondu x;
+}
+# i18n alias: EN abs, FR valeur_absolue, JA 絶対値
+isv abs(x: tamsayi) -> tamsayi { dondu mutlak_deger(x); }
+
+# Minimum (iki sayidan kucuk olani)
+isv minimum(a: tamsayi, b: tamsayi) -> tamsayi {
+    eger a < b ise { dondu a; }
+    dondu b;
+}
+# i18n alias
+isv min(a: tamsayi, b: tamsayi) -> tamsayi { dondu minimum(a, b); }
+
+# Maksimum (iki sayidan buyuk olani)
+isv maksimum(a: tamsayi, b: tamsayi) -> tamsayi {
+    eger a > b ise { dondu a; }
+    dondu b;
+}
+# i18n alias
+isv max(a: tamsayi, b: tamsayi) -> tamsayi { dondu maksimum(a, b); }
+
+# Clamp: x'i [alt, ust] araligina sinirla
+isv sinirla(x: tamsayi, alt: tamsayi, ust: tamsayi) -> tamsayi {
+    eger x < alt ise { dondu alt; }
+    eger x > ust ise { dondu ust; }
+    dondu x;
+}
+# i18n alias
+isv clamp(x: tamsayi, alt: tamsayi, ust: tamsayi) -> tamsayi { dondu sinirla(x, alt, ust); }
+
+# Us alma (tamsayi taban, tamsayi us)  O(taban ^ us) degil O(log us)
+isv us_al(taban: tamsayi, us: tamsayi) -> tamsayi {
+    eger us < 0 ise { dondu 0; }   # tam sayi sonuc istedigimiz icin negatif us'te 0
+    degisken sonuc: tamsayi = 1;
+    degisken t: tamsayi = taban;
+    degisken kalan_us: tamsayi = us;
+    dongu kalan_us > 0 {
+        # Tek ise carpar
+        eger (kalan_us % 2) == 1 ise {
+            sonuc = sonuc * t;
+        }
+        # Kalan_us'u ikiye bol, tabani karesini al
+        kalan_us = kalan_us / 2;
+        eger kalan_us > 0 ise {
+            t = t * t;
+        }
+    }
+    dondu sonuc;
+}
+# i18n alias
+isv pow(taban: tamsayi, us: tamsayi) -> tamsayi { dondu us_al(taban, us); }
+
+# Isaret (sign): -1, 0, 1 dondurur
+isv isaret(x: tamsayi) -> tamsayi {
+    eger x < 0 ise { dondu -1; }
+    eger x > 0 ise { dondu 1; }
+    dondu 0;
+}
+isv sign(x: tamsayi) -> tamsayi { dondu isaret(x); }
+
+# Kalan (mod)  [negatif sayilar icin pozitif kalan versiyonu]
+isv kalan_pozitif(a: tamsayi, m: tamsayi) -> tamsayi {
+    eger m == 0 ise { dondu 0; }
+    degisken r: tamsayi = a % m;
+    eger r < 0 ise {
+        eger m > 0 ise {
+            r = r + m;
+        } yoksa {
+            r = r - m;
+        }
+    }
+    dondu r;
+}
+
+# Karasinim (linear interpolation)
+isv dogrusal_araya_sok(alt: tamsayi, ust: tamsayi, oran_yuzde: tamsayi) -> tamsayi {
+    # oran_yuzde 0 = %0  -> alt
+    # oran_yuzde 100 = %100 -> ust
+    # (oran_yuzde * (ust - alt)) / 100 + alt
+    dondu ((oran_yuzde * (ust - alt)) / 100) + alt;
+}
+isv lerp(a: tamsayi, b: tamsayi, t_yuzde: tamsayi) -> tamsayi { dondu dogrusal_araya_sok(a, b, t_yuzde); }
+
+# ============================================================
+# GOREV 6.2: Gercek Kayan Nokta Matematigi (SSE2 / x87 FPU)
+# Bu fonksiyonlar codegen tarafindan dogrudan SSE/FPU talimatlarina
+# donusturulur — gercek donanim talimatlari kullanilir.
+# ============================================================
+
+# Kare kok (SQRTSD — SSE2)
+isv kare_kok(x: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-SQRTSD
+isv sqrt(x: gercek) -> gercek { dondu kare_kok(x); }
+# i18n alias
+isv racine(x: gercek) -> gercek { dondu kare_kok(x); }
+isv квкор(x: gercek) -> gercek { dondu kare_kok(x); }
+
+# Sinus (FSIN — x87 FPU, radyan cinsinden)
+isv sinus(x: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-FSIN
+isv sin(x: gercek) -> gercek { dondu sinus(x); }
+
+# Kosinus (FCOS — x87 FPU, radyan cinsinden)
+isv kosinus(x: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-FCOS
+isv cos(x: gercek) -> gercek { dondu kosinus(x); }
+
+# Tanjant (sin/cos)
+isv tanjant(x: gercek) -> gercek {
+    dondu sinus(x) / kosinus(x);
+}
+isv tan(x: gercek) -> gercek { dondu tanjant(x); }
+
+# Taban Fonksiyonu (floor: gercek -> alta yuvarlanmis gercek)
+isv taban(x: gercek) -> gercek {
+    degisken i: tamsayi = x as tamsayi;
+    degisken fi: gercek = i as gercek;
+    eger x < fi ise {
+        dondu fi - 1.0;
+    }
+    dondu fi;
+}
+isv floor(x: gercek) -> gercek { dondu taban(x); }
+
+# Tavan Fonksiyonu (ceil: gercek -> uste yuvarlanmis gercek)
+isv tavan(x: gercek) -> gercek {
+    degisken i: tamsayi = x as tamsayi;
+    degisken fi: gercek = i as gercek;
+    eger x > fi ise {
+        dondu fi + 1.0;
+    }
+    dondu fi;
+}
+isv ceil(x: gercek) -> gercek { dondu tavan(x); }
+
+# Yuvarlama (round: gercek -> en yakin tam sayiya yuvarlanmis gercek)
+isv yuvarla(x: gercek) -> gercek {
+    eger x >= 0.0 ise {
+        dondu taban(x + 0.5);
+    } yoksa {
+        dondu tavan(x - 0.5);
+    }
+}
+isv round(x: gercek) -> gercek { dondu yuvarla(x); }
+
+# Arktanjant (atan: Pade / Polinomial yaklasimi [-1, 1])
+isv arktanjant(x: gercek) -> gercek {
+    degisken x2: gercek = x * x;
+    dondu x / (1.0 + 0.280872 * x2);
+}
+isv atan(x: gercek) -> gercek { dondu arktanjant(x); }
+
+# Arksinus (asin: asin(x) = atan(x / sqrt(1 - x^2)))
+isv arksinus(x: gercek) -> gercek {
+    eger x >= 1.0 ise { dondu 1.57079632679; }
+    eger x <= -1.0 ise { dondu -1.57079632679; }
+    dondu atan(x / sqrt(1.0 - (x * x)));
+}
+isv asin(x: gercek) -> gercek { dondu arksinus(x); }
+
+# Arkkosinus (acos: acos(x) = pi/2 - asin(x))
+isv arkkosinus(x: gercek) -> gercek {
+    dondu 1.57079632679 - asin(x);
+}
+isv acos(x: gercek) -> gercek { dondu arkkosinus(x); }
+
+# Ustlu Fonksiyon (exp: e^x Taylor / Seri acilimi)
+isv ustel(x: gercek) -> gercek {
+    degisken terim: gercek = 1.0;
+    degisken toplam: gercek = 1.0;
+    degisken i: tamsayi = 1;
+    dongu i <= 16 {
+        terim = terim * (x / (i as gercek));
+        toplam = toplam + terim;
+        i = i + 1;
+    }
+    dondu toplam;
+}
+isv exp(x: gercek) -> gercek { dondu ustel(x); }
+
+# Dogal Logaritma (ln / log: (x-1)/(x+1) serisi)
+isv dogal_logaritma(x: gercek) -> gercek {
+    eger x <= 0.0 ise { dondu 0.0; }
+    degisken y: gercek = (x - 1.0) / (x + 1.0);
+    degisken y2: gercek = y * y;
+    degisken terim: gercek = y;
+    degisken toplam: gercek = y;
+    degisken k: tamsayi = 3;
+    dongu k <= 15 {
+        terim = terim * y2;
+        toplam = toplam + (terim / (k as gercek));
+        k = k + 2;
+    }
+    dondu 2.0 * toplam;
+}
+isv log(x: gercek) -> gercek { dondu dogal_logaritma(x); }
+
+# f64 mutlak deger (ANDPD ile isaret biti sifirla)
+isv gercek_mutlak(x: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-ANDPD
+isv fabs(x: gercek) -> gercek { dondu gercek_mutlak(x); }
+
+# Minimum (iki gercek sayidan kucuk olani — MINSD)
+isv gercek_minimum(a: gercek, b: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-MINSD
+isv fmin(a: gercek, b: gercek) -> gercek { dondu gercek_minimum(a, b); }
+
+# Maksimum (iki gercek sayidan buyuk olani — MAXSD)
+isv gercek_maksimum(a: gercek, b: gercek) -> gercek {} # reality-audit: allow class=empty_body reason=compiler-intrinsic-emits-real-MAXSD
+isv fmax(a: gercek, b: gercek) -> gercek { dondu gercek_maksimum(a, b); }
+
+# ============================================================
+# AVX2 256-bit SIMD Vektörel Hızlandırma
+# ============================================================
+harici isv ykn_simd_vec_add_i64(dst: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_simd_vec_sub_i64(dst: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_simd_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+
+isv vektor_topla(hedef: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi {
+    dondu ykn_simd_vec_add_i64(hedef, a, b, n);
+}
+
+isv vektor_cikar(hedef: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi {
+    dondu ykn_simd_vec_sub_i64(hedef, a, b, n);
+}
+
+isv nokta_carpim(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi {
+    dondu ykn_simd_dot_q16(a, b, n);
+}
+

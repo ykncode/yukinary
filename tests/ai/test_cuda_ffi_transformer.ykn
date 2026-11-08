@@ -1,0 +1,29 @@
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+harici isv LoadLibraryA(lp: *u8) -> tamsayi;
+harici isv GetProcAddress(handle: tamsayi, name: *u8) -> *u8;
+harici isv ykn_dyn_call_ptr_i64(target_ptr: *u8, a: tamsayi, b: tamsayi) -> tamsayi;
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("DYN_START\\n".ptr);
+    degisken h: tamsayi = LoadLibraryA("kernel32.dll".ptr);
+    ekrana_yaz("DYN_LOAD\\n".ptr);
+    degisken f: *u8 = GetProcAddress(h, "GetCurrentProcessId".ptr);
+    eger f == 0 { ekrana_yaz("DYN_NULL_SYMBOL\\n".ptr); dondu 7; }
+    degisken pid: tamsayi = ykn_dyn_call_ptr_i64(f, 0, 0);
+    ekrana_yaz("TRANSFORMER_IMPORT_DYN_PID=".ptr);
+    eger pid > 0 { ekrana_yaz("PASS\n".ptr); dondu 0; }
+    ekrana_yaz("FAIL\n".ptr); dondu 1;
+}

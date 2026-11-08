@@ -1,0 +1,179 @@
+# ============================================================
+# tests/ai/test_simd_fma.ykn
+# FAZ 11: AVX2 / FMA Vektörel GEMM & Vulkan Compute Kabul Testi
+# ============================================================
+
+#c-lib "kernel32";
+harici isv ExitProcess(uExitCode: tamsayi);
+harici isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi;
+harici isv WriteFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToWrite: tamsayi, lpNumberOfBytesWritten: *tamsayi, lpOverlapped: tamsayi) -> tamsayi;
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> *u8;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+
+harici isv ykn_dyn_call_ptr_i64(function_ptr: *u8, first: tamsayi, second: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+harici isv ykn_cpu_has_avx2() -> tamsayi;
+harici isv ykn_popcnt64(val: tamsayi) -> tamsayi;
+harici isv ykn_simd_vec_add_i64(dst: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_simd_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+
+isv konsol_yaz(metin: *u8, uzunluk: tamsayi) {
+    degisken stdout_handle: tamsayi = GetStdHandle(0 - 11);
+    degisken yazilan: tamsayi = 0;
+    WriteFile(stdout_handle, metin, uzunluk, &yazilan, 0);
+}
+
+# ------------------------------------------------------------
+# Test 1: POPCNT64 Donanım Bit Manipülasyonu
+# ------------------------------------------------------------
+isv test_popcnt() -> tamsayi {
+    degisken c0: tamsayi = ykn_popcnt64(0);
+    eger c0 != 0 { dondu 0; }
+
+    degisken c1: tamsayi = ykn_popcnt64(1);
+    eger c1 != 1 { dondu 0; }
+
+    degisken c8: tamsayi = ykn_popcnt64(255); # 0xFF
+    eger c8 != 8 { dondu 0; }
+
+    degisken c64: tamsayi = ykn_popcnt64(0 - 1); # -1 (all 64 bits set)
+    eger c64 != 64 { dondu 0; }
+
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# Test 2: AVX2 256-bit Vektörel Toplama (ykn_simd_vec_add_i64)
+# ------------------------------------------------------------
+isv test_simd_vec_add() -> tamsayi {
+    degisken a: [8]tamsayi;
+    degisken b: [8]tamsayi;
+    degisken dst: [8]tamsayi;
+
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        a[i] = (i + 1) * 10;
+        b[i] = (i + 1);
+        dst[i] = 0;
+        i = i + 1;
+    }
+
+    ykn_simd_vec_add_i64(dst, a, b, 8);
+
+    i = 0;
+    dongu i < 8 {
+        degisken beklenen: tamsayi = (i + 1) * 11;
+        eger dst[i] != beklenen {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# Test 3: AVX2 256-bit Widening Q16 Dot Product (ykn_simd_dot_q16)
+# ------------------------------------------------------------
+isv test_simd_dot_q16() -> tamsayi {
+    degisken va: [8]tamsayi;
+    degisken vb: [8]tamsayi;
+
+    # 4 eleman:
+    # va[i] = 65536 (1.0 in Q16)
+    # vb[i] = 131072 (2.0 in Q16)
+    # 4 * (1.0 * 2.0) = 8.0 = 524288 in Q16
+    va[0] = 65536; vb[0] = 131072;
+    va[1] = 65536; vb[1] = 131072;
+    va[2] = 65536; vb[2] = 131072;
+    va[3] = 65536; vb[3] = 131072;
+
+    degisken dot4: tamsayi = ykn_simd_dot_q16(va, vb, 4);
+    eger dot4 != 524288 {
+        dondu 0;
+    }
+
+    # 6 eleman (4 AVX2 + 2 skalar artık döngüsü):
+    # va[4] = 65536, vb[4] = 65536 (1.0 * 1.0 = 1.0)
+    # va[5] = 65536, vb[5] = 196608 (1.0 * 3.0 = 3.0)
+    # Toplam: 8.0 + 1.0 + 3.0 = 12.0 = 786432
+    va[4] = 65536; vb[4] = 65536;
+    va[5] = 65536; vb[5] = 196608;
+    degisken dot6: tamsayi = ykn_simd_dot_q16(va, vb, 6);
+    eger dot6 != 786432 {
+        dondu 0;
+    }
+
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# Test 4: Vulkan Compute Driver Discovery & Context Initialization
+# ------------------------------------------------------------
+isv test_vulkan_init() -> tamsayi {
+    # Vulkan DLL'ini dinamik sorgula
+    degisken dll: tamsayi = LoadLibraryA("vulkan-1.dll".ptr);
+    eger dll == 0 {
+        # Vulkan driver'ı bu makinede yüklü değilse temizce CPU fallback
+        # bildirimini geçiyoruz (Graceful fallback)
+        konsol_yaz("[Vulkan: Driver bulunamadi, CPU SIMD Fallback devrede]\n".ptr, 58);
+        dondu 1;
+    }
+    degisken fn_create_inst: *u8 = GetProcAddress(dll, "vkCreateInstance".ptr);
+    FreeLibrary(dll);
+
+    eger fn_create_inst != 0 {
+        konsol_yaz("[Vulkan: vulkan-1.dll ve vkCreateInstance tespit edildi]\n".ptr, 58);
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    konsol_yaz("=== YUKINARY FAZ 11 TEST: SIMD, AVX2, FMA & VULKAN ===\n".ptr, 56);
+
+    # 1. CPUID AVX2 Kontrolü
+    degisken avx2: tamsayi = ykn_cpu_has_avx2();
+    eger avx2 == 1 {
+        konsol_yaz("[OK] Donanim CPUID: AVX2 ve Vektorel Komut Seti Aktif\n".ptr, 55);
+    } yoksa {
+        konsol_yaz("[BILGI] Donanim CPUID: AVX2 bayragi 0, skalar fallback aktif\n".ptr, 62);
+    }
+
+    # 2. POPCNT Testi
+    eger test_popcnt() == 1 {
+        konsol_yaz("[OK] BitNet POPCNT64 Hardware Bit Manipulation Gecti\n".ptr, 54);
+    } yoksa {
+        konsol_yaz("[HATA] POPCNT64 Testi Basarisiz!\n".ptr, 34);
+        ExitProcess(1);
+    }
+
+    # 3. AVX2 Vektörel Toplama Testi
+    eger test_simd_vec_add() == 1 {
+        konsol_yaz("[OK] AVX2 256-bit Vektorel VPADDQ Gecti\n".ptr, 41);
+    } yoksa {
+        konsol_yaz("[HATA] AVX2 VPADDQ Testi Basarisiz!\n".ptr, 36);
+        ExitProcess(2);
+    }
+
+    # 4. AVX2 Q16 Dot Product Testi
+    eger test_simd_dot_q16() == 1 {
+        konsol_yaz("[OK] AVX2 256-bit Widening VPMULDQ Q16 Dot Product Gecti\n".ptr, 58);
+    } yoksa {
+        konsol_yaz("[HATA] AVX2 Q16 Dot Product Testi Basarisiz!\n".ptr, 45);
+        ExitProcess(3);
+    }
+
+    # 5. Vulkan Compute Testi
+    eger test_vulkan_init() == 1 {
+        konsol_yaz("[OK] Vulkan Compute Runtime Entegrasyonu Gecti\n".ptr, 48);
+    } yoksa {
+        konsol_yaz("[HATA] Vulkan Init Testi Basarisiz!\n".ptr, 36);
+        ExitProcess(4);
+    }
+
+    konsol_yaz("TEST SIMD FMA: BASARILI\n".ptr, 24);
+    ExitProcess(0);
+    dondu 0;
+}

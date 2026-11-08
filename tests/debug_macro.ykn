@@ -1,0 +1,26 @@
+ice_aktar "..\src\ast.ykn";
+ice_aktar "..\src\macros.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("DEBUG MACRO START\n".ptr);
+    degisken arena: *AstArena = bellek_tahsis_et(1048576);
+    arena.bellek = bellek_tahsis_et(1048576);
+    arena.kapasite = 1048576;
+    arena.kullanilan = 0;
+
+    degisken kural_mem: *MakroKural = bellek_tahsis_et(4096);
+    degisken motor: *MakroMotoru = bellek_tahsis_et(128);
+    motor.kurallar = kural_mem;
+    motor.kapasite = 100;
+    motor.kayitli_sayi = 0;
+    motor.arena = arena;
+
+    degisken kok: *AstDugum = arena_dugum_yarat(arena, 13, 0); # AST_BLOK
+    degisken d1: *AstDugum = arena_dugum_yarat(arena, 1, 0);   # AST_SAYI
+    kok.sol = d1;
+
+    ekrana_yaz("CALLING makrolari_genislet...\n".ptr);
+    makrolari_genislet(motor, kok);
+    ekrana_yaz("DEBUG MACRO DONE\n".ptr);
+    dondu 0;
+}

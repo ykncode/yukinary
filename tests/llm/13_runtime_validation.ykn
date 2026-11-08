@@ -1,0 +1,68 @@
+# Ortak LLM runtime spec ve güvenli dispatch negatif/pozitif testi.
+ice_aktar "../../std/ai/runtime.ykn";
+
+isv ana() -> tamsayi {
+    degisken spec: LLMModelSpec;
+    degisken durum: LLMRuntimeState;
+    llm_runtime_spec_sifirla(&spec);
+    spec.mimari = LLM_MIMARI_BITNET;
+    spec.quant_tipi = LLM_QUANT_IQ2_S;
+    spec.vocab_boyutu = 32000;
+    spec.gizli_boyut = 2048;
+    spec.katman_sayisi = 22;
+    spec.context_boyutu = 4096;
+    eger llm_runtime_spec_dogrula(&spec) != 1 ise { dondu 1; }
+
+    # Upstream GGML IQ2_S (22) and the model's BitNet extension (36)
+    # are both accepted as the same supported block format.
+    spec.quant_tipi = LLM_QUANT_IQ2_S_GGML;
+    eger llm_runtime_spec_dogrula(&spec) != 1 ise { dondu 8; }
+    spec.quant_tipi = LLM_QUANT_IQ2_S;
+
+    # BitNet yanlış quantization ile generic backend'e kaçamaz.
+    spec.quant_tipi = LLM_QUANT_F16;
+    eger llm_runtime_spec_dogrula(&spec) != 0 veya LLM_RUNTIME_HATASI != 4 ise { dondu 2; }
+
+    # Bilinmeyen mimari reddedilir.
+    spec.mimari = 99;
+    spec.quant_tipi = LLM_QUANT_F32;
+    eger llm_runtime_spec_dogrula(&spec) != 0 veya LLM_RUNTIME_HATASI != 2 ise { dondu 3; }
+
+    # MoE top-k expert sayısını aşamaz.
+    spec.mimari = LLM_MIMARI_BITNET_MOE;
+    spec.quant_tipi = LLM_QUANT_IQ2_S;
+    spec.expert_sayisi = 8;
+    spec.top_k = 9;
+    eger llm_runtime_spec_dogrula(&spec) != 0 veya LLM_RUNTIME_HATASI != 5 ise { dondu 4; }
+
+    # Router ve spec aynı güvenli 64 expert sınırını paylaşır.
+    spec.expert_sayisi = 64;
+    spec.top_k = 4;
+    eger llm_runtime_spec_dogrula(&spec) != 1 ise { dondu 5; }
+    degisken skorlar: [64]tamsayi;
+    degisken secilen: [4]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        skorlar[i] = i;
+        i = i + 1;
+    }
+    eger llm_runtime_moe_topk(skorlar, 64, 4, secilen) != 4 veya
+       secilen[0] != 63 veya secilen[3] != 60 ise { dondu 6; }
+
+    # Transformer geometry must cover the full hidden width, not merely fit
+    # within it (e.g. Qwen3 GQA: 32 heads * 128 = 4096).
+    spec.mimari = LLM_MIMARI_QWEN;
+    spec.quant_tipi = LLM_QUANT_Q1_0;
+    spec.gizli_boyut = 4096;
+    spec.kafa_sayisi = 32;
+    spec.kv_kafa_sayisi = 8;
+    spec.kafa_boyutu = 128;
+    eger llm_runtime_spec_dogrula(&spec) != 1 ise { dondu 9; }
+    spec.gizli_boyut = 4000;
+    eger llm_runtime_spec_dogrula(&spec) != 0 veya LLM_RUNTIME_HATASI != 7 ise { dondu 10; }
+
+    # Tam model payload'ı verilmeden runtime loaded sayılmaz.
+    eger llm_runtime_baslat(&durum, &spec, 0, 4) != 0 ise { dondu 7; }
+    ekrana_yaz("LLM-RUNTIME-VALIDATION-PASS\n".ptr);
+    dondu 0;
+}

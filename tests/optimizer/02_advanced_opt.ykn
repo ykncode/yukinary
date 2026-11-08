@@ -1,0 +1,91 @@
+# ============================================================
+# tests/optimizer/02_advanced_opt.ykn
+# Gelişmiş Optimizer Geçişleri Testi (GÖREV 6.5)
+# 1. Boolean Constant Folding (ve/veya)
+# 2. Strength Reduction (x*2 -> x+x, x%1->0, x*0->0, x/1->x)
+# 3. Small Function Inlining (<= 5 AST düğümü)
+# 4. Dead Loop Elimination (dongu 0 -> dce)
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(s: tamsayi) {}
+
+# Küçük fonksiyonlar (Inlining adayları)
+isv iki_kat(x: tamsayi) -> tamsayi {
+    dondu x * 2;
+}
+
+isv topla_kucuk(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv ana() -> tamsayi {
+    # --------------------------------------------------------
+    # 1. Boolean Constant Folding Testi
+    # --------------------------------------------------------
+    degisken b1: tamsayi = 1 ve 0;       # -> 0
+    degisken b2: tamsayi = 1 veya 0;     # -> 1
+    degisken b3: tamsayi = 1 ve 1;       # -> 1
+    degisken b4: tamsayi = 0 veya 0;     # -> 0
+
+    eger b1 != 0 veya b2 != 1 veya b3 != 1 veya b4 != 0 {
+        ekrana_yaz("FAIL: boolean constant folding hatali\n".ptr);
+        dondu 1;
+    }
+
+    # Short-circuit / identity folding
+    degisken x: tamsayi = 50;
+    degisken b5: tamsayi = 0 ve x;       # -> 0
+    degisken b6: tamsayi = 1 veya x;     # -> 1
+    eger b5 != 0 veya b6 != 1 {
+        ekrana_yaz("FAIL: boolean short-circuit folding hatali\n".ptr);
+        dondu 2;
+    }
+
+    # --------------------------------------------------------
+    # 2. Strength Reduction Testi
+    # --------------------------------------------------------
+    degisken val: tamsayi = 25;
+    degisken r1 = val * 2;               # -> val + val = 50
+    degisken r2 = 2 * val;               # -> val + val = 50
+    degisken r3 = val / 1;               # -> val = 25
+    degisken r4 = val % 1;               # -> 0
+    degisken r5 = val * 0;               # -> 0
+    degisken r6 = val * 1;               # -> val = 25
+    degisken r7 = val - 0;               # -> val = 25
+    degisken r8 = val + 0;               # -> val = 25
+
+    eger r1 != 50 veya r2 != 50 veya r3 != 25 veya r4 != 0 veya r5 != 0 veya r6 != 25 veya r7 != 25 veya r8 != 25 {
+        ekrana_yaz("FAIL: strength reduction hatali\n".ptr);
+        dondu 3;
+    }
+
+    # --------------------------------------------------------
+    # 3. Small Function Inlining Testi
+    # --------------------------------------------------------
+    degisken inlined1 = iki_kat(21);     # inlined -> 21 * 2 -> 42
+    degisken inlined2 = topla_kucuk(100, 200); # inlined -> 100 + 200 -> 300
+
+    eger inlined1 != 42 veya inlined2 != 300 {
+        ekrana_yaz("FAIL: small function inlining hatali\n".ptr);
+        dondu 4;
+    }
+
+    # --------------------------------------------------------
+    # 4. Dead Loop Elimination Testi (dongu 0 asla calismaz)
+    # --------------------------------------------------------
+    degisken loop_calisti: tamsayi = 0;
+    dongu 0 {
+        # Bu dongu govdesi derleme asamasinda tamamen silinir
+        loop_calisti = 1;
+        ekrana_yaz("FAIL: dead loop calisti!\n".ptr);
+    }
+
+    eger loop_calisti != 0 {
+        ekrana_yaz("FAIL: dead loop bayragi degisti\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("ADVANCED-OPTIMIZER-PASS\n".ptr);
+    dondu 0;
+}

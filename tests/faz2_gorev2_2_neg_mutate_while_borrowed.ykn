@@ -1,0 +1,9 @@
+# Faz 2 Görev 2.2 Negatif Test 2: Cannot Mutate While Borrowed
+
+isv main() -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken r: *tamsayi = &x;
+    x = 100; # HATA [E041]: Odunc alinmis degisken degistirilemez!
+    dondu 0;
+}
+

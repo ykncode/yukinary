@@ -1,0 +1,14 @@
+﻿isv ekrana_yaz(m: *u8) {}
+
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+isv ana() -> tamsayi {
+    degisken f: *u8 = topla;
+    degisken r: tamsayi = f(15, 27);
+    eger r == 42 ise {
+        ekrana_yaz("FN-PTR-OK\n".ptr);
+    }
+    dondu 0;
+}

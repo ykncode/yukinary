@@ -1,0 +1,270 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/io.ykn
+# Akis tabanli tamponlu girdi/cikti (Buffered I/O Stream)
+#
+# IO SOZLESMESI (I/O Stream Contract):
+#   - Dosya erisim modlari: DOSYA_MOD_OKU (1), DOSYA_MOD_YAZ (2), DOSYA_MOD_EKLE (3)
+#   - Tampon boyutu varsayilan 4096 bayttir.
+#   - dosya_ac: dosya acilamazsa veya yol NULL ise 0 (NULL) doner.
+#   - dosya_satir_oku: \n veya dosya sonuna kadar okur, ciktiyi NUL ile sonlandirir.
+#     \r\n satirlarinda \r karakterini ayiklar. Dosya sonunda -1 doner.
+#   - dosya_yaz_metin / dosya_yaz_satir: tamponlu yazar, tampon dolunca diske bosalir.
+#   - dosya_kapat: bekleyen tamponu diske yazar, handle'i kapatir, bellegi serbest birakir.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# Dosya Erisim Modlari
+degisken DOSYA_MOD_OKU       = 1;
+degisken DOSYA_MOD_YAZ       = 2;
+degisken DOSYA_MOD_EKLE      = 3;
+
+# Varsayilan Tampon Boyutu (4 KB)
+degisken IO_VARSAYILAN_TAMPON = 4096;
+
+# Dosya Akis Yapisi
+yapi DosyaAkisi {
+    handle: tamsayi;
+    mod: tamsayi;
+    tampon: *u8;
+    tampon_boyut: tamsayi;
+    tampon_kapasite: tamsayi;
+    imlec: tamsayi;
+    dosya_sonu: tamsayi;
+    yazma_imleci: tamsayi;
+}
+
+# Bir dosyayi belirtilen modda acar ve tamponlu akis nesnesi olusturur.
+# Basarisiz olursa 0 (NULL) doner.
+isv dosya_ac(yol: *u8, mod: tamsayi) -> *DosyaAkisi {
+    eger yol == 0 ise { dondu 0; }
+    
+    degisken h: tamsayi = 0;
+    eger mod == DOSYA_MOD_OKU ise {
+        h = os_dosya_yarat(yol, WIN_GENERIC_READ, WIN_FILE_SHARE_READ, WIN_OPEN_EXISTING, WIN_FILE_ATTRIBUTE_NORMAL);
+    } yoksa eger mod == DOSYA_MOD_YAZ ise {
+        h = os_dosya_yarat(yol, WIN_GENERIC_WRITE, WIN_FILE_SHARE_READ, WIN_CREATE_ALWAYS, WIN_FILE_ATTRIBUTE_NORMAL);
+    } yoksa eger mod == DOSYA_MOD_EKLE ise {
+        h = os_dosya_yarat(yol, WIN_GENERIC_WRITE, WIN_FILE_SHARE_READ, WIN_OPEN_ALWAYS, WIN_FILE_ATTRIBUTE_NORMAL);
+        eger h != 0 ve h != WIN_INVALID_HANDLE_VALUE ve h != 0 - 1 ise {
+            degisken yeni_konum: tamsayi = 0;
+            os_dosya_konum_ayarla(h, 0, &yeni_konum, OS_SEEK_SON);
+        }
+    } yoksa {
+        dondu 0;
+    }
+    
+    eger h == 0 veya h == WIN_INVALID_HANDLE_VALUE veya h == 0 - 1 ise {
+        dondu 0;
+    }
+    
+    degisken akis: *DosyaAkisi = os_bellek_tahsis(64);
+    eger akis == 0 ise {
+        os_dosya_kapat(h);
+        dondu 0;
+    }
+    
+    degisken buf: *u8 = os_bellek_tahsis(IO_VARSAYILAN_TAMPON);
+    eger buf == 0 ise {
+        os_bellek_serbest(akis);
+        os_dosya_kapat(h);
+        dondu 0;
+    }
+    
+    akis.handle = h;
+    akis.mod = mod;
+    akis.tampon = buf;
+    akis.tampon_boyut = 0;
+    akis.tampon_kapasite = IO_VARSAYILAN_TAMPON;
+    akis.imlec = 0;
+    akis.dosya_sonu = 0;
+    akis.yazma_imleci = 0;
+    
+    dondu akis;
+}
+isv open_file(path: *u8, mode: tamsayi) -> *DosyaAkisi { dondu dosya_ac(path, mode); }
+
+# Okuma tamponunu isletim sisteminden yeni veriyle doldurur.
+isv dosya_tampon_doldur(akis: *DosyaAkisi) -> tamsayi {
+    eger akis == 0 veya akis.handle == 0 veya akis.tampon == 0 ise { dondu 0; }
+    eger akis.dosya_sonu == 1 ise { dondu 0; }
+    
+    degisken okunan: tamsayi = 0;
+    degisken basarili: tamsayi = os_dosya_oku(akis.handle, akis.tampon, akis.tampon_kapasite, &okunan);
+    eger okunan <= 0 ise {
+        akis.dosya_sonu = 1;
+        akis.tampon_boyut = 0;
+        akis.imlec = 0;
+        dondu 0;
+    }
+    
+    akis.tampon_boyut = okunan;
+    akis.imlec = 0;
+    dondu okunan;
+}
+
+# Akistan tek bir karakter (bayt: 0..255) okur.
+# Dosya sonu (EOF) veya hata durumunda -1 doner.
+isv dosya_karakter_oku(akis: *DosyaAkisi) -> tamsayi {
+    eger akis == 0 ise { dondu 0 - 1; }
+    
+    eger akis.imlec >= akis.tampon_boyut ise {
+        degisken dolan: tamsayi = dosya_tampon_doldur(akis);
+        eger dolan <= 0 ise {
+            dondu 0 - 1;
+        }
+    }
+    
+    degisken c: u8 = akis.tampon[akis.imlec];
+    akis.imlec = akis.imlec + 1;
+    dondu c;
+}
+
+# Akistan bir satir okur (yeni satir '\n' veya EOF gorene kadar).
+# Okunan metin 'cikti' dizisine yazilir ve NUL (0) ile sonlandirilir.
+# '\r' (CR) karakterleri satir sonundan ayiklanir.
+# Okunan karakter sayisini doner. Dosya sonuna ulasildiysa ve hic veri okunmadiysa -1 doner.
+isv dosya_satir_oku(akis: *DosyaAkisi, cikti: *u8, maks: tamsayi) -> tamsayi {
+    eger akis == 0 veya cikti == 0 veya maks <= 1 ise { dondu 0 - 1; }
+    
+    degisken sayac: tamsayi = 0;
+    degisken bitti: tamsayi = 0;
+    
+    dongu bitti == 0 ve sayac < maks - 1 {
+        degisken c: tamsayi = dosya_karakter_oku(akis);
+        eger c < 0 ise {
+            # EOF
+            bitti = 1;
+        } yoksa {
+            eger c == 10 ise {
+                # '\n' satir sonu
+                bitti = 1;
+            } yoksa eger c == 13 ise {
+                # '\r' atla (CRLF uyumu)
+            } yoksa {
+                cikti[sayac] = c;
+                sayac = sayac + 1;
+            }
+        }
+    }
+    
+    cikti[sayac] = 0;
+    
+    eger sayac == 0 ve akis.dosya_sonu == 1 ise {
+        dondu 0 - 1;
+    }
+    
+    dondu sayac;
+}
+isv file_read_line(stream: *DosyaAkisi, out_buf: *u8, max_len: tamsayi) -> tamsayi {
+    dondu dosya_satir_oku(stream, out_buf, max_len);
+}
+
+# Akistan belirtilen bayt sayisi kadar veriyi hedef tampona okur.
+# Gercek okunan bayt sayisini doner.
+isv dosya_oku_baytlar(akis: *DosyaAkisi, hedef: *u8, istenen: tamsayi) -> tamsayi {
+    eger akis == 0 veya hedef == 0 veya istenen <= 0 ise { dondu 0; }
+    
+    degisken okunan_toplam: tamsayi = 0;
+    dongu okunan_toplam < istenen {
+        degisken c: tamsayi = dosya_karakter_oku(akis);
+        eger c < 0 ise { durdur; }
+        hedef[okunan_toplam] = c;
+        okunan_toplam = okunan_toplam + 1;
+    }
+    dondu okunan_toplam;
+}
+
+# Yazma tamponundaki bekleyen verileri isletim sistemi dosyasina bosaltir (flush).
+isv dosya_tampon_bosalt(akis: *DosyaAkisi) -> tamsayi {
+    eger akis == 0 veya akis.handle == 0 veya akis.tampon == 0 ise { dondu 0; }
+    eger akis.yazma_imleci <= 0 ise { dondu 0; }
+    
+    degisken yazilan: tamsayi = 0;
+    os_dosya_yaz(akis.handle, akis.tampon, akis.yazma_imleci, &yazilan);
+    akis.yazma_imleci = 0;
+    dondu yazilan;
+}
+isv file_flush(stream: *DosyaAkisi) -> tamsayi { dondu dosya_tampon_bosalt(stream); }
+
+# Akisa tek bir bayt yazar. Tampon doldugunda otomatik diske bosaltir.
+isv dosya_yaz_bayt(akis: *DosyaAkisi, b: u8) -> tamsayi {
+    eger akis == 0 veya akis.tampon == 0 ise { dondu 0; }
+    
+    eger akis.yazma_imleci >= akis.tampon_kapasite ise {
+        dosya_tampon_bosalt(akis);
+    }
+    
+    akis.tampon[akis.yazma_imleci] = b;
+    akis.yazma_imleci = akis.yazma_imleci + 1;
+    dondu 1;
+}
+
+# Akisa bayt dizisi yazar.
+isv dosya_yaz_baytlar(akis: *DosyaAkisi, kaynak: *u8, boyut: tamsayi) -> tamsayi {
+    eger akis == 0 veya kaynak == 0 veya boyut <= 0 ise { dondu 0; }
+    
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        dosya_yaz_bayt(akis, kaynak[i]);
+        i = i + 1;
+    }
+    dondu boyut;
+}
+
+# Akisa NUL-sonlu metin yazar.
+isv dosya_yaz_metin(akis: *DosyaAkisi, metin: *u8) -> tamsayi {
+    eger akis == 0 veya metin == 0 ise { dondu 0; }
+    
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        dosya_yaz_bayt(akis, metin[i]);
+        i = i + 1;
+    }
+    dondu i;
+}
+isv file_write_str(stream: *DosyaAkisi, text: *u8) -> tamsayi { dondu dosya_yaz_metin(stream, text); }
+
+# Akisa metin yazar ve sonuna yeni satir '\n' ekler.
+isv dosya_yaz_satir(akis: *DosyaAkisi, metin: *u8) -> tamsayi {
+    eger akis == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    eger metin != 0 ise {
+        n = dosya_yaz_metin(akis, metin);
+    }
+    dosya_yaz_bayt(akis, 10); # '\n'
+    dondu n + 1;
+}
+isv file_write_line(stream: *DosyaAkisi, text: *u8) -> tamsayi { dondu dosya_yaz_satir(stream, text); }
+
+# Dosya akisinin sonuna gelindi mi?
+isv dosya_akisi_sonunda_mi(akis: *DosyaAkisi) -> tamsayi {
+    eger akis == 0 ise { dondu 1; }
+    dondu akis.dosya_sonu;
+}
+isv file_eof(stream: *DosyaAkisi) -> tamsayi { dondu dosya_akisi_sonunda_mi(stream); }
+
+# Akisi kapatir, bekleyen tamponu diske yazar ve bellek kaynaklarini serbest birakir.
+isv dosya_kapat(akis: *DosyaAkisi) {
+    eger akis == 0 ise { dondu; }
+    
+    # Yazma modundaysa bekleyen tamponu bosalt
+    eger akis.mod == DOSYA_MOD_YAZ veya akis.mod == DOSYA_MOD_EKLE ise {
+        dosya_tampon_bosalt(akis);
+    }
+    
+    eger akis.handle != 0 ve akis.handle != WIN_INVALID_HANDLE_VALUE ve akis.handle != 0 - 1 ise {
+        os_dosya_kapat(akis.handle);
+        akis.handle = 0;
+    }
+    
+    eger akis.tampon != 0 ise {
+        os_bellek_serbest(akis.tampon);
+        akis.tampon = 0;
+    }
+    
+    os_bellek_serbest(akis);
+}
+isv file_close(stream: *DosyaAkisi) { dosya_kapat(stream); }
+

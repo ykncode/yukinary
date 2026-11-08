@@ -1,0 +1,6 @@
+# FIX-13 olumlu: non-nullable pointer guard olmadan kullanilabilir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: *u8 = 0;
+    p[0] = 74;
+    dondu 0;
+}

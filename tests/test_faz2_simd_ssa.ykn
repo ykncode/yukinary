@@ -1,0 +1,97 @@
+# ============================================================
+# Test: tests/test_faz2_simd_ssa.ykn
+# FAZ 2 Dogrulama: SIMD Vektorizasyonu ve SSA IR Optimizasyonu
+# Windows ve Linux uzerinde sifir mock ile tam dogrulama.
+# ============================================================
+
+ice_aktar "std/sayisal/simd_vektor.ykn";
+ice_aktar "std/opt/ssa_ir.ykn";
+
+isv main() -> tamsayi {
+    # ------------------------------------------------------------
+    # 1. SIMD Vektor Operasyonlari Dogrulamasi (64 eleman)
+    # ------------------------------------------------------------
+    degisken N: tamsayi = 64;
+    degisken a: *tamsayi = bellek_tahsis_et(N * 8);
+    degisken b: *tamsayi = bellek_tahsis_et(N * 8);
+    degisken c: *tamsayi = bellek_tahsis_et(N * 8);
+
+    eger a == 0 veya b == 0 veya c == 0 ise { dondu 1; }
+
+    degisken i: tamsayi = 0;
+    dongu i < N {
+        a[i] = i + 1;       # 1, 2, 3, ... 64
+        b[i] = (i + 1) * 2; # 2, 4, 6, ... 128
+        c[i] = 0;
+        i = i + 1;
+    }
+
+    # SIMD Toplama: c[i] = a[i] + b[i] = 3 * (i + 1)
+    simd_vektor_topla(a, b, c, N);
+
+    i = 0;
+    dongu i < N {
+        degisken beklenen: tamsayi = (i + 1) * 3;
+        eger c[i] != beklenen ise {
+            dondu 10; # SIMD toplama hatasi
+        }
+        i = i + 1;
+    }
+
+    # SIMD Nokta Carpim: A . B
+    # sum( (i+1) * 2*(i+1) ) = 2 * sum(k^2 for k=1..64)
+    # sum(k^2, 1..64) = 64 * 65 * 129 / 6 = 89440
+    # 2 * 89440 = 178880
+    degisken dot: tamsayi = simd_vektor_nokta_carpim(a, b, N);
+    eger dot != 178880 ise {
+        dondu 11; # SIMD dot product hatasi
+    }
+
+    # SIMD Skalar Carpim: c[i] = a[i] * 10
+    simd_vektor_skalar_carp(a, 10, c, N);
+    i = 0;
+    dongu i < N {
+        eger c[i] != (i + 1) * 10 ise {
+            dondu 12; # SIMD skalar carpim hatasi
+        }
+        i = i + 1;
+    }
+
+    os_bellek_serbest(a as *u8);
+    os_bellek_serbest(b as *u8);
+    os_bellek_serbest(c as *u8);
+
+    # ------------------------------------------------------------
+    # 2. SSA IR ve Deterministik Sabit Katlama Dogrulamasi
+    # ------------------------------------------------------------
+    degisken f: *SsaFonksiyon = ssa_fonksiyon_olustur();
+    eger f == 0 ise { dondu 2; }
+
+    # v0 = 15
+    degisken v0: tamsayi = ssa_emit_sabit(f, 15);
+    # v1 = 25
+    degisken v1: tamsayi = ssa_emit_sabit(f, 25);
+    # v2 = v0 + v1 (15 + 25 = 40)
+    degisken v2: tamsayi = ssa_emit_ikili(f, SSA_OP_TOPLA, v0, v1);
+    # v3 = 2
+    degisken v3: tamsayi = ssa_emit_sabit(f, 2);
+    # v4 = v2 * v3 (40 * 2 = 80)
+    degisken v4: tamsayi = ssa_emit_ikili(f, SSA_OP_CARP, v2, v3);
+
+    # Sabit Katlama Optimizasyonu calistir
+    degisken katlanan: tamsayi = ssa_optimize_sabit_katla(f);
+    eger katlanan != 2 ise {
+        dondu 20; # 2 adet islem katlanmaliydi (v2 ve v4)
+    }
+
+    # v4 artik SSA_OP_SABIT ve degeri 80 olmali
+    degisken b_blk: *SsaBlok = f.ana_blok;
+    degisken t4: *SsaTalimat = b_blk.talimatlar + (4 * 48);
+    eger t4.op != SSA_OP_SABIT veya t4.sabit_deger != 80 ise {
+        dondu 21; # v4 degeri 80 olmaliydi
+    }
+
+    ssa_fonksiyon_serbest_birak(f);
+
+    dondu 0;
+}

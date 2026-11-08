@@ -1,0 +1,11 @@
+modul bir {
+    isv topla() -> tamsayi { dondu 10; }
+}
+
+modul iki {
+    isv topla() -> tamsayi { dondu 20; }
+}
+
+isv ana() -> tamsayi {
+    dondu bir::topla() + iki::topla();
+}

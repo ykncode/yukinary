@@ -1,0 +1,22 @@
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken dizi: [5]tamsayi;
+    dizi[0] = 10;
+    dizi[1] = 20;
+    dizi[2] = 30;
+    dizi[3] = 40;
+    dizi[4] = 50;
+    
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 5 {
+        toplam = toplam + dizi[i];
+        i = i + 1;
+    }
+    
+    eger toplam == 150 ise {
+        ekrana_yaz("TEST 06: ARRAYS OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 06: ARRAYS FAILED\n".ptr);
+    }
+    dondu 0;
+}

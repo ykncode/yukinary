@@ -1,0 +1,32 @@
+# ============================================================
+# i18n Test 02: Ingilizce kontrol akisi (if/else/while/break/return)
+# ============================================================
+
+isv ekrana_yaz(mesaj: *u8) -> tamsayi { dondu 0; }
+isv sayi_yaz(n: tamsayi) -> tamsayi { dondu 0; }
+
+fn hesapla(x: tamsayi) -> tamsayi {
+    if x > 10 then {
+        return x * 2;
+    } else {
+        return x + 1;
+    }
+}
+
+fn main(argc: tamsayi, argv: **u8) -> tamsayi {
+    var sonuc: tamsayi = hesapla(5);
+    var sayac: tamsayi = 0;
+
+    while sayac < 3 {
+        ekrana_yaz("dongu\n".ptr);
+        sayac = sayac + 1;
+    }
+
+    if sonuc == 6 then {
+        ekrana_yaz("dogru\n".ptr);
+    } else {
+        ekrana_yaz("yanlis\n".ptr);
+    }
+
+    return 0;
+}

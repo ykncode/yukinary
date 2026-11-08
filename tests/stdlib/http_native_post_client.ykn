@@ -1,0 +1,12 @@
+# Gerçek YKN HTTP POST client: Content-Length request ve response doğrulama.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken tampon: [8192]u8;
+    degisken cevap: Cevap;
+    degisken sonuc: tamsayi = http_post(ipv4_adres(127, 0, 0, 1), 18083, "/submit".ptr, "hello".ptr, 5, tampon, 8192, &cevap);
+    eger sonuc != 0 ise { dondu 70; }
+    eger cevap.gecerli != 1 veya cevap.durum_kodu != 200 veya cevap.govde_uzunlugu != 2 ise { dondu 71; }
+    eger tampon[cevap.govde_baslangici] != 79 veya tampon[cevap.govde_baslangici + 1] != 75 ise { dondu 72; }
+    dondu 0;
+}

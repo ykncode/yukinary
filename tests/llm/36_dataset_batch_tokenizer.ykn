@@ -1,0 +1,136 @@
+# Saf YKN YKDS bounded batch + BPE tokenizer integration acceptance.
+ice_aktar "std/ai/dataset_batch.ykn";
+
+degisken DATA_BYTES: tamsayi = 32768;
+
+isv ana() -> tamsayi {
+    degisken yol: *u8 = "build/test-work/dataset-batch.ykds".ptr;
+    degisken w: *YKNDatasetWriter = ykn_dataset_writer_olustur(42);
+    eger w == 0 veya ykn_dataset_append(w, 11, "a".ptr, "b".ptr, "E001".ptr, "batch-test".ptr) == 0 veya
+       ykn_dataset_append(w, 12, "a".ptr, "b".ptr, "E002".ptr, "batch-test".ptr) == 0 veya
+       ykn_dataset_writer_bitir(w, yol) <= 0 ise {
+        ekrana_yaz("FAIL: dataset fixture\n".ptr);
+        dondu 1;
+    }
+    degisken data: *u8 = bellek_tahsis_et(DATA_BYTES);
+    eger data == 0 ise { ekrana_yaz("FAIL: dataset buffer\n".ptr); dondu 2; }
+    degisken data_size: tamsayi = dosya_oku(yol, data, DATA_BYTES);
+    eger data_size <= 0 ise { ekrana_yaz("FAIL: dataset read\n".ptr); dondu 3; }
+
+    degisken batch: *YKNDatasetBatch = bellek_tahsis_et(64);
+    eger batch == 0 veya ykn_dataset_batch_open(data, data_size, YKN_DS_BATCH_ALL_SPLITS, 2, batch) == 0 ise {
+        ekrana_yaz("FAIL: batch open\n".ptr);
+        dondu 4;
+    }
+    degisken vocab: [4]u8;
+    vocab[0] = 97; vocab[1] = 0; vocab[2] = 98; vocab[3] = 0;
+    degisken token_offsets: [2]tamsayi;
+    degisken token_lengths: [2]tamsayi;
+    token_offsets[0] = 0; token_offsets[1] = 2;
+    token_lengths[0] = 1; token_lengths[1] = 1;
+    degisken merge_offsets: [1]tamsayi;
+    degisken merge_lengths: [1]tamsayi;
+    merge_offsets[0] = 0; merge_lengths[0] = 0;
+    degisken source_text: [8]u8;
+    degisken target_text: [8]u8;
+    degisken source_ids: [4]tamsayi;
+    degisken target_ids: [4]tamsayi;
+    degisken source_count: tamsayi = 0;
+    degisken target_count: tamsayi = 0;
+    degisken split: tamsayi = 0;
+    degisken sample_id: tamsayi = 0;
+
+    # Ham iterator yolu da ayni YKDS bounded record parser'ini kullanir.
+    degisken raw_batch: *YKNDatasetBatch = bellek_tahsis_et(64);
+    degisken raw_source: *u8 = bellek_tahsis_et(8);
+    degisken raw_target: *u8 = bellek_tahsis_et(8);
+    degisken raw_output: *YKNDatasetBatchOutput = bellek_tahsis_et(96);
+    eger raw_batch == 0 veya raw_source == 0 veya raw_target == 0 veya raw_output == 0 ise { ekrana_yaz("FAIL: raw batch alloc\n".ptr); dondu 42; }
+    eger ykn_dataset_batch_open(data, data_size, YKN_DS_BATCH_ALL_SPLITS, 2, raw_batch) == 0 ise {
+        ekrana_yaz("FAIL: raw batch open\n".ptr);
+        dondu 43;
+    }
+    raw_output->source_out = raw_source;
+    raw_output->source_capacity = 8;
+    raw_output->target_out = raw_target;
+    raw_output->target_capacity = 8;
+    raw_output->diagnostic_out = 0;
+    raw_output->diagnostic_capacity = 0;
+    raw_output->provenance_out = 0;
+    raw_output->provenance_capacity = 0;
+    raw_output->split_out = 0;
+    raw_output->sample_id_out = 0;
+    eger ykn_dataset_batch_next(raw_batch, raw_output) == 0 ise {
+        ekrana_yaz("FAIL: raw batch next\n".ptr);
+        dondu 44;
+    }
+    eger raw_source[0] != 97 veya raw_target[0] != 98 ise {
+        ekrana_yaz("FAIL: raw batch payload\n".ptr);
+        dondu 45;
+    }
+
+    degisken cfg: *YKNDatasetTokenizerBatch = bellek_tahsis_et(160);
+    degisken cfg_output: *YKNDatasetBatchOutput = bellek_tahsis_et(96);
+    eger cfg == 0 veya cfg_output == 0 ise { ekrana_yaz("FAIL: tokenizer config\n".ptr); dondu 43; }
+    cfg_output->source_out = source_text;
+    cfg_output->source_capacity = 8;
+    cfg_output->target_out = target_text;
+    cfg_output->target_capacity = 8;
+    cfg_output->diagnostic_out = 0;
+    cfg_output->diagnostic_capacity = 0;
+    cfg_output->provenance_out = 0;
+    cfg_output->provenance_capacity = 0;
+    cfg_output->split_out = &split;
+    cfg_output->sample_id_out = &sample_id;
+    cfg->tokenizer_buffer = vocab;
+    cfg->token_offsets = token_offsets;
+    cfg->token_lengths = token_lengths;
+    cfg->token_count = 2;
+    cfg->merge_offsets = merge_offsets;
+    cfg->merge_lengths = merge_lengths;
+    cfg->merge_count = 0;
+    cfg->output = cfg_output;
+    cfg->source_text = source_text;
+    cfg->source_text_capacity = 8;
+    cfg->target_text = target_text;
+    cfg->target_text_capacity = 8;
+    eger cfg->output == 0 ise { ekrana_yaz("FAIL: tokenizer output link\n".ptr); dondu 60; }
+    cfg->source_ids = source_ids;
+    cfg->source_id_capacity = 4;
+    cfg->target_ids = target_ids;
+    cfg->target_id_capacity = 4;
+    cfg->source_id_count = &source_count;
+    cfg->target_id_count = &target_count;
+    cfg->split_out = &split;
+    cfg->sample_id_out = &sample_id;
+
+    degisken first_tokenized: tamsayi = ykn_dataset_batch_next_tokenized(batch, cfg);
+    eger first_tokenized == 0 ise {
+        ekrana_yaz("FAIL: first tokenized batch record\n".ptr);
+        dondu 50 + YKN_DS_BATCH_LAST_ERROR;
+    }
+    eger source_count != 1 veya target_count != 1 veya source_ids[0] != 0 veya
+       target_ids[0] != 1 veya sample_id != 11 ise {
+        ekrana_yaz("FAIL: first tokenized batch payload\n".ptr);
+        dondu 5;
+    }
+    eger ykn_dataset_batch_next_tokenized(batch, cfg) == 0 veya
+       source_count != 1 veya target_count != 1 veya source_ids[0] != 0 veya
+       target_ids[0] != 1 veya sample_id != 12 ise {
+        ekrana_yaz("FAIL: second tokenized batch record\n".ptr);
+        dondu 6;
+    }
+    eger ykn_dataset_batch_next_tokenized(batch, cfg) != 0 ise {
+        ekrana_yaz("FAIL: batch capacity overflow accepted\n".ptr);
+        dondu 7;
+    }
+    degisken bad_batch: *YKNDatasetBatch = bellek_tahsis_et(64);
+    eger bad_batch == 0 veya ykn_dataset_batch_open(data, data_size - 1, YKN_DS_BATCH_ALL_SPLITS, 2, bad_batch) != 0 veya
+       ykn_dataset_batch_open(data, data_size, YKN_DS_BATCH_ALL_SPLITS, 33, bad_batch) != 0 veya
+       ykn_dataset_batch_open(data, data_size, 9, 2, bad_batch) != 0 ise {
+        ekrana_yaz("FAIL: invalid batch bounds accepted\n".ptr);
+        dondu 8;
+    }
+    ekrana_yaz("YKN_DATASET_BATCH_TOKENIZER_PASS\n".ptr);
+    dondu 0;
+}

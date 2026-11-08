@@ -1,0 +1,26 @@
+# Test basit: sabitleri karsilastir
+# EXIT: 6 bekleniyor
+
+isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+
+    # Test 1: 10 < 20 => dogru
+    eger 10 < 20 ise { sonuc = sonuc + 1; }
+
+    # Test 2: 20 > 10 => dogru
+    eger 20 > 10 ise { sonuc = sonuc + 1; }
+
+    # Test 3: 10 == 10 => dogru
+    eger 10 == 10 ise { sonuc = sonuc + 1; }
+
+    # Test 4: 10 != 20 => dogru
+    eger 10 != 20 ise { sonuc = sonuc + 1; }
+
+    # Test 5: 10 <= 10 => dogru
+    eger 10 <= 10 ise { sonuc = sonuc + 1; }
+
+    # Test 6: 20 >= 20 => dogru
+    eger 20 >= 20 ise { sonuc = sonuc + 1; }
+
+    dondu sonuc;
+}

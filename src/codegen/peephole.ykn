@@ -1,0 +1,152 @@
+# ============================================================
+# Yukinary Codegen - x86_64 Komut Siniri Duyarli Peephole Optimizatoru
+# Modul: src/codegen/peephole.ykn
+# ============================================================
+
+isv x86_insn_len(p: *u8, max_len: tamsayi) -> tamsayi {
+    eger max_len <= 0 ise { dondu 0; }
+    degisken idx: tamsayi = 0;
+
+    # Prefixes
+    dongu idx < max_len {
+        degisken b: u8 = p[idx];
+        eger b == 102 veya b == 103 veya b == 240 veya b == 242 veya b == 243 veya (b >= 64 ve b <= 79) ise {
+            idx = idx + 1;
+        } yoksa {
+            durdur;
+        }
+    }
+    eger idx >= max_len ise { dondu max_len; }
+
+    degisken op: u8 = p[idx];
+    idx = idx + 1;
+
+    # 1-byte instructions without ModR/M
+    eger op >= 80 ve op <= 95 ise { dondu idx; } # PUSH / POP reg (0x50..0x5F)
+    eger op == 144 veya op == 195 veya op == 204 veya op == 153 ise { dondu idx; } # NOP, RET, INT3, CDQ/CQO
+
+    # Short branch: 2 bytes
+    eger op == 235 veya (op >= 112 ve op <= 127) ise {
+        eger idx + 1 <= max_len ise { dondu idx + 1; }
+        dondu max_len;
+    }
+
+    # Near branch / call: opcode + 4 bytes imm
+    eger op == 232 veya op == 233 ise {
+        eger idx + 4 <= max_len ise { dondu idx + 4; }
+        dondu max_len;
+    }
+
+    # MOV reg32, imm32 or MOV reg64, imm64
+    eger op >= 184 ve op <= 191 ise {
+        degisken rex_w: tamsayi = 0;
+        degisken pr: tamsayi = 0;
+        dongu pr < idx - 1 {
+            eger (p[pr] & 248) == 72 ise { rex_w = 1; }
+            pr = pr + 1;
+        }
+        degisken imm_sz: tamsayi = 4;
+        eger rex_w == 1 ise { imm_sz = 8; }
+        eger idx + imm_sz <= max_len ise { dondu idx + imm_sz; }
+        dondu max_len;
+    }
+
+    # 2-byte escape 0x0F
+    eger op == 15 ve idx < max_len ise {
+        degisken op2: u8 = p[idx];
+        idx = idx + 1;
+        eger op2 >= 128 ve op2 <= 143 ise {
+            eger idx + 4 <= max_len ise { dondu idx + 4; }
+            dondu max_len;
+        }
+    }
+
+    # VEX 2-byte: 0xC5
+    eger op == 197 ve idx < max_len ise {
+        idx = idx + 1;
+        eger idx < max_len ise { idx = idx + 1; }
+    }
+
+    # Instructions with ModR/M byte
+    eger idx < max_len ise {
+        degisken modrm: u8 = p[idx];
+        idx = idx + 1;
+        degisken mod: tamsayi = (modrm / 64) & 3;
+        degisken rm: tamsayi = modrm & 7;
+
+        # SIB byte if mod != 3 and rm == 4
+        eger mod != 3 ve rm == 4 ve idx < max_len ise {
+            degisken sib: u8 = p[idx];
+            idx = idx + 1;
+            eger mod == 0 ve (sib & 7) == 5 ise {
+                idx = idx + 4;
+            }
+        }
+
+        # Displacement
+        eger mod == 1 ise { idx = idx + 1; }
+        yoksa eger mod == 2 ise { idx = idx + 4; }
+        yoksa eger mod == 0 ve rm == 5 ise { idx = idx + 4; }
+
+        # Immediates
+        eger op == 131 veya op == 107 ise { idx = idx + 1; }
+        yoksa eger op == 129 veya op == 199 veya op == 105 ise { idx = idx + 4; }
+        yoksa eger (op == 246 veya op == 247) ve ((modrm / 8) & 7) == 0 ise {
+            eger op == 246 ise { idx = idx + 1; }
+            yoksa { idx = idx + 4; }
+        }
+    }
+
+    eger idx <= max_len ise { dondu idx; }
+    dondu max_len;
+}
+
+isv x86_peephole_optimize(arena: *MakineKoduArenasi, baslangic: tamsayi, bitis: tamsayi) -> tamsayi {
+    eger arena == 0 veya arena.bellek == 0 veya bitis <= baslangic ise { dondu 0; }
+    degisken code: *u8 = arena.bellek;
+    degisken total_eliminated: tamsayi = 0;
+
+    degisken pos: tamsayi = baslangic;
+    dongu pos < bitis {
+        degisken len1: tamsayi = x86_insn_len(code + pos, bitis - pos);
+        eger len1 <= 0 ise { durdur; }
+
+        degisken next_pos: tamsayi = pos + len1;
+
+        # Pattern 1: MOV RAX, RAX (0x48 0x89 0xC0) -> 3x NOP
+        eger len1 == 3 ve code[pos] == 72 ve code[pos + 1] == 137 ve code[pos + 2] == 192 ise {
+            code[pos] = 144;
+            code[pos + 1] = 144;
+            code[pos + 2] = 144;
+            total_eliminated = total_eliminated + 1;
+            pos = next_pos;
+            devam_et;
+        }
+
+        # Pattern 2: ADD RAX, 0 (0x48 0x83 0xC0 0x00) or SUB RAX, 0 (0x48 0x83 0xE8 0x00) -> 4x NOP
+        eger len1 == 4 ve code[pos] == 72 ve code[pos + 1] == 131 ve (code[pos + 2] == 192 veya code[pos + 2] == 232) ve code[pos + 3] == 0 ise {
+            code[pos] = 144;
+            code[pos + 1] = 144;
+            code[pos + 2] = 144;
+            code[pos + 3] = 144;
+            total_eliminated = total_eliminated + 1;
+            pos = next_pos;
+            devam_et;
+        }
+
+        # Pattern 3: PUSH RAX (0x50) followed by POP RAX (0x58) -> 2x NOP
+        eger next_pos < bitis ise {
+            degisken len2: tamsayi = x86_insn_len(code + next_pos, bitis - next_pos);
+            eger len1 == 1 ve code[pos] == 80 ve len2 == 1 ve code[next_pos] == 88 ise {
+                code[pos] = 144;
+                code[next_pos] = 144;
+                total_eliminated = total_eliminated + 2;
+                pos = next_pos + len2;
+                devam_et;
+            }
+        }
+
+        pos = next_pos;
+    }
+    dondu total_eliminated;
+}

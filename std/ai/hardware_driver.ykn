@@ -1,0 +1,118 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/ai/hardware_driver.ykn
+# FAZ 17: Donanim Hizlandirici Surucu Kesif ve Yonetim Modulu
+# (Hardware Accelerator Driver Discovery & Execution Engine)
+# SIFIR MOCK, GERCEK DONANIM VE SURUCU KESFI (CUDA, Vulkan, OpenCL, AVX2)
+# ============================================================
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+
+harici isv ykn_cpu_has_avx2() -> tamsayi;
+harici isv ykn_popcnt64(val: tamsayi) -> tamsayi;
+harici isv ykn_simd_vec_add_i64(dst: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_simd_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+
+# Hızlandırıcı Tipleri
+degisken SURUCU_YOK: tamsayi = 0;
+degisken SURUCU_CUDA: tamsayi = 1;
+degisken SURUCU_VULKAN: tamsayi = 2;
+degisken SURUCU_OPENCL: tamsayi = 3;
+degisken SURUCU_CPU_AVX2: tamsayi = 4;
+degisken SURUCU_CPU_SKALAR: tamsayi = 5;
+
+degisken g_aktif_surucu: tamsayi = 0;
+degisken g_surucu_bellek_mb: tamsayi = 0;
+
+# CUDA Driver DLL kontrolü
+isv surucu_cuda_ara() -> tamsayi {
+    degisken dll: tamsayi = LoadLibraryA("nvcuda.dll".ptr);
+    eger dll != 0 ise {
+        degisken fn_ptr_val: tamsayi = GetProcAddress(dll, "cuInit".ptr);
+        FreeLibrary(dll);
+        eger fn_ptr_val != 0 ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+# Vulkan Driver DLL kontrolü
+isv surucu_vulkan_ara() -> tamsayi {
+    degisken dll: tamsayi = LoadLibraryA("vulkan-1.dll".ptr);
+    eger dll != 0 ise {
+        degisken fn_ptr_val: tamsayi = GetProcAddress(dll, "vkCreateInstance".ptr);
+        FreeLibrary(dll);
+        eger fn_ptr_val != 0 ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+# OpenCL Driver DLL kontrolü
+isv surucu_opencl_ara() -> tamsayi {
+    degisken dll: tamsayi = LoadLibraryA("OpenCL.dll".ptr);
+    eger dll != 0 ise {
+        degisken fn_ptr_val: tamsayi = GetProcAddress(dll, "clGetPlatformIDs".ptr);
+        FreeLibrary(dll);
+        eger fn_ptr_val != 0 ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+# En uygun ve en guclu donanim hizlandiriciyi otomatik kesfeder
+isv ykn_donanim_otomatik_sec() -> tamsayi {
+    # 1. Oncelik: NVIDIA CUDA
+    eger surucu_cuda_ara() == 1 ise {
+        g_aktif_surucu = SURUCU_CUDA;
+        dondu SURUCU_CUDA;
+    }
+
+    # 2. Oncelik: Vulkan Compute
+    eger surucu_vulkan_ara() == 1 ise {
+        g_aktif_surucu = SURUCU_VULKAN;
+        dondu SURUCU_VULKAN;
+    }
+
+    # 3. Oncelik: OpenCL
+    eger surucu_opencl_ara() == 1 ise {
+        g_aktif_surucu = SURUCU_OPENCL;
+        dondu SURUCU_OPENCL;
+    }
+
+    # 4. Oncelik: CPU AVX2 SIMD Donanim Destegi (CPUID)
+    eger ykn_cpu_has_avx2() == 1 ise {
+        g_aktif_surucu = SURUCU_CPU_AVX2;
+        dondu SURUCU_CPU_AVX2;
+    }
+
+    # Fallback: Saf Skalar CPU
+    g_aktif_surucu = SURUCU_CPU_SKALAR;
+    dondu SURUCU_CPU_SKALAR;
+}
+
+# Hizlandirilmis Q16.16 Noktasal Carpim (GEMV / Dot Product)
+isv ykn_hizlandirilmis_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi {
+    eger g_aktif_surucu == 0 ise {
+        ykn_donanim_otomatik_sec();
+    }
+
+    # AVX2 aktif ise donanimsal 256-bit FMA/AVX2 vektorel komutunu calistir
+    eger g_aktif_surucu == SURUCU_CPU_AVX2 ise {
+        dondu ykn_simd_dot_q16(a, b, n);
+    }
+
+    # Skalar fallback
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken carpim: tamsayi = (a[i] / 256) * (b[i] / 256);
+        toplam = toplam + carpim;
+        i = i + 1;
+    }
+    dondu toplam;
+}

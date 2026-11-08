@@ -1,0 +1,12 @@
+# 日本語テスト: 浮動小数点数型
+関数 メイン(argc: 整数, argv: **u8) -> 整数 {
+    変数 a: 浮動 = 15.5;
+    変数 b: 浮動 = 3.5;
+    変数 c: 浮動 = a - b;
+    もし c == 12.0 なら {
+        ekrana_yaz("JA-FLOAT-PASS\n".ptr);
+    } それ以外 {
+        ekrana_yaz("JA-FLOAT-FAIL\n".ptr);
+    }
+    返す 0;
+}

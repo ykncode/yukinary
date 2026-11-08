@@ -1,0 +1,477 @@
+# ============================================================
+# Yukinary Codegen - Linux ELF64 (x86_64 & ARM64) Uretici
+# Modul: src/codegen/output_elf.ykn
+# FAZ 4: Standalone glibc-free Bootstrap, Syscall Thunks & 64KB Alignment
+# ============================================================
+
+# ============================================================
+# Linux AArch64 (ARM64) Syscall Numaralari (X8 Yazmaci)
+# ============================================================
+degisken CG_LINUX_ARM64_SYS_OPENAT     = 56;  # openat(dfd, path, flags, mode)
+degisken CG_LINUX_ARM64_SYS_CLOSE      = 57;  # close(fd)
+degisken CG_LINUX_ARM64_SYS_READ       = 63;  # read(fd, buf, len)
+degisken CG_LINUX_ARM64_SYS_WRITE      = 64;  # write(fd, buf, len)
+degisken CG_LINUX_ARM64_SYS_EXIT       = 93;  # exit(status)
+degisken CG_LINUX_ARM64_SYS_SOCKET     = 198; # socket(domain, type, proto)
+degisken CG_LINUX_ARM64_SYS_BIND       = 200; # bind(fd, addr, len)
+degisken CG_LINUX_ARM64_SYS_LISTEN     = 201; # listen(fd, backlog)
+degisken CG_LINUX_ARM64_SYS_ACCEPT     = 202; # accept(fd, addr, len)
+degisken CG_LINUX_ARM64_SYS_CONNECT    = 203; # connect(fd, addr, len)
+degisken CG_LINUX_ARM64_SYS_SENDTO     = 206; # sendto(fd, buf, len, flags, addr, alen)
+degisken CG_LINUX_ARM64_SYS_RECVFROM   = 207; # recvfrom(fd, buf, len, flags, addr, alen)
+degisken CG_LINUX_ARM64_SYS_MUNMAP     = 215; # munmap(addr, len)
+degisken CG_LINUX_ARM64_SYS_MMAP       = 222; # mmap(addr, len, prot, flags, fd, off)
+
+# ============================================================
+# Linux ARM64 Baslangic Thunk'i (glibc-free Standalone _start)
+# ============================================================
+isv linux_arm64_baslangic_thunk_uret(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # Linux AArch64 ABI:
+    # Kernel yigiti hazirlar: SP noktasinda argc, SP+8 noktasinda argv[0] vardir.
+    # LDR X0, [SP] (0xF94003E0) - Yukinary ana(argc)
+    byte_yaz(a, 0xE0); byte_yaz(a, 0x03); byte_yaz(a, 0x40); byte_yaz(a, 0xF9);
+    # ADD X1, SP, #8 (0x910023E1) - Yukinary ana(argv)
+    byte_yaz(a, 0xE1); byte_yaz(a, 0x23); byte_yaz(a, 0x00); byte_yaz(a, 0x91);
+    # BL ana_adres (ARM64 Branch with Link)
+    degisken bl_pos: tamsayi = a.kullanilan;
+    degisken rel_inst: tamsayi = (ana_adres - bl_pos) / 4;
+    degisken imm26: tamsayi = rel_inst;
+    dongu imm26 < 0 { imm26 = imm26 + 67108864; }
+    degisken opcode: tamsayi = 0x94000000 + (imm26 % 67108864);
+    int32_yaz(a, opcode);
+    # MOVZ X8, #93 (0xD2800BA8) (Linux AArch64 SYS_exit = 93, donus kodu X0'da)
+    byte_yaz(a, 0xA8); byte_yaz(a, 0x0B); byte_yaz(a, 0x80); byte_yaz(a, 0xD2);
+    # SVC #0 (0xD4000001) - Cekirdek Syscall cagrisi
+    byte_yaz(a, 0x01); byte_yaz(a, 0x00); byte_yaz(a, 0x00); byte_yaz(a, 0xD4);
+    dondu bas;
+}
+
+# ============================================================
+# Eski ELF uyumluluk (Linux icin)
+# ============================================================
+isv elf64_basligi_ve_kodu_yaz(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi) {
+    elf64_linux_uret(os_arena, kod, 0);
+}
+
+# ============================================================
+# Linux x86_64 ELF64 Dinamik Kutuphane (.so) ve Sembol Cozumleme Uretici
+# ============================================================
+isv elf64_linux_dinamik_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    degisken IMAGE_BASE:    tamsayi = 0x400000;
+    degisken ELF_HEADER_S:  tamsayi = 64;
+    degisken PROGRAM_HDR_S: tamsayi = 56;
+    degisken PHDR_COUNT:    tamsayi = 4; # 1: PT_INTERP, 2: PT_LOAD (RX), 3: PT_LOAD (RW), 4: PT_DYNAMIC
+
+    degisken interp_path: *u8 = "/lib64/ld-linux-x86-64.so.2".ptr;
+    degisken interp_len: tamsayi = 28; # strlen + 1 (null terminator)
+
+    degisken INTERP_OFF: tamsayi = ELF_HEADER_S + (PROGRAM_HDR_S * PHDR_COUNT); # 64 + 224 = 288
+    degisken CODE_OFF:   tamsayi = hizala_yukari(INTERP_OFF + interp_len, 16); # 288 + 28 = 316 -> 320
+
+    degisken code_s:     tamsayi = kod.kullanilan;
+    degisken code_end:   tamsayi = CODE_OFF + code_s;
+
+    degisken data_file_off: tamsayi = hizala_yukari(code_end, 0x1000);
+    degisken data_vaddr:    tamsayi = hizala_yukari(IMAGE_BASE + code_end, 0x1000);
+
+    # Dinamik tabloların boyutlarını hesapla
+    # DT_NEEDED girdileri (g_clib_adet adet) + DT_STRTAB, DT_SYMTAB, DT_STRSZ, DT_SYMENT, DT_NULL (5 adet)
+    degisken dyn_adet: tamsayi = g_clib_adet + 5;
+    degisken dyn_boyut: tamsayi = dyn_adet * 16; # Her Elf64_Dyn 16 bayt
+
+    # .dynsym: STN_UNDEF (24 bayt)
+    degisken sym_adet: tamsayi = 1;
+    degisken sym_boyut: tamsayi = sym_adet * 24; # Her Elf64_Sym 24 bayt
+
+    # .dynstr: \0 (1 bayt) + her kütüphane adı (null-terminated)
+    degisken str_boyut: tamsayi = 1;
+    degisken clib_str_offset: [64]tamsayi;
+    degisken ci: tamsayi = 0;
+    dongu ci < g_clib_adet {
+        clib_str_offset[ci] = str_boyut;
+        str_boyut = str_boyut + g_clib_uzunluk[ci] + 10;
+        ci = ci + 1;
+    }
+
+    degisken dynamic_vaddr: tamsayi = data_vaddr;
+    degisken sym_vaddr:     tamsayi = dynamic_vaddr + dyn_boyut;
+    degisken str_vaddr:     tamsayi = sym_vaddr + sym_boyut;
+    degisken data_tot_s:    tamsayi = dyn_boyut + sym_boyut + str_boyut;
+
+    degisken lib_ptr: *u8 = 0;
+    degisken lib_uzn: tamsayi = 0;
+    degisken has_so: tamsayi = 0;
+    degisken s_i: tamsayi = 0;
+    degisken max_tarama: tamsayi = 0;
+    degisken c0: tamsayi = 0;
+    degisken c1: tamsayi = 0;
+    degisken c2: tamsayi = 0;
+    degisken cb: u8 = 0;
+    degisken cb2: u8 = 0;
+    degisken l_libc: *u8 = "libc.so.6".ptr;
+    degisken l_pre: *u8 = "lib".ptr;
+    degisken l_suf: *u8 = ".so".ptr;
+
+    yamalari_uygula(kod);
+
+    # 1. ELF64 Header (64 bayt)
+    byte_yaz(os_arena, 0x7F); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x4C); byte_yaz(os_arena, 0x46); # \x7fELF
+    byte_yaz(os_arena, 0x02);        # ELFCLASS64
+    byte_yaz(os_arena, 0x01);        # ELFDATA2LSB
+    byte_yaz(os_arena, 0x01);        # EV_CURRENT
+    byte_yaz(os_arena, 0x00);        # ELFOSABI_NONE
+    sifir_doldur(os_arena, 8);       # Pad
+
+    u16_yaz(os_arena, 2);            # e_type = ET_EXEC (2)
+    u16_yaz(os_arena, 0x3E);         # e_machine = EM_X86_64 (62)
+    int32_yaz(os_arena, 1);          # e_version = 1
+    int64_yaz(os_arena, IMAGE_BASE + CODE_OFF + entry_offset); # e_entry
+    int64_yaz(os_arena, ELF_HEADER_S); # e_phoff = 64
+    int64_yaz(os_arena, 0);          # e_shoff
+    int32_yaz(os_arena, 0);          # e_flags
+    u16_yaz(os_arena, ELF_HEADER_S); # e_ehsize = 64
+    u16_yaz(os_arena, PROGRAM_HDR_S);# e_phentsize = 56
+    u16_yaz(os_arena, PHDR_COUNT);   # e_phnum = 4
+    u16_yaz(os_arena, 0); u16_yaz(os_arena, 0); u16_yaz(os_arena, 0);
+
+    # 2. Program Headers (4 adet)
+    # 2.1. PT_INTERP (56 bayt)
+    int32_yaz(os_arena, 3);          # p_type = PT_INTERP (3)
+    int32_yaz(os_arena, 4);          # p_flags = PF_R (4)
+    int64_yaz(os_arena, INTERP_OFF); # p_offset
+    int64_yaz(os_arena, IMAGE_BASE + INTERP_OFF); # p_vaddr
+    int64_yaz(os_arena, IMAGE_BASE + INTERP_OFF); # p_paddr
+    int64_yaz(os_arena, interp_len); # p_filesz
+    int64_yaz(os_arena, interp_len); # p_memsz
+    int64_yaz(os_arena, 1);          # p_align
+
+    # 2.2. PT_LOAD Segment 1: Code + Interp (RX)
+    int32_yaz(os_arena, 1);          # p_type = PT_LOAD (1)
+    int32_yaz(os_arena, 5);          # p_flags = PF_R | PF_X (5)
+    int64_yaz(os_arena, 0);          # p_offset = 0
+    int64_yaz(os_arena, IMAGE_BASE); # p_vaddr
+    int64_yaz(os_arena, IMAGE_BASE); # p_paddr
+    int64_yaz(os_arena, code_end);   # p_filesz
+    int64_yaz(os_arena, code_end);   # p_memsz
+    int64_yaz(os_arena, 0x1000);     # p_align = 4KB
+
+    # 2.3. PT_LOAD Segment 2: Data + Dynamic + Dynsym + Dynstr (RW)
+    int32_yaz(os_arena, 1);          # p_type = PT_LOAD (1)
+    int32_yaz(os_arena, 6);          # p_flags = PF_R | PF_W (6)
+    int64_yaz(os_arena, data_file_off); # p_offset
+    int64_yaz(os_arena, data_vaddr); # p_vaddr
+    int64_yaz(os_arena, data_vaddr); # p_paddr
+    int64_yaz(os_arena, data_tot_s); # p_filesz
+    int64_yaz(os_arena, hizala_yukari(data_tot_s, 0x1000)); # p_memsz
+    int64_yaz(os_arena, 0x1000);     # p_align = 4KB
+
+    # 2.4. PT_DYNAMIC Segment (RW)
+    int32_yaz(os_arena, 2);          # p_type = PT_DYNAMIC (2)
+    int32_yaz(os_arena, 6);          # p_flags = PF_R | PF_W (6)
+    int64_yaz(os_arena, data_file_off); # p_offset
+    int64_yaz(os_arena, dynamic_vaddr); # p_vaddr
+    int64_yaz(os_arena, dynamic_vaddr); # p_paddr
+    int64_yaz(os_arena, dyn_boyut);  # p_filesz
+    int64_yaz(os_arena, dyn_boyut);  # p_memsz
+    int64_yaz(os_arena, 8);          # p_align = 8
+
+    # 3. INTERP Stringini yaz
+    sifir_doldur(os_arena, INTERP_OFF - os_arena.kullanilan);
+    degisken ii: tamsayi = 0;
+    dongu ii < 27 { byte_yaz(os_arena, interp_path[ii]); ii = ii + 1; }
+    byte_yaz(os_arena, 0); # null terminator
+
+    # 4. Kodu yerleştir
+    sifir_doldur(os_arena, CODE_OFF - os_arena.kullanilan);
+    degisken ki: tamsayi = 0;
+    dongu ki < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[ki]);
+        ki = ki + 1;
+    }
+
+    # 5. Data Segmenti (data_file_off konumuna kadar sıfır doldur)
+    sifir_doldur(os_arena, data_file_off - os_arena.kullanilan);
+
+    # 5.1. _DYNAMIC Tablosu
+    ci = 0;
+    dongu ci < g_clib_adet {
+        int64_yaz(os_arena, 1); # DT_NEEDED = 1
+        int64_yaz(os_arena, clib_str_offset[ci]);
+        ci = ci + 1;
+    }
+    int64_yaz(os_arena, 5); int64_yaz(os_arena, str_vaddr); # DT_STRTAB = 5
+    int64_yaz(os_arena, 6); int64_yaz(os_arena, sym_vaddr); # DT_SYMTAB = 6
+    int64_yaz(os_arena, 10); int64_yaz(os_arena, str_boyut); # DT_STRSZ = 10
+    int64_yaz(os_arena, 11); int64_yaz(os_arena, 24);        # DT_SYMENT = 11 (24 bytes)
+    int64_yaz(os_arena, 0);  int64_yaz(os_arena, 0);         # DT_NULL = 0
+
+    # 5.2. .dynsym Tablosu (STN_UNDEF entry)
+    sifir_doldur(os_arena, sym_boyut);
+
+    # 5.3. .dynstr String Tablosu
+    byte_yaz(os_arena, 0); # Index 0: bos string
+    ci = 0;
+    dongu ci < g_clib_adet {
+        lib_ptr = g_clib_isim[ci];
+        lib_uzn = g_clib_uzunluk[ci];
+        has_so = 0;
+        s_i = 0;
+        max_tarama = lib_uzn - 2;
+        dongu s_i < max_tarama {
+            c0 = lib_ptr[s_i];
+            c1 = lib_ptr[s_i + 1];
+            c2 = lib_ptr[s_i + 2];
+            eger c0 == 46 ve c1 == 115 ve c2 == 111 ise { has_so = 1; }
+            s_i = s_i + 1;
+        }
+        eger has_so == 1 ise {
+            s_i = 0;
+            dongu s_i < lib_uzn {
+                cb = lib_ptr[s_i];
+                byte_yaz(os_arena, cb);
+                s_i = s_i + 1;
+            }
+        } yoksa eger lib_uzn == 4 ve bellek_esit_mi(lib_ptr, "libc".ptr, 4) == 1 ise {
+            s_i = 0;
+            dongu s_i < 9 { byte_yaz(os_arena, l_libc[s_i]); s_i = s_i + 1; }
+        } yoksa {
+            s_i = 0;
+            dongu s_i < 3 { byte_yaz(os_arena, l_pre[s_i]); s_i = s_i + 1; }
+            s_i = 0;
+            dongu s_i < lib_uzn {
+                cb2 = lib_ptr[s_i];
+                byte_yaz(os_arena, cb2);
+                s_i = s_i + 1;
+            }
+            s_i = 0;
+            dongu s_i < 3 { byte_yaz(os_arena, l_suf[s_i]); s_i = s_i + 1; }
+        }
+        byte_yaz(os_arena, 0); # null terminator
+        ci = ci + 1;
+    }
+}
+
+# ============================================================
+# Linux x86_64 ELF64 Uretici (Bagimsiz / glibc-free)
+# ============================================================
+isv elf64_linux_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    eger g_clib_adet > 0 ise {
+        elf64_linux_dinamik_uret(os_arena, kod, entry_offset);
+        dondu;
+    }
+
+    degisken IMAGE_BASE:    tamsayi = 0x400000;
+    degisken ELF_HEADER_S:  tamsayi = 64;
+    degisken PROGRAM_HDR_S: tamsayi = 56;
+    degisken PHDR_COUNT:    tamsayi = 2; # W^X: Segment 1 (Code, RX) + Segment 2 (Data/BSS, RW)
+    degisken CODE_OFF:      tamsayi = ELF_HEADER_S + (PROGRAM_HDR_S * PHDR_COUNT); # 176
+    degisken code_s:        tamsayi = kod.kullanilan;
+    degisken file_s:        tamsayi = CODE_OFF + code_s;
+
+    yamalari_uygula(kod);
+
+    # 1. ELF64 Header (64 bytes)
+    byte_yaz(os_arena, 0x7F); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x4C); byte_yaz(os_arena, 0x46); # \x7fELF
+    byte_yaz(os_arena, 0x02);        # ELFCLASS64
+    byte_yaz(os_arena, 0x01);        # ELFDATA2LSB (Little Endian)
+    byte_yaz(os_arena, 0x01);        # EV_CURRENT
+    byte_yaz(os_arena, 0x00);        # ELFOSABI_NONE (System V)
+    sifir_doldur(os_arena, 8);       # Pad
+
+    u16_yaz(os_arena, 2);            # e_type = ET_EXEC (2)
+    u16_yaz(os_arena, 0x3E);         # e_machine = EM_X86_64 (62)
+    int32_yaz(os_arena, 1);          # e_version = EV_CURRENT (1)
+    int64_yaz(os_arena, IMAGE_BASE + CODE_OFF + entry_offset); # e_entry (dogrudan _start thunk adresi)
+    int64_yaz(os_arena, ELF_HEADER_S); # e_phoff = 64
+    int64_yaz(os_arena, 0);          # e_shoff = 0 (bolum tablosu yok, tamamen bagimsiz calisabilir)
+    int32_yaz(os_arena, 0);          # e_flags = 0
+    u16_yaz(os_arena, ELF_HEADER_S); # e_ehsize = 64
+    u16_yaz(os_arena, PROGRAM_HDR_S);# e_phentsize = 56
+    u16_yaz(os_arena, PHDR_COUNT);   # e_phnum = 2 (W^X uyumlu RX ve RW segmentleri)
+    u16_yaz(os_arena, 0);            # e_shentsize = 0
+    u16_yaz(os_arena, 0);            # e_shnum = 0
+    u16_yaz(os_arena, 0);            # e_shstrndx = 0
+
+    # 2. Segment 1: Code PT_LOAD (56 bytes) - RWX (Code + Data)
+    int32_yaz(os_arena, 1);          # p_type = PT_LOAD (1)
+    int32_yaz(os_arena, 7);          # p_flags = PF_R | PF_W | PF_X (7)
+    int64_yaz(os_arena, 0);          # p_offset = 0 (ELF basligi + kod)
+    int64_yaz(os_arena, IMAGE_BASE); # p_vaddr = 0x400000
+    int64_yaz(os_arena, IMAGE_BASE); # p_paddr = 0x400000
+    int64_yaz(os_arena, file_s);     # p_filesz
+    int64_yaz(os_arena, file_s);     # p_memsz
+    int64_yaz(os_arena, 0x1000);     # p_align = 4KB sayfa hizalamasi
+
+    # 3. Segment 2: Data/BSS PT_LOAD (56 bytes) - RW
+    degisken data_vaddr: tamsayi = hizala_yukari(IMAGE_BASE + file_s, 0x1000);
+    int32_yaz(os_arena, 1);          # p_type = PT_LOAD (1)
+    int32_yaz(os_arena, 6);          # p_flags = PF_R | PF_W (6)
+    int64_yaz(os_arena, hizala_yukari(file_s, 0x1000)); # p_offset
+    int64_yaz(os_arena, data_vaddr); # p_vaddr
+    int64_yaz(os_arena, data_vaddr); # p_paddr
+    int64_yaz(os_arena, 0);          # p_filesz = 0 (BSS)
+    int64_yaz(os_arena, 0x1000);     # p_memsz = 4KB
+    int64_yaz(os_arena, 0x1000);     # p_align = 4KB
+
+    # 4. Kodu yerlestir
+    degisken k: tamsayi = 0;
+    dongu k < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k]);
+        k = k + 1;
+    }
+}
+
+# ============================================================
+# Linux ARM64 (AArch64) ELF64 Uretici (Bagimsiz / glibc-free)
+# 64KB Sayfa Hizalamasi (CentOS/RHEL/Android/Asahi Uyumlu)
+# ============================================================
+isv elf64_arm64_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    degisken IMAGE_BASE:    tamsayi = 0x400000;
+    degisken ELF_HEADER_S:  tamsayi = 64;
+    degisken PROGRAM_HDR_S: tamsayi = 56;
+    degisken PHDR_COUNT:    tamsayi = 2; # W^X: Segment 1 (Code, RX) + Segment 2 (Data/BSS, RW)
+    degisken CODE_OFF:      tamsayi = ELF_HEADER_S + (PROGRAM_HDR_S * PHDR_COUNT);
+    degisken code_s:        tamsayi = kod.kullanilan;
+    degisken file_s:        tamsayi = CODE_OFF + code_s;
+
+    yamalari_uygula(kod);
+
+    # 1. ELF64 Header ARM64 (64 bytes)
+    byte_yaz(os_arena, 0x7F); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x4C); byte_yaz(os_arena, 0x46);
+    byte_yaz(os_arena, 0x02);        # ELFCLASS64
+    byte_yaz(os_arena, 0x01);        # ELFDATA2LSB
+    byte_yaz(os_arena, 0x01);        # EV_CURRENT
+    byte_yaz(os_arena, 0x00);        # ELFOSABI_NONE
+    sifir_doldur(os_arena, 8);
+
+    u16_yaz(os_arena, 2);            # ET_EXEC
+    u16_yaz(os_arena, 0xB7);         # EM_AARCH64 (183 = 0xB7)
+    int32_yaz(os_arena, 1);          # EV_CURRENT
+    int64_yaz(os_arena, IMAGE_BASE + CODE_OFF + entry_offset); # e_entry
+    int64_yaz(os_arena, ELF_HEADER_S); # e_phoff
+    int64_yaz(os_arena, 0);          # e_shoff
+    int32_yaz(os_arena, 0);          # e_flags
+    u16_yaz(os_arena, ELF_HEADER_S);
+    u16_yaz(os_arena, PROGRAM_HDR_S);
+    u16_yaz(os_arena, PHDR_COUNT);   # e_phnum = 2
+    u16_yaz(os_arena, 0); u16_yaz(os_arena, 0); u16_yaz(os_arena, 0);
+
+    # 2. Segment 1: Code PT_LOAD (56 bytes) - RWX (Code + Data)
+    int32_yaz(os_arena, 1);          # PT_LOAD
+    int32_yaz(os_arena, 7);          # PF_R | PF_W | PF_X (7)
+    int64_yaz(os_arena, 0);          # p_offset = 0
+    int64_yaz(os_arena, IMAGE_BASE);
+    int64_yaz(os_arena, IMAGE_BASE);
+    int64_yaz(os_arena, file_s);     # p_filesz
+    int64_yaz(os_arena, file_s);     # p_memsz
+    int64_yaz(os_arena, 0x10000);    # p_align = 64KB (AArch64 genis sayfa uyumlulugu)
+
+    # 3. Segment 2: Data/BSS PT_LOAD (56 bytes) - RW
+    degisken data_vaddr: tamsayi = hizala_yukari(IMAGE_BASE + file_s, 0x10000);
+    int32_yaz(os_arena, 1);          # PT_LOAD
+    int32_yaz(os_arena, 6);          # PF_R | PF_W
+    int64_yaz(os_arena, hizala_yukari(file_s, 0x10000));
+    int64_yaz(os_arena, data_vaddr);
+    int64_yaz(os_arena, data_vaddr);
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, 0x10000);
+    int64_yaz(os_arena, 0x10000);
+
+    # 4. Kodu yerlestir
+    degisken k_a: tamsayi = 0;
+    dongu k_a < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k_a]);
+        k_a = k_a + 1;
+    }
+}
+
+# ============================================================
+# Linux RISC-V 64 Baslangic Thunk'i (glibc-free Standalone _start)
+# ============================================================
+isv linux_riscv64_baslangic_thunk_uret(a: *MakineKoduArenasi, ana_adres: tamsayi) -> tamsayi {
+    degisken bas: tamsayi = a.kullanilan;
+    # ld a0, 0(sp)
+    byte_yaz(a, 0x03); byte_yaz(a, 0x35); byte_yaz(a, 0x01); byte_yaz(a, 0x00);
+    # addi a1, sp, 8
+    byte_yaz(a, 0x93); byte_yaz(a, 0x05); byte_yaz(a, 0x81); byte_yaz(a, 0x00);
+    # jal ra, ana_adres (J-type jal encoding)
+    degisken jal_pos: tamsayi = a.kullanilan;
+    degisken offset: tamsayi = ana_adres - jal_pos;
+    degisken u: tamsayi = offset;
+    dongu u < 0 { u = u + 4294967296; }
+    degisken imm20: tamsayi = (u / 1048576) % 2;
+    degisken imm10_1: tamsayi = (u / 2) % 1024;
+    degisken imm11: tamsayi = (u / 2048) % 2;
+    degisken imm19_12: tamsayi = (u / 4096) % 256;
+    degisken jal_inst: tamsayi = (imm20 * 2147483648) + (imm10_1 * 2097152) + (imm11 * 1048576) + (imm19_12 * 4096) + 128 + 0x6F;
+    int32_yaz(a, jal_inst);
+    # li a7, 93 (addi a7, zero, 93)
+    byte_yaz(a, 0x93); byte_yaz(a, 0x08); byte_yaz(a, 0xD0); byte_yaz(a, 0x05);
+    # ecall
+    byte_yaz(a, 0x73); byte_yaz(a, 0x00); byte_yaz(a, 0x00); byte_yaz(a, 0x00);
+    dondu bas;
+}
+
+# ============================================================
+# Linux RISC-V 64 ELF64 Uretici (Bagimsiz / glibc-free)
+# ============================================================
+isv elf64_riscv64_uret(os_arena: *MakineKoduArenasi, kod: *MakineKoduArenasi, entry_offset: tamsayi) {
+    degisken IMAGE_BASE:    tamsayi = 0x10000;
+    degisken ELF_HEADER_S:  tamsayi = 64;
+    degisken PROGRAM_HDR_S: tamsayi = 56;
+    degisken PHDR_COUNT:    tamsayi = 2; # W^X: Segment 1 (Code, RX) + Segment 2 (Data/BSS, RW)
+    degisken CODE_OFF:      tamsayi = ELF_HEADER_S + (PROGRAM_HDR_S * PHDR_COUNT);
+    degisken code_s:        tamsayi = kod.kullanilan;
+    degisken file_s:        tamsayi = CODE_OFF + code_s;
+
+    yamalari_uygula(kod);
+
+    # 1. ELF64 Header RISC-V (64 bytes)
+    byte_yaz(os_arena, 0x7F); byte_yaz(os_arena, 0x45); byte_yaz(os_arena, 0x4C); byte_yaz(os_arena, 0x46);
+    byte_yaz(os_arena, 0x02);        # ELFCLASS64
+    byte_yaz(os_arena, 0x01);        # ELFDATA2LSB
+    byte_yaz(os_arena, 0x01);        # EV_CURRENT
+    byte_yaz(os_arena, 0x00);        # ELFOSABI_NONE
+    sifir_doldur(os_arena, 8);
+
+    u16_yaz(os_arena, 2);            # ET_EXEC
+    u16_yaz(os_arena, 243);          # EM_RISCV (243 = 0xF3)
+    int32_yaz(os_arena, 1);          # EV_CURRENT
+    int64_yaz(os_arena, IMAGE_BASE + CODE_OFF + entry_offset); # e_entry
+    int64_yaz(os_arena, ELF_HEADER_S); # e_phoff
+    int64_yaz(os_arena, 0);          # e_shoff
+    int32_yaz(os_arena, 5);          # e_flags = EF_RISCV_RVC | EF_RISCV_FLOAT_ABI_DOUBLE
+    u16_yaz(os_arena, ELF_HEADER_S);
+    u16_yaz(os_arena, PROGRAM_HDR_S);
+    u16_yaz(os_arena, PHDR_COUNT);   # e_phnum = 2
+    u16_yaz(os_arena, 0); u16_yaz(os_arena, 0); u16_yaz(os_arena, 0);
+
+    # 2. Segment 1: Code PT_LOAD (56 bytes) - RWX (Code + Data)
+    int32_yaz(os_arena, 1);          # PT_LOAD
+    int32_yaz(os_arena, 7);          # PF_R | PF_W | PF_X (7)
+    int64_yaz(os_arena, 0);          # p_offset = 0
+    int64_yaz(os_arena, IMAGE_BASE);
+    int64_yaz(os_arena, IMAGE_BASE);
+    int64_yaz(os_arena, file_s);     # p_filesz
+    int64_yaz(os_arena, file_s);     # p_memsz
+    int64_yaz(os_arena, 0x1000);     # p_align = 4KB sayfa hizalamasi
+
+    # 3. Segment 2: Data/BSS PT_LOAD (56 bytes) - RW
+    degisken data_vaddr: tamsayi = hizala_yukari(IMAGE_BASE + file_s, 0x1000);
+    int32_yaz(os_arena, 1);          # PT_LOAD
+    int32_yaz(os_arena, 6);          # PF_R | PF_W
+    int64_yaz(os_arena, hizala_yukari(file_s, 0x1000));
+    int64_yaz(os_arena, data_vaddr);
+    int64_yaz(os_arena, data_vaddr);
+    int64_yaz(os_arena, 0);
+    int64_yaz(os_arena, 0x1000);
+    int64_yaz(os_arena, 0x1000);
+
+    # 4. Kodu yerlestir
+    degisken k_r: tamsayi = 0;
+    dongu k_r < kod.kullanilan {
+        byte_yaz(os_arena, kod.bellek[k_r]);
+        k_r = k_r + 1;
+    }
+}

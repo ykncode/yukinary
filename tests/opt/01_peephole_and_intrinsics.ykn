@@ -1,0 +1,76 @@
+# ============================================================
+# Yukinary Compiler Optimization & Hardware Intrinsics Test (Clang / RustC Tier)
+# Tests: popcount, bswap, clz, ctz, rotleft, rotright + Peephole optimizer
+# ============================================================
+
+isv test_opt() -> tamsayi {
+    # 1. popcount (POPCNT)
+    degisken p1: tamsayi = popcount(7);
+    eger p1 != 3 ise {
+        dondu 1;
+    }
+
+    degisken p2: tamsayi = popcount(0);
+    eger p2 != 0 ise {
+        dondu 2;
+    }
+
+    # 2. bswap (BSWAP)
+    degisken bs1: tamsayi = bswap(12345);
+    degisken bs2: tamsayi = bswap(bs1);
+    eger bs2 != 12345 ise {
+        dondu 3;
+    }
+
+    # 3. clz (Count Leading Zeros via BSR)
+    degisken lz1: tamsayi = clz(1);
+    eger lz1 != 63 ise {
+        dondu 4;
+    }
+
+    degisken lz2: tamsayi = clz(4);
+    eger lz2 != 61 ise {
+        dondu 5;
+    }
+
+    # 4. ctz (Count Trailing Zeros via BSF)
+    degisken tz1: tamsayi = ctz(8);
+    eger tz1 != 3 ise {
+        dondu 6;
+    }
+
+    degisken tz2: tamsayi = ctz(1);
+    eger tz2 != 0 ise {
+        dondu 7;
+    }
+
+    # 5. rotleft & rotright (ROL / ROR)
+    degisken rl: tamsayi = rotleft(1, 4);
+    eger rl != 16 ise {
+        dondu 8;
+    }
+
+    degisken rr: tamsayi = rotright(16, 4);
+    eger rr != 1 ise {
+        dondu 9;
+    }
+
+    # 6. Peephole Store-Load Redundancy Verification
+    degisken x: tamsayi = 42;
+    degisken y: tamsayi = x + 10;
+    degisken z: tamsayi = y + x;
+    eger z != 94 ise {
+        dondu 10;
+    }
+
+    dondu 0;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken res: tamsayi = test_opt();
+    eger res == 0 ise {
+        ekrana_yaz("OPT & INTRINSICS PASS: Clang/RustC seviyesi optimizasyon ve intrinsics basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu res;
+}

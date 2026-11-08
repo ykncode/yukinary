@@ -1,0 +1,43 @@
+# Test: JIT REPL Execution Mode
+ice_aktar "src/repl.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("--- JIT REPL MODU TESTLERI ---\n".ptr);
+
+    # 1. JIT destegi kontrolu
+    eger repl_jit_destekleniyor_mu() != 1 ise {
+        ekrana_yaz("HATA: JIT destegi aktif degil!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("JIT Destegi: AKTIF\n".ptr);
+
+    # 2. Oturum olustur
+    degisken ot: *ReplOturumu = repl_oturum_olustur();
+    eger ot == 0 ise {
+        ekrana_yaz("HATA: REPL oturumu baslatilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 3. JIT uzerinden degisken tanimini calistir
+    degisken s1: *u8 = "degisken a: tamsayi = 100;\n".ptr;
+    degisken s1_ok: tamsayi = repl_jit_satir_calistir(ot, s1, 28);
+    eger s1_ok != 1 ise {
+        ekrana_yaz("HATA: s1 calistirilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 4. JIT uzerinden fonksiyon tanimini calistir
+    degisken s2: *u8 = "isv topla(x: tamsayi) -> tamsayi { dondu x + 5; }\n".ptr;
+    degisken s2_ok: tamsayi = repl_jit_satir_calistir(ot, s2, 50);
+    eger s2_ok != 1 ise {
+        ekrana_yaz("HATA: s2 calistirilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 5. JIT durum raporu
+    repl_jit_rapor(ot);
+
+    repl_oturum_temizle(ot);
+    ekrana_yaz("REPL_JIT_MODE: PASS\n".ptr);
+    dondu 0;
+}

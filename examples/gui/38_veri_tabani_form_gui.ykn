@@ -1,0 +1,46 @@
+# ============================================================
+# Örnek 38: Win32 Arayüzlü CRUD Veri Tabanı Kayıt Formu
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+yapi Personel {
+    id: tamsayi;
+    ad: [32]u8;
+    maas: tamsayi;
+}
+
+degisken g_kayitli_personel_sayisi: tamsayi = 3;
+
+isv personel_ekle(ad: *u8, maas: tamsayi) -> tamsayi {
+    g_kayitli_personel_sayisi = g_kayitli_personel_sayisi + 1;
+    ekrana_yaz("Yeni personel kaydedildi. Toplam kayit: ");
+    ekrana_yaz("\n".ptr);
+    dondu g_kayitli_personel_sayisi;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Personel CRUD Paneli".ptr, 650, 460);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Form Girdi Alanlari
+    metin_kutusu_olustur(p_h, 101, 30, 30, 260, 35); # Ad Soyad
+    metin_kutusu_olustur(p_h, 102, 30, 80, 260, 35); # Departman
+    metin_kutusu_olustur(p_h, 103, 30, 130, 260, 35); # Maas
+
+    # CRUD Butonlari
+    buton_olustur(p_h, "Kaydet (Create)".ptr, 201, 30, 190, 125, 40);
+    buton_olustur(p_h, "Guncelle (Update)".ptr, 202, 165, 190, 125, 40);
+    buton_olustur(p_h, "Sil (Delete)".ptr, 203, 30, 240, 125, 40);
+    buton_olustur(p_h, "Filtrele / Ara".ptr, 204, 165, 240, 125, 40);
+
+    # Sag Liste Alani
+    metin_kutusu_olustur(p_h, 301, 320, 30, 290, 360);
+
+    ekrana_yaz("CRUD Formu yuklendi. Kayitlar hazir.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

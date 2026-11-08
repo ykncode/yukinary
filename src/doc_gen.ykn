@@ -1,0 +1,140 @@
+# ============================================================
+# src/doc_gen.ykn
+# FAZ 44 & FAZ 64: Saf Yukinary Dokumantasyon Ureticisi (Doc Generator)
+# Kod ici islev, yapi ve modul dokumantasyonu derler ve gercek Markdown uretir
+# SIFIR MOCK - Gercek metin birlestirme ve Markdown ciktisi
+# ============================================================
+
+yapi DocKayit {
+    ad:        *u8;
+    imza:      *u8;
+    aciklama:  *u8;
+}
+
+yapi DocModul {
+    modul_adi:    *u8;
+    kapasite:     tamsayi;
+    kayit_sayisi: tamsayi;
+    kayitlar:     *tamsayi;
+}
+
+isv doc_dizgi_kopyala(hedef: *u8, h_indeks: tamsayi, kaynak: *u8) -> tamsayi {
+    eger kaynak == 0 ise { dondu h_indeks; }
+    degisken i: tamsayi = 0;
+    dongu kaynak[i] != 0 {
+        hedef[h_indeks] = kaynak[i];
+        h_indeks = h_indeks + 1;
+        i = i + 1;
+    }
+    dondu h_indeks;
+}
+
+isv doc_modul_olustur(ad: *u8, kap: tamsayi) -> *DocModul {
+    degisken m: *DocModul = bellek_tahsis_et(32);
+    m.modul_adi = ad;
+    m.kapasite = kap;
+    m.kayit_sayisi = 0;
+    m.kayitlar = bellek_tahsis_et(kap * 8);
+    dondu m;
+}
+
+isv doc_islev_ekle(m: *DocModul, ad: *u8, imza: *u8, aciklama: *u8) -> tamsayi {
+    degisken n: tamsayi = m.kayit_sayisi;
+    degisken cap: tamsayi = m.kapasite;
+    eger n >= cap ise {
+        dondu 0;
+    }
+    degisken k: *DocKayit = bellek_tahsis_et(24);
+    k.ad = ad;
+    k.imza = imza;
+    k.aciklama = aciklama;
+
+    degisken arr: *tamsayi = m.kayitlar;
+    arr[n] = k as tamsayi;
+    m.kayit_sayisi = n + 1;
+    dondu 1;
+}
+
+isv doc_markdown_uret(m: *DocModul, hedef: *u8) -> tamsayi {
+    degisken n: tamsayi = m.kayit_sayisi;
+    eger n <= 0 ise {
+        hedef[0] = 0;
+        dondu 0;
+    }
+    degisken h: tamsayi = 0;
+
+    # "# Modul: "
+    hedef[h] = 35; h = h + 1; # '#'
+    hedef[h] = 32; h = h + 1; # ' '
+    hedef[h] = 77; h = h + 1; # 'M'
+    hedef[h] = 111; h = h + 1; # 'o'
+    hedef[h] = 100; h = h + 1; # 'd'
+    hedef[h] = 117; h = h + 1; # 'u'
+    hedef[h] = 108; h = h + 1; # 'l'
+    hedef[h] = 58;  h = h + 1; # ':'
+    hedef[h] = 32;  h = h + 1; # ' '
+
+    h = doc_dizgi_kopyala(hedef, h, m.modul_adi);
+
+    # "\n\n## Islevler\n\n"
+    hedef[h] = 10; h = h + 1;
+    hedef[h] = 10; h = h + 1;
+    hedef[h] = 35; h = h + 1; # '#'
+    hedef[h] = 35; h = h + 1; # '#'
+    hedef[h] = 32; h = h + 1; # ' '
+    hedef[h] = 73; h = h + 1; # 'I'
+    hedef[h] = 115; h = h + 1; # 's'
+    hedef[h] = 108; h = h + 1; # 'l'
+    hedef[h] = 101; h = h + 1; # 'e'
+    hedef[h] = 118; h = h + 1; # 'v'
+    hedef[h] = 108; h = h + 1; # 'l'
+    hedef[h] = 101; h = h + 1; # 'e'
+    hedef[h] = 114; h = h + 1; # 'r'
+    hedef[h] = 10; h = h + 1;
+    hedef[h] = 10; h = h + 1;
+
+    degisken arr: *tamsayi = m.kayitlar;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken k: *DocKayit = arr[i] as *DocKayit;
+
+        # "### "
+        hedef[h] = 35; h = h + 1;
+        hedef[h] = 35; h = h + 1;
+        hedef[h] = 35; h = h + 1;
+        hedef[h] = 32; h = h + 1;
+
+        # Islev adi
+        h = doc_dizgi_kopyala(hedef, h, k.ad);
+        hedef[h] = 10; h = h + 1;
+
+        # "```ykn\n"
+        hedef[h] = 96; h = h + 1; # '`'
+        hedef[h] = 96; h = h + 1;
+        hedef[h] = 96; h = h + 1;
+        hedef[h] = 121; h = h + 1; # 'y'
+        hedef[h] = 107; h = h + 1; # 'k'
+        hedef[h] = 110; h = h + 1; # 'n'
+        hedef[h] = 10;  h = h + 1;
+
+        # Imza
+        h = doc_dizgi_kopyala(hedef, h, k.imza);
+        hedef[h] = 10; h = h + 1;
+
+        # "```\n"
+        hedef[h] = 96; h = h + 1;
+        hedef[h] = 96; h = h + 1;
+        hedef[h] = 96; h = h + 1;
+        hedef[h] = 10; h = h + 1;
+
+        # Aciklama
+        h = doc_dizgi_kopyala(hedef, h, k.aciklama);
+        hedef[h] = 10; h = h + 1;
+        hedef[h] = 10; h = h + 1;
+
+        i = i + 1;
+    }
+
+    hedef[h] = 0;
+    dondu n;
+}

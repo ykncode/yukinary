@@ -1,0 +1,42 @@
+# ============================================================
+# Örnek 8: Konsol Tabanlı Hex Dökümcüsü (hexdump aracı)
+# ============================================================
+
+degisken g_hex_karakterler: *u8 = "0123456789ABCDEF".ptr;
+
+isv hex_bayt_yaz(b: u8) {
+    degisken h1: u8 = g_hex_karakterler[(b / 16) % 16];
+    degisken h2: u8 = g_hex_karakterler[b % 16];
+    degisken buf: [3]u8;
+    buf[0] = h1;
+    buf[1] = h2;
+    buf[2] = 0;
+    ekrana_yaz(buf);
+}
+
+isv hexdump_calistir(veri: *u8, uzunluk: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu (i < uzunluk) {
+        eger i % 16 == 0 ise {
+            sayiyi_ekrana_yaz(i);
+            ekrana_yaz(":  ".ptr);
+        }
+
+        hex_bayt_yaz(veri[i]);
+        ekrana_yaz(" ".ptr);
+
+        eger (i + 1) % 16 == 0 veya i + 1 == uzunluk ise {
+            ekrana_yaz("\n".ptr);
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken ornek_veri: *u8 = "Yukinary Native PE Executable Architecture 2026".ptr;
+    degisken len: tamsayi = 47;
+
+    ekrana_yaz("=== HexDump Gorunumu ===\n".ptr);
+    hexdump_calistir(ornek_veri, len);
+    dondu 0;
+}

@@ -1,0 +1,8 @@
+# Negatif Test 05: "Bunu mu demek istediniz?" onerisi
+# Beklenen: 'tanimsiz_degisken' veya 'tamsayi_degiske' icin ipucu onerisi
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken tamsayi_degisken: tamsayi = 42;
+    degisken y: tamsayi = tamsayi_degiske + 1;
+    dondu 0;
+}

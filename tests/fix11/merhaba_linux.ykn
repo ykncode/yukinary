@@ -1,0 +1,4 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("Merhaba Linux x86_64!\n".ptr);
+    dondu 0;
+}

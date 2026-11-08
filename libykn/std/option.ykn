@@ -1,0 +1,73 @@
+# ============================================================
+# Yukinary (YKN) Secenek Kutuphanesi (libykn/std/option.ykn)
+# Option<T> (Bazi / Hic) Deger Sarmalayici ve Guvenli Null Yonetimi
+# ============================================================
+
+degisken OPTION_HIC  = 0;   # None
+degisken OPTION_BAZI = 1;   # Some(T)
+
+yapi Option {
+    durum: tamsayi;   # 1 = OPTION_BAZI, 0 = OPTION_HIC
+    deger: tamsayi;   # T degeri veya isaretci (pointer)
+}
+
+# ------------------------------------------------------------
+# Yapici Fonksiyonlar
+# ------------------------------------------------------------
+
+# Bazi (Some): Deger tasiyan bir Option olusturur
+isv bazi(val: tamsayi) -> *Option {
+    degisken opt: *Option = bellek_tahsis_et(16);
+    opt.durum = OPTION_BAZI;
+    opt.deger = val;
+    dondu opt;
+}
+
+# Hic (None): Bos / degeri olmayan bir Option olusturur
+isv hic() -> *Option {
+    degisken opt: *Option = bellek_tahsis_et(16);
+    opt.durum = OPTION_HIC;
+    opt.deger = 0;
+    dondu opt;
+}
+
+# ------------------------------------------------------------
+# Sorgulama Fonksiyonlari
+# ------------------------------------------------------------
+
+# bazi_mi (is_some): Option dolu mu?
+isv bazi_mi(opt: *Option) -> tamsayi {
+    eger opt == 0 { dondu 0; }
+    dondu opt.durum == OPTION_BAZI;
+}
+
+# hic_mi (is_none): Option bos mu?
+isv hic_mi(opt: *Option) -> tamsayi {
+    eger opt == 0 { dondu 1; }
+    dondu opt.durum == OPTION_HIC;
+}
+
+# ------------------------------------------------------------
+# Deger Cikarma Fonksiyonlari
+# ------------------------------------------------------------
+
+# deger_al_veya (unwrap_or): Dolu ise degeri, bos ise varsayilani dondurur
+isv deger_veya(opt: *Option, varsayilan_deger: tamsayi) -> tamsayi {
+    eger opt == 0 veya opt.durum == OPTION_HIC {
+        dondu varsayilan_deger;
+    }
+    dondu opt.deger;
+}
+
+# deger_al (unwrap): Degeri dondurur, bos ise 0 doner
+isv deger_al(opt: *Option) -> tamsayi {
+    dondu deger_veya(opt, 0);
+}
+
+# ------------------------------------------------------------
+# Secenek (std/enum.ykn) ile Geriye Donuk Uyumluluk Alias'lari
+# ------------------------------------------------------------
+isv option_var(val: tamsayi) -> *Option { dondu bazi(val); }
+isv option_yok() -> *Option { dondu hic(); }
+isv option_var_mi(opt: *Option) -> tamsayi { dondu bazi_mi(opt); }
+isv option_deger_al(opt: *Option, varsayilan_deger: tamsayi) -> tamsayi { dondu deger_veya(opt, varsayilan_deger); }

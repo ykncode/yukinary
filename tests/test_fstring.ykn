@@ -1,0 +1,6 @@
+isv ana() -> tamsayi {
+    degisken isim: *u8 = "YKN".ptr;
+    degisken mesaj: *u8 = f"Merhaba {isim}!".ptr;
+    ekrana_yaz(mesaj);
+    dondu 0;
+}

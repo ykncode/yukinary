@@ -1,0 +1,135 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/ag/asenkron_soket.ykn
+# FAZ 2: Evrensel Asenkron Ag Reaktoru ve Non-blocking Soket Motoru
+#
+# Cift yonlu dairesel tamponlar (Ring Buffers), deterministik
+# durum makinesi ve sifir-kilitli asenkron soket soyutlamasi.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# Soket Durum Sabitleri
+degisken SOKET_DURUM_KAPALI:     tamsayi = 0;
+degisken SOKET_DURUM_BAGLANIYOR: tamsayi = 1;
+degisken SOKET_DURUM_BAGLANDI:   tamsayi = 2;
+degisken SOKET_DURUM_KAPANIYOR:  tamsayi = 3;
+degisken SOKET_DURUM_HATA:       tamsayi = 4;
+
+# Dairesel Halka Tampon (Ring Buffer)
+yapi AsenkronHalkaTampon {
+    tampon:   *u8;
+    kapasite: tamsayi;
+    bas:      tamsayi;
+    son:      tamsayi;
+    adet:     tamsayi;
+}
+
+# Asenkron Soket Nesnesi
+yapi AsenkronSoket {
+    fd:             tamsayi;
+    durum:          tamsayi;
+    nonblocking:    tamsayi;
+    okuma_tamponu:  *AsenkronHalkaTampon;
+    yazma_tamponu:  *AsenkronHalkaTampon;
+}
+
+# Dairesel tampon baslat
+isv asenkron_tampon_olustur(kapasite: tamsayi) -> *AsenkronHalkaTampon {
+    degisken kap: tamsayi = kapasite;
+    eger kap <= 0 ise { kap = 1024; }
+    degisken t: *AsenkronHalkaTampon = bellek_tahsis_et(40);
+    eger t == 0 ise { dondu 0; }
+    t.tampon = bellek_tahsis_et(kap);
+    t.kapasite = kap;
+    t.bas = 0;
+    t.son = 0;
+    t.adet = 0;
+    dondu t;
+}
+
+# Dairesel tampona veri yaz (enqueue)
+isv asenkron_tampon_yaz(t: *AsenkronHalkaTampon, veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger t == 0 veya veri == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken bos_yer: tamsayi = t.kapasite - t.adet;
+    degisken yazilacak: tamsayi = uzunluk;
+    eger yazilacak > bos_yer ise { yazilacak = bos_yer; }
+    
+    degisken buf: *u8 = t.tampon;
+    degisken s_idx: tamsayi = t.son;
+    degisken i: tamsayi = 0;
+    dongu i < yazilacak {
+        buf[s_idx] = veri[i];
+        s_idx = (s_idx + 1) % t.kapasite;
+        i = i + 1;
+    }
+    t.son = s_idx;
+    t.adet = t.adet + yazilacak;
+    dondu yazilacak;
+}
+
+# Dairesel tampondan veri oku (dequeue)
+isv asenkron_tampon_oku(t: *AsenkronHalkaTampon, cikti: *u8, max_len: tamsayi) -> tamsayi {
+    eger t == 0 veya cikti == 0 veya max_len <= 0 ise { dondu 0; }
+    degisken okunacak: tamsayi = max_len;
+    eger okunacak > t.adet ise { okunacak = t.adet; }
+    
+    degisken buf: *u8 = t.tampon;
+    degisken b_idx: tamsayi = t.bas;
+    degisken i: tamsayi = 0;
+    dongu i < okunacak {
+        cikti[i] = buf[b_idx];
+        b_idx = (b_idx + 1) % t.kapasite;
+        i = i + 1;
+    }
+    t.bas = b_idx;
+    t.adet = t.adet - okunacak;
+    dondu okunacak;
+}
+
+# Dairesel tamponu temizle
+isv asenkron_tampon_serbest_birak(t: *AsenkronHalkaTampon) {
+    eger t == 0 ise { dondu; }
+    eger t.tampon != 0 ise {
+        os_bellek_serbest(t.tampon);
+    }
+    os_bellek_serbest(t as *u8);
+}
+
+# Yeni bir asenkron soket olusturur
+isv asenkron_soket_olustur(fd: tamsayi) -> *AsenkronSoket {
+    degisken s: *AsenkronSoket = bellek_tahsis_et(40);
+    eger s == 0 ise { dondu 0; }
+    s.fd = fd;
+    s.durum = SOKET_DURUM_BAGLANDI;
+    s.nonblocking = 1;
+    s.okuma_tamponu = asenkron_tampon_olustur(4096);
+    s.yazma_tamponu = asenkron_tampon_olustur(4096);
+    dondu s;
+}
+
+# Non-blocking sokete veri gonder
+isv asenkron_soket_veri_gonder(s: *AsenkronSoket, veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger s == 0 veya s.durum != SOKET_DURUM_BAGLANDI ise { dondu 0 - 1; }
+    dondu asenkron_tampon_yaz(s.yazma_tamponu, veri, uzunluk);
+}
+
+# Non-blocking soketten veri oku
+isv asenkron_soket_veri_al(s: *AsenkronSoket, cikti: *u8, max_len: tamsayi) -> tamsayi {
+    eger s == 0 veya s.durum != SOKET_DURUM_BAGLANDI ise { dondu 0 - 1; }
+    dondu asenkron_tampon_oku(s.okuma_tamponu, cikti, max_len);
+}
+
+# Soketi kapat
+isv asenkron_soket_kapat(s: *AsenkronSoket) {
+    eger s == 0 ise { dondu; }
+    s.durum = SOKET_DURUM_KAPALI;
+}
+
+# Soketi serbest birak
+isv asenkron_soket_serbest_birak(s: *AsenkronSoket) {
+    eger s == 0 ise { dondu; }
+    asenkron_tampon_serbest_birak(s.okuma_tamponu);
+    asenkron_tampon_serbest_birak(s.yazma_tamponu);
+    os_bellek_serbest(s as *u8);
+}

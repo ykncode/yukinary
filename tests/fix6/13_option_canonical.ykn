@@ -1,0 +1,9 @@
+ice_aktar "std/enum.ykn";
+
+isv ana() -> tamsayi {
+    degisken var_mi: *Secenek = secenek_var(42);
+    eger secenek_var_mi(var_mi) == 1 ise {
+        dondu secenek_deger_al(var_mi, 0);
+    }
+    dondu 0;
+}

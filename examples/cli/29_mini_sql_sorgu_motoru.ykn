@@ -1,0 +1,68 @@
+# ============================================================
+# Örnek 77: Konsol Tabanlı Bellek İçi Mini SQL Sorgu Motoru
+# ============================================================
+
+yapi TabloKaydi {
+    id: tamsayi;
+    puan: tamsayi;
+    aktif: tamsayi;
+}
+
+degisken g_tablo: [10]TabloKaydi;
+degisken g_kayit_sayisi: tamsayi = 0;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv sql_insert(id: tamsayi, puan: tamsayi, aktif: tamsayi) {
+    g_tablo[g_kayit_sayisi].id = id;
+    g_tablo[g_kayit_sayisi].puan = puan;
+    g_tablo[g_kayit_sayisi].aktif = aktif;
+    g_kayit_sayisi = g_kayit_sayisi + 1;
+}
+
+isv sql_select_where_puan_gt(esik: tamsayi) {
+    ekrana_yaz("SELECT * FROM kullanicilar WHERE puan > ".ptr);
+    sayiyi_yaz(esik);
+    ekrana_yaz(";\n".ptr);
+    ekrana_yaz("ID\tPUAN\tAKTIF\n".ptr);
+
+    degisken i: tamsayi = 0;
+    dongu (i < g_kayit_sayisi) {
+        eger g_tablo[i].puan > esik ise {
+            sayiyi_yaz(g_tablo[i].id); ekrana_yaz("\t".ptr);
+            sayiyi_yaz(g_tablo[i].puan); ekrana_yaz("\t".ptr);
+            sayiyi_yaz(g_tablo[i].aktif); ekrana_yaz("\n".ptr);
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Mini SQL Sorgu Motoru ===\n".ptr);
+    sql_insert(1, 85, 1);
+    sql_insert(2, 42, 0);
+    sql_insert(3, 94, 1);
+    sql_insert(4, 76, 1);
+    sql_insert(5, 59, 0);
+
+    sql_select_where_puan_gt(70);
+    dondu 0;
+}

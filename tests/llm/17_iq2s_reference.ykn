@@ -1,0 +1,95 @@
+# Resmi GGML IQ2_S 82-byte blok ve gerçek dequant/matmul testi.
+isv iq2s_abi_probe(a: *u8, b: *u8, c: *u8, M: tamsayi, K: tamsayi, N: tamsayi) -> tamsayi {
+    dondu N;
+}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken n: tamsayi = sayi;
+    degisken i: tamsayi = 0;
+    eger n == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    dongu i > 0 { i = i - 1; degisken one: [2]u8; one[0] = buf[i]; one[1] = 0; ekrana_yaz(one); }
+}
+
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken blok: [82]u8;
+    degisken i: tamsayi = 0;
+    dongu i < 82 { blok[i] = 0; i = i + 1; }
+    # d=1.0 (F16 0x3c00), grid[0] = sekiz adet 8, scale nibble=0.
+    # IQ2_S Q5/grid sözleşmesinde sonuç 2048 Q16 birimidir.
+    blok[0] = 0; blok[1] = 60;
+    eger bitnet_iq2s_eleman_q16(blok, 0) != 2048 veya
+       bitnet_iq2s_eleman_q16(blok, 7) != 2048 veya
+       bitnet_iq2s_eleman_q16(blok, 255) != 2048 ise {
+        ekrana_yaz("FAIL-IQ2S-DEQUANT\n".ptr); dondu 1;
+    }
+    # qh üst index + per-group scale + işaret byte'ı da gerçek layout'tan okunur.
+    blok[66] = 1; blok[34] = 1; blok[74] = 1;
+    eger bitnet_iq2s_eleman_q16(blok, 0) != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-SCALE-SIGN\n".ptr); dondu 1;
+    }
+    degisken aktivasyon: [256]tamsayi;
+    degisken cikti: [1]tamsayi;
+    i = 0;
+    dongu i < 256 { aktivasyon[i] = 0; i = i + 1; }
+    aktivasyon[0] = 65536;
+    eger aktivasyon[1] != 0 veya aktivasyon[2] != 0 veya aktivasyon[3] != 0 veya
+       aktivasyon[7] != 0 ise {
+        ekrana_yaz("FAIL-IQ2S-ACTIVATION-INIT\\n".ptr); dondu 12;
+    }
+    eger iq2s_abi_probe(blok, aktivasyon, cikti, 1, 2, 3) != 3 ise {
+        ekrana_yaz("FAIL-IQ2S-ABI-PROBE\\n".ptr); dondu 9;
+    }
+    degisken at_deger: tamsayi = bitnet_iq2s_eleman_q16_at(blok, 0, 0);
+    eger at_deger != 0 - 19200 {
+        ekrana_yaz("FAIL-IQ2S-AT=".ptr); sayiyi_yazdir(at_deger); ekrana_yaz("\\n".ptr); dondu 6;
+    }
+    degisken ara_carpim: tamsayi = aktivasyon[0] * at_deger;
+    degisken ara_sonuc: tamsayi = ara_carpim / 65536;
+    eger ara_sonuc != 0 - 19200 {
+        ekrana_yaz("FAIL-IQ2S-SCALAR=".ptr); sayiyi_yazdir(ara_sonuc); ekrana_yaz(" P=".ptr); sayiyi_yazdir(ara_carpim); ekrana_yaz("\\n".ptr); dondu 7;
+    }
+    # Tekil ABI yolu ile matmul çağrısının pointer/write sözleşmesini ayır.
+    degisken tek_cikti: [1]tamsayi;
+    eger bitnet_iq2s_carp_tek(blok, aktivasyon, tek_cikti) != 1 veya
+       tek_cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-SINGLE-ABI=".ptr); sayiyi_yazdir(tek_cikti[0]); ekrana_yaz("\\n".ptr); dondu 8;
+    }
+    # Önce tek iterasyonlu atomik matmul yolu doğrulanır.
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 1, 1) != 1 veya
+       cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-K1=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz("\\n".ptr); dondu 2;
+    }
+    # K=2 ile inner loop'un ikinci iterasyonu ayrıca doğrulanır.
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 2, 1) != 1 veya
+       cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-K2=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz("\\n".ptr); dondu 3;
+    }
+    # Daha uzun inner loop'lar ile ara eşikler de kapsanır.
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 3, 1) != 1 veya
+       cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-K3=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz("\\n".ptr); dondu 11;
+    }
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 8, 1) != 1 veya
+       cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-K8=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz("\\n".ptr); dondu 4;
+    }
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 32, 1) != 1 veya
+       cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-K32=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz("\\n".ptr); dondu 10;
+    }
+    # Ardından tam IQ2_S blok uzunluğu ile gerçek matmul doğrulanır.
+    eger bitnet_iq2s_paketli_matris_carp(blok, aktivasyon, cikti, 1, 256, 1) != 1 ise {
+        ekrana_yaz("FAIL-IQ2S-MATMUL-STATUS\\n".ptr); dondu 2;
+    }
+    eger cikti[0] != 0 - 19200 ise {
+        ekrana_yaz("FAIL-IQ2S-VALUE=".ptr); sayiyi_yazdir(cikti[0]); ekrana_yaz(" W=".ptr); sayiyi_yazdir(at_deger); ekrana_yaz("\\n".ptr);
+        dondu 5;
+    }
+    ekrana_yaz("LLM-IQ2S-REFERENCE-PASS\n".ptr);
+    dondu 0;
+}

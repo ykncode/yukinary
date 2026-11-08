@@ -1,0 +1,8 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken sonuc = topla(30, 12);
+    dondu sonuc;
+}
+
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}

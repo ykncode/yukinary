@@ -1,0 +1,29 @@
+# ============================================================
+# tests/ag/test_https_schannel.ykn
+# FAZ 21: Windows Schannel Native TLS & HTTPS Client Doğrulama Testi
+# ============================================================
+ice_aktar "std/ag/tls_win32.ykn";
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(s: tamsayi) {}
+
+isv ana() -> tamsayi {
+    # 1. TLS Modülü Yükle
+    degisken yukle: tamsayi = ykn_tls_modul_yukle();
+    eger yukle != 0 {
+        ekrana_yaz("FAIL: ykn_ag_tls.dll yuklenemedi!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Windows Schannel SSP Kimlik Alma Testi
+    degisken cred_sonuc: tamsayi = ykn_tls_cred_test();
+    eger cred_sonuc != 1 {
+        ekrana_yaz("FAIL: Schannel SSP kimlik alinamadi! Kod: ".ptr);
+        sayiyi_yazdir(cred_sonuc);
+        ekrana_yaz("\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("HTTPS-SCHANNEL-PASS\n".ptr);
+    dondu 0;
+}

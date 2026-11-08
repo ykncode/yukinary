@@ -1,0 +1,32 @@
+# ============================================================
+# Örnek 68: Win32 Sistem Bilgisi Dashboard GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+#c-lib "kernel32";
+harici isv GetCurrentProcessId() -> tamsayi;
+
+isv sistem_raporu_bas() {
+    ekrana_yaz("--- YKN Sistem Dashboard ---\n".ptr);
+    ekrana_yaz("Mimar: x86_64 Native PE32+\n".ptr);
+    ekrana_yaz("Isletim Sistemi: Windows Native\n".ptr);
+    ekrana_yaz("Aktif Surec (PID): ");
+    sayiyi_ekrana_yaz(GetCurrentProcessId());
+    ekrana_yaz("\n----------------------------\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Sistem Bilgisi".ptr, 380, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Bilgi Butonlari
+    buton_olustur(p_h, "PID ve Surec Bilgisi Al".ptr, 9801, 40, 40, 280, 45);
+    buton_olustur(p_h, "Bellek Durumunu Raporla".ptr, 9802, 40, 105, 280, 45);
+
+    ekrana_yaz("Sistem Bilgisi Penceresi Acildi.\n".ptr);
+    sistem_raporu_bas();
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

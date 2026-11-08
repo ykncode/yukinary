@@ -1,0 +1,93 @@
+# Saf YKNLLM bounded sandbox arena/policy acceptance.
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/ai/yknllm_sandbox.ykn";
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    eger sayi == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; i = i + 1; n = n / 10; }
+    dongu i > 0 { i = i - 1; degisken one: [2]u8; one[0] = buf[i]; one[1] = 0; ekrana_yaz(one); }
+}
+
+isv ana() -> tamsayi {
+    degisken politika: YKNLLMSandboxPolicy;
+    eger yknllm_sandbox_politika_kur(&politika) == 0 veya
+       yknllm_sandbox_politika_gecerli_mi(&politika) == 0 ise {
+        ekrana_yaz("FAIL: fail-closed policy kurulamadi\n".ptr);
+        dondu 1;
+    }
+    eger politika.dosya_yazma != 0 veya politika.kabuk != 0 veya
+       politika.ag != 0 veya politika.ffi != 0 veya politika.asm_yetkisi != 0 veya
+       politika.cocuk_surec != 0 ise {
+        ekrana_yaz("FAIL: capability varsayilan olarak acik\n".ptr);
+        dondu 2;
+    }
+    eger yknllm_sandbox_workspace_id_mi("workspace-42".ptr) == 0 veya
+       yknllm_sandbox_workspace_id_mi("../escape".ptr) != 0 veya
+       yknllm_sandbox_workspace_id_mi("C:\\escape".ptr) != 0 ise {
+        ekrana_yaz("FAIL: workspace ID path policy\n".ptr);
+        dondu 3;
+    }
+
+    degisken arena: YKNLLMSandboxArena;
+    eger yknllm_sandbox_arena_kur(&arena, 64) == 0 ise {
+        ekrana_yaz("FAIL: arena kurulamadi\n".ptr);
+        dondu 4;
+    }
+    degisken kod: *u8 = "isv ana() -> tamsayi { dondu 0; }".ptr;
+    eger yknllm_sandbox_kod_izinli_mi(kod, &politika) == 0 ise {
+        ekrana_yaz("FAIL: saf YKN reddedildi\n".ptr);
+        dondu 5;
+    }
+    degisken kopya: *u8 = yknllm_sandbox_kod_kopyala(&arena, kod,
+        yknllm_sandbox_uzunluk(kod));
+    eger kopya == 0 veya yknllm_sandbox_uzunluk(kopya) != yknllm_sandbox_uzunluk(kod) veya
+       kopya[0] != 105 veya kopya[1] != 115 veya kopya[2] != 118 ise {
+        ekrana_yaz("FAIL: bounded code copy used=".ptr);
+        sayiyi_yazdir(arena.kullanilan);
+        ekrana_yaz(" cap=".ptr);
+        sayiyi_yazdir(arena.kapasite);
+        ekrana_yaz(" src=".ptr);
+        sayiyi_yazdir(yknllm_sandbox_uzunluk(kod));
+        ekrana_yaz(" copy=".ptr);
+        sayiyi_yazdir(yknllm_sandbox_uzunluk(kopya));
+        ekrana_yaz(" c0=".ptr);
+        sayiyi_yazdir(kopya[0]);
+        ekrana_yaz(" c1=".ptr);
+        sayiyi_yazdir(kopya[1]);
+        ekrana_yaz(" c2=".ptr);
+        sayiyi_yazdir(kopya[2]);
+        ekrana_yaz(" ptrnull=".ptr);
+        sayiyi_yazdir(kopya == 0);
+        ekrana_yaz("\n".ptr);
+        dondu 6;
+    }
+
+    eger yknllm_sandbox_kod_izinli_mi("asm { 0x90 };".ptr, &politika) != 0 veya
+       yknllm_sandbox_kod_izinli_mi("isv diske_bas_ve_kapat() {}".ptr, &politika) != 0 veya
+       yknllm_sandbox_kod_izinli_mi("harici isv CreateFileA()".ptr, &politika) != 0 veya
+       yknllm_sandbox_kod_izinli_mi("isv socket() {}".ptr, &politika) != 0 ise {
+        ekrana_yaz("FAIL: capability kodu kabul edildi\n".ptr);
+        dondu 7;
+    }
+    eger yknllm_sandbox_kod_kopyala(&arena,
+        "isv ikinci() -> tamsayi { dondu 1; }".ptr,
+        yknllm_sandbox_uzunluk("isv ikinci() -> tamsayi { dondu 1; }".ptr)) != 0 ise {
+        ekrana_yaz("FAIL: arena kapasite asimi kabul edildi\n".ptr);
+        dondu 8;
+    }
+
+    eger yknllm_sandbox_arena_sifirla(&arena) == 0 veya arena.kullanilan != 0 ise {
+        ekrana_yaz("FAIL: arena reset\n".ptr);
+        dondu 9;
+    }
+    eger yknllm_sandbox_arena_kapat(&arena) == 0 veya arena.acik != 0 veya
+       yknllm_sandbox_kod_kopyala(&arena, kod, 3) != 0 ise {
+        ekrana_yaz("FAIL: arena close\n".ptr);
+        dondu 10;
+    }
+    ekrana_yaz("YKNLLM_SANDBOX_ARENA_PASS\n".ptr);
+    dondu 0;
+}

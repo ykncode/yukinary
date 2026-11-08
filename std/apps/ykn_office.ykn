@@ -1,0 +1,114 @@
+# ============================================================
+# std/apps/ykn_office.ykn
+# FAZ 49 & FAZ 66: Saf Yukinary Masaustu Metin Duzenleyici Motoru (Gap Buffer)
+# SIFIR MOCK, Gercek Gap Buffer Metin Ekleme, Silme, Imlec Hareketi ve Birlestirme
+# ============================================================
+
+yapi GapBuffer {
+    tampon:   *u8;
+    kapasite: tamsayi;
+    gap_bas:  tamsayi;
+    gap_son:  tamsayi;
+}
+
+isv gap_buffer_olustur(kap: tamsayi) -> *GapBuffer {
+    degisken gb: *GapBuffer = bellek_tahsis_et(32);
+    gb.kapasite = kap;
+    gb.tampon = bellek_tahsis_et(kap);
+    gb.gap_bas = 0;
+    gb.gap_son = kap;
+    dondu gb;
+}
+
+isv gap_ekle(gb: *GapBuffer, c: u8) -> tamsayi {
+    eger gb.gap_bas >= gb.gap_son ise {
+        dondu 0; # Gap doldu
+    }
+    degisken buf: *u8 = gb.tampon;
+    buf[gb.gap_bas] = c;
+    gb.gap_bas = gb.gap_bas + 1;
+    dondu 1;
+}
+
+isv gap_sil(gb: *GapBuffer) -> tamsayi {
+    eger gb.gap_bas <= 0 ise {
+        dondu 0; # Basa gelindi, silinecek karakter yok
+    }
+    gb.gap_bas = gb.gap_bas - 1;
+    dondu 1;
+}
+
+# FAZ 66: Imleci bir sola kaydir
+isv gap_imlec_sola(gb: *GapBuffer) -> tamsayi {
+    eger gb.gap_bas <= 0 ise {
+        dondu 0;
+    }
+    degisken buf: *u8 = gb.tampon;
+    gb.gap_bas = gb.gap_bas - 1;
+    gb.gap_son = gb.gap_son - 1;
+    buf[gb.gap_son] = buf[gb.gap_bas];
+    dondu 1;
+}
+
+# FAZ 66: Imleci bir saga kaydir
+isv gap_imlec_saga(gb: *GapBuffer) -> tamsayi {
+    eger gb.gap_son >= gb.kapasite ise {
+        dondu 0;
+    }
+    degisken buf: *u8 = gb.tampon;
+    buf[gb.gap_bas] = buf[gb.gap_son];
+    gb.gap_bas = gb.gap_bas + 1;
+    gb.gap_son = gb.gap_son + 1;
+    dondu 1;
+}
+
+# FAZ 66: Imleci belirli bir konuma tasi
+isv gap_imlec_git(gb: *GapBuffer, konum: tamsayi) -> tamsayi {
+    dongu gb.gap_bas > konum {
+        gap_imlec_sola(gb);
+    }
+    dongu gb.gap_bas < konum {
+        degisken ok: tamsayi = gap_imlec_saga(gb);
+        eger ok == 0 ise {
+            dondu 0;
+        }
+    }
+    dondu 1;
+}
+
+# FAZ 66: Metin dizisi ekle
+isv gap_metin_ekle(gb: *GapBuffer, metin: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        degisken basarili: tamsayi = gap_ekle(gb, metin[i]);
+        eger basarili == 0 ise {
+            dondu i;
+        }
+        i = i + 1;
+    }
+    dondu i;
+}
+
+isv gap_metin_al(gb: *GapBuffer, cikti: *u8) -> tamsayi {
+    degisken buf: *u8 = gb.tampon;
+    degisken out_idx: tamsayi = 0;
+
+    # 1. Gap oncesini kopyala
+    degisken i: tamsayi = 0;
+    dongu i < gb.gap_bas {
+        cikti[out_idx] = buf[i];
+        out_idx = out_idx + 1;
+        i = i + 1;
+    }
+
+    # 2. Gap sonrasini kopyala
+    degisken j: tamsayi = gb.gap_son;
+    dongu j < gb.kapasite {
+        cikti[out_idx] = buf[j];
+        out_idx = out_idx + 1;
+        j = j + 1;
+    }
+
+    cikti[out_idx] = 0; # NUL sonlandirma
+    dondu out_idx;
+}

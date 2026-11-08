@@ -1,0 +1,32 @@
+# ============================================================
+# Örnek 41: Win32 Arayüzlü Ağ Ping ve Gecikme Takip Paneli
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_hedef_ms: tamsayi = 24;
+degisken g_kayip_paket: tamsayi = 0;
+degisken g_toplam_paket: tamsayi = 100;
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Ag Ping Monitoru".ptr, 600, 440);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # IP Giris Kutusu
+    metin_kutusu_olustur(p_h, 101, 20, 20, 380, 35);
+    buton_olustur(p_h, "Ping Baslat".ptr, 201, 420, 20, 140, 35);
+
+    # Gecikme Grafigi ve Istatistik Paneli
+    metin_kutusu_olustur(p_h, 301, 20, 80, 540, 260);
+
+    # Durum Butonlari
+    buton_olustur(p_h, "Raporu Kaydet".ptr, 202, 20, 360, 160, 35);
+    buton_olustur(p_h, "Sifirla".ptr, 203, 200, 360, 160, 35);
+
+    ekrana_yaz("Ag izleyici baslatildi. Ortalama gecikme: 24ms, Kayip: %0\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

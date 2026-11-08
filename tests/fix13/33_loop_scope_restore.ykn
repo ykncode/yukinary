@@ -1,0 +1,10 @@
+# FIX-13: loop govdesinde daraltilan nullable sembol dongu sonrasinda tekrar nullable olmalidir (E033).
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = "A".ptr;
+    dongu p != bos {
+        p[0] = 65;
+        p = bos;
+    }
+    p[0] = 65;
+    dondu 0;
+}

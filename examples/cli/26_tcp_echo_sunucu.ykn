@@ -1,0 +1,26 @@
+# ============================================================
+# Örnek 26: Konsol Tabanlı TCP Echo Sunucusu
+# ============================================================
+ice_aktar "std/ag/soket.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== YKN TCP Echo Sunucusu ===\n".ptr);
+    degisken wsa: tamsayi = wsa_baslat();
+    eger wsa != 0 ise {
+        ekrana_yaz("Winsock baslatilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken port: tamsayi = 8080;
+    ekrana_yaz("Sunucu soketi hazirlandi. Dinlenen Port: ");
+    sayiyi_ekrana_yaz(port);
+    ekrana_yaz("\nIstemci baglantisi bekleniyor...\n".ptr);
+
+    # Simule edilen yankı (echo) akışı
+    degisken gelen_mesaj: *u8 = "Merhaba YKN Sunucu!".ptr;
+    ekrana_yaz("Gelen Veri : "); ekrana_yaz(gelen_mesaj); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Yanki (Echo): "); ekrana_yaz(gelen_mesaj); ekrana_yaz("\n".ptr);
+
+    WSACleanup();
+    dondu 0;
+}

@@ -1,0 +1,21 @@
+# Seed Parity Fixture: generics_basics.ykn
+# Test: generic fonksiyon, type parameter
+isv kimlik<T>(x: T) -> T {
+    dondu x;
+}
+
+isv toplam<T>(a: T, b: T) -> T {
+    dondu a + b;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken a: tamsayi = kimlik<tamsayi>(99);
+    degisken b: tamsayi = toplam<tamsayi>(3, 4);
+    eger a == 99 ise {
+        ekrana_yaz("GENERICS_BASICS: identity OK\n".ptr);
+    }
+    eger b == 7 ise {
+        ekrana_yaz("GENERICS_BASICS: sum OK\n".ptr);
+    }
+    dondu 0;
+}

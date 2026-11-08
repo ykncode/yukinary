@@ -1,0 +1,62 @@
+# ============================================================
+# Örnek 81: Konsol Tabanlı BitNet 1.58b Ternary {-1, 0, +1} Çıkarım Motoru
+# ============================================================
+
+degisken g_aktivasyon: [4]tamsayi;
+degisken g_agirlik_w: [4]tamsayi; # -1, 0, +1
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv bitnet_nokta_carpim(uzunluk: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu (i < uzunluk) {
+        degisken w: tamsayi = g_agirlik_w[i];
+        # Carpmaya gerek yok! Sadece toplama/cikarma
+        eger w == 1 ise {
+            toplam = toplam + g_aktivasyon[i];
+        } yoksa eger w == (0 - 1) ise {
+            toplam = toplam - g_aktivasyon[i];
+        }
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== BitNet 1.58b Ternary Kernel ===\n".ptr);
+
+    g_aktivasyon[0] = 120;
+    g_aktivasyon[1] = 45;
+    g_aktivasyon[2] = 80;
+    g_aktivasyon[3] = 15;
+
+    g_agirlik_w[0] = 1;
+    g_agirlik_w[1] = 0 - 1;
+    g_agirlik_w[2] = 0;
+    g_agirlik_w[3] = 1;
+
+    degisken sonuc: tamsayi = bitnet_nokta_carpim(4);
+    ekrana_yaz("Ternary Nokta Carpim Sonucu: ".ptr);
+    sayiyi_yaz(sonuc);
+    ekrana_yaz(" (Beklenen: 120 - 45 + 0 + 15 = 90)\n".ptr);
+    dondu 0;
+}

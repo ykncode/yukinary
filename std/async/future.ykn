@@ -1,0 +1,395 @@
+# ============================================================
+# YKN async temel runtime — gerçek poll sözleşmesi
+#
+# Bu modül compiler async/await lowering'ının kullandığı runtime
+# sözleşmesinin saf-YKN temelidir. Bir Future, tek bir poll callback'i
+# ve kullanıcı context'i taşır. Callback her çağrıda:
+#   ASYNC_BEKLIYOR  -> henüz tamamlanmadı
+#   ASYNC_HAZIR     -> başarıyla tamamlandı
+#   ASYNC_HATA      -> kalıcı hata
+# döndürür.
+#
+# Callback ABI: isv poll(context: *u8) -> tamsayi
+# Callback sonucu context içindeki kullanıcı state'ine yazar. Runtime
+# kullanıcı sonucunun türünü varsaymaz ve sahte değer üretmez.
+# ============================================================
+
+degisken ASYNC_BEKLIYOR: tamsayi = 0;
+degisken ASYNC_HAZIR: tamsayi = 1;
+degisken ASYNC_HATA: tamsayi = 2;
+degisken ASYNC_IPTAL: tamsayi = 3;
+degisken ASYNC_ZAMAN_ASIMI: tamsayi = 4;
+degisken ASYNC_MAKS_GOREV: tamsayi = 64;
+
+yapi Future {
+    poll: *u8;
+    context: *u8;
+    durum: tamsayi;
+    hata: tamsayi;
+    poll_sayisi: tamsayi;
+    # 0 = sınırsız; pozitif değer callback için azami poll sayısıdır.
+    # Bu deterministic bütçe, gerçek saat tabanlı deadline değildir.
+    poll_limiti: tamsayi;
+    # Typed result ABI: değer varsayılanla doldurulmaz; yalnızca HAZIR
+    # durumunda geçerli olan sahipli byte payload'ı tutulur.
+    sonuc_bellegi: *u8;
+    sonuc_boyutu: tamsayi;
+    sonuc_tipi: tamsayi;
+    frame: *u8;
+}
+
+yapi AsyncFrame {
+    magic: tamsayi;
+    boyut: tamsayi;
+    program_sayaci: tamsayi;
+    sonuc_durumu: tamsayi;
+    sonuc_hata: tamsayi;
+    beklenen: *Future;
+    sahibi: *Future;
+    slotlar: *tamsayi;
+    slot_sayisi: tamsayi;
+}
+
+degisken ASYNC_FRAME_MAGIC: tamsayi = 0x594B4E46;
+degisken ASYNC_FRAME_MAKS_SLOT: tamsayi = 256;
+degisken ASYNC_TIP_BAYT: tamsayi = 1;
+degisken ASYNC_TIP_TAMSAYI: tamsayi = 2;
+degisken ASYNC_TIP_ISARETSIZ: tamsayi = 3;
+
+yapi OlayDongusu {
+    # Görev tablosu ayrı heap bloğudur. Inline pointer-array alanı mevcut
+    # x86 codegen struct layout'ına bağlı kalmadığı için kullanılmaz.
+    gorevler: **Future;
+    gorev_sayisi: tamsayi;
+    tamamlanan: tamsayi;
+    son_tur: tamsayi;
+    iptal_edilen: tamsayi;
+}
+
+isv gelecek_olustur(poll: *u8, context: *u8) -> *Future {
+    eger poll == 0 veya context == 0 ise { dondu 0; }
+    # Future layout: 10 adet 8-byte slot = 80 byte. Result buffer
+    # Future tarafından sahiplenilir ve yalnızca gelecek_serbest_birak ile
+    # serbest bırakılır.
+    degisken f: *Future = bellek_tahsis_et(80);
+    eger f == 0 ise { dondu 0; }
+    f.poll = poll;
+    f.context = context;
+    f.durum = ASYNC_BEKLIYOR;
+    f.hata = 0;
+    f.poll_sayisi = 0;
+    f.poll_limiti = 0;
+    f.sonuc_bellegi = 0;
+    f.sonuc_boyutu = 0;
+    f.sonuc_tipi = 0;
+    f.frame = 0;
+    dondu f;
+}
+
+# ------------------------------------------------------------------
+# Typed result ABI
+# ------------------------------------------------------------------
+# Callback'ın başarı sonucunu sahipli bir byte payload olarak Future'a
+# yazması. Kaynak null olamaz; boyut 1..64 KiB ile sınırlandırılır.
+isv gelecek_sonuc_bellegi_yaz(f: *Future, kaynak: *u8, boyut: tamsayi, tip: tamsayi) -> tamsayi {
+    eger f == 0 veya kaynak == 0 veya boyut <= 0 veya boyut > 65536 ise { dondu -1; }
+    eger tip <= 0 veya f.durum != ASYNC_BEKLIYOR ise { dondu -2; }
+    degisken yeni: *u8 = bellek_tahsis_et(boyut);
+    eger yeni == 0 ise { dondu -3; }
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        yeni[i] = kaynak[i];
+        i = i + 1;
+    }
+    eger f.sonuc_bellegi != 0 ise { os_bellek_serbest(f.sonuc_bellegi); }
+    f.sonuc_bellegi = yeni;
+    f.sonuc_boyutu = boyut;
+    f.sonuc_tipi = tip;
+    dondu 0;
+}
+
+# En sık kullanılan scalar ABI: tamsayi, platform pointer genişliğinde
+# imzalı bir payload olarak 8 byte kopyalanır. Değer varsayılanlanmaz.
+isv gelecek_sonuc_tamsayi_yaz(f: *Future, deger: tamsayi) -> tamsayi {
+    dondu gelecek_sonuc_bellegi_yaz(f, &deger, 8, ASYNC_TIP_TAMSAYI);
+}
+
+# Başarı dönüşünü terminal duruma geçirir. Payload yazılmamışsa başarıya
+# geçişi reddeder; böylece hazır Future hiçbir zaman sahte/default değer
+# taşımaz.
+isv gelecek_hazir_et(f: *Future) -> tamsayi {
+    eger f == 0 veya f.durum != ASYNC_BEKLIYOR ise { dondu -1; }
+    eger f.sonuc_bellegi == 0 veya f.sonuc_boyutu <= 0 veya f.sonuc_tipi <= 0 ise { dondu -2; }
+    f.durum = ASYNC_HAZIR;
+    dondu 0;
+}
+
+# Result yalnızca HAZIR durumunda okunabilir. Hedef boyutu yetersizse
+# hiçbir byte yazılmaz. Dönüş 0 başarı, negatif değer ayrıntılı hatadır.
+isv gelecek_deger_al(f: *Future, hedef: *u8, kapasite: tamsayi, okunan: *tamsayi, tip: *tamsayi) -> tamsayi {
+    eger f == 0 veya hedef == 0 veya okunan == 0 veya tip == 0 ise { dondu -1; }
+    eger f.durum != ASYNC_HAZIR ise { dondu -2; }
+    eger f.sonuc_bellegi == 0 veya f.sonuc_boyutu <= 0 veya f.sonuc_tipi <= 0 ise { dondu -3; }
+    eger kapasite < f.sonuc_boyutu ise { dondu -4; }
+    degisken i: tamsayi = 0;
+    dongu i < f.sonuc_boyutu {
+        hedef[i] = f.sonuc_bellegi[i];
+        i = i + 1;
+    }
+    *okunan = f.sonuc_boyutu;
+    *tip = f.sonuc_tipi;
+    dondu 0;
+}
+
+isv gelecek_hata_al(f: *Future) -> tamsayi {
+    eger f == 0 ise { dondu -1; }
+    eger f.durum == ASYNC_HAZIR veya f.durum == ASYNC_BEKLIYOR ise { dondu -2; }
+    dondu f.hata;
+}
+
+# Future'ın sahip olduğu payload ve Future nesnesini serbest bırakır.
+# context ve AsyncFrame dış sahipli olabilir; burada tahsis edilmedikleri
+# için serbest bırakılmazlar.
+isv gelecek_serbest_birak(f: *Future) -> tamsayi {
+    eger f == 0 ise { dondu -1; }
+    eger f.sonuc_bellegi != 0 ise { os_bellek_serbest(f.sonuc_bellegi); }
+    os_bellek_serbest(f);
+    dondu 0;
+}
+
+# ------------------------------------------------------------------
+# Coroutine frame ABI
+# ------------------------------------------------------------------
+# Frame, compiler-generated poll/state-machine fonksiyonunun kalıcı
+# local/parametre alanıdır. Slotlar ayrı heap bloğunda tutulur; böylece
+# frame struct layout'ı ile inline dizi codegen'ine bağımlı değildir.
+isv async_frame_dogrula(frame: *AsyncFrame) -> tamsayi {
+    eger frame == 0 veya frame.magic != ASYNC_FRAME_MAGIC ise { dondu 0; }
+    eger frame.slotlar == 0 veya frame.slot_sayisi <= 0 veya frame.slot_sayisi > ASYNC_FRAME_MAKS_SLOT ise { dondu 0; }
+    eger frame.boyut != frame.slot_sayisi * 8 ise { dondu 0; }
+    dondu 1;
+}
+
+isv async_frame_baslat(slot_sayisi: tamsayi) -> *AsyncFrame {
+    eger slot_sayisi <= 0 veya slot_sayisi > ASYNC_FRAME_MAKS_SLOT ise { dondu 0; }
+    degisken frame: *AsyncFrame = bellek_tahsis_et(72);
+    eger frame == 0 ise { dondu 0; }
+    degisken alan: *tamsayi = bellek_tahsis_et(slot_sayisi * 8);
+    eger alan == 0 ise {
+        os_bellek_serbest(frame);
+        dondu 0;
+    }
+    frame.magic = ASYNC_FRAME_MAGIC;
+    frame.boyut = slot_sayisi * 8;
+    frame.program_sayaci = 0;
+    frame.sonuc_durumu = ASYNC_BEKLIYOR;
+    frame.sonuc_hata = 0;
+    frame.beklenen = 0;
+    frame.sahibi = 0;
+    frame.slotlar = alan;
+    frame.slot_sayisi = slot_sayisi;
+    degisken i: tamsayi = 0;
+    dongu i < slot_sayisi {
+        alan[i] = 0;
+        i = i + 1;
+    }
+    dondu frame;
+}
+
+isv async_frame_slot_yaz(frame: *AsyncFrame, indeks: tamsayi, deger: tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya indeks < 0 veya indeks >= frame.slot_sayisi ise { dondu -1; }
+    frame.slotlar[indeks] = deger;
+    dondu 0;
+}
+
+isv async_frame_slot_oku(frame: *AsyncFrame, indeks: tamsayi, deger: *tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya deger == 0 veya indeks < 0 veya indeks >= frame.slot_sayisi ise { dondu -1; }
+    *deger = frame.slotlar[indeks];
+    dondu 0;
+}
+
+isv async_frame_program_sayaci_ayarla(frame: *AsyncFrame, pc: tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya pc < 0 ise { dondu -1; }
+    frame.program_sayaci = pc;
+    dondu 0;
+}
+
+isv async_frame_program_sayaci_al(frame: *AsyncFrame, pc: *tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya pc == 0 ise { dondu -1; }
+    *pc = frame.program_sayaci;
+    dondu 0;
+}
+
+isv async_frame_bekleyen_ata(frame: *AsyncFrame, child: *Future) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya child == 0 veya child.durum != ASYNC_BEKLIYOR ise { dondu -1; }
+    frame.beklenen = child;
+    dondu 0;
+}
+
+isv async_frame_bekleyen_al(frame: *AsyncFrame) -> *Future {
+    eger async_frame_dogrula(frame) == 0 ise { dondu 0; }
+    dondu frame.beklenen;
+}
+
+isv gelecek_frame_ata(f: *Future, frame: *AsyncFrame) -> tamsayi {
+    eger f == 0 veya frame == 0 veya async_frame_dogrula(frame) == 0 ise { dondu -1; }
+    eger f.durum != ASYNC_BEKLIYOR veya frame.sahibi != 0 ise { dondu -2; }
+    f.frame = frame;
+    frame.sahibi = f;
+    dondu 0;
+}
+
+isv gelecek_frame_ayir(f: *Future, frame: *AsyncFrame) -> tamsayi {
+    eger f == 0 veya frame == 0 veya f.frame != frame veya frame.sahibi != f ise { dondu -1; }
+    f.frame = 0;
+    frame.sahibi = 0;
+    dondu 0;
+}
+
+isv async_frame_sonuc_yaz(frame: *AsyncFrame, deger: tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya frame.sonuc_durumu != ASYNC_BEKLIYOR ise { dondu -1; }
+    frame.sonuc_hata = deger;
+    frame.sonuc_durumu = ASYNC_HAZIR;
+    dondu 0;
+}
+
+isv async_frame_hata_yaz(frame: *AsyncFrame, hata: tamsayi) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya frame.sonuc_durumu != ASYNC_BEKLIYOR veya hata == 0 ise { dondu -1; }
+    frame.sonuc_hata = hata;
+    frame.sonuc_durumu = ASYNC_HATA;
+    dondu 0;
+}
+
+# Frame terminal sonucunu owner Future'a tek seferde aktarır.
+# Pending frame için aktarım yapılmaz; hazır frame ise typed result
+# payload zorunluluğu ile Future'ı hazır eder.
+isv async_frame_sonuc_aktar(frame: *AsyncFrame, f: *Future) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 veya f == 0 veya f.durum != ASYNC_BEKLIYOR ise { dondu -1; }
+    eger frame.sonuc_durumu == ASYNC_BEKLIYOR ise { dondu 1; }
+    eger frame.sonuc_durumu == ASYNC_HATA ise {
+        f.hata = frame.sonuc_hata;
+        f.durum = ASYNC_HATA;
+        dondu 0;
+    }
+    eger frame.sonuc_durumu != ASYNC_HAZIR ise { dondu -2; }
+    eger gelecek_sonuc_tamsayi_yaz(f, frame.sonuc_hata) != 0 ise { dondu -3; }
+    eger gelecek_hazir_et(f) != 0 ise { dondu -4; }
+    dondu 0;
+}
+
+isv async_frame_kapat(frame: *AsyncFrame) -> tamsayi {
+    eger async_frame_dogrula(frame) == 0 ise { dondu -1; }
+    eger frame.sahibi != 0 ise { dondu -2; }
+    os_bellek_serbest(frame.slotlar);
+    os_bellek_serbest(frame);
+    dondu 0;
+}
+
+isv gelecek_iptal_et(f: *Future) -> tamsayi {
+    eger f == 0 ise { dondu -1; }
+    eger f.durum == ASYNC_HAZIR veya f.durum == ASYNC_HATA ise { dondu -2; }
+    f.durum = ASYNC_IPTAL;
+    f.hata = ASYNC_IPTAL;
+    dondu 0;
+}
+
+# Tek poll adımı. Callback yalnızca bir kez çağrılır; tamamlanmış ve
+# terminal Future'lar tekrar çalıştırılmaz.
+# Gerçek saat okumadan deterministik timeout sınırı. Platform saat/readiness
+# adaptörü geldiğinde bu sözleşme aynı terminal durumu kullanır.
+isv gelecek_poll_limiti_ayarla(f: *Future, limit: tamsayi) -> tamsayi {
+    eger f == 0 veya limit <= 0 veya f.durum != ASYNC_BEKLIYOR ise { dondu -1; }
+    f.poll_limiti = limit;
+    dondu 0;
+}
+
+isv gelecek_poll(f: *Future) -> tamsayi {
+    eger f == 0 veya f.poll == 0 veya f.context == 0 ise { dondu ASYNC_HATA; }
+    eger f.durum != ASYNC_BEKLIYOR ise { dondu f.durum; }
+    eger f.poll_limiti > 0 ve f.poll_sayisi >= f.poll_limiti ise {
+        f.hata = ASYNC_ZAMAN_ASIMI;
+        f.durum = ASYNC_ZAMAN_ASIMI;
+        dondu ASYNC_ZAMAN_ASIMI;
+    }
+    degisken poll_fn: *u8 = f.poll;
+    degisken sonuc: tamsayi = poll_fn(f.context);
+    f.poll_sayisi = f.poll_sayisi + 1;
+    eger sonuc == ASYNC_BEKLIYOR ise { dondu ASYNC_BEKLIYOR; }
+    eger sonuc == ASYNC_HAZIR ise {
+        f.durum = ASYNC_HAZIR;
+        dondu ASYNC_HAZIR;
+    }
+    f.hata = sonuc;
+    f.durum = ASYNC_HATA;
+    dondu ASYNC_HATA;
+}
+
+isv olay_dongusu_sifirla(d: *OlayDongusu) {
+    eger d == 0 ise { dondu; }
+    eger d.gorevler == 0 ise {
+        d.gorevler = bellek_tahsis_et(512);
+        eger d.gorevler == 0 ise { dondu; }
+    }
+    d.gorev_sayisi = 0;
+    d.tamamlanan = 0;
+    d.son_tur = 0;
+    d.iptal_edilen = 0;
+    degisken i: tamsayi = 0;
+    dongu i < ASYNC_MAKS_GOREV {
+        d.gorevler[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv olay_dongusu_gorev_ekle(d: *OlayDongusu, f: *Future) -> tamsayi {
+    eger d == 0 veya f == 0 veya d.gorevler == 0 veya f.durum != ASYNC_BEKLIYOR ise { dondu -1; }
+    eger d.gorev_sayisi >= ASYNC_MAKS_GOREV ise { dondu -2; }
+    d.gorevler[d.gorev_sayisi] = f;
+    d.gorev_sayisi = d.gorev_sayisi + 1;
+    dondu 0;
+}
+
+# Bir turda tüm bekleyen görevler tam olarak bir kez poll edilir.
+# Böylece bir callback diğerlerini aç bırakmaz; scheduler deterministiktir.
+isv olay_dongusu_tur(d: *OlayDongusu) -> tamsayi {
+    eger d == 0 veya d.gorev_sayisi <= 0 ise { dondu -1; }
+    degisken i: tamsayi = 0;
+    degisken bekleyen: tamsayi = 0;
+    dongu i < d.gorev_sayisi {
+        degisken f: *Future = d.gorevler[i];
+        eger f != 0 ve f.durum == ASYNC_BEKLIYOR ise {
+            degisken onceki: tamsayi = f.durum;
+            degisken yeni: tamsayi = gelecek_poll(f);
+            eger yeni == ASYNC_HAZIR ve onceki == ASYNC_BEKLIYOR ise {
+                d.tamamlanan = d.tamamlanan + 1;
+            }
+            eger yeni == ASYNC_BEKLIYOR ise { bekleyen = bekleyen + 1; }
+            eger yeni == ASYNC_IPTAL ise { d.iptal_edilen = d.iptal_edilen + 1; }
+        }
+        i = i + 1;
+    }
+    d.son_tur = d.son_tur + 1;
+    dondu bekleyen;
+}
+
+# max_tur sonlu tutulur; sonsuz döngüye girmez. Dönüş:
+# 0 = tüm görevler terminal, -1 = hata, -2 = bütçe tükenmiş.
+isv olay_dongusu_calistir(d: *OlayDongusu, max_tur: tamsayi) -> tamsayi {
+    eger d == 0 veya d.gorev_sayisi <= 0 veya max_tur <= 0 ise { dondu -1; }
+    degisken tur: tamsayi = 0;
+    dongu tur < max_tur {
+        degisken bekleyen: tamsayi = olay_dongusu_tur(d);
+        eger bekleyen == 0 ise { dondu 0; }
+        tur = tur + 1;
+    }
+    dondu -2;
+}
+
+isv gelecek_sonuc(f: *Future) -> tamsayi {
+    eger f == 0 ise { dondu -1; }
+    eger f.durum == ASYNC_HAZIR ise { dondu 0; }
+    eger f.durum == ASYNC_IPTAL ise { dondu ASYNC_IPTAL; }
+    eger f.durum == ASYNC_ZAMAN_ASIMI ise { dondu ASYNC_ZAMAN_ASIMI; }
+    eger f.durum == ASYNC_HATA ise { dondu f.hata; }
+    dondu ASYNC_BEKLIYOR;
+}

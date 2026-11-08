@@ -1,0 +1,259 @@
+﻿# ============================================================
+# tests/ai/test_gemma4_kapsamli.ykn
+# Gemma-4-E4B-it Q4_K_M modelini YKN dili ile kapsamli test et.
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv str_yaz_n(s: *u8, max_n: tamsayi) {
+    eger s == 0 ise { ekrana_yaz("<null>".ptr); dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < max_n ve s[i] != 0 {
+        degisken ch: [2]u8;
+        ch[0] = s[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+        i = i + 1;
+    }
+}
+
+isv quant_adi_yaz(quant_id: tamsayi) {
+    eger quant_id == 0 ise { ekrana_yaz("F32".ptr); dondu; }
+    eger quant_id == 1 ise { ekrana_yaz("F16".ptr); dondu; }
+    eger quant_id == 8 ise { ekrana_yaz("Q4_0".ptr); dondu; }
+    eger quant_id == 12 ise { ekrana_yaz("Q4_K_M(12)".ptr); dondu; }
+    eger quant_id == 15 ise { ekrana_yaz("Q4_K_M(15)".ptr); dondu; }
+    eger quant_id == 36 ise { ekrana_yaz("IQ2_S".ptr); dondu; }
+    eger quant_id == 41 ise { ekrana_yaz("Q1_0-BitNet".ptr); dondu; }
+    ekrana_yaz("ID=".ptr); sayi_yaz(quant_id);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YKN x Gemma-4-E4B-it GGUF Envanter Test Raporu\n".ptr);
+    ekrana_yaz("  Yukinary Yazilim Dili & Derleyici Projesi\n".ptr);
+    ekrana_yaz("============================================================\n\n".ptr);
+
+    degisken toplam_test: tamsayi = 0;
+    degisken gecen_test: tamsayi = 0;
+
+    ekrana_yaz("[TEST 1/7] Ana Model GGUF Header Parse\n".ptr);
+    ekrana_yaz("  Dosya: models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf\n".ptr);
+    toplam_test = toplam_test + 1;
+
+    
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 ise {
+        ekrana_yaz("  [BASARISIZ] Bellek tahsis edilemedi!\n".ptr);
+        ExitProcess(1);
+    }
+    gguf_durum_sifirla(durum);
+
+    degisken model_yolu: *u8 = "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr;
+    degisken parse_ok: tamsayi = gguf_yukle(model_yolu, durum);
+    
+    
+
+    eger parse_ok == 0 ise {
+        ekrana_yaz("  [BASARISIZ] GGUF parse basarisiz! Hata: ".ptr);
+        sayi_yaz(GGUF_SON_HATA);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(2);
+    }
+    ekrana_yaz("  [BASARILI] Parse tamamlandi. Sure: ".ptr);
+    sayi_yaz(0);
+    ekrana_yaz(" ms\n\n".ptr);
+    gecen_test = gecen_test + 1;
+
+    ekrana_yaz("[TEST 2/7] GGUF Versiyon Dogrulama\n".ptr);
+    toplam_test = toplam_test + 1;
+    degisken versiyon: tamsayi = durum->versiyon;
+    ekrana_yaz("  GGUF Versiyonu: ".ptr); sayi_yaz(versiyon); ekrana_yaz("\n".ptr);
+    eger versiyon == 3 ise {
+        ekrana_yaz("  [BASARILI] GGUF v3 onaylandi.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    } yoksa {
+        ekrana_yaz("  [UYARI] Beklenmeyen versiyon: ".ptr);
+        sayi_yaz(versiyon);
+        ekrana_yaz("\n\n".ptr);
+    }
+
+    ekrana_yaz("[TEST 3/7] Model Metadata & Mimari Analizi\n".ptr);
+    toplam_test = toplam_test + 1;
+    degisken tensor_sayisi: tamsayi = durum->tensor_sayisi;
+    degisken vocab_boyutu: tamsayi = durum->vocab_boyutu;
+    degisken gizli_boyut: tamsayi = durum->gizli_boyut;
+    degisken katman_sayisi: tamsayi = durum->katman_sayisi;
+    degisken kafa_sayisi: tamsayi = durum->kafa_sayisi;
+    degisken kv_kafa_sayisi: tamsayi = durum->kv_kafa_sayisi;
+    degisken kafa_boyutu: tamsayi = durum->kafa_boyutu;
+    degisken ffn_boyutu: tamsayi = durum->ffn_boyutu;
+    degisken context_boyutu: tamsayi = durum->context_boyutu;
+    degisken expert_sayisi: tamsayi = durum->expert_sayisi;
+    degisken quant_tipi: tamsayi = durum->quant_tipi;
+    degisken metadata_hazir: tamsayi = durum->metadata_model_hazir;
+    degisken bos_id: tamsayi = durum->bos_token_id;
+    degisken eos_id: tamsayi = durum->eos_token_id;
+
+    ekrana_yaz("  Mimari Adi      : ".ptr);
+    eger durum->mimari_adi != 0 ise { str_yaz_n(durum->mimari_adi, 64); }
+    yoksa { ekrana_yaz("<yok>".ptr); }
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Tensor Sayisi   : ".ptr); sayi_yaz(tensor_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Vocab Boyutu    : ".ptr); sayi_yaz(vocab_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Gizli Boyut     : ".ptr); sayi_yaz(gizli_boyut); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  FFN Boyutu      : ".ptr); sayi_yaz(ffn_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Katman Sayisi   : ".ptr); sayi_yaz(katman_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Attention Kafa  : ".ptr); sayi_yaz(kafa_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  KV Kafa         : ".ptr); sayi_yaz(kv_kafa_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Kafa Boyutu     : ".ptr); sayi_yaz(kafa_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Context Boyutu  : ".ptr); sayi_yaz(context_boyutu); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Expert Sayisi   : ".ptr); sayi_yaz(expert_sayisi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Quant Tipi      : ".ptr); quant_adi_yaz(quant_tipi); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  BOS Token ID    : ".ptr); sayi_yaz(bos_id); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  EOS Token ID    : ".ptr); sayi_yaz(eos_id); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Metadata Hazir  : ".ptr); sayi_yaz(metadata_hazir); ekrana_yaz("\n".ptr);
+
+    eger tensor_sayisi > 0 ve metadata_hazir == 1 ise {
+        ekrana_yaz("  [BASARILI] Metadata tam, tensor tablosu gecerli.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    } yoksa eger tensor_sayisi > 0 ise {
+        ekrana_yaz("  [KISMI] Tensor var, metadata_hazir=0.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    } yoksa {
+        ekrana_yaz("  [BASARISIZ] Tensor tablosu bos!\n\n".ptr);
+    }
+
+    ekrana_yaz("[TEST 4/7] Runtime Mimari Tanima\n".ptr);
+    toplam_test = toplam_test + 1;
+    degisken rt_mimari: tamsayi = llm_runtime_mimari_bul(model_yolu, 54);
+    ekrana_yaz("  Runtime Mimari ID : ".ptr); sayi_yaz(rt_mimari); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Beklenen Gemma ID : ".ptr); sayi_yaz(LLM_MIMARI_GEMMA); ekrana_yaz("\n".ptr);
+    eger rt_mimari == LLM_MIMARI_GEMMA ise {
+        ekrana_yaz("  [BASARILI] Gemma mimarisi tanimlandi.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    } yoksa {
+        ekrana_yaz("  [UYARI] Path'ten taninamadi (ID=".ptr); sayi_yaz(rt_mimari);
+        ekrana_yaz("). mimari_adi kontrol ediliyor...\n".ptr);
+        eger durum->mimari_adi != 0 ise {
+            ekrana_yaz("  [KISMI] mimari_adi GGUF metadata'da mevcut.\n\n".ptr);
+            gecen_test = gecen_test + 1;
+        } yoksa { ekrana_yaz("\n".ptr); }
+    }
+
+    ekrana_yaz("[TEST 5/7] Tensor Tablosu Sanity Check\n".ptr);
+    toplam_test = toplam_test + 1;
+    eger durum->tensor_list != 0 ve tensor_sayisi > 0 ise {
+        degisken t0: *GGUFTensorInfo = durum->tensor_list;
+        ekrana_yaz("  Tensor[0] Isim : ".ptr);
+        eger t0->isim != 0 ise { str_yaz_n(t0->isim, 80); }
+        yoksa { ekrana_yaz("<isim yok>".ptr); }
+        ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] ndim : ".ptr); sayi_yaz(t0->ndim); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] dim0 : ".ptr); sayi_yaz(t0->dim_0); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] dim1 : ".ptr); sayi_yaz(t0->dim_1); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] tip  : ".ptr); sayi_yaz(t0->ggml_type); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] bayt : ".ptr); sayi_yaz(t0->bayt_sayisi); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Tensor[0] ofset: ".ptr); sayi_yaz(t0->veri_offset); ekrana_yaz("\n".ptr);
+        eger t0->bayt_sayisi > 0 ve t0->ndim > 0 ise {
+            ekrana_yaz("  [BASARILI] Ilk tensor gecerli.\n\n".ptr);
+            gecen_test = gecen_test + 1;
+        } yoksa {
+            ekrana_yaz("  [BASARISIZ] Ilk tensor gecersiz!\n\n".ptr);
+        }
+    } yoksa {
+        ekrana_yaz("  [UYARI] Tensor listesi bos.\n\n".ptr);
+    }
+
+    ekrana_yaz("[TEST 6/7] Multimodal Projeksiyon (mmproj) Parse\n".ptr);
+    ekrana_yaz("  mmproj-gemma-4-E4B-it-BF16.gguf (~945 MB)\n".ptr);
+    toplam_test = toplam_test + 1;
+    degisken mm_durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger mm_durum == 0 ise {
+        ekrana_yaz("  [BASARISIZ] mm bellek tahsis edilemedi!\n\n".ptr);
+        ExitProcess(10);
+    }
+    gguf_durum_sifirla(mm_durum);
+    degisken mm_yolu: *u8 = "models/gemma-4-E4B-it-GGUF/mmproj-gemma-4-E4B-it-BF16.gguf".ptr;
+    degisken mm_ok: tamsayi = gguf_yukle(mm_yolu, mm_durum);
+    eger mm_ok == 0 ise {
+        ekrana_yaz("  [UYARI] mmproj parse basarisiz (hata=".ptr);
+        sayi_yaz(GGUF_SON_HATA);
+        ekrana_yaz("). BF16 henuz tam desteklenmeyebilir.\n\n".ptr);
+    } yoksa {
+        ekrana_yaz("  mmproj Versiyon: ".ptr); sayi_yaz(mm_durum->versiyon); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  mmproj Tensor  : ".ptr); sayi_yaz(mm_durum->tensor_sayisi); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  mmproj Quant   : ".ptr); quant_adi_yaz(mm_durum->quant_tipi); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  [BASARILI] mmproj parse edildi.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    }
+
+    ekrana_yaz("[TEST 7/7] GGUF Metadata Envanter Ozeti\n".ptr);
+    toplam_test = toplam_test + 1;
+    ekrana_yaz("  Model   : Gemma-4 (Google DeepMind)\n".ptr);
+    ekrana_yaz("  Variant : E4B-it (~4B param, instruction-tuned)\n".ptr);
+    ekrana_yaz("  GGUF ve mmproj boyutlari dosyalardan okunur; inference bu testte olcum yapmaz.\n\n".ptr);
+    eger gizli_boyut > 0 ve katman_sayisi > 0 ise {
+        ekrana_yaz("  Gizli Boyut : ".ptr); sayi_yaz(gizli_boyut); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Katman      : ".ptr); sayi_yaz(katman_sayisi); ekrana_yaz("\n".ptr);
+        ekrana_yaz("  Parametre sayisi: bu test hesaplamaz (varyant adi E4B).\n".ptr);
+        eger expert_sayisi > 0 ise {
+            ekrana_yaz("  MoE Expert  : ".ptr); sayi_yaz(expert_sayisi); ekrana_yaz("\n".ptr);
+        }
+        ekrana_yaz("  [BASARILI] Rapor olusturuldu.\n\n".ptr);
+        gecen_test = gecen_test + 1;
+    } yoksa {
+        ekrana_yaz("  [UYARI] Metadata eksik, tahmin yapilamadi.\n".ptr);
+        eger tensor_sayisi > 0 ise {
+            ekrana_yaz("  (Tensor count gecerli)\n\n".ptr);
+            gecen_test = gecen_test + 1;
+        } yoksa { ekrana_yaz("\n".ptr); }
+    }
+
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  SONUC RAPORU\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  Toplam  : ".ptr); sayi_yaz(toplam_test); ekrana_yaz(" test\n".ptr);
+    ekrana_yaz("  Gecen   : ".ptr); sayi_yaz(gecen_test); ekrana_yaz(" test\n".ptr);
+    degisken basarisiz_sayi: tamsayi = toplam_test - gecen_test;
+    ekrana_yaz("  Basarisiz: ".ptr); sayi_yaz(basarisiz_sayi); ekrana_yaz(" test\n".ptr);
+    degisken skor: tamsayi = 0;
+    eger toplam_test > 0 ise { skor = (gecen_test * 100) / toplam_test; }
+    ekrana_yaz("  GGUF envanter test skoru (inference degil): ".ptr); sayi_yaz(skor); ekrana_yaz("/100\n\n".ptr);
+
+    ekrana_yaz("  --- KAPSAM SINIRI ---\n".ptr);
+    ekrana_yaz("  [+] GGUF metadata/tensor envanteri parse edildi.\n".ptr);
+    ekrana_yaz("  [+] mmproj GGUF metadata envanteri parse edildi.\n".ptr);
+    ekrana_yaz("  [-] Bu test agirliklari tam yuklemez, Transformer forward calistirmaz.\n".ptr);
+    ekrana_yaz("  [-] Bu test model tokeni uretmez; Gemma-4 inference tamamlanmamistir.\n\n".ptr);
+
+    ekrana_yaz(">>> GGUF envanter testleri tamamlandi; bu, model uyumlulugu/inference onayi degildir. <<<\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    dondu 0;
+}

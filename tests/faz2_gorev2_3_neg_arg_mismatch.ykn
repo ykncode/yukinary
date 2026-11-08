@@ -1,0 +1,13 @@
+# FAZ 2.3 NEGATIF TEST
+# Coklu generic parametre bekleyen yapiya tek tip argumani verilmesi (E015 kontrolu)
+
+yapi Cift<T, U> {
+    birinci: T;
+    ikinci: U;
+}
+
+isv ana() -> tamsayi {
+    # HATA: Cift 2 generic parametre bekliyor ancak 1 tane verildi
+    degisken c: Cift<tamsayi>;
+    dondu 0;
+}

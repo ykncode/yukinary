@@ -1,0 +1,38 @@
+# FAZ 5 Test 5: Trait kısıtlı generic dispatch
+# isv kucuk_mi<T: Esit>(a: T, b: T) -> tamsayi
+# Bu fonksiyon sadece 'Esit' trait'ini uygulayan tipler icin gecerli
+isv esit_mi<T: Esit>(a: T, b: T) -> tamsayi {
+    eger a == b ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# isv topla_trait<T: Toplama>(a: T, b: T) -> T
+isv topla_trait<T: Toplama>(a: T, b: T) -> T {
+    dondu a + b;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    # Esit trait testi (tamsayi Esit trait'ini uyguluyor)
+    degisken sonuc1: tamsayi = esit_mi<tamsayi>(42, 42);
+    degisken sonuc2: tamsayi = esit_mi<tamsayi>(10, 20);
+
+    eger sonuc1 == 1 ve sonuc2 == 0 ise {
+        ekrana_yaz("TEST 05 GENERICS: TRAIT DISPATCH ESIT OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 05 GENERICS: TRAIT DISPATCH ESIT FAILED\n".ptr);
+        dondu 1;
+    }
+
+    # Toplama trait testi (tamsayi Toplama trait'ini uyguluyor)
+    degisken sonuc3: tamsayi = topla_trait<tamsayi>(10, 32);
+    eger sonuc3 == 42 ise {
+        ekrana_yaz("TEST 05 GENERICS: TRAIT DISPATCH TOPLAMA OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST 05 GENERICS: TRAIT DISPATCH TOPLAMA FAILED\n".ptr);
+        dondu 1;
+    }
+
+    dondu 0;
+}

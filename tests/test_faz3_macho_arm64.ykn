@@ -1,0 +1,113 @@
+# ============================================================
+# Test: tests/test_faz3_macho_arm64.ykn
+# FAZ 3 Dogrulama: macOS Mach-O 64-Bit ve Linux ARM64 Native Paritesi
+# Windows ve Linux uzerinde sifir mock ile tam dogrulama.
+# ============================================================
+
+ice_aktar "std/os/macho_writer.ykn";
+ice_aktar "std/os/os_linux_arm64.ykn";
+
+# Tampondan 32-bit tamsayi okuma yardimcisi (Little Endian)
+isv oku_u32(p: *u8) -> tamsayi {
+    degisken b0: tamsayi = p[0] as tamsayi;
+    degisken b1: tamsayi = p[1] as tamsayi;
+    degisken b2: tamsayi = p[2] as tamsayi;
+    degisken b3: tamsayi = p[3] as tamsayi;
+    dondu b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+isv main() -> tamsayi {
+    # ------------------------------------------------------------
+    # 1. macOS Mach-O 64-Bit x86_64 Ikili Baslik Dogrulamasi
+    # ------------------------------------------------------------
+    degisken m_x64: *MachoDosya = macho_olustur(4096, MACHO_CPU_TYPE_X86_64);
+    eger m_x64 == 0 ise { dondu 1; }
+
+    degisken kod_x64: *u8 = bellek_tahsis_et(4);
+    kod_x64[0] = 0x90 as u8; # NOP
+    kod_x64[1] = 0x90 as u8; # NOP
+    kod_x64[2] = 0x90 as u8; # NOP
+    kod_x64[3] = 0xC3 as u8; # RET
+
+    degisken boyut_x64: tamsayi = macho_dosya_derle(m_x64, 0, kod_x64, 4);
+    eger boyut_x64 != 516 ise {
+        dondu 10; # 512 bayt header/pad + 4 bayt kod = 516
+    }
+
+    # Mach-O basligini incele
+    degisken magic_x64: tamsayi = oku_u32(m_x64.tampon);
+    degisken cputype_x64: tamsayi = oku_u32(m_x64.tampon + 4);
+    degisken filetype_x64: tamsayi = oku_u32(m_x64.tampon + 12);
+
+    # 0xFEEDFACF = 4277009103
+    eger magic_x64 != 0xFEEDFACF ise {
+        dondu 11; # Mach-O magic hatasi
+    }
+    eger cputype_x64 != MACHO_CPU_TYPE_X86_64 ise {
+        dondu 12; # CPU type x86_64 hatasi
+    }
+    eger filetype_x64 != MACHO_MH_EXECUTE ise {
+        dondu 13; # MH_EXECUTE hatasi
+    }
+
+    macho_serbest_birak(m_x64);
+    os_bellek_serbest(kod_x64);
+
+    # ------------------------------------------------------------
+    # 2. macOS Mach-O 64-Bit ARM64 (Apple Silicon) Dogrulamasi
+    # ------------------------------------------------------------
+    degisken m_arm: *MachoDosya = macho_olustur(4096, MACHO_CPU_TYPE_ARM64);
+    eger m_arm == 0 ise { dondu 2; }
+
+    degisken kod_arm: *u8 = bellek_tahsis_et(4);
+    kod_arm[0] = 0xC0 as u8;
+    kod_arm[1] = 0x03 as u8;
+    kod_arm[2] = 0x5F as u8;
+    kod_arm[3] = 0xD6 as u8; # RET (0xD65F03C0)
+
+    degisken boyut_arm: tamsayi = macho_dosya_derle(m_arm, 0, kod_arm, 4);
+    eger boyut_arm != 516 ise {
+        dondu 20;
+    }
+
+    degisken magic_arm: tamsayi = oku_u32(m_arm.tampon);
+    degisken cputype_arm: tamsayi = oku_u32(m_arm.tampon + 4);
+
+    eger magic_arm != 0xFEEDFACF ise {
+        dondu 21;
+    }
+    eger cputype_arm != MACHO_CPU_TYPE_ARM64 ise {
+        dondu 22; # CPU type ARM64 (0x0100000C) hatasi
+    }
+
+    macho_serbest_birak(m_arm);
+    os_bellek_serbest(kod_arm);
+
+    # ------------------------------------------------------------
+    # 3. Linux ARM64 (AArch64) Talimat Kodlayici Dogrulamasi
+    # ------------------------------------------------------------
+    degisken insn_svc: tamsayi = arm64_encode_svc(0);
+    eger insn_svc != 0xD4000001 ise {
+        dondu 30; # SVC #0 opkodu 0xD4000001 olmali
+    }
+
+    degisken insn_ret: tamsayi = arm64_encode_ret();
+    eger insn_ret != 0xD65F03C0 ise {
+        dondu 31; # RET opkodu 0xD65F03C0 olmali
+    }
+
+    # MOV x8, #93 (sys_exit cagrisi icin: rd=8, imm=93, hw=0)
+    # 0xD2800000 | (93 << 5) | 8 = 0xD2800BA8
+    degisken insn_movz: tamsayi = arm64_encode_movz(8, 93, 0);
+    eger insn_movz != 0xD2800BA8 ise {
+        dondu 32; # MOVZ x8, #93 opkodu 0xD2800BA8 olmali
+    }
+
+    # Syscall numaralari dogrulama
+    eger SYS_ARM64_READ != 63 veya SYS_ARM64_WRITE != 64 veya SYS_ARM64_EXIT != 93 veya SYS_ARM64_MMAP != 222 ise {
+        dondu 33; # ARM64 Linux syscall numaralari hatali
+    }
+
+    dondu 0;
+}
+

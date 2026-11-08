@@ -1,0 +1,57 @@
+# ============================================================
+# Örnek 1: Win32 Grafik Arayüzlü Basit Hesap Makinesi
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_sayi1: tamsayi = 0;
+degisken g_sayi2: tamsayi = 0;
+degisken g_islem: tamsayi = 0; # 1: +, 2: -, 3: *, 4: /
+degisken g_sonuc: tamsayi = 0;
+
+isv hesapla(a: tamsayi, b: tamsayi, op: tamsayi) -> tamsayi {
+    eger op == 1 ise { dondu a + b; }
+    eger op == 2 ise { dondu a - b; }
+    eger op == 3 ise { dondu a * b; }
+    eger op == 4 ise { 
+        eger b == 0 ise { dondu 0; }
+        dondu a / b; 
+    }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Hesap Makinesi".ptr, 320, 420);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Sonuc Ekrani (Metin Kutusu)
+    degisken ekran_h: tamsayi = metin_kutusu_olustur(p_h, 100, 20, 20, 260, 40);
+
+    # Sayi Butonlari (1-9)
+    buton_olustur(p_h, "7".ptr, 107, 20, 80, 50, 50);
+    buton_olustur(p_h, "8".ptr, 108, 80, 80, 50, 50);
+    buton_olustur(p_h, "9".ptr, 109, 140, 80, 50, 50);
+    buton_olustur(p_h, "/".ptr, 204, 200, 80, 50, 50);
+
+    buton_olustur(p_h, "4".ptr, 104, 20, 140, 50, 50);
+    buton_olustur(p_h, "5".ptr, 105, 80, 140, 50, 50);
+    buton_olustur(p_h, "6".ptr, 106, 140, 140, 50, 50);
+    buton_olustur(p_h, "*".ptr, 203, 200, 140, 50, 50);
+
+    buton_olustur(p_h, "1".ptr, 101, 20, 200, 50, 50);
+    buton_olustur(p_h, "2".ptr, 102, 80, 200, 50, 50);
+    buton_olustur(p_h, "3".ptr, 103, 140, 200, 50, 50);
+    buton_olustur(p_h, "-".ptr, 202, 200, 200, 50, 50);
+
+    buton_olustur(p_h, "0".ptr, 100, 20, 260, 50, 50);
+    buton_olustur(p_h, "C".ptr, 300, 80, 260, 50, 50);
+    buton_olustur(p_h, "=".ptr, 301, 140, 260, 50, 50);
+    buton_olustur(p_h, "+".ptr, 201, 200, 260, 50, 50);
+
+    ekrana_yaz("Hesap makinesi baslatildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

@@ -1,0 +1,50 @@
+# Q16 activation checks for Gemma-family GELU and shared tanh helper.
+ice_aktar "../../std/ai/attention.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken one: tamsayi = BITNET_Q16_BIR;
+    degisken zero: tamsayi = 0;
+    degisken gelu_one: tamsayi = bitnet_q16_gelu(one);
+    degisken gelu_minus_one: tamsayi = bitnet_q16_gelu(0 - one);
+    degisken tanh_one: tamsayi = bitnet_q16_tanh(one);
+    degisken tanh_zero: tamsayi = bitnet_q16_tanh(zero);
+    degisken softcap: tamsayi = 30 * one;
+    degisken capped_one: tamsayi = bitnet_q16_softcap(softcap, softcap);
+    degisken softcap_vector: [3]tamsayi;
+    softcap_vector[0] = softcap;
+    softcap_vector[1] = 0;
+    softcap_vector[2] = 20 * softcap;
+    degisken vector: [4]tamsayi;
+    vector[0] = one; vector[1] = 0 - one; vector[2] = 0; vector[3] = 6 * one;
+    # Reference values: GELU(1)=0.8413447, GELU(-1)=-0.1586553,
+    # tanh(1)=0.7615942. A 0.01 Q16 tolerance covers polynomial exp error.
+    eger gelu_one < 54600 or gelu_one > 55600 or
+       gelu_minus_one < 0 - 10900 or gelu_minus_one > 0 - 9850 or
+       tanh_one < 49100 or tanh_one > 50700 or tanh_zero != 0 {
+        ekrana_yaz("GELU-MATH-FAIL\n".ptr);
+        dondu 1;
+    }
+    eger capped_one < 1480000 or capped_one > 1515000 or
+       bitnet_q16_softcap_vector(softcap_vector, 3, softcap) != 1 or
+       softcap_vector[0] != capped_one or softcap_vector[1] != 0 or
+       softcap_vector[2] != softcap {
+        ekrana_yaz("SOFTCAP-MATH-FAIL\n".ptr);
+        dondu 3;
+    }
+    eger bitnet_q16_gelu_vector(vector, 4) != 1 or
+       vector[0] < 54600 or vector[0] > 55600 or
+       vector[1] < 0 - 10900 or vector[1] > 0 - 9850 or
+       vector[2] != 0 or vector[3] != 6 * one {
+        ekrana_yaz("GELU-VECTOR-FAIL\n".ptr);
+        dondu 2;
+    }
+    eger bitnet_q16_gelu(6 * one) != 6 * one or
+       bitnet_q16_gelu(0 - 6 * one) != 0 or
+       bitnet_q16_tanh(8 * one) != one or
+       bitnet_q16_tanh(0 - 8 * one) != 0 - one {
+        ekrana_yaz("GELU-SATURATION-FAIL\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("GELU-MATH-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,4 @@
+ice_aktar "std/metin.ykn" olarak metin;
+isv ana() -> tamsayi {
+    dondu 0;
+}

@@ -1,0 +1,105 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/gui/cizim.ykn
+# Donanim / Framebuffer 2D Raster Çizim Motoru
+# ARGB8888 (4 Bayt / Piksel) Standart Uyumu
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+yapi CizimYuzeyi {
+    genislik: tamsayi;
+    yukseklik: tamsayi;
+    arabellek: *u8; # ARGB8888 (4 byte per pixel)
+    boyut_bayt: tamsayi;
+}
+
+isv cizim_yuzeyi_olustur(y: *CizimYuzeyi, genislik: tamsayi, yukseklik: tamsayi) -> tamsayi {
+    eger y == 0 veya genislik <= 0 veya yukseklik <= 0 ise { dondu -1; }
+    
+    degisken toplam_bayt: tamsayi = genislik * yukseklik * 4;
+    degisken ptr: *u8 = bellek_tahsis_et(toplam_bayt);
+    eger ptr == 0 ise { dondu -4; }
+    
+    y.genislik = genislik;
+    y.yukseklik = yukseklik;
+    y.arabellek = ptr;
+    y.boyut_bayt = toplam_bayt;
+    
+    # Varsayilan siyah ile temizle
+    cizim_temizle(y, 0);
+    dondu 0;
+}
+
+isv cizim_yuzeyi_serbest_birak(y: *CizimYuzeyi) {
+    eger y == 0 veya y.arabellek == 0 ise { dondu; }
+    os_bellek_serbest(y.arabellek);
+    y.arabellek = 0;
+    y.genislik = 0;
+    y.yukseklik = 0;
+    y.boyut_bayt = 0;
+}
+
+isv cizim_temizle(y: *CizimYuzeyi, renk_argb: tamsayi) {
+    eger y == 0 veya y.arabellek == 0 ise { dondu; }
+    
+    degisken b0: tamsayi = renk_argb & 255;
+    degisken b1: tamsayi = (renk_argb >> 8) & 255;
+    degisken b2: tamsayi = (renk_argb >> 16) & 255;
+    degisken b3: tamsayi = (renk_argb >> 24) & 255;
+
+    degisken toplam_piksel: tamsayi = y.genislik * y.yukseklik;
+    degisken buf: *u8 = y.arabellek;
+    degisken i: tamsayi = 0;
+    dongu i < toplam_piksel {
+        degisken ofs: tamsayi = i * 4;
+        buf[ofs]     = b0;
+        buf[ofs + 1] = b1;
+        buf[ofs + 2] = b2;
+        buf[ofs + 3] = b3;
+        i = i + 1;
+    }
+}
+
+isv cizim_piksel_koy(y: *CizimYuzeyi, x: tamsayi, y_pos: tamsayi, renk_argb: tamsayi) {
+    eger y == 0 veya y.arabellek == 0 ise { dondu; }
+    eger x < 0 veya x >= y.genislik veya y_pos < 0 veya y_pos >= y.yukseklik ise { dondu; }
+    
+    degisken ofset: tamsayi = ((y_pos * y.genislik) + x) * 4;
+    degisken buf: *u8 = y.arabellek;
+    buf[ofset]     = renk_argb & 255;
+    buf[ofset + 1] = (renk_argb >> 8) & 255;
+    buf[ofset + 2] = (renk_argb >> 16) & 255;
+    buf[ofset + 3] = (renk_argb >> 24) & 255;
+}
+
+isv cizim_piksel_al(y: *CizimYuzeyi, x: tamsayi, y_pos: tamsayi) -> tamsayi {
+    eger y == 0 veya y.arabellek == 0 ise { dondu 0; }
+    eger x < 0 veya x >= y.genislik veya y_pos < 0 veya y_pos >= y.yukseklik ise { dondu 0; }
+    degisken ofset: tamsayi = ((y_pos * y.genislik) + x) * 4;
+    degisken buf: *u8 = y.arabellek;
+    dondu buf[ofset] | (buf[ofset + 1] << 8) | (buf[ofset + 2] << 16) | (buf[ofset + 3] << 24);
+}
+
+isv cizim_dikdortgen_doldur(y: *CizimYuzeyi, bas_x: tamsayi, bas_y: tamsayi, w: tamsayi, h: tamsayi, renk_argb: tamsayi) {
+    eger y == 0 veya y.arabellek == 0 ise { dondu; }
+    
+    degisken son_y: tamsayi = bas_y + h;
+    degisken son_x: tamsayi = bas_x + w;
+    
+    eger son_y > y.yukseklik ise { son_y = y.yukseklik; }
+    eger son_x > y.genislik ise { son_x = y.genislik; }
+    
+    degisken cy: tamsayi = bas_y;
+    dongu cy < son_y {
+        eger cy >= 0 ise {
+            degisken cx: tamsayi = bas_x;
+            dongu cx < son_x {
+                eger cx >= 0 ise {
+                    cizim_piksel_koy(y, cx, cy, renk_argb);
+                }
+                cx = cx + 1;
+            }
+        }
+        cy = cy + 1;
+    }
+}

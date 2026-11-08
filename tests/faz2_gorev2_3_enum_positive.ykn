@@ -1,0 +1,19 @@
+# FAZ 2.3 GENERIC ENUM POZITIF TEST
+# enum Secenek<T> { Bazi(T), Hic }
+
+enum Secenek<T> {
+    Bazi(T),
+    Hic
+}
+
+isv ana() -> tamsayi {
+    degisken s: Secenek<tamsayi>;
+    s.durum = 0; # Bazi
+    s.deger = 999;
+
+    eger s.deger == 999 ise {
+        ekrana_yaz("FAZ 2.3 GENERIC ENUM BASARILI!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

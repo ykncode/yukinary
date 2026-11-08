@@ -1,0 +1,1559 @@
+{
+  "schema": "ykn.correctness.v1",
+  "meaning": "only oracle correctness outcomes; performance metrics are excluded",
+  "fixture_inventory_count": 568,
+  "executed_case_count": 52,
+  "passed": 52,
+  "failed": 0,
+  "pass_rate_percent": 100.0,
+  "coverage_warning": "This report combines the repository's canonical 122-case suite and separate 34-case FIX-13 suite; it does not claim all fixture files were executed.",
+  "sources": {
+    "canonical": "D:\\yukinary\\yukinary-language\\benchmarks\\full-suite-results.json",
+    "fix13": "D:\\yukinary\\yukinary-language\\benchmarks\\fix13-results.json"
+  },
+  "suites": {
+    "GENERICS": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    "I18N (TR, EN, FR, RU, JA, ZH, KO)": {
+      "total": 12,
+      "passed": 11,
+      "failed": 1
+    },
+    "NEGATIVE (STRICT TYPECHECKER)": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    "OPTIMIZER (CFG/DCE/FOLDING)": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "STDLIB (MATH, MEM, STR, FILE)": {
+      "total": 37,
+      "passed": 27,
+      "failed": 10
+    },
+    "LLM & BITNET (GGUF, BPE, KERNELS)": {
+      "total": 23,
+      "passed": 9,
+      "failed": 14
+    },
+    "SELF-HEALING (TYPECHECKER TUNNEL)": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "CROSS-PLATFORM (LINUX ELF64)": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    },
+    "CROSS-PLATFORM (MACOS MACH-O 64)": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    },
+    "CROSS-PLATFORM (ARM64 ELF & MACH-O)": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0
+    },
+    "FAZ 9 FFI (#c-lib, extern isv, IAT)": {
+      "total": 3,
+      "passed": 3,
+      "failed": 0
+    },
+    "STAGE-1 SELF-HOST ENTRY POINT (ana)": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0
+    },
+    "LLM STAGE-0 SAHTE PROMPT GUARD": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "LLM YKNA TRUNCATION RECOVERY": {
+      "total": 1,
+      "passed": 0,
+      "failed": 1
+    },
+    "FIX13": {
+      "total": 34,
+      "passed": 34,
+      "failed": 0
+    }
+  },
+  "failures": [
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "01_en_hello.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 41,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "01_stdlib_tum.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 64,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "02_matematik.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 53,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "03_bellek.ykn",
+      "status": "FAIL (Exit -1073740791)",
+      "expected_match": false,
+      "duration_ms": 2609,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "04_metin.ykn",
+      "status": "FAIL (Exit -1073741819)",
+      "expected_match": false,
+      "duration_ms": 2431,
+      "output": "uzunluk=8 kars=-10 alt="
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "05_dosya.ykn",
+      "status": "FAIL (Output Mismatch)",
+      "expected_match": false,
+      "duration_ms": 67,
+      "output": "yaz=0 var_mi=0 satir=0 oku=std-dosya-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "10_enum_match.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 67,
+      "output": "FAIL: o1 var olmali"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "14_her_dongusu.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 63,
+      "output": "FAIL: her toplam != 55"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "21_koleksiyon.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 37,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "23_fpu_talimatlar.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 36,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "test_native_std_faz16.ykn",
+      "status": "FAIL (Missing Oracle)",
+      "expected_match": false,
+      "duration_ms": 0,
+      "output": "Missing stdout/stderr oracle: "
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "03_gguf_load.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 47,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "04_real_bitnet_metadata.ykn",
+      "status": "FAIL (Exit 2)",
+      "expected_match": false,
+      "duration_ms": 72,
+      "output": "TEST 04 FAZ 8: FAILED (gercek GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "05_i2s_real_block.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 33,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "06_real_tensor_payload.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 69,
+      "output": "TEST 06 FAZ 8: FAILED (GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "07_real_i2s_tensor_read.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 45,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "09_real_tokenizer_metadata.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 86,
+      "output": "TEST 09 FAZ 8: FAILED (GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "10_real_bpe_ascii.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 74,
+      "output": ""
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "14_llm_spec_binding.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 97,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "16_gguf_runtime_loader.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 98,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "17_iq2s_reference.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 43,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "25_float_decode.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 46,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "26_embedding_range.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 68,
+      "output": "EMBEDDING-RANGE-FAIL-READ"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "27_o_projection_row_parity.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 40,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "32_yknllm_audit_append.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 73,
+      "output": "FAIL: audit ilk append basarisiz"
+    },
+    {
+      "suite": "LLM YKNA TRUNCATION RECOVERY",
+      "fixture": "LLM YKNA TRUNCATION RECOVERY :: reader fixture append basarisiz",
+      "status": "FAIL (External)",
+      "expected_match": false,
+      "duration_ms": 0,
+      "output": "reader fixture append basarisiz"
+    }
+  ],
+  "cases": [
+    {
+      "suite": "GENERICS",
+      "fixture": "01_identity.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 139,
+      "output": "TEST 01 GENERICS: IDENTITY OK"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "02_math.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 75,
+      "output": "TEST 02 GENERICS: MATH OK"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "03_multi_specialization.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 69,
+      "output": "TEST 03 GENERICS: MULTI-SPECIALIZATION OK"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "04_vec_hashmap.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 86,
+      "output": "COLLECTIONS-VEC-HASHMAP-PASS"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "05_trait_dispatch.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 74,
+      "output": "TEST 05 GENERICS: TRAIT DISPATCH ESIT OK\nTEST 05 GENERICS: TRAIT DISPATCH TOPLAMA OK"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "06_struct_trait.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 81,
+      "output": "TEST 06 GENERICS: TRAIT ESIT OK\nTEST 06 GENERICS: TRAIT TOPLAMA3 OK"
+    },
+    {
+      "suite": "GENERICS",
+      "fixture": "07_multi_type_param.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 72,
+      "output": "TEST 07 MULTI-PARAM: CIFT DONUYOR OK\nTEST 07 MULTI-PARAM: CIFT TOPLA OK"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "01_en_hello.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 41,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "02_en_control_flow.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "dongu\ndongu\ndongu\ndogru"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "02_fr_control.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 76,
+      "output": "Bonjour depuis Yukinary francais!"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "03_ru_math.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 85,
+      "output": "Привет из Yukinary на русском!"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "04_ja_struct.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "日本語のYukinaryへようこそ！"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "05_zh_loop.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 56,
+      "output": "来自Yukinary中文版的问候！"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "06_ko_logic.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 65,
+      "output": "한국어 Yukinary에 오신 것을 환영합니다!"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "07_fr_float.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "FR-FLOAT-PASS"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "08_ru_float.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "RU-FLOAT-PASS"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "09_ja_float.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 71,
+      "output": "JA-FLOAT-PASS"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "10_zh_float.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 86,
+      "output": "ZH-FLOAT-PASS"
+    },
+    {
+      "suite": "I18N (TR, EN, FR, RU, JA, ZH, KO)",
+      "fixture": "11_ko_float.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 70,
+      "output": "KO-FLOAT-PASS"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "01_undefined_var.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 135,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "02_type_mismatch.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 38,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "03_invalid_return.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 43,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "04_multi_undefined_var.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 36,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "05_did_you_mean.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 38,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "07_nullable_index_without_check.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 35,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[2.5/8] Moduller"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "circular_import.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 44,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "NEGATIVE (STRICT TYPECHECKER)",
+      "fixture": "circular_import2.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 44,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "OPTIMIZER (CFG/DCE/FOLDING)",
+      "fixture": "01_faz6_kriter.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "     \nDCE-TEST: Kosul dogru"
+    },
+    {
+      "suite": "OPTIMIZER (CFG/DCE/FOLDING)",
+      "fixture": "02_advanced_opt.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 72,
+      "output": "ADVANCED-OPTIMIZER-PASS"
+    },
+    {
+      "suite": "OPTIMIZER (CFG/DCE/FOLDING)",
+      "fixture": "03_inlining_and_unroll_deep.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 71,
+      "output": "INLINING-AND-UNROLLING-DEEP-PASS"
+    },
+    {
+      "suite": "OPTIMIZER (CFG/DCE/FOLDING)",
+      "fixture": "test_inlining_and_unroll.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 70,
+      "output": ""
+    },
+    {
+      "suite": "OPTIMIZER (CFG/DCE/FOLDING)",
+      "fixture": "test_stage0_ssa_cfg.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 77,
+      "output": "STAGE0_SSA_CFG_OPTIMIZER: OK"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "01_stdlib_tum.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 64,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "02_matematik.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 53,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "03_bellek.ykn",
+      "status": "FAIL (Exit -1073740791)",
+      "expected_match": false,
+      "duration_ms": 2609,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "04_metin.ykn",
+      "status": "FAIL (Exit -1073741819)",
+      "expected_match": false,
+      "duration_ms": 2431,
+      "output": "uzunluk=8 kars=-10 alt="
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "05_dosya.ykn",
+      "status": "FAIL (Output Mismatch)",
+      "expected_match": false,
+      "duration_ms": 67,
+      "output": "yaz=0 var_mi=0 satir=0 oku=std-dosya-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "06_import_alias_now_supported.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 83,
+      "output": "ALIAS_WORKS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "06_kesirli.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 64,
+      "output": "5 7 1 1 1 2 3 10\nkesirli-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "07_f64_alias.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 61,
+      "output": "f64-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "08_f64_aritmetik.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "f64-ARITMETIK-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "09_metin_tipi.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 70,
+      "output": "METIN-TIPI-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "10_enum_match.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 67,
+      "output": "FAIL: o1 var olmali"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "11_her_iterator.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 88,
+      "output": "HER-ITERATOR-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "12_namespace_modul.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 74,
+      "output": "NAMESPACE-MODULE-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "13_lambda_fonksiyon.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 64,
+      "output": "LAMBDA-CLOSURE-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "14_her_dongusu.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 63,
+      "output": "FAIL: her toplam != 55"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "15_esles_match.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 62,
+      "output": "ESLES-MATCH-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "16_metin_operatorler.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 66,
+      "output": "METIN-OPERATORLER-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "17_hashmap_rehash.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 79,
+      "output": "HASHMAP-REHASH-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "18_sonuc_ve_soru.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 79,
+      "output": "SONUC-PASS-1\nSONUC-PASS-2"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "19_libykn_collections.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 83,
+      "output": "LIBYKN-COLLECTIONS-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "20_macro_test.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 66,
+      "output": "TEST MACRO: ikikat OK\nTEST MACRO: topla3 OK\nTEST MACRO: ifade icinde OK\nMACRO-CODEGEN-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "21_builtin_macro_test.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 70,
+      "output": "42\nTEST BUILTIN: ayikla OK\nTEST BUILTIN: boyut(tamsayi)=8 OK\nTEST BUILTIN: boyut(u8)=1 OK\nTEST BUILTIN: dogrula OK (devam etti)\nBUILTIN-MACRO-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "21_koleksiyon.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 37,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "22_macro_hygiene_test.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 59,
+      "output": "TEST HYGIENE: hesapla(5)=30 OK\nTEST HYGIENE: dis taban=100 korundu OK\nTEST HYGIENE: cift cagri OK\nMACRO-HYGIENE-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "23_fpu_talimatlar.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 36,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "24_string_format.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 75,
+      "output": "STRING-FORMAT-PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "25_modules.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "25_MODULES_PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "25_sonuc_enum_cakismasi.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 72,
+      "output": "25_SONUC_PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "26_algebraic_enum.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 65,
+      "output": "Algebraic enum PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "30_faz5_stdlib_collections.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 77,
+      "output": "FAZ5_STDLIB_PASS"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "async_future_frame.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "async_future_runtime.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 65,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "hashmap_uaf_neg.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 3004,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "iterator_composability.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 77,
+      "output": "ITERATOR_COMPOSABILITY: map->filter->take OK"
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "test_native_std_faz16.ykn",
+      "status": "FAIL (Missing Oracle)",
+      "expected_match": false,
+      "duration_ms": 0,
+      "output": "Missing stdout/stderr oracle: "
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "test_sonuc_tanim.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 62,
+      "output": ""
+    },
+    {
+      "suite": "STDLIB (MATH, MEM, STR, FILE)",
+      "fixture": "vec_double_free_neg.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 66,
+      "output": "VEC_DOUBLE_FREE_NEG: vec hazir\nVEC_DOUBLE_FREE_NEG: ilk yok_et OK\nVEC_DOUBLE_FREE_NEG: ULASILMAMALI"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "02_mat_carp.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 58,
+      "output": "TEST 02 FAZ 8: BITLINEAR MATMUL OK (-20, 10, -20, 10)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "03_gguf_load.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 47,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "04_real_bitnet_metadata.ykn",
+      "status": "FAIL (Exit 2)",
+      "expected_match": false,
+      "duration_ms": 72,
+      "output": "TEST 04 FAZ 8: FAILED (gercek GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "05_i2s_real_block.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 33,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "06_real_tensor_payload.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 69,
+      "output": "TEST 06 FAZ 8: FAILED (GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "07_real_i2s_tensor_read.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 45,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "08_transformer_kernels.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 67,
+      "output": "TEST 08 FAZ 8: RMSNORM+ROPE+KV+SAMPLER OK"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "09_real_tokenizer_metadata.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 86,
+      "output": "TEST 09 FAZ 8: FAILED (GGUF parse)"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "10_real_bpe_ascii.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 74,
+      "output": ""
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "12_runtime_dispatch.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 63,
+      "output": "LLM-RUNTIME-DISPATCH-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "13_runtime_validation.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 74,
+      "output": "LLM-RUNTIME-VALIDATION-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "14_llm_spec_binding.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 97,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "15_forward_pipeline.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 109,
+      "output": "LLM-FORWARD-PIPELINE-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "16_gguf_runtime_loader.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 98,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "17_iq2s_reference.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 43,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "18_attention_global_parity.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 73,
+      "output": "ATTENTION-GLOBAL-PARITY-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "19_rope_math.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 72,
+      "output": "ROPE-MATH-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "24_rmsnorm_overflow.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 74,
+      "output": "RMSNORM-OVERFLOW-PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "25_float_decode.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 46,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "26_embedding_range.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 68,
+      "output": "EMBEDDING-RANGE-FAIL-READ"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "27_o_projection_row_parity.ykn",
+      "status": "FAIL (Compile Error)",
+      "expected_match": false,
+      "duration_ms": 40,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islenÄ±yor...\n[ice_aktar] Yukl"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "31_yknllm_typed_gateway.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 74,
+      "output": "YKNLLM_TYPED_GATEWAY_PASS"
+    },
+    {
+      "suite": "LLM & BITNET (GGUF, BPE, KERNELS)",
+      "fixture": "32_yknllm_audit_append.ykn",
+      "status": "FAIL (Exit 1)",
+      "expected_match": false,
+      "duration_ms": 73,
+      "output": "FAIL: audit ilk append basarisiz"
+    },
+    {
+      "suite": "SELF-HEALING (TYPECHECKER TUNNEL)",
+      "fixture": "SELF-HEALING (TYPECHECKER TUNNEL) :: Undefined var without --self-heal",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Undefined var without --self-heal"
+    },
+    {
+      "suite": "SELF-HEALING (TYPECHECKER TUNNEL)",
+      "fixture": "SELF-HEALING (TYPECHECKER TUNNEL) :: Undefined var",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Undefined var"
+    },
+    {
+      "suite": "SELF-HEALING (TYPECHECKER TUNNEL)",
+      "fixture": "SELF-HEALING (TYPECHECKER TUNNEL) :: Multi undefined var",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Multi undefined var"
+    },
+    {
+      "suite": "SELF-HEALING (TYPECHECKER TUNNEL)",
+      "fixture": "SELF-HEALING (TYPECHECKER TUNNEL) :: Type mismatch",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Type mismatch"
+    },
+    {
+      "suite": "SELF-HEALING (TYPECHECKER TUNNEL)",
+      "fixture": "SELF-HEALING (TYPECHECKER TUNNEL) :: Invalid return",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Invalid return"
+    },
+    {
+      "suite": "CROSS-PLATFORM (LINUX ELF64)",
+      "fixture": "CROSS-PLATFORM (LINUX ELF64) :: 01_hello.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01_hello.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (LINUX ELF64)",
+      "fixture": "CROSS-PLATFORM (LINUX ELF64) :: 02_arithmetic.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02_arithmetic.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (LINUX ELF64)",
+      "fixture": "CROSS-PLATFORM (LINUX ELF64) :: 05_structs.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "05_structs.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (LINUX ELF64)",
+      "fixture": "CROSS-PLATFORM (LINUX ELF64) :: 05_dosya.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "05_dosya.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (MACOS MACH-O 64)",
+      "fixture": "CROSS-PLATFORM (MACOS MACH-O 64) :: 01_hello.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01_hello.macho"
+    },
+    {
+      "suite": "CROSS-PLATFORM (MACOS MACH-O 64)",
+      "fixture": "CROSS-PLATFORM (MACOS MACH-O 64) :: 02_arithmetic.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02_arithmetic.macho"
+    },
+    {
+      "suite": "CROSS-PLATFORM (MACOS MACH-O 64)",
+      "fixture": "CROSS-PLATFORM (MACOS MACH-O 64) :: 05_structs.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "05_structs.macho"
+    },
+    {
+      "suite": "CROSS-PLATFORM (MACOS MACH-O 64)",
+      "fixture": "CROSS-PLATFORM (MACOS MACH-O 64) :: 05_dosya.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "05_dosya.macho"
+    },
+    {
+      "suite": "CROSS-PLATFORM (ARM64 ELF & MACH-O)",
+      "fixture": "CROSS-PLATFORM (ARM64 ELF & MACH-O) :: 01_hello_arm64.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01_hello_arm64.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (ARM64 ELF & MACH-O)",
+      "fixture": "CROSS-PLATFORM (ARM64 ELF & MACH-O) :: 01_hello_arm64.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01_hello_arm64.macho"
+    },
+    {
+      "suite": "CROSS-PLATFORM (ARM64 ELF & MACH-O)",
+      "fixture": "CROSS-PLATFORM (ARM64 ELF & MACH-O) :: 02_arithmetic_arm64.elf",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02_arithmetic_arm64.elf"
+    },
+    {
+      "suite": "CROSS-PLATFORM (ARM64 ELF & MACH-O)",
+      "fixture": "CROSS-PLATFORM (ARM64 ELF & MACH-O) :: 02_arithmetic_arm64.macho",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02_arithmetic_arm64.macho"
+    },
+    {
+      "suite": "FAZ 9 FFI (#c-lib, extern isv, IAT)",
+      "fixture": "FAZ 9 FFI (#c-lib, extern isv, IAT) :: 01 #c-lib direktif + normal isv",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01 #c-lib direktif + normal isv"
+    },
+    {
+      "suite": "FAZ 9 FFI (#c-lib, extern isv, IAT)",
+      "fixture": "FAZ 9 FFI (#c-lib, extern isv, IAT) :: 02 extern isv + kernel32 WriteFile IAT",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02 extern isv + kernel32 WriteFile IAT"
+    },
+    {
+      "suite": "FAZ 9 FFI (#c-lib, extern isv, IAT)",
+      "fixture": "FAZ 9 FFI (#c-lib, extern isv, IAT) :: 03 isv prototip (noktali virgul) sozdizimi",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "03 isv prototip (noktali virgul) sozdizimi"
+    },
+    {
+      "suite": "STAGE-1 SELF-HOST ENTRY POINT (ana)",
+      "fixture": "STAGE-1 SELF-HOST ENTRY POINT (ana) :: Stage-1 Self-Host ana() testi BASARILI!",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "Stage-1 Self-Host ana() testi BASARILI!"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 01_bolge_temel.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "01_bolge_temel.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 02_affine_move.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "02_affine_move.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 03_guvenli_sinir_ve_null.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "03_guvenli_sinir_ve_null.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 08_bounds_check.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "08_bounds_check.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 09_double_free.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "09_double_free.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 10_dangling_pointer.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "10_dangling_pointer.ykn"
+    },
+    {
+      "suite": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir)",
+      "fixture": "FAZ 14 BELLEK GUVENLIGI (Bolge/Affine/Sinir) :: 11_uaf_runtime.ykn",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "11_uaf_runtime.ykn"
+    },
+    {
+      "suite": "LLM STAGE-0 SAHTE PROMPT GUARD",
+      "fixture": "LLM STAGE-0 SAHTE PROMPT GUARD :: STAGE0_PROMPT_GUARD_PASS",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": 0,
+      "output": "STAGE0_PROMPT_GUARD_PASS"
+    },
+    {
+      "suite": "LLM YKNA TRUNCATION RECOVERY",
+      "fixture": "LLM YKNA TRUNCATION RECOVERY :: reader fixture append basarisiz",
+      "status": "FAIL (External)",
+      "expected_match": false,
+      "duration_ms": 0,
+      "output": "reader fixture append basarisiz"
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "01_bos_literal",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "02_nil_alias",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "03_nullable_declaration",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "04_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\..\\negative\\07_nullable_index_without_check.ykn:4:5 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "05_index_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "06_truthy_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "07_null_branch",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_index_null_branch.ykn:5:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "08_scope_restore",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_index_scope_restore.ykn:7:5 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "09_field_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_field_no_check.ykn:8:5 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "10_field_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\n[DEBUG_YAPI] Yapildi: Nokta (alan_sayisi=1)\n   alan[0]: x off=0\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "11_unrelated_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_unrelated_guard.ykn:6:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "12_reassigned_inside_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_reassigned_inside_guard.ykn:6:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "13_null_aliases_positive",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "14_nested_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "15_two_pointer_guards",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "16_else_narrowing",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "17_non_nullable_access",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "18_nul_initializer",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "19_null_initializer",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "20_second_pointer_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_second_pointer_no_check.ykn:6:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "21_and_narrowing",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "22_or_same_pointer",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "23_or_two_pointers",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_or_two_pointers.ykn:6:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "24_nullable_parameter_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 131\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "25_nullable_parameter_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_parameter_no_check.ykn:3:11 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "26_nullable_return_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 67\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "27_nullable_return_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_return_no_check.ykn:8:11 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "29_nullable_pointer_to_pointer_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "30_nullable_pointer_to_pointer_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_pointer_to_pointer_no_check.ykn:4:5 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "31_loop_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "32_loop_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\32_loop_no_check.ykn:6:9 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "33_loop_scope_restore",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\33_loop_scope_restore.ykn:8:5 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "34_struct_field_guard",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\n[6/7] AST Optimizasyonu (Constant Folding + DCE)...\n[7/7] x86_64 Makine Kodu ve PE32+ baglaniyor...\nCodegen basliyor, AST mevcut.\n[DEBUG_YAPI] Yapildi: Kut (alan_sayisi=1)\n   alan[0]: veri off=0\nMATCHED ANA TR: 'ana' at 0\nDerleme tamamlandi! Diske basiliyor...\nDerleme tamamlandi."
+    },
+    {
+      "suite": "FIX13",
+      "fixture": "35_struct_field_no_check",
+      "status": "PASS",
+      "expected_match": true,
+      "duration_ms": null,
+      "output": "Bellek tahsis ediliyor...\nDosya okunuyor...\nDosya okundu, derleyici cagiriliyor...\nYKN Derleyici Basliyor...\n[1/8] Lexer calisiyor...\nTokenize et basliyor...\nLexer tamamlandi!\n[2/8] Parser (Pratt/AST) calisiyor...\nParser OK, AST olusturuldu.\n[2.5/8] ice_aktar modulleri islen├ä┬▒yor...\n[2.5/8] Moduller birlestirildi.\n[3/8] Makrolar genisletiliyor...\n[4/8] Generics monomorphization...\n[5/8] Tip denetimi ve Name Resolution...\nHATA [E033] [ERR_NULLABLE_ACCESS_WITHOUT_CHECK] [class=codegen]:C:\\yukinary\\tests\\fix13\\nullable_struct_field_no_check.ykn:6:6 ÔÇö FIX13 HATA: Nullable pointer erisimi kontrolsuz.\nHATA: Tip denetimi basarisiz! Derleme durduruldu."
+    }
+  ],
+  "latest_run": "2026-11-03 21:08:50",
+  "maturity_index": 100.0,
+  "maturity_tier": "L4_COMPILER_VERIFIED"
+}

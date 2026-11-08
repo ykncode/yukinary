@@ -1,0 +1,74 @@
+# YKDS v1 native writer/reader acceptance test.
+ice_aktar "std/ai/dataset.ykn";
+isv ekrana_yaz(m: *u8) {}
+
+degisken g_a: [32768]u8;
+degisken g_b: [32768]u8;
+
+isv ayni_mi(a: *u8, b: *u8, n: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv fixture_yaz(yol: *u8) -> tamsayi {
+    degisken w: *YKNDatasetWriter = ykn_dataset_writer_olustur(42);
+    eger w == 0 ise { dondu 0; }
+    eger ykn_dataset_append(w, 1, "kaynak-1".ptr, "hedef-1".ptr, "E001".ptr, "tests/dataset/01_binary_dataset.ykn".ptr) == 0 ise { dondu 0; }
+    eger ykn_dataset_append(w, 2, "kaynak-2".ptr, "hedef-2".ptr, "E002".ptr, "tests/dataset/01_binary_dataset.ykn".ptr) == 0 ise { dondu 0; }
+    eger ykn_dataset_append(w, 3, "kaynak-3".ptr, "hedef-3".ptr, "E003".ptr, "tests/dataset/01_binary_dataset.ykn".ptr) == 0 ise { dondu 0; }
+    eger ykn_dataset_append(w, 4, "kaynak-4".ptr, "hedef-4".ptr, "E004".ptr, "tests/dataset/01_binary_dataset.ykn".ptr) == 0 ise { dondu 0; }
+    dondu ykn_dataset_writer_bitir(w, yol);
+}
+
+isv ana() -> tamsayi {
+    degisken yol_a: *u8 = "build/test-work/dataset-a.ykds".ptr;
+    degisken yol_b: *u8 = "build/test-work/dataset-b.ykds".ptr;
+    degisken n_a: tamsayi = fixture_yaz(yol_a);
+    eger n_a <= 0 ise { ekrana_yaz("FAIL: first write\n".ptr); dondu 1; }
+    degisken n_b: tamsayi = fixture_yaz(yol_b);
+    eger n_b != n_a ise { ekrana_yaz("FAIL: deterministic size\n".ptr); dondu 2; }
+    degisken ra: tamsayi = dosya_oku(yol_a, g_a, 32768);
+    degisken rb: tamsayi = dosya_oku(yol_b, g_b, 32768);
+    eger ra != rb veya ayni_mi(g_a, g_b, ra) == 0 ise {
+        ekrana_yaz("FAIL: deterministic bytes\n".ptr);
+        dondu 3;
+    }
+
+    degisken count: tamsayi = 0;
+    degisken loaded: *u8 = bellek_tahsis_et(32768);
+    degisken valid_result: tamsayi = ykn_dataset_read_file(yol_a, loaded, 32768, &count);
+
+    eger loaded == 0 veya valid_result == 0 ise {
+        ekrana_yaz("FAIL: valid dataset rejected by reader\n".ptr);
+        dondu 4;
+    }
+    eger count != 4 ise {
+        ekrana_yaz("FAIL: valid dataset record count\n".ptr);
+        dondu 4;
+    }
+    degisken loaded_size: tamsayi = dosya_oku(yol_a, loaded, 32768);
+    degisken saved: u8 = loaded[0];
+    loaded[0] = 0;
+    eger ykn_dataset_validate_buffer(loaded, loaded_size, &count) != 0 ise {
+        ekrana_yaz("FAIL: bad magic accepted\n".ptr);
+        dondu 5;
+    }
+    loaded[0] = saved;
+    eger ykn_dataset_validate_buffer(loaded, loaded_size - 1, &count) != 0 ise {
+        ekrana_yaz("FAIL: truncation accepted\n".ptr);
+        dondu 6;
+    }
+    saved = loaded[loaded_size - 1];
+    loaded[loaded_size - 1] = loaded[loaded_size - 1] ^ 1;
+    eger ykn_dataset_validate_buffer(loaded, loaded_size, &count) != 0 ise {
+        ekrana_yaz("FAIL: payload hash mismatch accepted\n".ptr);
+        dondu 7;
+    }
+    loaded[loaded_size - 1] = saved;
+    ekrana_yaz("YKN_DATASET_DETERMINISTIC_CORRUPTION_PASS\n".ptr);
+    dondu 0;
+}

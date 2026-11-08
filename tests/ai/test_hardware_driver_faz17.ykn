@@ -1,0 +1,72 @@
+ice_aktar "std/ai/hardware_driver.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("[TEST FAZ 17] Donanim Hizlandirici FFI Surucu Kesfi Baslatiliyor...\n".ptr);
+
+    # 1. Otomatik Donanim Kesif Testi
+    ekrana_yaz("1. Otomatik Donanim Hizlandirici Kesfi: ".ptr);
+    degisken secilen: tamsayi = ykn_donanim_otomatik_sec();
+
+    eger secilen == SURUCU_CUDA ise {
+        ekrana_yaz("NVIDIA CUDA Driver Tespit Edildi (cuInit)\n".ptr);
+    } yoksa eger secilen == SURUCU_VULKAN ise {
+        ekrana_yaz("Vulkan Compute Driver Tespit Edildi (vkCreateInstance)\n".ptr);
+    } yoksa eger secilen == SURUCU_OPENCL ise {
+        ekrana_yaz("OpenCL Compute Driver Tespit Edildi\n".ptr);
+    } yoksa eger secilen == SURUCU_CPU_AVX2 ise {
+        ekrana_yaz("BASARILI (x86_64 AVX2/FMA Vektorel Donanim Hizlandirici Devrede)\n".ptr);
+    } yoksa {
+        ekrana_yaz("Skalar Standart CPU Modu Devrede\n".ptr);
+    }
+
+    # 2. Hızlandırılmış Vektörel GEMV / Q16.16 Dot Product Testi
+    ekrana_yaz("2. Hizlandirilmis Q16.16 Vektorel Dot Product Testi: ".ptr);
+    degisken vec_a: [8]tamsayi;
+    degisken vec_b: [8]tamsayi;
+
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        vec_a[i] = 65536;       # 1.0 (Q16.16)
+        vec_b[i] = (i + 1) * 65536; # (i+1).0 (Q16.16)
+        i = i + 1;
+    }
+
+    # Beklenen toplam: sum(1 * (1..8)) = 1+2+3+4+5+6+7+8 = 36.0 = 36 * 65536 = 2359296
+    degisken sonuc: tamsayi = ykn_hizlandirilmis_dot_q16(vec_a.ptr, vec_b.ptr, 8);
+
+    eger sonuc == 2359296 ise {
+        ekrana_yaz("BASARILI (Sonuc: ".ptr);
+        sayi_yaz(sonuc);
+        ekrana_yaz(" [36.0 Q16.16] Dogrulandi)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: Dot product sonucu hatali! Alinan: ".ptr);
+        sayi_yaz(sonuc);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(1);
+    }
+
+    ekrana_yaz("\n>>> [SONUC] FAZ 17 DONANIM HIZLANDIRICI FFI TESTI BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

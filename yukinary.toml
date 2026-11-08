@@ -1,0 +1,20 @@
+# Yukinary proje manifesti
+# Schema version: 1 (zorunlu - manifest versiyonu belirsiz yuklenmeye karsi koruma)
+[package]
+schema_version = 1
+name = "yukinary"
+version = "0.1.0"
+main = "src/main.ykn"
+output = "build/yukinary.exe"
+edition = "2026"
+description = "Yukinary YKN derleyicisi"
+
+[dependencies]
+# Yerel bagimlilklar: { path = "pkg/mod_adi" } biciminde
+# NOT: Registry/network bagimliliklar bu fazin disindadir (FIX 11+)
+# Ornek: matematik = { path = "pkg/matematik" }
+
+[build]
+# Derleme secenekleri
+opt_level = 0          # 0=debug, 1=release, 2=aggressive
+emit_diagnostics = true

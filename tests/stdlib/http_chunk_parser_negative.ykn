@@ -1,0 +1,21 @@
+# Saf YKN negative acceptance: malformed/truncated chunk framing reddedilmeli.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken ilk: [256]u8;
+    degisken kaynak1: *u8 = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nZ\r\nBAD\r\n0\r\n\r\n".ptr;
+    degisken n1: tamsayi = 0;
+    dongu kaynak1[n1] != 0 { ilk[n1] = kaynak1[n1]; n1 = n1 + 1; }
+    degisken c1: Cevap;
+    eger http_cevap_ayristir(ilk, n1, &c1) != 1 veya c1.parca_kodlamali != 1 ise { dondu 120; }
+    eger http_parca_coz(ilk, n1, &c1) == 0 ise { dondu 121; }
+
+    degisken ikinci: [256]u8;
+    degisken kaynak2: *u8 = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nABC\r\n0\r\n".ptr;
+    degisken n2: tamsayi = 0;
+    dongu kaynak2[n2] != 0 { ikinci[n2] = kaynak2[n2]; n2 = n2 + 1; }
+    degisken c2: Cevap;
+    eger http_cevap_ayristir(ikinci, n2, &c2) != 1 veya c2.parca_kodlamali != 1 ise { dondu 122; }
+    eger http_parca_coz(ikinci, n2, &c2) == 0 ise { dondu 123; }
+    dondu 0;
+}

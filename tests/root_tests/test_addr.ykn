@@ -1,0 +1,13 @@
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+    z: tamsayi;
+}
+isv ana() -> tamsayi {
+    degisken pt: Nokta;
+    pt.x = 10;
+    pt.y = 20;
+    pt.z = 30;
+    degisken py: *tamsayi = &pt.y;
+    dondu *py;
+}

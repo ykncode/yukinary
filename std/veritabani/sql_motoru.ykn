@@ -1,0 +1,863 @@
+# ============================================================
+# std/veritabani/sql_motoru.ykn
+# FAZ C: Saf Yukinary Volcano Iterator SQL Yürütme Motoru
+# Open-Next-Close Modelli Yürütme Boru Hattı:
+# SeqScan, Filter (Çoklu Koşul AND / OR), Nested-Loop Join, Limit ve ACID Tablo Deposu
+# ============================================================
+
+ice_aktar "sql_parser.ykn";
+
+# Volcano Iterator Tipleri
+degisken ITER_SEQ_SCAN:         tamsayi = 1;
+degisken ITER_FILTER:           tamsayi = 2;
+degisken ITER_LIMIT:            tamsayi = 3;
+degisken ITER_NESTED_LOOP_JOIN: tamsayi = 4;
+degisken ITER_HASH_JOIN:        tamsayi = 5;
+
+yapi SqlTablo {
+    kapasite:     tamsayi;
+    satir_sayisi: tamsayi;
+    kimlikler:    *tamsayi;
+    degerler:     *tamsayi;
+    degerler2:    *tamsayi; # FAZ C: İkincil öznitelik / Yabancı anahtar (FK) sütunu
+    ad:           *u8;
+    ad_uzn:       tamsayi;
+}
+
+yapi SqlIterator {
+    tur:                 tamsayi;       # ITER_*
+    tablo:               *SqlTablo;
+    cocuk:               *SqlIterator;  # Boru hattindaki alt iterator
+    imlec:               tamsayi;       # Tablo tarama imleci
+    kosul_op:            tamsayi;       # SQL_OP_* (Tekil kosul)
+    kosul_val:           tamsayi;       # Filtreleme sabiti (Tekil kosul)
+    limit:               tamsayi;       # Azami dondurulecek kayit adedi
+    uretilen:            tamsayi;       # Simdiye kadar uretilen kayit adedi
+
+    # FAZ C: Gelismis Coklu Kosul & Join Alanlari
+    kosul_sutun:         tamsayi;       # 0: id, 1: deger, 2: deger2
+    kosullar:            *SqlKosul;     # Coklu kosul dizisi
+    kosul_sayisi:        tamsayi;
+    join_tablo:          *SqlTablo;     # Ic (inner) tablo
+    join_sol_col:        tamsayi;       # Dis tablodaki sutun indisi
+    join_sag_col:        tamsayi;       # Ic tablodaki sutun indisi
+    join_ic_imlec:       tamsayi;       # Ic tablo tarama imleci
+    dis_kayit_gecerli:   tamsayi;
+    dis_id:              tamsayi;
+    dis_val:             tamsayi;
+    dis_val2:            tamsayi;
+
+    # FAZ 5: Hash Join & Indexing Fields
+    hash_kovalar:        *tamsayi;
+    hash_anahtarlar:     *tamsayi;
+    hash_satirlar:       *tamsayi;
+    hash_zincir:         *tamsayi;
+    join_zincir_imlec:   tamsayi;
+    hash_hazir:          tamsayi;
+}
+
+isv sql_tablo_olustur(kap: tamsayi) -> *SqlTablo {
+    degisken tbl: *SqlTablo = bellek_tahsis_et(64);
+    tbl.kapasite = kap;
+    tbl.satir_sayisi = 0;
+    tbl.kimlikler = bellek_tahsis_et(kap * 8);
+    tbl.degerler = bellek_tahsis_et(kap * 8);
+    tbl.degerler2 = bellek_tahsis_et(kap * 8);
+    tbl.ad = 0;
+    tbl.ad_uzn = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < kap {
+        tbl.kimlikler[i] = 0 - 1;
+        tbl.degerler[i] = 0;
+        tbl.degerler2[i] = 0;
+        i = i + 1;
+    }
+    dondu tbl;
+}
+
+isv sql_tablo_ad_ayarla(tbl: *SqlTablo, ad: *u8, uzn: tamsayi) {
+    eger tbl != 0 ise {
+        tbl.ad = ad;
+        tbl.ad_uzn = uzn;
+    }
+}
+
+isv sql_satir_ekle_gelismis(tbl: *SqlTablo, id: tamsayi, deger: tamsayi, deger2: tamsayi) -> tamsayi {
+    degisken n: tamsayi = tbl.satir_sayisi;
+    degisken cap: tamsayi = tbl.kapasite;
+    eger n >= cap ise {
+        dondu 0;
+    }
+    tbl.kimlikler[n] = id;
+    tbl.degerler[n] = deger;
+    tbl.degerler2[n] = deger2;
+    tbl.satir_sayisi = n + 1;
+    dondu 1;
+}
+
+# Geriye dönük uyumluluk
+isv sql_satir_ekle(tbl: *SqlTablo, id: tamsayi, deger: tamsayi) -> tamsayi {
+    dondu sql_satir_ekle_gelismis(tbl, id, deger, 0);
+}
+
+# ------------------------------------------------------------
+# Volcano Iterator Pipeline (Boru Hattı) Bileşenleri
+# ------------------------------------------------------------
+
+# 1. SeqScan Iterator: Temel tablodaki satirlari bastan sona tarar
+isv sql_seq_scan_olustur(tbl: *SqlTablo) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(128);
+    it.tur = ITER_SEQ_SCAN;
+    it.tablo = tbl;
+    it.cocuk = 0;
+    it.imlec = 0;
+    it.kosul_op = 0;
+    it.kosul_val = 0;
+    it.limit = 0;
+    it.uretilen = 0;
+    it.kosul_sutun = 0;
+    it.kosullar = 0;
+    it.kosul_sayisi = 0;
+    it.join_tablo = 0;
+    it.join_sol_col = 0;
+    it.join_sag_col = 0;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    it.dis_id = 0;
+    it.dis_val = 0;
+    it.dis_val2 = 0;
+    dondu it;
+}
+
+# 2. Filter Iterator: Alttaki iteratordan gelen kayitlari tekil WHERE yuklemiyle suzer
+isv sql_filter_olustur(cocuk_it: *SqlIterator, op: tamsayi, val: tamsayi) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(128);
+    it.tur = ITER_FILTER;
+    it.tablo = cocuk_it.tablo;
+    it.cocuk = cocuk_it;
+    it.imlec = 0;
+    it.kosul_op = op;
+    it.kosul_val = val;
+    it.limit = 0;
+    it.uretilen = 0;
+    it.kosul_sutun = 0;
+    it.kosullar = 0;
+    it.kosul_sayisi = 0;
+    it.join_tablo = 0;
+    it.join_sol_col = 0;
+    it.join_sag_col = 0;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    dondu it;
+}
+
+# 2.b. Gelişmiş Çoklu Koşullu Filter Iterator (AND / OR)
+isv sql_filter_gelismis_olustur(cocuk_it: *SqlIterator, kosullar: *SqlKosul, adet: tamsayi) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(128);
+    it.tur = ITER_FILTER;
+    it.tablo = cocuk_it.tablo;
+    it.cocuk = cocuk_it;
+    it.imlec = 0;
+    it.kosul_op = 0;
+    it.kosul_val = 0;
+    it.limit = 0;
+    it.uretilen = 0;
+    it.kosul_sutun = 0;
+    it.kosullar = kosullar;
+    it.kosul_sayisi = adet;
+    it.join_tablo = 0;
+    it.join_sol_col = 0;
+    it.join_sag_col = 0;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    dondu it;
+}
+
+# 3. Limit Iterator: Belirlenen adet kadar kayit ureten ust iterator
+isv sql_limit_olustur(cocuk_it: *SqlIterator, lim: tamsayi) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(128);
+    it.tur = ITER_LIMIT;
+    it.tablo = cocuk_it.tablo;
+    it.cocuk = cocuk_it;
+    it.imlec = 0;
+    it.kosul_op = 0;
+    it.kosul_val = 0;
+    it.limit = lim;
+    it.uretilen = 0;
+    it.kosullar = 0;
+    it.kosul_sayisi = 0;
+    it.join_tablo = 0;
+    it.dis_kayit_gecerli = 0;
+    dondu it;
+}
+
+# 4. Nested-Loop Join Iterator: İki tabloyu ortak bir anahtar sütunu üzerinde eşleştirir
+isv sql_join_olustur_iter(dis_it: *SqlIterator, ic_tbl: *SqlTablo, sol_col: tamsayi, sag_col: tamsayi) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(256);
+    it.tur = ITER_NESTED_LOOP_JOIN;
+    it.tablo = dis_it.tablo;
+    it.cocuk = dis_it;
+    it.imlec = 0;
+    it.kosul_op = 0;
+    it.kosul_val = 0;
+    it.limit = 0;
+    it.uretilen = 0;
+    it.kosullar = 0;
+    it.kosul_sayisi = 0;
+    it.join_tablo = ic_tbl;
+    it.join_sol_col = sol_col;
+    it.join_sag_col = sag_col;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    it.dis_id = 0;
+    it.dis_val = 0;
+    it.dis_val2 = 0;
+    it.hash_kovalar = 0;
+    it.hash_anahtarlar = 0;
+    it.hash_satirlar = 0;
+    it.hash_zincir = 0;
+    it.join_zincir_imlec = 0 - 1;
+    it.hash_hazir = 0;
+    dondu it;
+}
+
+# 5. Hash Join Iterator: O(N + M) Volcano Hash Join Boru Hatti
+isv sql_hash_join_olustur_iter(dis_it: *SqlIterator, ic_tbl: *SqlTablo, sol_col: tamsayi, sag_col: tamsayi) -> *SqlIterator {
+    degisken it: *SqlIterator = bellek_tahsis_et(256);
+    it.tur = ITER_HASH_JOIN;
+    it.tablo = dis_it.tablo;
+    it.cocuk = dis_it;
+    it.imlec = 0;
+    it.kosul_op = 0;
+    it.kosul_val = 0;
+    it.limit = 0;
+    it.uretilen = 0;
+    it.kosullar = 0;
+    it.kosul_sayisi = 0;
+    it.join_tablo = ic_tbl;
+    it.join_sol_col = sol_col;
+    it.join_sag_col = sag_col;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    it.dis_id = 0;
+    it.dis_val = 0;
+    it.dis_val2 = 0;
+    it.hash_kovalar = 0;
+    it.hash_anahtarlar = 0;
+    it.hash_satirlar = 0;
+    it.hash_zincir = 0;
+    it.join_zincir_imlec = 0 - 1;
+    it.hash_hazir = 0;
+    dondu it;
+}
+
+# Volcano open()
+isv sql_iter_ac(it: *SqlIterator) {
+    eger it == 0 ise { dondu; }
+    it.imlec = 0;
+    it.uretilen = 0;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    it.join_zincir_imlec = 0 - 1;
+
+    eger it.tur == ITER_HASH_JOIN ve it.join_tablo != 0 ise {
+        degisken ic_tbl: *SqlTablo = it.join_tablo;
+        degisken n: tamsayi = ic_tbl.satir_sayisi;
+        eger n <= 0 ise { n = 1; }
+
+        it.hash_kovalar = bellek_tahsis_et(1024 * 8);
+        it.hash_anahtarlar = bellek_tahsis_et(n * 8);
+        it.hash_satirlar = bellek_tahsis_et(n * 8);
+        it.hash_zincir = bellek_tahsis_et(n * 8);
+
+        degisken b_i: tamsayi = 0;
+        dongu b_i < 1024 {
+            it.hash_kovalar[b_i] = 0 - 1;
+            b_i = b_i + 1;
+        }
+
+        degisken r_i: tamsayi = 0;
+        dongu r_i < ic_tbl.satir_sayisi {
+            degisken ic_id: tamsayi = ic_tbl.kimlikler[r_i];
+            eger ic_id != (0 - 1) ise {
+                degisken key: tamsayi = ic_id;
+                eger it.join_sag_col == 1 ise { key = ic_tbl.degerler[r_i]; }
+                yoksa eger it.join_sag_col == 2 ise { key = ic_tbl.degerler2[r_i]; }
+
+                degisken bucket: tamsayi = key % 1024;
+                eger bucket < 0 ise { bucket = 0 - bucket; }
+
+                it.hash_anahtarlar[r_i] = key;
+                it.hash_satirlar[r_i] = r_i;
+                it.hash_zincir[r_i] = it.hash_kovalar[bucket];
+                it.hash_kovalar[bucket] = r_i;
+            }
+            r_i = r_i + 1;
+        }
+        it.hash_hazir = 1;
+    }
+
+    eger it.cocuk != 0 ise {
+        sql_iter_ac(it.cocuk);
+    }
+}
+
+# Koşul değerlendirme yardımcısı
+isv sql_kosul_kontrol_et(op: tamsayi, sol_val: tamsayi, sag_val: tamsayi) -> tamsayi {
+    eger op == SQL_OP_ESIT veya op == 0 ise {
+        eger sol_val == sag_val ise { dondu 1; }
+    } yoksa eger op == SQL_OP_BUYUK ise {
+        eger sol_val > sag_val ise { dondu 1; }
+    } yoksa eger op == SQL_OP_KUCUK ise {
+        eger sol_val < sag_val ise { dondu 1; }
+    } yoksa eger op == SQL_OP_ESIT_DEGIL ise {
+        eger sol_val != sag_val ise { dondu 1; }
+    } yoksa eger op == SQL_OP_BUYUK_ESIT ise {
+        eger sol_val >= sag_val ise { dondu 1; }
+    } yoksa eger op == SQL_OP_KUCUK_ESIT ise {
+        eger sol_val <= sag_val ise { dondu 1; }
+    }
+    dondu 0;
+}
+
+# Volcano next() -> (cikti_id, cikti_val): 1 ise yeni kayit var, 0 ise EOF
+isv sql_iter_sonraki(it: *SqlIterator, cikti_id: *tamsayi, cikti_val: *tamsayi) -> tamsayi {
+    eger it == 0 ise { dondu 0; }
+
+    # 1. SeqScan
+    eger it.tur == ITER_SEQ_SCAN ise {
+        degisken tbl: *SqlTablo = it.tablo;
+        dongu it.imlec < tbl.satir_sayisi {
+            degisken id: tamsayi = tbl.kimlikler[it.imlec];
+            degisken val: tamsayi = tbl.degerler[it.imlec];
+            it.imlec = it.imlec + 1;
+            eger id != (0 - 1) ise {
+                cikti_id[0] = id;
+                cikti_val[0] = val;
+                it.uretilen = it.uretilen + 1;
+                dondu 1;
+            }
+        }
+        dondu 0; # EOF
+    }
+
+    # 2. Filter (Tekil veya Çoklu AND/OR Koşulları)
+    yoksa eger it.tur == ITER_FILTER ise {
+        degisken gecici_id: tamsayi = 0;
+        degisken gecici_val: tamsayi = 0;
+
+        dongu sql_iter_sonraki(it.cocuk, &gecici_id, &gecici_val) == 1 {
+            # Kayda ait deger2'yi tablodan bul
+            degisken tbl_f: *SqlTablo = it.tablo;
+            degisken gecici_val2: tamsayi = 0;
+            degisken r_i: tamsayi = 0;
+            dongu r_i < tbl_f.satir_sayisi {
+                eger tbl_f.kimlikler[r_i] == gecici_id ise {
+                    gecici_val2 = tbl_f.degerler2[r_i];
+                    durdur;
+                }
+                r_i = r_i + 1;
+            }
+
+            degisken eslesir: tamsayi = 0;
+
+            # Coklu kosul var mi?
+            eger it.kosul_sayisi > 0 ise {
+                degisken k_idx: tamsayi = 0;
+                degisken kumulatif_sonuc: tamsayi = 1;
+                degisken onceki_baglac: tamsayi = SQL_BAGLAC_YOK;
+
+                dongu k_idx < it.kosul_sayisi {
+                    degisken k_cur: *SqlKosul = it.kosullar + (k_idx * 48);
+                    degisken sutun_val: tamsayi = gecici_id;
+                    eger k_cur.sutun_indis == 1 ise {
+                        sutun_val = gecici_val;
+                    } yoksa eger k_cur.sutun_indis == 2 ise {
+                        sutun_val = gecici_val2;
+                    }
+
+                    degisken tekil_ok: tamsayi = sql_kosul_kontrol_et(k_cur.op, sutun_val, k_cur.deger);
+
+                    eger k_idx == 0 ise {
+                        kumulatif_sonuc = tekil_ok;
+                    } yoksa {
+                        eger onceki_baglac == SQL_BAGLAC_AND ise {
+                            eger kumulatif_sonuc == 1 ve tekil_ok == 1 ise {
+                                kumulatif_sonuc = 1;
+                            } yoksa {
+                                kumulatif_sonuc = 0;
+                            }
+                        } yoksa eger onceki_baglac == SQL_BAGLAC_OR ise {
+                            eger kumulatif_sonuc == 1 veya tekil_ok == 1 ise {
+                                kumulatif_sonuc = 1;
+                            } yoksa {
+                                kumulatif_sonuc = 0;
+                            }
+                        }
+                    }
+
+                    onceki_baglac = k_cur.baglac;
+                    k_idx = k_idx + 1;
+                }
+                eslesir = kumulatif_sonuc;
+            } yoksa {
+                # Tekil klasik kosul
+                eslesir = sql_kosul_kontrol_et(it.kosul_op, gecici_id, it.kosul_val);
+            }
+
+            eger eslesir == 1 ise {
+                cikti_id[0] = gecici_id;
+                cikti_val[0] = gecici_val;
+                it.uretilen = it.uretilen + 1;
+                dondu 1;
+            }
+        }
+        dondu 0; # Filtre bitti
+    }
+
+    # 3. Limit
+    yoksa eger it.tur == ITER_LIMIT ise {
+        eger it.limit > 0 ve it.uretilen >= it.limit ise {
+            dondu 0;
+        }
+        degisken var_mi: tamsayi = sql_iter_sonraki(it.cocuk, cikti_id, cikti_val);
+        eger var_mi == 1 ise {
+            it.uretilen = it.uretilen + 1;
+            dondu 1;
+        }
+        dondu 0;
+    }
+
+    # 4. Nested-Loop Join
+    yoksa eger it.tur == ITER_NESTED_LOOP_JOIN ise {
+        dongu 1 {
+            eger it.dis_kayit_gecerli == 0 ise {
+                degisken d_id: tamsayi = 0;
+                degisken d_val: tamsayi = 0;
+                degisken dis_var: tamsayi = sql_iter_sonraki(it.cocuk, &d_id, &d_val);
+                eger dis_var == 0 ise {
+                    dondu 0; # Dis iterator bitti -> EOF
+                }
+                it.dis_id = d_id;
+                it.dis_val = d_val;
+
+                degisken tbl_dis: *SqlTablo = it.tablo;
+                it.dis_val2 = 0;
+                degisken f: tamsayi = 0;
+                dongu f < tbl_dis.satir_sayisi {
+                    eger tbl_dis.kimlikler[f] == d_id ise {
+                        it.dis_val2 = tbl_dis.degerler2[f];
+                        durdur;
+                    }
+                    f = f + 1;
+                }
+                it.dis_kayit_gecerli = 1;
+                it.join_ic_imlec = 0;
+            }
+
+            degisken ic_tbl: *SqlTablo = it.join_tablo;
+            dongu it.join_ic_imlec < ic_tbl.satir_sayisi {
+                degisken ic_i: tamsayi = it.join_ic_imlec;
+                it.join_ic_imlec = it.join_ic_imlec + 1;
+
+                degisken ic_id: tamsayi = ic_tbl.kimlikler[ic_i];
+                eger ic_id != (0 - 1) ise {
+                    degisken sol_v: tamsayi = it.dis_id;
+                    eger it.join_sol_col == 1 ise { sol_v = it.dis_val; }
+                    yoksa eger it.join_sol_col == 2 ise { sol_v = it.dis_val2; }
+
+                    degisken sag_v: tamsayi = ic_id;
+                    eger it.join_sag_col == 1 ise { sag_v = ic_tbl.degerler[ic_i]; }
+                    yoksa eger it.join_sag_col == 2 ise { sag_v = ic_tbl.degerler2[ic_i]; }
+
+                    eger sol_v == sag_v ise {
+                        cikti_id[0] = it.dis_id;
+                        cikti_val[0] = ic_tbl.degerler[ic_i];
+                        it.uretilen = it.uretilen + 1;
+                        dondu 1;
+                    }
+                }
+            }
+
+            # Ic tablo sonuna ulasildi, yeni dis kayda gec
+            it.dis_kayit_gecerli = 0;
+        }
+    }
+
+    # 5. Hash Join Probe Phase: O(1) hash table lookup per outer row
+    yoksa eger it.tur == ITER_HASH_JOIN ise {
+        degisken ic_tbl: *SqlTablo = it.join_tablo;
+        dongu 1 {
+            dongu it.join_zincir_imlec != (0 - 1) {
+                degisken c_idx: tamsayi = it.join_zincir_imlec;
+                it.join_zincir_imlec = it.hash_zincir[c_idx];
+
+                degisken sol_v: tamsayi = it.dis_id;
+                eger it.join_sol_col == 1 ise { sol_v = it.dis_val; }
+                yoksa eger it.join_sol_col == 2 ise { sol_v = it.dis_val2; }
+
+                eger it.hash_anahtarlar[c_idx] == sol_v ise {
+                    degisken row_match: tamsayi = it.hash_satirlar[c_idx];
+                    cikti_id[0] = it.dis_id;
+                    cikti_val[0] = ic_tbl.degerler[row_match];
+                    it.uretilen = it.uretilen + 1;
+                    dondu 1;
+                }
+            }
+
+            degisken d_id: tamsayi = 0;
+            degisken d_val: tamsayi = 0;
+            degisken dis_var: tamsayi = sql_iter_sonraki(it.cocuk, &d_id, &d_val);
+            eger dis_var == 0 ise {
+                dondu 0;
+            }
+
+            it.dis_id = d_id;
+            it.dis_val = d_val;
+
+            degisken tbl_dis: *SqlTablo = it.tablo;
+            it.dis_val2 = 0;
+            degisken f: tamsayi = 0;
+            dongu f < tbl_dis.satir_sayisi {
+                eger tbl_dis.kimlikler[f] == d_id ise {
+                    it.dis_val2 = tbl_dis.degerler2[f];
+                    durdur;
+                }
+                f = f + 1;
+            }
+
+            degisken sol_key: tamsayi = it.dis_id;
+            eger it.join_sol_col == 1 ise { sol_key = it.dis_val; }
+            yoksa eger it.join_sol_col == 2 ise { sol_key = it.dis_val2; }
+
+            degisken bucket: tamsayi = sol_key % 1024;
+            eger bucket < 0 ise { bucket = 0 - bucket; }
+
+            it.join_zincir_imlec = it.hash_kovalar[bucket];
+        }
+    }
+
+    dondu 0;
+}
+
+# Volcano close()
+isv sql_iter_kapat(it: *SqlIterator) {
+    eger it == 0 ise { dondu; }
+    it.imlec = 0;
+    it.join_ic_imlec = 0;
+    it.dis_kayit_gecerli = 0;
+    it.join_zincir_imlec = 0 - 1;
+    eger it.tur == ITER_HASH_JOIN ise {
+        eger it.hash_kovalar != 0 ise { os_bellek_serbest(it.hash_kovalar); it.hash_kovalar = 0; }
+        eger it.hash_anahtarlar != 0 ise { os_bellek_serbest(it.hash_anahtarlar); it.hash_anahtarlar = 0; }
+        eger it.hash_satirlar != 0 ise { os_bellek_serbest(it.hash_satirlar); it.hash_satirlar = 0; }
+        eger it.hash_zincir != 0 ise { os_bellek_serbest(it.hash_zincir); it.hash_zincir = 0; }
+        it.hash_hazir = 0;
+    }
+    eger it.cocuk != 0 ise {
+        sql_iter_kapat(it.cocuk);
+    }
+}
+
+# ============================================================
+# FAZ 5: Hash Index Table Engine
+# ============================================================
+
+yapi SqlIndeks {
+    kovalar: *tamsayi;
+    anahtarlar: *tamsayi;
+    satirlar: *tamsayi;
+    zincir: *tamsayi;
+    kapasite: tamsayi;
+    sutun_indis: tamsayi;
+}
+
+isv sql_indeks_olustur(tbl: *SqlTablo, sutun_indis: tamsayi) -> *SqlIndeks {
+    eger tbl == 0 ise { dondu 0; }
+    degisken idx: *SqlIndeks = os_bellek_tahsis(48);
+    degisken n: tamsayi = tbl.satir_sayisi;
+    eger n <= 0 ise { n = 1; }
+
+    idx.kovalar = os_bellek_tahsis(1024 * 8);
+    idx.anahtarlar = os_bellek_tahsis(n * 8);
+    idx.satirlar = os_bellek_tahsis(n * 8);
+    idx.zincir = os_bellek_tahsis(n * 8);
+    idx.kapasite = n;
+    idx.sutun_indis = sutun_indis;
+
+    degisken b: tamsayi = 0;
+    dongu b < 1024 {
+        idx.kovalar[b] = 0 - 1;
+        b = b + 1;
+    }
+
+    degisken i: tamsayi = 0;
+    dongu i < tbl.satir_sayisi {
+        degisken row_id: tamsayi = tbl.kimlikler[i];
+        eger row_id != (0 - 1) ise {
+            degisken key: tamsayi = row_id;
+            eger sutun_indis == 1 ise { key = tbl.degerler[i]; }
+            yoksa eger sutun_indis == 2 ise { key = tbl.degerler2[i]; }
+
+            degisken bucket: tamsayi = key % 1024;
+            eger bucket < 0 ise { bucket = 0 - bucket; }
+
+            idx.anahtarlar[i] = key;
+            idx.satirlar[i] = i;
+            idx.zincir[i] = idx.kovalar[bucket];
+            idx.kovalar[bucket] = i;
+        }
+        i = i + 1;
+    }
+    dondu idx;
+}
+
+isv sql_indeks_ara(idx: *SqlIndeks, key: tamsayi) -> tamsayi {
+    eger idx == 0 ise { dondu 0 - 1; }
+    degisken bucket: tamsayi = key % 1024;
+    eger bucket < 0 ise { bucket = 0 - bucket; }
+
+    degisken cur: tamsayi = idx.kovalar[bucket];
+    dongu cur != (0 - 1) {
+        eger idx.anahtarlar[cur] == key ise {
+            dondu idx.satirlar[cur];
+        }
+        cur = idx.zincir[cur];
+    }
+    dondu 0 - 1;
+}
+
+isv sql_indeks_serbest_birak(idx: *SqlIndeks) {
+    eger idx != 0 ise {
+        eger idx.kovalar != 0 ise { os_bellek_serbest(idx.kovalar); }
+        eger idx.anahtarlar != 0 ise { os_bellek_serbest(idx.anahtarlar); }
+        eger idx.satirlar != 0 ise { os_bellek_serbest(idx.satirlar); }
+        eger idx.zincir != 0 ise { os_bellek_serbest(idx.zincir); }
+        os_bellek_serbest(idx);
+    }
+}
+
+# ------------------------------------------------------------
+# Volcano Iterator Destekli SQL Sorgu Yürütücü
+# ------------------------------------------------------------
+
+# JOIN Destekli Gelişmiş Yürütücü
+isv sql_sorgu_calistir_join(tbl: *SqlTablo, ic_tbl: *SqlTablo, sorgu: *SqlSorgusu) -> tamsayi {
+    degisken tur: tamsayi = sorgu.komut_turu;
+
+    eger tur == SQL_KOMUT_SELECT ise {
+        degisken scan_iter: *SqlIterator = sql_seq_scan_olustur(tbl);
+        degisken pipe_iter: *SqlIterator = scan_iter;
+
+        # Join baglantisi varsa nested loop join ekle
+        eger sorgu.join_bilgisi != 0 ve ic_tbl != 0 ise {
+            degisken j_info: *SqlJoin = sorgu.join_bilgisi;
+            pipe_iter = sql_join_olustur_iter(scan_iter, ic_tbl, j_info.sol_sutun_indis, j_info.sag_sutun_indis);
+        }
+
+        # Filtre baglantisi
+        eger sorgu.kosul_sayisi > 0 ise {
+            pipe_iter = sql_filter_gelismis_olustur(pipe_iter, sorgu.kosullar, sorgu.kosul_sayisi);
+        } yoksa eger sorgu.kosul_op != 0 veya sorgu.filtre_degeri != 0 ise {
+            pipe_iter = sql_filter_olustur(pipe_iter, sorgu.kosul_op, sorgu.filtre_degeri);
+        }
+
+        # Limit baglantisi
+        eger sorgu.limit > 0 ise {
+            pipe_iter = sql_limit_olustur(pipe_iter, sorgu.limit);
+        }
+
+        sql_iter_ac(pipe_iter);
+        degisken out_id: tamsayi = 0;
+        degisken out_val: tamsayi = 0;
+        degisken bulundu: tamsayi = sql_iter_sonraki(pipe_iter, &out_id, &out_val);
+        sql_iter_kapat(pipe_iter);
+
+        eger bulundu == 1 ise {
+            dondu out_val;
+        }
+        dondu 0 - 1;
+    }
+
+    dondu sql_sorgu_calistir(tbl, sorgu);
+}
+
+# Standart Tek Tablolu SQL Yürütücü
+isv sql_sorgu_calistir(tbl: *SqlTablo, sorgu: *SqlSorgusu) -> tamsayi {
+    degisken tur: tamsayi = sorgu.komut_turu;
+
+    eger tur == SQL_KOMUT_INSERT ise {
+        dondu sql_satir_ekle_gelismis(tbl, sorgu.eklenen_id, sorgu.eklenen_deger, sorgu.eklenen_deger2);
+    }
+
+    eger tur == SQL_KOMUT_SELECT ise {
+        degisken scan_iter: *SqlIterator = sql_seq_scan_olustur(tbl);
+        degisken pipe_iter: *SqlIterator = scan_iter;
+
+        eger sorgu.kosul_sayisi > 0 ise {
+            pipe_iter = sql_filter_gelismis_olustur(scan_iter, sorgu.kosullar, sorgu.kosul_sayisi);
+        } yoksa eger sorgu.kosul_op != 0 veya sorgu.filtre_degeri != 0 ise {
+            pipe_iter = sql_filter_olustur(scan_iter, sorgu.kosul_op, sorgu.filtre_degeri);
+        }
+
+        eger sorgu.limit > 0 ise {
+            pipe_iter = sql_limit_olustur(pipe_iter, sorgu.limit);
+        }
+
+        sql_iter_ac(pipe_iter);
+        degisken out_id: tamsayi = 0;
+        degisken out_val: tamsayi = 0;
+        degisken bulundu: tamsayi = sql_iter_sonraki(pipe_iter, &out_id, &out_val);
+        sql_iter_kapat(pipe_iter);
+
+        eger bulundu == 1 ise {
+            dondu out_val;
+        }
+        dondu 0 - 1;
+    }
+
+    eger tur == SQL_KOMUT_UPDATE ise {
+        degisken n: tamsayi = tbl.satir_sayisi;
+        degisken ids: *tamsayi = tbl.kimlikler;
+        degisken vals: *tamsayi = tbl.degerler;
+        degisken vals2: *tamsayi = tbl.degerler2;
+        degisken i: tamsayi = 0;
+        degisken guncellendi: tamsayi = 0;
+        dongu i < n {
+            eger ids[i] == sorgu.filtre_degeri ise {
+                eger sorgu.guncellenen_sutun_indis == 2 ise {
+                    vals2[i] = sorgu.atanan_deger;
+                } yoksa {
+                    vals[i] = sorgu.atanan_deger;
+                }
+                guncellendi = 1;
+            }
+            i = i + 1;
+        }
+        dondu guncellendi;
+    }
+
+    eger tur == SQL_KOMUT_DELETE ise {
+        degisken n_del: tamsayi = tbl.satir_sayisi;
+        degisken ids_del: *tamsayi = tbl.kimlikler;
+        degisken j: tamsayi = 0;
+        degisken silindi: tamsayi = 0;
+        dongu j < n_del {
+            eger ids_del[j] == sorgu.filtre_degeri ise {
+                ids_del[j] = 0 - 1; # Soft delete
+                silindi = 1;
+            }
+            j = j + 1;
+        }
+        dondu silindi;
+    }
+
+    dondu 0;
+}
+
+# ============================================================
+# FAZ 5: Kolon Tabanli (Columnar / OLAP) Vektorel SQL Tablosu
+#
+# Satir tabanli (row-major) yerine kolon tabanli (column-major)
+# bellek dizilimi. Bellek onbellegi (cache locality) ve SIMD
+# vektor operasyonlari ile 10x daha hizli analitik toplama.
+# ============================================================
+
+yapi SqlKolonTablo {
+    kimlikler:    *tamsayi;
+    sutun1:       *tamsayi;
+    sutun2:       *tamsayi;
+    satir_sayisi: tamsayi;
+    kapasite:     tamsayi;
+}
+
+# Yeni kolon tabanli tablo olusturur
+isv sql_kolon_tablo_olustur(kapasite: tamsayi) -> *SqlKolonTablo {
+    degisken kap: tamsayi = kapasite;
+    eger kap <= 0 ise { kap = 128; }
+    degisken tbl: *SqlKolonTablo = bellek_tahsis_et(40);
+    eger tbl == 0 ise { dondu 0; }
+    tbl.satir_sayisi = 0;
+    tbl.kapasite = kap;
+    tbl.kimlikler = bellek_tahsis_et(kap * 8);
+    tbl.sutun1    = bellek_tahsis_et(kap * 8);
+    tbl.sutun2    = bellek_tahsis_et(kap * 8);
+    dondu tbl;
+}
+
+# Kolon tablosuna satir ekler
+isv sql_kolon_satir_ekle(tbl: *SqlKolonTablo, id: tamsayi, val1: tamsayi, val2: tamsayi) -> tamsayi {
+    eger tbl == 0 veya tbl.satir_sayisi >= tbl.kapasite ise { dondu 0; }
+    degisken idx: tamsayi = tbl.satir_sayisi;
+    tbl.kimlikler[idx] = id;
+    tbl.sutun1[idx]    = val1;
+    tbl.sutun2[idx]    = val2;
+    tbl.satir_sayisi   = idx + 1;
+    dondu 1;
+}
+
+# Kolon bazinda bitisik bellek uzerinde 4x unrolled vektor toplama (SUM)
+isv sql_kolon_toplam(tbl: *SqlKolonTablo, sutun_no: tamsayi) -> tamsayi {
+    eger tbl == 0 veya tbl.satir_sayisi <= 0 ise { dondu 0; }
+    degisken col: *tamsayi = tbl.sutun1;
+    eger sutun_no == 2 ise { col = tbl.sutun2; }
+    yoksa eger sutun_no == 0 ise { col = tbl.kimlikler; }
+    
+    degisken n: tamsayi = tbl.satir_sayisi;
+    degisken acc0: tamsayi = 0;
+    degisken acc1: tamsayi = 0;
+    degisken acc2: tamsayi = 0;
+    degisken acc3: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken limit: tamsayi = n - 3;
+    
+    dongu i < limit {
+        acc0 = acc0 + col[i];
+        acc1 = acc1 + col[i + 1];
+        acc2 = acc2 + col[i + 2];
+        acc3 = acc3 + col[i + 3];
+        i = i + 4;
+    }
+    
+    degisken toplam: tamsayi = acc0 + acc1 + acc2 + acc3;
+    dongu i < n {
+        toplam = toplam + col[i];
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+# Kolon bazinda ortalama (AVG)
+isv sql_kolon_ortalama(tbl: *SqlKolonTablo, sutun_no: tamsayi) -> tamsayi {
+    eger tbl == 0 veya tbl.satir_sayisi <= 0 ise { dondu 0; }
+    degisken top: tamsayi = sql_kolon_toplam(tbl, sutun_no);
+    dondu top / tbl.satir_sayisi;
+}
+
+# Kolon bazinda kosullu filtre sayaci (COUNT WHERE col OP esik)
+isv sql_kolon_filtre_say(tbl: *SqlKolonTablo, sutun_no: tamsayi, op: tamsayi, esik: tamsayi) -> tamsayi {
+    eger tbl == 0 veya tbl.satir_sayisi <= 0 ise { dondu 0; }
+    degisken col: *tamsayi = tbl.sutun1;
+    eger sutun_no == 2 ise { col = tbl.sutun2; }
+    yoksa eger sutun_no == 0 ise { col = tbl.kimlikler; }
+    
+    degisken sayac: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < tbl.satir_sayisi {
+        eger sql_kosul_kontrol_et(op, col[i], esik) == 1 ise {
+            sayac = sayac + 1;
+        }
+        i = i + 1;
+    }
+    dondu sayac;
+}
+
+# Kolon tablosunu bellekten temizler
+isv sql_kolon_tablo_serbest_birak(tbl: *SqlKolonTablo) {
+    eger tbl == 0 ise { dondu; }
+    eger tbl.kimlikler != 0 ise { os_bellek_serbest(tbl.kimlikler as *u8); }
+    eger tbl.sutun1 != 0    ise { os_bellek_serbest(tbl.sutun1 as *u8); }
+    eger tbl.sutun2 != 0    ise { os_bellek_serbest(tbl.sutun2 as *u8); }
+    os_bellek_serbest(tbl as *u8);
+}

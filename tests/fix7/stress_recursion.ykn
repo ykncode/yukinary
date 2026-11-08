@@ -1,0 +1,16 @@
+# Stress Test for recursive calls and stack alignment
+isv ackermann(m: tamsayi, n: tamsayi) -> tamsayi {
+    eger m == 0 ise {
+        dondu n + 1;
+    }
+    eger m > 0 ve n == 0 ise {
+        dondu ackermann(m - 1, 1);
+    }
+    dondu ackermann(m - 1, ackermann(m, n - 1));
+}
+
+isv ana() -> tamsayi {
+    degisken sonuc: tamsayi = ackermann(3, 2); # Expect 29
+    # Just return it to verify execution
+    dondu sonuc;
+}

@@ -1,0 +1,39 @@
+# GGUF metadata özetinin ortak LLMModelSpec'e bağlanması.
+ice_aktar "../../src/llm.ykn";
+
+isv ana() -> tamsayi {
+    degisken durum: GGUFDurum;
+    durum.mimari_adi = "bitnet".ptr;
+    durum.quant_tipi = LLM_QUANT_IQ2_S;
+    durum.vocab_boyutu = 32000;
+    durum.gizli_boyut = 2048;
+    durum.katman_sayisi = 22;
+    durum.context_boyutu = 4096;
+    durum.expert_sayisi = 0;
+    durum.top_k = 0;
+    durum.metadata_model_hazir = 1;
+    durum.kafa_sayisi = 32;
+    durum.kv_kafa_sayisi = 32;
+    durum.kafa_boyutu = 64;
+    durum.ffn_boyutu = 8192;
+    durum.rope_boyutu = 64;
+    durum.rope_freq_base_q16 = 655360000;
+    durum.norm_eps_q16 = 1;
+    durum.bos_token_id = 1;
+    durum.eos_token_id = 2;
+    eger llm_gguf_spec_doldur("bitnet.gguf".ptr, &durum) != 1 veya
+       g_llm_model_spec.mimari != LLM_MIMARI_BITNET veya
+       llm_runtime_backend_bul(g_llm_model_spec.mimari) != LLM_BACKEND_BITNET_NATIVE ise { dondu 1; }
+
+    # Expert metadata'sı BitNet profilini native MoE backend'e yükseltir.
+    durum.expert_sayisi = 8;
+    durum.top_k = 2;
+    eger llm_gguf_spec_doldur("bitnet-moe.gguf".ptr, &durum) != 1 veya
+       g_llm_model_spec.mimari != LLM_MIMARI_BITNET_MOE veya
+       g_llm_model_spec.expert_sayisi != 8 veya
+       g_llm_model_spec.top_k != 2 veya
+       llm_runtime_backend_bul(g_llm_model_spec.mimari) != LLM_BACKEND_BITNET_MOE_NATIVE ise { dondu 2; }
+
+    ekrana_yaz("LLM-SPEC-BINDING-PASS\n".ptr);
+    dondu 0;
+}

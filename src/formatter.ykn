@@ -1,0 +1,764 @@
+# ============================================================
+# Yukinary Kod Bicimlendirici
+# ============================================================
+# Formatter lexer tokenlarina degil kaynak baytlarina dayanir. Boylece
+# yorumlar ve string literalleri icerikleriyle birlikte korunur.
+
+# FormatterDurumu alanlari 8-byte hizali tutulur. Bu, YKN'nin pointer ve
+# tamsayi alanlarini ayni runtime ABI ile kullanmasini saglar.
+yapi FormatterDurumu {
+    kaynak: *u8;
+    kaynak_boyutu: tamsayi;
+    bellek: *u8;
+    kapasite: tamsayi;
+    yazilan: tamsayi;
+    girinti: tamsayi;
+    satir_basinda: tamsayi;
+    bosluk_bekliyor: tamsayi;
+    onceki_sinif: tamsayi;
+    onceki_kelime: *u8;
+    onceki_kelime_uzunluk: tamsayi;
+    parantez_derinligi: tamsayi;
+    kapanan_kuslu: tamsayi;
+    tekli_operator_sonrasi: tamsayi;
+}
+
+degisken g_formatter_son_uzunluk: tamsayi = 0;
+
+isv formatter_ham_yaz(d: *FormatterDurumu, c: u8) {
+    eger d == 0 ise { dondu; }
+    eger d.yazilan + 1 >= d.kapasite ise { dondu; }
+    d.bellek[d.yazilan] = c;
+    d.yazilan = d.yazilan + 1;
+    d.bellek[d.yazilan] = 0;
+}
+
+isv formatter_satir_basini_hazirla(d: *FormatterDurumu) {
+    eger d.satir_basinda == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    degisken bosluk_sayisi: tamsayi = d.girinti * 4;
+    dongu i < bosluk_sayisi {
+        formatter_ham_yaz(d, 32);
+        i = i + 1;
+    }
+    d.satir_basinda = 0;
+}
+
+isv formatter_yaz(d: *FormatterDurumu, c: u8) {
+    eger c == 10 ise {
+        formatter_ham_yaz(d, c);
+        d.satir_basinda = 1;
+        dondu;
+    }
+    formatter_satir_basini_hazirla(d);
+    formatter_ham_yaz(d, c);
+}
+
+isv formatter_sondaki_bosluklari_sil(d: *FormatterDurumu) {
+    eger d == 0 ise { dondu; }
+    dongu d.yazilan > 0 ve d.bellek[d.yazilan - 1] == 32 {
+        d.yazilan = d.yazilan - 1;
+    }
+    d.bellek[d.yazilan] = 0;
+}
+
+isv formatter_boslugu_uygula(d: *FormatterDurumu) {
+    eger d.bosluk_bekliyor == 0 ise { dondu; }
+    eger d.satir_basinda == 0 ise {
+        eger d.yazilan > 0 ve d.bellek[d.yazilan - 1] != 32 ve d.bellek[d.yazilan - 1] != 10 ise {
+            formatter_ham_yaz(d, 32);
+        }
+    }
+    d.bosluk_bekliyor = 0;
+}
+
+isv formatter_yeni_satir(d: *FormatterDurumu) {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.yazilan > 0 ise {
+        eger d.bellek[d.yazilan - 1] != 10 ise {
+            formatter_ham_yaz(d, 10);
+        }
+    }
+    d.satir_basinda = 1;
+    d.bosluk_bekliyor = 0;
+    d.onceki_sinif = 0;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+}
+
+isv formatter_sinirli_bosluk(d: *FormatterDurumu) {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.satir_basinda == 0 ise {
+        formatter_ham_yaz(d, 32);
+    }
+    d.bosluk_bekliyor = 0;
+}
+
+isv formatter_ikili_operator(d: *FormatterDurumu, ilk: u8, ikinci: u8) {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.satir_basinda == 0 ise {
+        formatter_ham_yaz(d, 32);
+    }
+    formatter_yaz(d, ilk);
+    eger ikinci != 0 ise {
+        formatter_yaz(d, ikinci);
+    }
+    d.bosluk_bekliyor = 1;
+    d.onceki_sinif = 4;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+}
+
+isv formatter_tekli_operator(d: *FormatterDurumu, c: u8) {
+    eger d.yazilan > 0 ve (
+        d.bellek[d.yazilan - 1] == 58 veya
+        d.bellek[d.yazilan - 1] == 44 veya
+        d.bellek[d.yazilan - 1] == 61 veya
+        d.bellek[d.yazilan - 1] == 43 veya
+        d.bellek[d.yazilan - 1] == 45 veya
+        d.bellek[d.yazilan - 1] == 42 veya
+        d.bellek[d.yazilan - 1] == 47 veya
+        d.bellek[d.yazilan - 1] == 37 veya
+        d.bellek[d.yazilan - 1] == 60 veya
+        d.bellek[d.yazilan - 1] == 62
+    ) ise {
+        formatter_sinirli_bosluk(d);
+    } yoksa {
+        formatter_sondaki_bosluklari_sil(d);
+        d.bosluk_bekliyor = 0;
+    }
+    formatter_yaz(d, c);
+    d.onceki_sinif = 4;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 1;
+}
+
+isv formatter_aralik_yaz(d: *FormatterDurumu, bas: *u8, uzn: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        formatter_yaz(d, bas[i]);
+        i = i + 1;
+    }
+}
+
+isv formatter_aralik_karsilastir(bas: *u8, uzn: tamsayi, ref: *u8, ref_uzn: tamsayi) -> tamsayi {
+    eger bas == 0 veya ref == 0 veya uzn != ref_uzn ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        eger bas[i] != ref[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv formatter_kontrol_kelimesi_mi(d: *FormatterDurumu) -> tamsayi {
+    eger d.onceki_kelime == 0 ise { dondu 0; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "eger".ptr, 4) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "dongu".ptr, 5) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "her".ptr, 3) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "esles".ptr, 5) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "if".ptr, 2) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "while".ptr, 5) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "for".ptr, 3) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "match".ptr, 5) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv formatter_kapanistan_sonra_kelime_mi(bas: *u8, uzn: tamsayi) -> tamsayi {
+    eger formatter_aralik_karsilastir(bas, uzn, "yoksa".ptr, 5) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(bas, uzn, "else".ptr, 4) == 1 ise { dondu 1; }
+    eger formatter_aralik_karsilastir(bas, uzn, "sinon".ptr, 5) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv formatter_kelime_karakteri_mi(c: u8) -> tamsayi {
+    eger c >= 65 ve c <= 90 ise { dondu 1; }
+    eger c >= 97 ve c <= 122 ise { dondu 1; }
+    eger c >= 48 ve c <= 57 ise { dondu 1; }
+    eger c == 95 veya c > 127 ise { dondu 1; }
+    dondu 0;
+}
+
+isv formatter_kapanan_kusluyu_isle(d: *FormatterDurumu) {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.kapanan_kuslu == 1 ise {
+        formatter_yeni_satir(d);
+    } yoksa eger d.satir_basinda == 0 ise {
+        formatter_yeni_satir(d);
+    }
+    eger d.girinti > 0 ise {
+        d.girinti = d.girinti - 1;
+    }
+    formatter_yaz(d, 125);
+    d.onceki_sinif = 3;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 1;
+    d.bosluk_bekliyor = 0;
+    d.tekli_operator_sonrasi = 0;
+}
+
+isv formatter_stringi_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
+    formatter_boslugu_uygula(d);
+    formatter_satir_basini_hazirla(d);
+    formatter_ham_yaz(d, 34);
+    degisken i: tamsayi = baslangic + 1;
+    dongu i < boyut {
+        degisken c: u8 = kaynak[i];
+        formatter_ham_yaz(d, c);
+        i = i + 1;
+        eger c == 92 ve i < boyut ise {
+            formatter_ham_yaz(d, kaynak[i]);
+            i = i + 1;
+        } yoksa eger c == 34 ise {
+            durdur;
+        }
+    }
+    d.onceki_sinif = 2;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+    dondu i;
+}
+
+isv formatter_karakter_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
+    formatter_boslugu_uygula(d);
+    formatter_satir_basini_hazirla(d);
+    formatter_ham_yaz(d, 39);
+    degisken i: tamsayi = baslangic + 1;
+    dongu i < boyut {
+        degisken c: u8 = kaynak[i];
+        formatter_ham_yaz(d, c);
+        i = i + 1;
+        eger c == 92 ve i < boyut ise {
+            formatter_ham_yaz(d, kaynak[i]);
+            i = i + 1;
+        } yoksa eger c == 39 ise {
+            durdur;
+        }
+    }
+    d.onceki_sinif = 2;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+    dondu i;
+}
+
+isv formatter_yorum_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.satir_basinda == 0 ise {
+        formatter_ham_yaz(d, 32);
+    }
+    degisken i: tamsayi = baslangic;
+    dongu i < boyut ve kaynak[i] != 10 ve kaynak[i] != 0 {
+        formatter_yaz(d, kaynak[i]);
+        i = i + 1;
+    }
+    d.onceki_sinif = 4;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.bosluk_bekliyor = 0;
+    dondu i;
+}
+
+isv formatter_blok_yorum_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
+    formatter_boslugu_uygula(d);
+    formatter_satir_basini_hazirla(d);
+    formatter_ham_yaz(d, 47);
+    formatter_ham_yaz(d, 42);
+    degisken i: tamsayi = baslangic + 2;
+    dongu i < boyut {
+        degisken c: u8 = kaynak[i];
+        eger c == 13 ise {
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 42 ve (i + 1) < boyut ve kaynak[i + 1] == 47 ise {
+            formatter_ham_yaz(d, 42);
+            formatter_ham_yaz(d, 47);
+            i = i + 2;
+            durdur;
+        }
+        formatter_ham_yaz(d, c);
+        eger c == 10 ise {
+            d.satir_basinda = 1;
+        }
+        i = i + 1;
+    }
+    d.onceki_sinif = 4;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.bosluk_bekliyor = 0;
+    dondu i;
+}
+
+isv formatter_kelimeyi_isle(d: *FormatterDurumu, kaynak: *u8, baslangic: tamsayi, bitis: tamsayi) {
+    degisken bas: *u8 = kaynak + baslangic;
+    degisken uzn: tamsayi = bitis - baslangic;
+    eger d.kapanan_kuslu == 1 ise {
+        eger formatter_kapanistan_sonra_kelime_mi(bas, uzn) == 1 ise {
+            formatter_sinirli_bosluk(d);
+        } yoksa {
+            formatter_yeni_satir(d);
+        }
+        d.kapanan_kuslu = 0;
+    }
+    eger d.tekli_operator_sonrasi == 1 ise {
+        d.bosluk_bekliyor = 0;
+    } yoksa {
+        formatter_boslugu_uygula(d);
+    }
+    formatter_aralik_yaz(d, bas, uzn);
+    d.onceki_sinif = 1;
+    d.onceki_kelime = bas;
+    d.onceki_kelime_uzunluk = uzn;
+    d.tekli_operator_sonrasi = 0;
+}
+
+isv formatter_acilan_kusluyu_isle(d: *FormatterDurumu) {
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.satir_basinda == 0 ve d.yazilan > 0 ise {
+        eger d.bellek[d.yazilan - 1] != 40 ve d.bellek[d.yazilan - 1] != 91 ve d.bellek[d.yazilan - 1] != 46 ise {
+            formatter_ham_yaz(d, 32);
+        }
+    }
+    d.bosluk_bekliyor = 0;
+    formatter_yaz(d, 123);
+    d.girinti = d.girinti + 1;
+    formatter_yeni_satir(d);
+    d.onceki_sinif = 0;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+}
+
+isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
+    degisken kapasite: tamsayi = boyut * 3 + 4096;
+    eger kapasite < 4096 ise { kapasite = 4096; }
+    degisken d: *FormatterDurumu = compiler_tahsis_et(128);
+    degisken cikti: *u8 = compiler_tahsis_et(kapasite);
+    eger d == 0 veya cikti == 0 ise {
+        g_formatter_son_uzunluk = 0;
+        dondu 0;
+    }
+    d.kaynak = kaynak;
+    d.kaynak_boyutu = boyut;
+    d.bellek = cikti;
+    d.kapasite = kapasite;
+    d.yazilan = 0;
+    d.girinti = 0;
+    d.satir_basinda = 1;
+    d.bosluk_bekliyor = 0;
+    d.onceki_sinif = 0;
+    d.onceki_kelime = 0;
+    d.onceki_kelime_uzunluk = 0;
+    d.parantez_derinligi = 0;
+    d.kapanan_kuslu = 0;
+    d.tekli_operator_sonrasi = 0;
+    d.bellek[0] = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        degisken c: u8 = kaynak[i];
+
+        # Satir sonlarini LF'e normalize et, bosluklari beklet.
+        eger c == 13 ise {
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 10 ise {
+            formatter_yeni_satir(d);
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 32 veya c == 9 ise {
+            d.bosluk_bekliyor = 1;
+            i = i + 1;
+            devam_et;
+        }
+
+        # String, karakter literal ve yorumlarin icerigine dokunma.
+        eger c == 34 ise {
+            eger d.kapanan_kuslu == 1 ise { formatter_yeni_satir(d); }
+            i = formatter_stringi_kopyala(d, kaynak, boyut, i);
+            devam_et;
+        }
+        eger c == 39 ise {
+            eger d.kapanan_kuslu == 1 ise { formatter_yeni_satir(d); }
+            i = formatter_karakter_kopyala(d, kaynak, boyut, i);
+            devam_et;
+        }
+        eger c == 35 ise {
+            i = formatter_yorum_kopyala(d, kaynak, boyut, i);
+            devam_et;
+        }
+        eger c == 47 ve (i + 1) < boyut ve kaynak[i + 1] == 47 ise {
+            i = formatter_yorum_kopyala(d, kaynak, boyut, i);
+            devam_et;
+        }
+        eger c == 47 ve (i + 1) < boyut ve kaynak[i + 1] == 42 ise {
+            eger d.kapanan_kuslu == 1 ise { formatter_yeni_satir(d); }
+            i = formatter_blok_yorum_kopyala(d, kaynak, boyut, i);
+            devam_et;
+        }
+
+        # Kelime veya sayı. Non-ASCII byte'ları tek tek değil UTF-8
+        # scalar olarak ilerlet; böylece identifier sınırı byte'a bölünmez.
+        eger formatter_kelime_karakteri_mi(c) == 1 ise {
+            degisken j: tamsayi = i;
+            dongu j < boyut {
+                degisken cp: tamsayi = utf8_kod_noktasi_oku(kaynak, boyut, j);
+                eger cp < 0 veya utf8_kimlik_kodu_mi(cp) == 0 ise { durdur; }
+                degisken n: tamsayi = utf8_bayt_sayisi(kaynak[j]);
+                eger n <= 0 ise { durdur; }
+                j = j + n;
+            }
+            formatter_kelimeyi_isle(d, kaynak, i, j);
+            i = j;
+            devam_et;
+        }
+
+        # Bloklar: acilis ayni satirda, kapanis kendi satirinda.
+        eger c == 123 ise {
+            formatter_acilan_kusluyu_isle(d);
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 125 ise {
+            formatter_kapanan_kusluyu_isle(d);
+            i = i + 1;
+            devam_et;
+        }
+
+        # Cok karakterli operatorler.
+        eger c == 45 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
+            formatter_ikili_operator(d, 45, 62);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 61 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 61, 61);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 43 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 43, 61); # +=
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 45 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 45, 61); # -=
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 42 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 42, 61); # *=
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 47 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 47, 61); # /=
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 60 ve i + 1 < boyut ve kaynak[i + 1] == 60 ise {
+            formatter_ikili_operator(d, 60, 60); # <<
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 62 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
+            formatter_ikili_operator(d, 62, 62); # >>
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 38 ve i + 1 < boyut ve kaynak[i + 1] == 38 ise {
+            formatter_ikili_operator(d, 38, 38); # &&
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 124 ve i + 1 < boyut ve kaynak[i + 1] == 124 ise {
+            formatter_ikili_operator(d, 124, 124); # ||
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 61 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
+            formatter_ikili_operator(d, 61, 62);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 33 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 33, 61);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 60 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 60, 61);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 62 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
+            formatter_ikili_operator(d, 62, 61);
+            i = i + 2;
+            devam_et;
+        }
+        eger c == 58 ve i + 1 < boyut ve kaynak[i + 1] == 58 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 58);
+            formatter_yaz(d, 58);
+            d.bosluk_bekliyor = 0;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            i = i + 2;
+            devam_et;
+        }
+
+        # Parantez ve ayiricilar.
+        eger c == 40 ise {
+            eger formatter_kontrol_kelimesi_mi(d) == 1 ise {
+                formatter_sinirli_bosluk(d);
+            } yoksa {
+                formatter_sondaki_bosluklari_sil(d);
+                d.bosluk_bekliyor = 0;
+            }
+            formatter_yaz(d, 40);
+            d.parantez_derinligi = d.parantez_derinligi + 1;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 41 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 41);
+            eger d.parantez_derinligi > 0 ise { d.parantez_derinligi = d.parantez_derinligi - 1; }
+            d.onceki_sinif = 3;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.bosluk_bekliyor = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 91 ise {
+            eger d.onceki_sinif == 1 veya d.onceki_sinif == 2 veya d.onceki_sinif == 3 ise {
+                formatter_sondaki_bosluklari_sil(d);
+                d.bosluk_bekliyor = 0;
+            } yoksa {
+                formatter_boslugu_uygula(d);
+            }
+            formatter_yaz(d, 91);
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 93 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 93);
+            d.onceki_sinif = 3;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.bosluk_bekliyor = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 44 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 44);
+            d.bosluk_bekliyor = 1;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 59 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 59);
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.bosluk_bekliyor = 0;
+            d.tekli_operator_sonrasi = 0;
+            eger d.parantez_derinligi == 0 ise { formatter_yeni_satir(d); } yoksa { d.bosluk_bekliyor = 1; }
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 46 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 46);
+            d.bosluk_bekliyor = 0;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 58 ise {
+            formatter_sondaki_bosluklari_sil(d);
+            formatter_yaz(d, 58);
+            d.bosluk_bekliyor = 1;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.tekli_operator_sonrasi = 0;
+            i = i + 1;
+            devam_et;
+        }
+
+        # Referans ve aritmetik operatorleri. *, + ve - unary ise bitisik kalir.
+        eger c == 38 ise {
+            eger d.onceki_sinif == 0 veya d.onceki_sinif == 4 veya d.onceki_sinif == 3 ise {
+                formatter_tekli_operator(d, c);
+            } yoksa {
+                formatter_ikili_operator(d, c, 0);
+            }
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 42 veya c == 43 veya c == 45 ise {
+            eger d.onceki_sinif == 0 veya d.onceki_sinif == 4 ise {
+                formatter_tekli_operator(d, c);
+            } yoksa {
+                formatter_ikili_operator(d, c, 0);
+            }
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 47 veya c == 37 ise {
+            formatter_ikili_operator(d, c, 0);
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 60 veya c == 62 ise {
+            # Generic tip argumani: oncesinde tanimlayici ve bosluk yoksa bitisik yaz
+            eger c == 60 ve d.onceki_sinif == 1 ve d.bosluk_bekliyor == 0 ise {
+                formatter_sondaki_bosluklari_sil(d);
+                formatter_yaz(d, 60);
+                d.bosluk_bekliyor = 0;
+                d.onceki_sinif = 4;
+            } yoksa eger c == 62 ve d.parantez_derinligi == 0 ve d.onceki_sinif == 1 ve d.bosluk_bekliyor == 0 ise {
+                formatter_sondaki_bosluklari_sil(d);
+                formatter_yaz(d, 62);
+                d.bosluk_bekliyor = 1;
+                d.onceki_sinif = 4;
+            } yoksa {
+                formatter_ikili_operator(d, c, 0);
+            }
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 61 ise {
+            formatter_ikili_operator(d, c, 0);
+            i = i + 1;
+            devam_et;
+        }
+        eger c == 33 veya c == 63 ise {
+            formatter_tekli_operator(d, c);
+            i = i + 1;
+            devam_et;
+        }
+
+        # Bilinmeyen ama string/comment disindaki karakterleri koru.
+        eger d.kapanan_kuslu == 1 ise { formatter_yeni_satir(d); }
+        formatter_boslugu_uygula(d);
+        formatter_yaz(d, c);
+        d.onceki_sinif = 4;
+        d.onceki_kelime = 0;
+        d.onceki_kelime_uzunluk = 0;
+        d.kapanan_kuslu = 0;
+        d.tekli_operator_sonrasi = 0;
+        i = i + 1;
+    }
+
+    formatter_sondaki_bosluklari_sil(d);
+    eger d.yazilan > 0 ve d.bellek[d.yazilan - 1] != 10 ise {
+        formatter_ham_yaz(d, 10);
+    }
+    g_formatter_son_uzunluk = d.yazilan;
+    dondu cikti;
+}
+
+isv formatter_bicim_karsilastir(a: *u8, a_uzn: tamsayi, b: *u8, b_uzn: tamsayi) -> tamsayi {
+    eger a_uzn != b_uzn ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < a_uzn {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
+    degisken kapasite: tamsayi = 33554432;
+    degisken kaynak: *u8 = compiler_tahsis_et(kapasite + 1);
+    eger kaynak == 0 ise {
+        ekrana_yaz("HATA: Formatter kaynak tamponu tahsis edilemedi.\n".ptr);
+        dondu 1;
+    }
+    degisken okunan: tamsayi = dosya_oku(kaynak_dosyasi, kaynak, kapasite);
+    eger okunan <= 0 ise {
+        ekrana_yaz("HATA: Formatter kaynak dosyasini okuyamadi: ".ptr);
+        ekrana_yaz(kaynak_dosyasi);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    kaynak[okunan] = 0;
+
+    degisken bicimli: *u8 = formatter_dosya_bicimlendir(kaynak, okunan);
+    eger bicimli == 0 ise {
+        ekrana_yaz("HATA: Formatter cikti tamponu tahsis edilemedi.\n".ptr);
+        dondu 1;
+    }
+    degisken ayni: tamsayi = formatter_bicim_karsilastir(kaynak, okunan, bicimli, g_formatter_son_uzunluk);
+    eger kontrol == 1 ise {
+        eger ayni == 1 ise {
+            ekrana_yaz("fmt: temiz: ".ptr);
+            ekrana_yaz(kaynak_dosyasi);
+            ekrana_yaz("\n".ptr);
+            dondu 0;
+        }
+        ekrana_yaz("fmt: bicimlendirilmeli: ".ptr);
+        ekrana_yaz(kaynak_dosyasi);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ayni == 1 ise {
+        ekrana_yaz("fmt: zaten bicimli: ".ptr);
+        ekrana_yaz(kaynak_dosyasi);
+        ekrana_yaz("\n".ptr);
+        dondu 0;
+    }
+
+    # diske_bas_ve_kapat legacy builtin'i yazilan byte sayisini degil 0 dondurur.
+    # Yazma islemi tamamlandiktan sonra --check bir sonraki cagrida byte karsilastirir.
+    diske_bas_ve_kapat(kaynak_dosyasi, bicimli, g_formatter_son_uzunluk);
+    ekrana_yaz("fmt: bicimlendirildi: ".ptr);
+    ekrana_yaz(kaynak_dosyasi);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

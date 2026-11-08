@@ -1,0 +1,5 @@
+islev ana() {
+    degisken a: tamsayi = 77;
+    degisken p: *tamsayi = &a;
+    cikis(p[0]);
+}

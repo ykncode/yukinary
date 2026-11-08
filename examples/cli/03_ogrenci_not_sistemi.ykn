@@ -1,0 +1,67 @@
+# ============================================================
+# Örnek 3: Konsol Tabanlı Öğrenci Not Takip Sistemi
+# ============================================================
+
+yapi Ogrenci {
+    ad: *u8;
+    vize: tamsayi;
+    final_notu: tamsayi;
+    ortalama: tamsayi;
+}
+
+degisken g_ogrenciler: [50]Ogrenci;
+degisken g_ogrenci_sayisi: tamsayi = 0;
+
+isv ogrenci_ekle(ad: *u8, vize: tamsayi, final_notu: tamsayi) {
+    eger g_ogrenci_sayisi >= 50 ise { dondu; }
+    degisken ort: tamsayi = (vize * 40 + final_notu * 60) / 100;
+    
+    g_ogrenciler[g_ogrenci_sayisi].ad = ad;
+    g_ogrenciler[g_ogrenci_sayisi].vize = vize;
+    g_ogrenciler[g_ogrenci_sayisi].final_notu = final_notu;
+    g_ogrenciler[g_ogrenci_sayisi].ortalama = ort;
+    g_ogrenci_sayisi = g_ogrenci_sayisi + 1;
+}
+
+isv harf_notu(ort: tamsayi) -> *u8 {
+    eger ort >= 90 ise { dondu "AA".ptr; }
+    eger ort >= 80 ise { dondu "BA".ptr; }
+    eger ort >= 70 ise { dondu "BB".ptr; }
+    eger ort >= 60 ise { dondu "CB".ptr; }
+    eger ort >= 50 ise { dondu "CC".ptr; }
+    dondu "FF".ptr;
+}
+
+isv karne_yazdir() {
+    ekrana_yaz("\n=== SINIF NOT LISTESI ===\n".ptr);
+    degisken i: tamsayi = 0;
+    degisken toplam: tamsayi = 0;
+
+    dongu (i < g_ogrenci_sayisi) {
+        ekrana_yaz(g_ogrenciler[i].ad);
+        ekrana_yaz(" | Ort: ".ptr);
+        sayiyi_ekrana_yaz(g_ogrenciler[i].ortalama);
+        ekrana_yaz(" | Harf: ".ptr);
+        ekrana_yaz(harf_notu(g_ogrenciler[i].ortalama));
+        ekrana_yaz("\n".ptr);
+        toplam = toplam + g_ogrenciler[i].ortalama;
+        i = i + 1;
+    }
+    
+    eger g_ogrenci_sayisi > 0 ise {
+        ekrana_yaz("-------------------------\n".ptr);
+        ekrana_yaz("Sinif Ortalamasi: ".ptr);
+        sayiyi_ekrana_yaz(toplam / g_ogrenci_sayisi);
+        ekrana_yaz("\n\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    ogrenci_ekle("Ahmet Yilmaz".ptr, 75, 85);
+    ogrenci_ekle("Ayse Demir".ptr, 90, 95);
+    ogrenci_ekle("Mehmet Kaya".ptr, 40, 50);
+    ogrenci_ekle("Zeynep Celik".ptr, 60, 70);
+
+    karne_yazdir();
+    dondu 0;
+}

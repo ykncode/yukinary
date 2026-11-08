@@ -1,0 +1,75 @@
+# ============================================================
+# tests/fix11/test_windows_baseline.ykn
+# FIX 11 - Windows x86_64 PE/IAT runtime baseline testi
+#
+# Bu test Windows x86_64'te release baseline'i sabitler:
+#   - stage0 compiler var ve calisabilir
+#   - Urettigi binary PE32+ formatinda
+#   - os_* API'leri calisir (bellek tahsis, dosya oku/yaz, standart handle)
+#   - Exit code sözlesmesi: 0 = basari, != 0 = hata
+#
+# Beklenen cikti: "WINDOWS BASELINE TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- os_bellek_tahsis calisir ---
+    degisken buf: *u8 = os_bellek_tahsis(1024);
+    eger buf == 0 ise {
+        ekrana_yaz("HATA: os_bellek_tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # --- Bellek yazilabilir ve okunabilir ---
+    buf[0] = 65;
+    buf[1] = 66;
+    buf[2] = 0;
+    eger buf[0] != 65 veya buf[1] != 66 ise {
+        ekrana_yaz("HATA: Bellek yazma/okuma hatasi\n".ptr);
+        dondu 1;
+    }
+
+    # --- os_standart_handle_al calisiyor ---
+    degisken stdin_h: tamsayi = os_standart_handle_al(WIN_STD_INPUT_HANDLE);
+    degisken stdout_h: tamsayi = os_standart_handle_al(WIN_STD_OUTPUT_HANDLE);
+    degisken stderr_h: tamsayi = os_standart_handle_al(WIN_STD_ERROR_HANDLE);
+    eger stdout_h == WIN_INVALID_HANDLE_VALUE ise {
+        ekrana_yaz("HATA: stdout handle gecersiz\n".ptr);
+        dondu 1;
+    }
+    eger stderr_h == WIN_INVALID_HANDLE_VALUE ise {
+        ekrana_yaz("HATA: stderr handle gecersiz\n".ptr);
+        dondu 1;
+    }
+
+    # --- WIN32 sabit degerleri dogru ---
+    eger WIN_STD_INPUT_HANDLE != 0xfffffff6 ise {
+        ekrana_yaz("HATA: WIN_STD_INPUT_HANDLE sabit yanlis\n".ptr);
+        dondu 1;
+    }
+    eger WIN_STD_OUTPUT_HANDLE != 0xfffffff5 ise {
+        ekrana_yaz("HATA: WIN_STD_OUTPUT_HANDLE sabit yanlis\n".ptr);
+        dondu 1;
+    }
+    eger WIN_INVALID_HANDLE_VALUE != 0xffffffffffffffff ise {
+        ekrana_yaz("HATA: WIN_INVALID_HANDLE_VALUE sabit yanlis\n".ptr);
+        dondu 1;
+    }
+
+    # --- Dosya okuma: stage0.exe PE32+ ---
+    degisken pe_buf: [4]u8;
+    degisken n: tamsayi = dosya_oku("build\\bootstrap\\stage0.exe".ptr, pe_buf, 4);
+    eger n < 2 ise {
+        ekrana_yaz("HATA: stage0.exe 4 byte okunamadi\n".ptr);
+        dondu 1;
+    }
+    # MZ = 0x4D 0x5A
+    eger pe_buf[0] != 77 veya pe_buf[1] != 90 ise {
+        ekrana_yaz("HATA: stage0.exe MZ magic bulunamadi (PE degil?)\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("WINDOWS BASELINE TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

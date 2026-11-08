@@ -1,0 +1,13 @@
+isv ana() -> tamsayi {
+    degisken arg: *u8 = komut_satiri_arg1();
+    eger arg == 0 ise {
+        ekrana_yaz("ARG NULL\n".ptr);
+        dondu 1;
+    }
+    
+    ekrana_yaz("ARG: ".ptr);
+    ekrana_yaz(arg);
+    ekrana_yaz("\n".ptr);
+    
+    dondu 0;
+}

@@ -1,0 +1,161 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/arc.ykn
+# Atomik Referans Sayici Akilli Isaretci (Atomic Reference Counted Pointer - Arc<T>)
+#
+# ARC SOZLESMESI (Arc Contract):
+#   - Is parcaciklari arasinda paylasilabilir guvenli referans sayimi (thread-safe).
+#   - Referans artirma islemi: Atomic LOCK XADD (ykn_atomik_artir64).
+#   - Referans azaltma islemi: Atomic CAS Loop LOCK CMPXCHG (ykn_cmpxchg64).
+#   - arc_olustur<T>: T turundeki bir nesneyi heap uzerinde referans sayaci 1 olarak sarar.
+#   - arc_klonla<T>: Referans sayacini atomik olarak 1 artirir ve ayni nesneyi gosteren
+#     yeni bir Arc handle'i dondurur.
+#   - arc_serbest_birak<T>: Referans sayacini atomik olarak 1 azaltir. Sayac 0'a ulastiginda
+#     hem tasinan nesneyi hem de Arc kontrol blogunu isletim sistemine iade eder.
+#   - arc_benzersiz_mi<T>: Bu Arc handle'inin nesneye olan tek sahip olup olmadigini (ref == 1) denetler.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+
+# Arc Kontrol Blogu: Referans sayaclarini heap uzerinde atomik olarak barindirir
+yapi ArcSayacKontrol {
+    ref_sayisi: tamsayi;
+    zayif_sayisi: tamsayi;
+    yikici_fn: tamsayi;
+}
+
+# Arc<T> Sablon Yapisi (Generic Arc Handle)
+yapi Arc<T> {
+    ptr: *T;
+    kontrol: *ArcSayacKontrol;
+}
+
+# Atomik CAS (Compare-And-Swap) dongusuyle 64-bit degeri 1 azaltir ve yeni degeri dondurur.
+isv arc_atomik_azalt(ptr: *tamsayi) -> tamsayi {
+    eger ptr == 0 ise { dondu 0; }
+    
+    dongu 1 == 1 {
+        degisken eski: tamsayi = ptr[0];
+        degisken yeni: tamsayi = eski - 1;
+        degisken basarili: tamsayi = ykn_cmpxchg64(ptr, eski, yeni);
+        eger basarili == 1 ise {
+            dondu yeni;
+        }
+    }
+    dondu 0;
+}
+
+# Verilen pointer degerini atomik referans sayaciyla sarmalayarak yeni bir Arc<T> nesnesi uretir.
+# Baslangic ref_sayisi = 1 olarak atanir.
+isv arc_olustur<T>(deger: *T) -> *Arc<T> {
+    eger deger == 0 ise { dondu 0; }
+    
+    degisken kontrol: *ArcSayacKontrol = os_bellek_tahsis(24);
+    eger kontrol == 0 ise { dondu 0; }
+    
+    kontrol.ref_sayisi = 1;
+    kontrol.zayif_sayisi = 0;
+    kontrol.yikici_fn = 0;
+    
+    degisken arc: *Arc<T> = os_bellek_tahsis(16);
+    eger arc == 0 ise {
+        os_bellek_serbest(kontrol);
+        dondu 0;
+    }
+    
+    arc.ptr = deger;
+    arc.kontrol = kontrol;
+    
+    dondu arc;
+}
+isv arc_create<T>(val: *T) -> *Arc<T> { dondu arc_olustur<T>(val); }
+
+# Nesne serbest birakildiginda calistirilacak ozel yikici (destructor) fonksiyon ile Arc olusturur
+isv arc_olustur_yikici_ile<T>(deger: *T, yikici_fn: tamsayi) -> *Arc<T> {
+    degisken a: *Arc<T> = arc_olustur<T>(deger);
+    eger a != 0 ve a.kontrol != 0 ise {
+        a.kontrol.yikici_fn = yikici_fn;
+    }
+    dondu a;
+}
+
+# Mevcut bir Arc nesnesini klonlar: referans sayacini atomik olarak 1 artirir
+# ve ayni veriyi gosteren bagimsiz bir Arc handle'i dondurur.
+isv arc_klonla<T>(arc: *Arc<T>) -> *Arc<T> {
+    eger arc == 0 veya arc.kontrol == 0 ise { dondu 0; }
+    
+    degisken k: *ArcSayacKontrol = arc.kontrol;
+    # Atomik olarak referans sayisini 1 artir (LOCK XADD)
+    ykn_atomik_artir64(&k.ref_sayisi);
+    
+    degisken yeni_arc: *Arc<T> = os_bellek_tahsis(16);
+    eger yeni_arc == 0 ise {
+        # Bellek yetersizliginde sayaci geri al
+        arc_atomik_azalt(&k.ref_sayisi);
+        dondu 0;
+    }
+    
+    yeni_arc.ptr = arc.ptr;
+    yeni_arc.kontrol = k;
+    
+    dondu yeni_arc;
+}
+isv arc_clone<T>(arc: *Arc<T>) -> *Arc<T> { dondu arc_klonla<T>(arc); }
+
+# Arc nesnesini serbest birakir. Referans sayaci atomik olarak 1 azaltilir.
+# Sayac 0'a ulastiginda sarmalanan veri ve kontrol blogu bellekten silinir.
+isv arc_serbest_birak<T>(arc: *Arc<T>) {
+    eger arc == 0 ise { dondu; }
+    
+    degisken k: *ArcSayacKontrol = arc.kontrol;
+    eger k != 0 ise {
+        degisken kalan: tamsayi = arc_atomik_azalt(&k.ref_sayisi);
+        eger kalan <= 0 ise {
+            degisken fn_yikici: tamsayi = k.yikici_fn;
+            degisken ptr_veri: *hic = arc.ptr;
+            degisken zayif_adet: tamsayi = k.zayif_sayisi;
+            
+            # Kademeli ozel yikici (cascading destructor) cagir:
+            eger fn_yikici != 0 ve ptr_veri != 0 ise {
+                ykn_dyn_call_ptr_3(fn_yikici, ptr_veri, 0, 0);
+            }
+            # Hicbir guclu referans kalmadi: veriyi temizle
+            eger ptr_veri != 0 ise {
+                os_bellek_serbest(ptr_veri);
+            }
+            # Eger zayif referans da yoksa kontrol blogunu sil
+            eger zayif_adet <= 0 ise {
+                os_bellek_serbest(k);
+            }
+        }
+    }
+    
+    os_bellek_serbest(arc);
+}
+isv arc_drop<T>(arc: *Arc<T>) { arc_serbest_birak<T>(arc); }
+
+# Arc nesnesinin gecerli aktif referans sayisini dondurur.
+isv arc_ref_sayisi<T>(arc: *Arc<T>) -> tamsayi {
+    eger arc == 0 veya arc.kontrol == 0 ise { dondu 0; }
+    dondu arc.kontrol.ref_sayisi;
+}
+isv arc_strong_count<T>(arc: *Arc<T>) -> tamsayi { dondu arc_ref_sayisi<T>(arc); }
+
+# Arc icerisindeki gercek veri pointer'ini dondurur.
+isv arc_deger_al<T>(arc: *Arc<T>) -> *T {
+    eger arc == 0 ise { dondu 0; }
+    dondu arc.ptr;
+}
+isv arc_get<T>(arc: *Arc<T>) -> *T { dondu arc_deger_al<T>(arc); }
+
+# Bu handle'in nesneye sahip tek handle olup olmadigini (ref_sayisi == 1) denetler.
+# Eger tek sahipse verinin guvenle degistirilmesine (mutable access) olanak tanir.
+isv arc_benzersiz_mi<T>(arc: *Arc<T>) -> tamsayi {
+    eger arc == 0 veya arc.kontrol == 0 ise { dondu 0; }
+    eger arc.kontrol.ref_sayisi == 1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+isv arc_is_unique<T>(arc: *Arc<T>) -> tamsayi { dondu arc_benzersiz_mi<T>(arc); }
+

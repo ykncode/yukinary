@@ -1,0 +1,53 @@
+# ============================================================
+# tests/veritabani/test_sql_engine.ykn
+# FAZ 43: SQL Sozdizim & Volcano Sorgu Motoru Dogrulama Testi
+# ============================================================
+
+ice_aktar "std/veritabani/sql_motoru.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 43: SQL Sozdizim & Volcano Sorgu Motoru Testi Basliyor...\n".ptr);
+
+    degisken tbl: *SqlTablo = sql_tablo_olustur(16);
+
+    # 1. INSERT sorgulari
+    degisken q_ins1: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_INSERT, 1, 101, 550);
+    degisken q_ins2: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_INSERT, 1, 102, 890);
+    degisken q_ins3: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_INSERT, 1, 103, 1200);
+
+    sql_sorgu_calistir(tbl, q_ins1);
+    sql_sorgu_calistir(tbl, q_ins2);
+    sql_sorgu_calistir(tbl, q_ins3);
+
+    # 2. SELECT WHERE id == 102 -> 890
+    degisken q_sel1: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_SELECT, 1, 102, 0);
+    degisken r1: tamsayi = sql_sorgu_calistir(tbl, q_sel1);
+    eger r1 != 890 ise {
+        ekrana_yaz("HATA: SELECT beklenen 890, gelen hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # 3. UPDATE WHERE id == 102, yeni deger = 950
+    degisken q_upd: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_UPDATE, 1, 102, 950);
+    sql_sorgu_calistir(tbl, q_upd);
+
+    degisken r2: tamsayi = sql_sorgu_calistir(tbl, q_sel1);
+    eger r2 != 950 ise {
+        ekrana_yaz("HATA: UPDATE sonrasi SELECT beklenen 950, gelen hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 4. DELETE WHERE id == 101
+    degisken q_del: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_DELETE, 1, 101, 0);
+    sql_sorgu_calistir(tbl, q_del);
+
+    degisken q_sel_del: *SqlSorgusu = sql_sorgu_olustur(SQL_KOMUT_SELECT, 1, 101, 0);
+    degisken r3: tamsayi = sql_sorgu_calistir(tbl, q_sel_del);
+    eger r3 != (0 - 1) ise {
+        ekrana_yaz("HATA: DELETE sonrasi SELECT beklenen -1, gelen hatali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("SQL_ENGINE_PASS\n".ptr);
+    dondu 0;
+}

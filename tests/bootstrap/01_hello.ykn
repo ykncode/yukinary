@@ -1,0 +1,4 @@
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("TEST 01: Hello Yukinary!\n".ptr);
+    dondu 0;
+}

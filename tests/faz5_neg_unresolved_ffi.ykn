@@ -1,0 +1,11 @@
+# ============================================================
+# tests/faz5_neg_unresolved_ffi.ykn
+# Faz 5 Negatif Test: Hedef platformda cozulmeyen harici FFI fonksiyonu
+# ============================================================
+harici isv OlmayanGecersizHariciFonksiyon() -> tamsayi;
+
+isv ana() -> tamsayi {
+    degisken x: tamsayi = OlmayanGecersizHariciFonksiyon();
+    dondu x;
+}
+

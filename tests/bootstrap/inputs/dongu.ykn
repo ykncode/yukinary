@@ -1,0 +1,2 @@
+isv ekrana_yaz(mesaj: *u8) {}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi { degisken i: tamsayi = 0; dongu i < 3 { ekrana_yaz("L\n".ptr); i = i + 1; } dondu 0; }

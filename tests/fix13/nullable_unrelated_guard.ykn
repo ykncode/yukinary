@@ -1,0 +1,9 @@
+# FIX-13 olumsuz: p guard'i q pointer'ini daraltmamali.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    degisken q: ?*u8 = bos;
+    eger p != bos ise {
+        q[0] = 66;
+    }
+    dondu 0;
+}

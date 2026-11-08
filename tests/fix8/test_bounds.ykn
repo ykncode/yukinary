@@ -1,0 +1,11 @@
+isv ana() -> tamsayi {
+    degisken dizi: [3]tamsayi;
+    dizi[0] = 10;
+    dizi[1] = 20;
+    dizi[2] = 30;
+
+    # Bounds violation!
+    dizi[3] = 40;
+
+    dondu 0;
+}

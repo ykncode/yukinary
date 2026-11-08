@@ -1,0 +1,67 @@
+# ============================================================
+# tests/guvenlik/06_ffi_sanitizer_pos.ykn
+# FAZ 30: FFI Sinir Guvenligi, Null Kontrolu & Bellek Hizalama (Alignment)
+# ============================================================
+
+yapi FfiGostergesi {
+    adres:      *u8;
+    boyut:      tamsayi;
+    hizalama:   tamsayi;
+    gecerli:    tamsayi;
+}
+
+isv ffi_pointer_dogrula(g: *FfiGostergesi) -> tamsayi {
+    # 1. Null pointer kontrolu
+    eger g.adres == 0 ise {
+        dondu 1; # HATA_NULL_PTR
+    }
+
+    # 2. Boyut pozitif olmali
+    eger g.boyut <= 0 ise {
+        dondu 2; # HATA_GECERSIZ_BOYUT
+    }
+
+    # 3. 8-bayt donanim bellek hizalama denetimi (x86_64 pointer alignment)
+    degisken adres_sayi: tamsayi = g.adres;
+    eger (adres_sayi % g.hizalama) != 0 ise {
+        dondu 3; # HATA_HIZALAMA_BOZUK
+    }
+
+    g.gecerli = 1;
+    dondu 0; # GECERLI
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 30: FFI Sinir Sanitizer Testi Basliyor...\n".ptr);
+
+    # Gecerli yigin degiskeni (8 bayt hizali)
+    degisken guvenli_veri: tamsayi = 123456789;
+    degisken g: FfiGostergesi;
+    g.adres = &guvenli_veri;
+    g.boyut = 8;
+    g.hizalama = 8;
+    g.gecerli = 0;
+
+    degisken sonuc1: tamsayi = ffi_pointer_dogrula(&g);
+    eger sonuc1 != 0 ise {
+        ekrana_yaz("HATA: Gecerli FFI gostergesi reddedildi!\n".ptr);
+        dondu 1;
+    }
+
+    # Null pointer denemesi
+    degisken hatali_g: FfiGostergesi;
+    hatali_g.adres = 0;
+    hatali_g.boyut = 8;
+    hatali_g.hizalama = 8;
+    hatali_g.gecerli = 0;
+
+    degisken sonuc2: tamsayi = ffi_pointer_dogrula(&hatali_g);
+    eger sonuc2 != 1 ise {
+        ekrana_yaz("HATA: Null pointer sanitization yakalayamadi!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("FFI_SANITIZER_PASS\n".ptr);
+    dondu 0;
+}
+

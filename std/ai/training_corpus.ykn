@@ -1,0 +1,339 @@
+# ============================================================
+# Yukinary std/ai/training_corpus.ykn
+#
+# YUKINARY KAPSAMLI DIL VE COK DILLI EGITIM VERI SETI (CORPUS)
+# 
+# Bu modul, YKN derleyicisi ve gomulu Micro-LLM icin:
+#   1. Tam YKN Dil Sozdizimi, Gramer ve Standart Kutuphane Spesifikasyonunu
+#   2. 7 Dogal Dildeki Anahtar Kelime ve Esleme Tablolarini (TR, EN, FR, DE, ES, RU, ZH)
+#   3. Polyglot Dillerin (Python, C, C++, JavaScript) YKN Karsiliklarini
+#   4. Tipik Kod Oruntulerini ve Algoritmik Referans Kodlarini
+#   5. Kendi Kendini Egitme / Sentetik Veri Seti Derleyicisini (YKDS Formati)
+# dogrudan binary icine gomulu saf metin ve veri seti olarak sunar.
+# ============================================================
+
+ice_aktar "std/bellek.ykn";
+
+
+# ------------------------------------------------------------
+# 1. YUKINARY DILININ KENDISINI ANLATAN RESMI EGITIM KORPUSU
+# ------------------------------------------------------------
+isv ykn_training_corpus_al() -> *u8 {
+    dondu "
+# Yukinary (YKN) Kapsamli Dil, Sohbet ve Polyglot Egitim Kumesi
+# ==========================================================
+
+# ----------------------------------------------------------
+# BOLUM 1: SOHBET, DIYALOG VE DOGAL DIL ANLAYISI (CONVERSATION & DIALOGUE)
+# ----------------------------------------------------------
+[SOHBET - TR]
+Kullanici: Merhaba, nasilsin?
+Asistan: Merhaba! Ben Yukinary derleyicisinin icine gomulu Micro-LLM noral motoruyum. C++, Python, C, JavaScript ve YKN dillerinde kod yazabilir, analiz edebilir ve diller arasi ceviri yapabilirim. Size nasil yardimci olabilirim?
+
+Kullanici: Sen kimsin ve ne ise yararsin?
+Asistan: Ben Yukinary (YKN) programlama dilinin yasayan yapay zeka cekirdegiyim. Sifir harici bagimlilikla, dogrudan 1.58-bit BitNet ternary agirliklari uzerinde calisirim. Amacim kodunuzu otonom onarmak, eksik parcalari tamamlamak ve baska dillerden YKN'ye kod donusturmektir.
+
+Kullanici: YKN nasil bir dildir?
+Asistan: Yukinary; yuksek performansli, sifir runtime bagimlilikli, bellek guvenlikli (ownership ve borrow denetimli) ve derleyici icinde gomulu yapay zekaya sahip modern bir sistem programlama dilidir.
+
+Kullanici: Bir fonksiyon nasil tanimlanir?
+Asistan: YKN'de fonksiyonlar 'isv' anahtar kelimesiyle tanimlanir. Ornek:
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+Kullanici: Degisken nasil tanimlanir?
+Asistan: 'degisken ad: tip = deger;' biciminde tanimlanir. Ornek:
+degisken sayac: tamsayi = 10;
+degisken mesaj: *u8 = \"Yukinary\".ptr;
+
+Kullanici: Dongu nasil kurulur?
+Asistan: 'dongu kosul { govde }' yapisi kullanilir. Ornek:
+degisken i: tamsayi = 0;
+dongu i < 10 {
+    ekrana_yaz(\"Adim\\n\".ptr);
+    i = i + 1;
+}
+
+Kullanici: Ekrana nasil yazi yazdirilir?
+Asistan: 'ekrana_yaz(\"metin\\n\".ptr);' fonksiyonuyla ekrana yazi basabilirsiniz.
+
+[CONVERSATION - EN]
+User: Hello, how are you?
+Assistant: Hello! I am the Yukinary embedded Micro-LLM engine. I am ready to help you write, debug, and transpile code between C++, Python, C, JavaScript, and YKN.
+
+User: What is Yukinary?
+Assistant: Yukinary is a self-hosted, memory-safe, zero-dependency systems programming language with unified native AI and BitNet 1.58b architecture.
+
+User: How do I define a function in YKN?
+Assistant: In English syntax you can write:
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+Or in native Turkish syntax:
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+User: Can you convert my Python code to YKN?
+Assistant: Yes! You can use 'yukinary cevir <dosya.py>' or ask me directly to transpile your Python, C, C++, or JS code into idiomatic Yukinary code.
+
+# ----------------------------------------------------------
+# BOLUM 2: POLYGLOT CEVIRI VE DIL ESLEME TABLOSU (CONVERT SYSTEM)
+# ----------------------------------------------------------
+
+[PYTHON -> YKN CONVERT]
+# Python:
+def topla(a, b):
+    return a + b
+# YKN Karsiligi:
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+# Python:
+def kare_al(x):
+    return x * x
+# YKN Karsiligi:
+isv kare_al(x: tamsayi) -> tamsayi {
+    dondu x * x;
+}
+
+# Python:
+def faktoriyel(n):
+    if n <= 1:
+        return 1
+    return n * faktoriyel(n - 1)
+# YKN Karsiligi:
+isv faktoriyel(n: tamsayi) -> tamsayi {
+    eger n <= 1 ise {
+        dondu 1;
+    }
+    dondu n * faktoriyel(n - 1);
+}
+
+# Python:
+def kontrol_et(deger):
+    if deger > 0:
+        print(\"Pozitif\")
+    elif deger == 0:
+        print(\"Sifir\")
+    else:
+        print(\"Negatif\")
+# YKN Karsiligi:
+isv kontrol_et(deger: tamsayi) {
+    eger deger > 0 ise {
+        ekrana_yaz(\"Pozitif\\n\".ptr);
+    } yoksa eger deger == 0 ise {
+        ekrana_yaz(\"Sifir\\n\".ptr);
+    } yoksa {
+        ekrana_yaz(\"Negatif\\n\".ptr);
+    }
+}
+
+# Python:
+def dongu_ornek():
+    toplam = 0
+    for i in range(10):
+        toplam += i
+    print(toplam)
+# YKN Karsiligi:
+isv dongu_ornek() {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 10 {
+        toplam = toplam + i;
+        i = i + 1;
+    }
+    sayiyi_ekrana_yaz(toplam);
+}
+
+[C -> YKN CONVERT]
+// C Dili:
+int topla(int a, int b) {
+    return a + b;
+}
+// YKN Karsiligi:
+isv topla(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a + b;
+}
+
+// C Dili:
+#include <stdio.h>
+void selam_ver(const char* isim) {
+    printf(\"Selam, %s\\n\", isim);
+}
+// YKN Karsiligi:
+isv selam_ver(isim: *u8) {
+    ekrana_yaz(\"Selam, \".ptr);
+    ekrana_yaz(isim);
+    ekrana_yaz(\"\\n\".ptr);
+}
+
+// C Dili:
+struct Nokta {
+    int x;
+    int y;
+};
+// YKN Karsiligi:
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+// C Dili:
+int dizi_topla(int* dizi, int boyut) {
+    int toplam = 0;
+    for (int i = 0; i < boyut; i++) {
+        toplam += dizi[i];
+    }
+    return toplam;
+}
+// YKN Karsiligi:
+isv dizi_topla(dizi: *tamsayi, boyut: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        toplam = toplam + dizi[i];
+        i = i + 1;
+    }
+    dondu toplam;
+}
+
+[C++ -> YKN CONVERT]
+// C++ Dili:
+#include <iostream>
+int main() {
+    std::cout << \"Yukinary Calisiyor\" << std::endl;
+    return 0;
+}
+// YKN Karsiligi:
+isv ana() -> tamsayi {
+    ekrana_yaz(\"Yukinary Calisiyor\\n\".ptr);
+    dondu 0;
+}
+
+// C++ Dili:
+class Hesaplayici {
+public:
+    int carpan;
+    int hesapla(int girdi) {
+        return girdi * carpan;
+    }
+};
+// YKN Karsiligi:
+yapi Hesaplayici {
+    carpan: tamsayi;
+}
+isv Hesaplayici_hesapla(h: *Hesaplayici, girdi: tamsayi) -> tamsayi {
+    dondu girdi * h.carpan;
+}
+
+// C++ Dili:
+bool buyuk_mu(int a, int b) {
+    return a > b;
+}
+// YKN Karsiligi:
+isv buyuk_mu(a: tamsayi, b: tamsayi) -> mantiksal {
+    dondu a > b;
+}
+
+[JAVASCRIPT -> YKN CONVERT]
+// JavaScript:
+function carp(a, b) {
+    return a * b;
+}
+// YKN Karsiligi:
+isv carp(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu a * b;
+}
+
+// JavaScript:
+const MAX_SAYAC = 100;
+let mevcut = 0;
+console.log(\"Basliyor\");
+// YKN Karsiligi:
+degisken MAX_SAYAC: tamsayi = 100;
+degisken mevcut: tamsayi = 0;
+ekrana_yaz(\"Basliyor\\n\".ptr);
+
+// JavaScript:
+function geri_sayim(n) {
+    while (n > 0) {
+        console.log(n);
+        n--;
+    }
+}
+// YKN Karsiligi:
+isv geri_sayim(n: tamsayi) {
+    degisken sayac: tamsayi = n;
+    dongu sayac > 0 {
+        sayiyi_ekrana_yaz(sayac);
+        sayac = sayac - 1;
+    }
+}
+
+# ----------------------------------------------------------
+# BOLUM 3: TEMEL SOZDIZIM, TIPLER VE GUCLU KURALLAR
+# ----------------------------------------------------------
+Fonksiyon Bildirimi:
+  TR: isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }
+  EN: fn add(a: int, b: int) -> int { return a + b; }
+  FR: fn somme(a: int, b: int) -> int { return a + b; }
+  RU: фн сложить(a: int, b: int) -> int { return a + b; }
+
+Degisken Bildirimi:
+  TR: degisken sayac: tamsayi = 0;
+  EN: let count: int = 0; var count: int = 0; mut count: int = 0;
+  FR: soit compteur: int = 0;
+
+Kontrol Akisi:
+  TR: eger sayac > 0 ise { dondu 1; } yoksa { dondu 0; }
+  EN: if count > 0 then { return 1; } else { return 0; }
+  FR: si compteur > 0 alors { return 1; } sinon { return 0; }
+  RU: если count > 0 то { return 1; } иначе { return 0; }
+
+Donguler:
+  TR: dongu i < 10 { i = i + 1; }
+  EN: while i < 10 { i = i + 1; } loop { break; }
+  FR: pour i dans 0..10 { i = i + 1; }
+
+Veri Yapilari:
+  TR: yapi Nokta { x: tamsayi; y: tamsayi; }
+  EN: struct Point { x: int; y: int; }
+
+Moduller ve Import:
+  TR: ice_aktar \"std/os.ykn\";
+  EN: import \"std/os.ykn\"; use \"std/os.ykn\";
+
+Standart Tipler:
+  tamsayi (64-bit int), int, u8 (byte), u16, u32, u64, ondalik (double/float),
+  metin (string), mantiksal (bool), bos (null/nil), hic (void).
+
+Bellek Yonetimi ve Sahiplik:
+  - Tek Sahiplik (Single Ownership): Her deger tek bir degiskene aittir.
+  - Odunc Alma (Borrowing): '&' ile okunabilir referans alinir.
+  - Tasima (Move Semantics): Fonksiyona gecilen deger varsayilan olarak tasinir.
+  - Yigit Guvenligi: Yerel stack adresi dondurulemez (E046 Dangling Reference engeli).
+  - Sabit Dizi Guvenligi: Dizi siniri asilamaz (E048 Bounds Check engeli).
+
+Otonom Onarim (Self-Healing) Kurallari:
+  - Satir sonunda ';' eksikse otomatik enjekte edilir.
+  - Kapanmamis '{' bloklari '\\n}' ile dengelenir.
+  - Donus degeri bekleyen fonksiyonda donus yoksa 'dondu 0;' eklenir.
+  - Null olabilecek isaretciler 'eger ptr != 0 ise { ... }' ile sarilir.
+# ==========================================================
+".ptr;
+}
+
+# Korpus metninin uzunlugunu dondur
+isv ykn_training_corpus_boyutu() -> tamsayi {
+    degisken p: *u8 = ykn_training_corpus_al();
+    degisken uzn: tamsayi = 0;
+    dongu p[uzn] != 0 {
+        uzn = uzn + 1;
+    }
+    dondu uzn;
+}
+
+

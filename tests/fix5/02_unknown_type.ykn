@@ -1,0 +1,4 @@
+isv ana() -> tamsayi {
+    degisken x: BilinmeyenTip = 1;
+    dondu 0;
+}

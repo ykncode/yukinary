@@ -1,0 +1,73 @@
+# ============================================================
+# RAII / Loop Stack Unwinding (Break & Continue) Testi (FAZ 9)
+# ============================================================
+
+degisken g_break_birakildi: tamsayi = 0;
+degisken g_continue_birakildi: tamsayi = 0;
+
+yapi KaynakBreak {
+    id: tamsayi;
+}
+
+isv KaynakBreak_birak(k: *KaynakBreak) {
+    g_break_birakildi = g_break_birakildi + 1;
+}
+
+yapi KaynakCont {
+    id: tamsayi;
+}
+
+isv KaynakCont_birak(k: *KaynakCont) {
+    g_continue_birakildi = g_continue_birakildi + 1;
+}
+
+isv test_break_unwind() {
+    degisken i: tamsayi = 0;
+    dongu i < 5 {
+        eger 1 == 1 ise {
+            degisken kb: KaynakBreak;
+            kb.id = 42;
+            # 2. dongude durdur (break) ile ertelemeksizin unwind tetiklenmeli
+            eger i == 1 ise {
+                durdur;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+isv test_continue_unwind() {
+    degisken j: tamsayi = 0;
+    dongu j < 3 {
+        eger 1 == 1 ise {
+            degisken kc: KaynakCont;
+            kc.id = 99;
+            j = j + 1;
+            # Her iterasyonda devam_et (continue) ile unwind tetiklenmeli
+            devam_et;
+        }
+    }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    test_break_unwind();
+    # i=0'da normal blok cikisi (1 kez), i=1'de break oncesi unwind (1 kez) => Toplam 2
+    eger g_break_birakildi != 2 ise {
+        ekrana_yaz("HATA: Break unwind beklenen 2 idi, alinan: ");
+        tam_yaz(g_break_birakildi);
+        ekrana_yaz("\n");
+        dondu 1;
+    }
+
+    test_continue_unwind();
+    # 3 iterasyonun her birinde devam_et oncesi unwind => Toplam 3
+    eger g_continue_birakildi != 3 ise {
+        ekrana_yaz("HATA: Continue unwind beklenen 3 idi, alinan: ");
+        tam_yaz(g_continue_birakildi);
+        ekrana_yaz("\n");
+        dondu 2;
+    }
+
+    ekrana_yaz("TEST RAII UNWIND: BASARILI\n".ptr);
+    dondu 0;
+}

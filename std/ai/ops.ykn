@@ -1,0 +1,209 @@
+# YKN std/ai/ops.ykn
+# Q16.16 deterministic reference tensor operations.
+#
+# Bu modül GPU/SIMD mock'u değildir. Her işlem gerçek scalar YKN referans
+# kernel'i çalıştırır. Native backend varsa çağıran katman ayrıca dispatch
+# edebilir; referans sonucu ve hata sözleşmesi değişmez.
+
+degisken AI_Q16_BIR = 65536;
+degisken AI_OPS_HATA = 0;
+
+isv ai_q16_mul(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu (a * b) / AI_Q16_BIR;
+}
+
+isv ai_q16_abs(a: tamsayi) -> tamsayi {
+    eger a < 0 ise { dondu 0 - a; }
+    dondu a;
+}
+
+# x * sigmoid(x), bounded rational approximation.
+isv ai_q16_silu_deger(x: tamsayi) -> tamsayi {
+    degisken z: tamsayi = x;
+    eger z <= 0 - (8 * AI_Q16_BIR) ise { dondu 0; }
+    eger z >= 8 * AI_Q16_BIR ise { dondu z; }
+
+    # sigmoid(z) ≈ 1/2 + z/4 - z^3/48 for |z| <= 4.
+    # Uzak bölgelerde sabit doygunluk kullanılır; ara bölgede taşma sınırı
+    # korunarak Q16 çarpımları hesaplanır.
+    degisken sigmoid: tamsayi = 0;
+    eger z <= 0 - (4 * AI_Q16_BIR) ise {
+        sigmoid = 0;
+    } yoksa eger z >= 4 * AI_Q16_BIR ise {
+        sigmoid = AI_Q16_BIR;
+    } yoksa {
+        degisken z2: tamsayi = ai_q16_mul(z, z);
+        degisken z3: tamsayi = ai_q16_mul(z2, z);
+        sigmoid = (AI_Q16_BIR / 2) + (z / 4) - (z3 / 48);
+        eger sigmoid < 0 ise { sigmoid = 0; }
+        eger sigmoid > AI_Q16_BIR ise { sigmoid = AI_Q16_BIR; }
+    }
+    dondu ai_q16_mul(z, sigmoid);
+}
+
+# A[M x K] * B[K x N] = C[M x N], all values Q16.16.
+isv ai_matmul(A_ptr: *tamsayi, B_ptr: *tamsayi, C_ptr: *tamsayi,
+              M: tamsayi, N: tamsayi, K: tamsayi) -> tamsayi {
+    AI_OPS_HATA = 0;
+    eger A_ptr == 0 veya B_ptr == 0 veya C_ptr == 0 veya M <= 0 veya N <= 0 veya K <= 0 ise {
+        AI_OPS_HATA = 1;
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < M {
+        degisken j: tamsayi = 0;
+        dongu j < N {
+            degisken toplam: tamsayi = 0;
+            degisken k: tamsayi = 0;
+            dongu k < K {
+                toplam = toplam + ai_q16_mul(A_ptr[i * K + k], B_ptr[k * N + j]);
+                k = k + 1;
+            }
+            C_ptr[i * N + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# FAZ 11: AVX2 Hızlandırmalı GEMM / GEMV Matris Çarpımı.
+# N == 1 (Vektör çıkarımı / GEMV) doğrudan ykn_simd_dot_q16 kernel'ini kullanır.
+isv ai_matmul_simd(A_ptr: *tamsayi, B_ptr: *tamsayi, C_ptr: *tamsayi,
+                   M: tamsayi, N: tamsayi, K: tamsayi) -> tamsayi {
+    AI_OPS_HATA = 0;
+    eger A_ptr == 0 veya B_ptr == 0 veya C_ptr == 0 veya M <= 0 veya N <= 0 veya K <= 0 ise {
+        AI_OPS_HATA = 1;
+        dondu 0;
+    }
+    eger ykn_cpu_has_avx2() == 1 {
+        eger N == 1 {
+            # GEMV Hızlı Vektör Yolu:
+            degisken r: tamsayi = 0;
+            dongu r < M {
+                C_ptr[r] = ykn_simd_dot_q16(A_ptr + r * K, B_ptr, K);
+                r = r + 1;
+            }
+            dondu 1;
+        }
+    }
+    # Genel durum için referans döngüye delege et
+    dondu ai_matmul(A_ptr, B_ptr, C_ptr, M, N, K);
+}
+
+isv ai_silu(X_ptr: *tamsayi, eleman_sayisi: tamsayi) -> tamsayi {
+    AI_OPS_HATA = 0;
+    eger X_ptr == 0 veya eleman_sayisi <= 0 ise {
+        AI_OPS_HATA = 2;
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < eleman_sayisi {
+        X_ptr[i] = ai_q16_silu_deger(X_ptr[i]);
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Integer Newton square-root for a non-negative Q16.16 value.
+isv ai_q16_sqrt(deger: tamsayi) -> tamsayi {
+    eger deger <= 0 ise { dondu 0; }
+    degisken tahmin: tamsayi = deger;
+    eger tahmin < AI_Q16_BIR ise { tahmin = AI_Q16_BIR; }
+    degisken i: tamsayi = 0;
+    dongu i < 24 {
+        degisken bolum: tamsayi = (deger * AI_Q16_BIR) / tahmin;
+        tahmin = (tahmin + bolum) / 2;
+        i = i + 1;
+    }
+    dondu tahmin;
+}
+
+# RMSNorm reference implementation. max_abs scaling prevents x*x overflow.
+isv ai_rmsnorm(X_ptr: *tamsayi, agirlik_ptr: *tamsayi,
+               eleman_sayisi: tamsayi) -> tamsayi {
+    AI_OPS_HATA = 0;
+    eger X_ptr == 0 veya agirlik_ptr == 0 veya eleman_sayisi <= 0 ise {
+        AI_OPS_HATA = 3;
+        dondu 0;
+    }
+    degisken maksimum: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < eleman_sayisi {
+        degisken mutlak: tamsayi = ai_q16_abs(X_ptr[i]);
+        eger mutlak > maksimum ise { maksimum = mutlak; }
+        i = i + 1;
+    }
+    eger maksimum == 0 ise {
+        i = 0;
+        dongu i < eleman_sayisi { X_ptr[i] = 0; i = i + 1; }
+        dondu 1;
+    }
+
+    # Normalize each sample to Q16 before squaring.
+    degisken kare_toplami: tamsayi = 0;
+    i = 0;
+    dongu i < eleman_sayisi {
+        degisken normalize: tamsayi = (X_ptr[i] * AI_Q16_BIR) / maksimum;
+        kare_toplami = kare_toplami + ai_q16_mul(normalize, normalize);
+        i = i + 1;
+    }
+    degisken ortalama: tamsayi = kare_toplami / eleman_sayisi;
+    degisken rms: tamsayi = ai_q16_sqrt(ortalama + 1);
+    eger rms <= 0 ise { AI_OPS_HATA = 4; dondu 0; }
+
+    i = 0;
+    dongu i < eleman_sayisi {
+        degisken normalize: tamsayi = (X_ptr[i] * AI_Q16_BIR) / maksimum;
+        degisken normlu: tamsayi = (normalize * AI_Q16_BIR) / rms;
+        X_ptr[i] = ai_q16_mul(normlu, agirlik_ptr[i]);
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Stable polynomial exp approximation for x in Q16.16.
+isv ai_q16_exp(deger: tamsayi) -> tamsayi {
+    eger deger <= 0 - (8 * AI_Q16_BIR) ise { dondu 0; }
+    eger deger >= 8 * AI_Q16_BIR ise { dondu 8 * AI_Q16_BIR; }
+    degisken x: tamsayi = deger;
+    degisken x2: tamsayi = ai_q16_mul(x, x);
+    degisken x3: tamsayi = ai_q16_mul(x2, x);
+    degisken x4: tamsayi = ai_q16_mul(x3, x);
+    degisken sonuc: tamsayi = AI_Q16_BIR + x + (x2 / 2) + (x3 / 6) + (x4 / 24);
+    eger sonuc < 0 ise { dondu 0; }
+    dondu sonuc;
+}
+
+# Row-major softmax: X has satir rows and sutun columns; result overwrites X.
+isv ai_softmax(X_ptr: *tamsayi, satir: tamsayi, sutun: tamsayi) -> tamsayi {
+    AI_OPS_HATA = 0;
+    eger X_ptr == 0 veya satir <= 0 veya sutun <= 0 ise {
+        AI_OPS_HATA = 5;
+        dondu 0;
+    }
+    degisken r: tamsayi = 0;
+    dongu r < satir {
+        degisken en_buyuk: tamsayi = X_ptr[r * sutun];
+        degisken c: tamsayi = 1;
+        dongu c < sutun {
+            eger X_ptr[r * sutun + c] > en_buyuk ise { en_buyuk = X_ptr[r * sutun + c]; }
+            c = c + 1;
+        }
+        degisken toplam: tamsayi = 0;
+        c = 0;
+        dongu c < sutun {
+            X_ptr[r * sutun + c] = ai_q16_exp(X_ptr[r * sutun + c] - en_buyuk);
+            toplam = toplam + X_ptr[r * sutun + c];
+            c = c + 1;
+        }
+        eger toplam <= 0 ise { AI_OPS_HATA = 6; dondu 0; }
+        c = 0;
+        dongu c < sutun {
+            X_ptr[r * sutun + c] = (X_ptr[r * sutun + c] * AI_Q16_BIR) / toplam;
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    dondu 1;
+}

@@ -1,0 +1,16 @@
+﻿{
+  "meta": {
+    "generated_at": "2026-09-13T05:37:35Z",
+    "generator": "tests/fix12/run_fix12_tests.ps1",
+    "schema_version": 1,
+    "note": "Bu dosya her release'te yeniden uretilir. Elle duzenleme yasak."
+  },
+  "platform_matrix": {
+    "windows_x86_64": "SUPPORTED",
+    "linux_x86_64": "SUPPORTED",
+    "linux_arm64": "EXPERIMENTAL",
+    "macos_x86_64": "EXPERIMENTAL",
+    "macos_arm64": "EXPERIMENTAL"
+  },
+  "overall": "PASS"
+}

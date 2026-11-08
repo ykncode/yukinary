@@ -1,0 +1,12 @@
+# Тест на русском: тип вещественного числа
+функция главная(argc: tamsayi, argv: **u8) -> tamsayi {
+    перем a: вещ = 9.0;
+    перем b: вещ = 3.0;
+    перем c: вещ = a / b;
+    если c == 3.0 то {
+        ekrana_yaz("RU-FLOAT-PASS\n".ptr);
+    } иначе {
+        ekrana_yaz("RU-FLOAT-FAIL\n".ptr);
+    }
+    вернуть 0;
+}

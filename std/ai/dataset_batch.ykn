@@ -1,0 +1,360 @@
+# ============================================================
+# Saf YKN YKDS batch + tokenizer pipeline
+#
+# YKDS buffer once validate edilir; iterator record sinirlarini,
+# split filtresini ve batch kapasitesini zorlar. Tokenized API ayni
+# record'u mevcut saf YKN BPE tokenizer'a baglar.
+# ============================================================
+
+ice_aktar "std/ai/dataset.ykn";
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+
+degisken YKN_DS_BATCH_ALL_SPLITS: tamsayi = 0 - 1;
+degisken YKN_DS_BATCH_MAX_RECORDS: tamsayi = 32;
+degisken YKN_DS_BATCH_MAX_TEXT: tamsayi = 65536;
+degisken YKN_DS_BATCH_LAST_ERROR: tamsayi = 0;
+
+yapi YKNDatasetBatch {
+    buffer: *u8;
+    boyut: tamsayi;
+    pos: tamsayi;
+    record_count: tamsayi;
+    yielded: tamsayi;
+    capacity: tamsayi;
+    split_filter: tamsayi;
+}
+
+yapi YKNDatasetBatchRecord {
+    record_len: tamsayi;
+    split: tamsayi;
+    sample_id: tamsayi;
+    source: *u8;
+    source_len: tamsayi;
+    target: *u8;
+    target_len: tamsayi;
+    diagnostic: *u8;
+    diagnostic_len: tamsayi;
+    provenance: *u8;
+    provenance_len: tamsayi;
+}
+
+isv ykn_ds_batch_kopyala_kesikli(kaynak: *u8, uzunluk: tamsayi,
+                                 hedef: *u8, kapasite: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya hedef == 0 veya uzunluk < 0 veya kapasite <= uzunluk ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[uzunluk] = 0;
+    dondu 1;
+}
+
+isv ykn_ds_batch_record_oku(batch: *YKNDatasetBatch,
+                            rec: *YKNDatasetBatchRecord) -> tamsayi {
+    eger batch == 0 veya rec == 0 veya batch->buffer == 0 veya
+       batch->pos < 0 veya batch->pos >= batch->boyut veya
+       batch->boyut - batch->pos < YKN_DS_RECORD_HEADER_SIZE ise { dondu 0; }
+    degisken p: tamsayi = batch->pos;
+    degisken record_len: tamsayi = ykn_ds_buf_u32_oku(batch->buffer, p);
+    eger record_len < YKN_DS_RECORD_HEADER_SIZE veya record_len > batch->boyut - p ise { dondu 0; }
+    eger ykn_ds_buf_u32_oku(batch->buffer, p + 4) != YKN_DS_VERSION veya
+       ykn_ds_buf_u32_oku(batch->buffer, p + 8) > 2 veya
+       ykn_ds_buf_u32_oku(batch->buffer, p + 12) != 1 ise { dondu 0; }
+    rec->record_len = record_len;
+    rec->split = ykn_ds_buf_u32_oku(batch->buffer, p + 8);
+    rec->sample_id = ykn_ds_buf_u32_oku(batch->buffer, p + 32);
+    rec->source_len = ykn_ds_buf_u32_oku(batch->buffer, p + 16);
+    rec->target_len = ykn_ds_buf_u32_oku(batch->buffer, p + 20);
+    rec->diagnostic_len = ykn_ds_buf_u32_oku(batch->buffer, p + 24);
+    rec->provenance_len = ykn_ds_buf_u32_oku(batch->buffer, p + 28);
+    eger rec->source_len <= 0 veya rec->source_len > YKN_DS_BATCH_MAX_TEXT veya
+       rec->target_len <= 0 veya rec->target_len > YKN_DS_BATCH_MAX_TEXT veya
+       rec->diagnostic_len > YKN_DS_BATCH_MAX_TEXT veya
+       rec->provenance_len <= 0 veya rec->provenance_len > YKN_DS_BATCH_MAX_TEXT ise { dondu 0; }
+    degisken payload_len: tamsayi = rec->source_len + rec->target_len +
+        rec->diagnostic_len + rec->provenance_len;
+    eger record_len != YKN_DS_RECORD_HEADER_SIZE + payload_len ise { dondu 0; }
+    rec->source = batch->buffer + p + YKN_DS_RECORD_HEADER_SIZE;
+    rec->target = rec->source + rec->source_len;
+    rec->diagnostic = rec->target + rec->target_len;
+    rec->provenance = rec->diagnostic + rec->diagnostic_len;
+    dondu 1;
+}
+
+isv ykn_dataset_batch_open(buffer: *u8, boyut: tamsayi,
+                           split_filter: tamsayi, capacity: tamsayi,
+                           batch: *YKNDatasetBatch) -> tamsayi {
+    eger batch == 0 veya buffer == 0 veya boyut <= 0 veya capacity <= 0 veya
+       capacity > YKN_DS_BATCH_MAX_RECORDS veya
+       (split_filter != YKN_DS_BATCH_ALL_SPLITS ve
+        (split_filter < 0 veya split_filter > 2)) ise { dondu 0; }
+    degisken count: tamsayi = 0;
+    eger ykn_dataset_validate_buffer(buffer, boyut, &count) == 0 ise { dondu 0; }
+    batch->buffer = buffer;
+    batch->boyut = boyut;
+    batch->pos = YKN_DS_HEADER_SIZE + ykn_ds_buf_u32_oku(buffer, 28);
+    batch->record_count = count;
+    batch->yielded = 0;
+    batch->capacity = capacity;
+    batch->split_filter = split_filter;
+    dondu 1;
+}
+
+isv ykn_dataset_batch_reset(batch: *YKNDatasetBatch) -> tamsayi {
+    eger batch == 0 veya batch->buffer == 0 ise { dondu 0; }
+    batch->yielded = 0;
+    batch->pos = YKN_DS_HEADER_SIZE + ykn_ds_buf_u32_oku(batch->buffer, 28);
+    dondu 1;
+}
+
+# Mevcut pozisyonu koruyarak kapasite segmentini devam ettirir.
+# reset() dataset'in başına döner; bu API batch kapasitesi dolduğunda
+# aynı YKDS akışında sonraki kayıtları kaybetmeden ilerlemek içindir.
+isv ykn_dataset_batch_segment_devam(batch: *YKNDatasetBatch) -> tamsayi {
+    eger batch == 0 veya batch->buffer == 0 veya batch->capacity <= 0 ise { dondu 0; }
+    eger batch->pos < 0 veya batch->pos > batch->boyut ise { dondu 0; }
+    batch->yielded = 0;
+    dondu 1;
+}
+
+yapi YKNDatasetBatchOutput {
+    source_out: *u8;
+    source_capacity: tamsayi;
+    target_out: *u8;
+    target_capacity: tamsayi;
+    diagnostic_out: *u8;
+    diagnostic_capacity: tamsayi;
+    provenance_out: *u8;
+    provenance_capacity: tamsayi;
+    split_out: *tamsayi;
+    sample_id_out: *tamsayi;
+}
+
+isv ykn_dataset_batch_next(batch: *YKNDatasetBatch,
+                           output: *YKNDatasetBatchOutput) -> tamsayi {
+    YKN_DS_BATCH_LAST_ERROR = 0;
+    eger batch == 0 veya output == 0 ise { YKN_DS_BATCH_LAST_ERROR = 1; dondu 0; }
+    degisken batch_buffer: *u8 = batch->buffer;
+    degisken batch_boyut: tamsayi = batch->boyut;
+    degisken batch_yielded: tamsayi = batch->yielded;
+    degisken batch_capacity: tamsayi = batch->capacity;
+    degisken batch_split_filter: tamsayi = batch->split_filter;
+    degisken source_out: *u8 = output->source_out;
+    degisken source_capacity: tamsayi = output->source_capacity;
+    degisken target_out: *u8 = output->target_out;
+    degisken target_capacity: tamsayi = output->target_capacity;
+    degisken diagnostic_out: *u8 = output->diagnostic_out;
+    degisken diagnostic_capacity: tamsayi = output->diagnostic_capacity;
+    degisken provenance_out: *u8 = output->provenance_out;
+    degisken provenance_capacity: tamsayi = output->provenance_capacity;
+    eger batch_buffer == 0 veya
+       batch_yielded >= batch_capacity veya source_out == 0 veya
+       target_out == 0 veya source_capacity <= 0 veya
+       target_capacity <= 0 ise { YKN_DS_BATCH_LAST_ERROR = 1; dondu 0; }
+    dongu batch->pos < batch_boyut {
+        degisken p: tamsayi = batch->pos;
+        eger batch_boyut - p < YKN_DS_RECORD_HEADER_SIZE ise { YKN_DS_BATCH_LAST_ERROR = 2; dondu 0; }
+        degisken record_len: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p);
+        eger record_len < YKN_DS_RECORD_HEADER_SIZE veya record_len > batch_boyut - p ise { YKN_DS_BATCH_LAST_ERROR = 3; dondu 0; }
+
+        eger ykn_ds_buf_u32_oku(batch_buffer, p + 4) != YKN_DS_VERSION veya
+           ykn_ds_buf_u32_oku(batch_buffer, p + 8) > 2 veya
+           ykn_ds_buf_u32_oku(batch_buffer, p + 12) != 1 ise { YKN_DS_BATCH_LAST_ERROR = 4; dondu 0; }
+        degisken split: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 8);
+        degisken sample_id: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 32);
+        degisken source_len: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 16);
+        degisken target_len: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 20);
+        degisken diagnostic_len: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 24);
+        degisken provenance_len: tamsayi = ykn_ds_buf_u32_oku(batch_buffer, p + 28);
+        eger source_len <= 0 veya source_len > YKN_DS_BATCH_MAX_TEXT veya
+           target_len <= 0 veya target_len > YKN_DS_BATCH_MAX_TEXT veya
+           diagnostic_len > YKN_DS_BATCH_MAX_TEXT veya
+           provenance_len <= 0 veya provenance_len > YKN_DS_BATCH_MAX_TEXT ise { YKN_DS_BATCH_LAST_ERROR = 5; dondu 0; }
+        degisken payload_len: tamsayi = source_len + target_len +
+            diagnostic_len + provenance_len;
+        eger record_len != YKN_DS_RECORD_HEADER_SIZE + payload_len ise { YKN_DS_BATCH_LAST_ERROR = 6; dondu 0; }
+        batch->pos = p + record_len;
+        eger batch_split_filter != YKN_DS_BATCH_ALL_SPLITS ve
+           split != batch_split_filter ise { devam_et; }
+        degisken source_ptr: *u8 = batch_buffer + p + YKN_DS_RECORD_HEADER_SIZE;
+        degisken target_ptr: *u8 = source_ptr + source_len;
+        degisken diagnostic_ptr: *u8 = target_ptr + target_len;
+        degisken provenance_ptr: *u8 = diagnostic_ptr + diagnostic_len;
+        eger ykn_ds_batch_kopyala_kesikli(source_ptr, source_len,
+                                          source_out, source_capacity) == 0 ise { YKN_DS_BATCH_LAST_ERROR = 7; dondu 0; }
+        eger ykn_ds_batch_kopyala_kesikli(target_ptr, target_len,
+                                        target_out, target_capacity) == 0 ise { YKN_DS_BATCH_LAST_ERROR = 8; dondu 0; }
+        eger diagnostic_out != 0 ve diagnostic_capacity > 0 ise {
+            eger ykn_ds_batch_kopyala_kesikli(diagnostic_ptr, diagnostic_len,
+                                              diagnostic_out, diagnostic_capacity) == 0 ise { YKN_DS_BATCH_LAST_ERROR = 9; dondu 0; }
+        }
+        eger provenance_out != 0 ve provenance_capacity > 0 ise {
+            eger ykn_ds_batch_kopyala_kesikli(provenance_ptr, provenance_len,
+                                              provenance_out, provenance_capacity) == 0 ise { YKN_DS_BATCH_LAST_ERROR = 10; dondu 0; }
+        }
+        eger output->split_out != 0 ise { output->split_out[0] = split; }
+        eger output->sample_id_out != 0 ise { output->sample_id_out[0] = sample_id; }
+        batch->yielded = batch->yielded + 1;
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv ykn_ds_batch_str_uzunluk(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu metin[n] != 0 { n = n + 1; }
+    dondu n;
+}
+
+yapi YKNDatasetTokenizerBatch {
+    tokenizer_buffer: *u8;
+    token_offsets: *tamsayi;
+    token_lengths: *tamsayi;
+    token_count: tamsayi;
+    merge_offsets: *tamsayi;
+    merge_lengths: *tamsayi;
+    merge_count: tamsayi;
+    output: *YKNDatasetBatchOutput;
+    source_text: *u8;
+    source_text_capacity: tamsayi;
+    target_text: *u8;
+    target_text_capacity: tamsayi;
+    source_ids: *tamsayi;
+    source_id_capacity: tamsayi;
+    target_ids: *tamsayi;
+    target_id_capacity: tamsayi;
+    source_id_count: *tamsayi;
+    target_id_count: *tamsayi;
+    split_out: *tamsayi;
+    sample_id_out: *tamsayi;
+}
+
+isv ykn_dataset_batch_next_tokenized(batch: *YKNDatasetBatch,
+                                     cfg: *YKNDatasetTokenizerBatch) -> tamsayi {
+    eger batch == 0 veya cfg == 0 veya cfg->output == 0 veya
+       cfg->source_id_count == 0 veya cfg->target_id_count == 0 veya
+       cfg->source_ids == 0 veya cfg->target_ids == 0 veya
+       cfg->source_text == 0 veya cfg->target_text == 0 veya
+       cfg->source_text_capacity <= 0 veya cfg->target_text_capacity <= 0 veya
+       cfg->source_id_capacity <= 0 veya cfg->target_id_capacity <= 0 veya
+       cfg->tokenizer_buffer == 0 veya
+       cfg->token_offsets == 0 veya cfg->token_lengths == 0 veya
+       cfg->merge_offsets == 0 veya cfg->merge_lengths == 0 veya
+       cfg->token_count <= 0 veya cfg->merge_count < 0 ise { dondu 0; }
+    cfg->source_id_count[0] = 0;
+    cfg->target_id_count[0] = 0;
+    eger ykn_dataset_batch_next(batch, cfg->output) == 0 ise { dondu 0; }
+    degisken source_count: tamsayi = bitnet_bpe_ascii_kodla(cfg->tokenizer_buffer,
+       cfg->token_offsets, cfg->token_lengths, cfg->token_count,
+       cfg->merge_offsets, cfg->merge_lengths, cfg->merge_count,
+       cfg->source_text, ykn_ds_batch_str_uzunluk(cfg->source_text),
+       cfg->source_ids, cfg->source_id_capacity);
+    eger source_count <= 0 ise { dondu 0; }
+    degisken target_count: tamsayi = bitnet_bpe_ascii_kodla(cfg->tokenizer_buffer,
+       cfg->token_offsets, cfg->token_lengths, cfg->token_count,
+       cfg->merge_offsets, cfg->merge_lengths, cfg->merge_count,
+       cfg->target_text, ykn_ds_batch_str_uzunluk(cfg->target_text),
+       cfg->target_ids, cfg->target_id_capacity);
+    eger target_count <= 0 ise { dondu 0; }
+    cfg->source_id_count[0] = source_count;
+    cfg->target_id_count[0] = target_count;
+    dondu 1;
+}
+
+# ============================================================
+# Saf YKN causal sequence packing
+#
+# Bir kayit [source, separator, target, EOS] olarak paketlenir.
+# Labels shifted next-token hedefidir; source prefix'i -100 ile maskelenir.
+# Bir kayit max_sequence_length'i asamaz ve kapasite tasmasinda partial write yapilmaz.
+# ============================================================
+
+yapi YKNSequencePack {
+    input_ids: *tamsayi;
+    labels: *tamsayi;
+    loss_mask: *tamsayi;
+    capacity: tamsayi;
+    max_sequence_length: tamsayi;
+    eos_token_id: tamsayi;
+    separator_token_id: tamsayi;
+    count: tamsayi;
+    segment_count: tamsayi;
+}
+
+isv ykn_sequence_pack_init(pack: *YKNSequencePack,
+                           input_ids: *tamsayi, labels: *tamsayi,
+                           loss_mask: *tamsayi, capacity: tamsayi,
+                           max_sequence_length: tamsayi,
+                           separator_token_id: tamsayi,
+                           eos_token_id: tamsayi) -> tamsayi {
+    eger pack == 0 veya input_ids == 0 veya labels == 0 veya loss_mask == 0 veya
+       capacity <= 0 veya max_sequence_length <= 0 veya
+       max_sequence_length > capacity veya separator_token_id < 0 veya
+       eos_token_id < 0 ise { dondu 0; }
+    pack->input_ids = input_ids;
+    pack->labels = labels;
+    pack->loss_mask = loss_mask;
+    pack->capacity = capacity;
+    pack->max_sequence_length = max_sequence_length;
+    pack->separator_token_id = separator_token_id;
+    pack->eos_token_id = eos_token_id;
+    pack->count = 0;
+    pack->segment_count = 0;
+    dondu 1;
+}
+
+isv ykn_sequence_pack_reset(pack: *YKNSequencePack) -> tamsayi {
+    eger pack == 0 veya pack->input_ids == 0 veya pack->labels == 0 veya
+       pack->loss_mask == 0 veya pack->capacity <= 0 ise { dondu 0; }
+    pack->count = 0;
+    pack->segment_count = 0;
+    dondu 1;
+}
+
+isv ykn_sequence_pack_append(pack: *YKNSequencePack,
+                             source_ids: *tamsayi, source_count: tamsayi,
+                             target_ids: *tamsayi, target_count: tamsayi) -> tamsayi {
+    eger pack == 0 veya source_ids == 0 veya target_ids == 0 veya
+       source_count <= 0 veya target_count <= 0 veya
+       pack->input_ids == 0 veya pack->labels == 0 veya
+       pack->loss_mask == 0 veya pack->count < 0 veya
+       pack->count > pack->capacity veya
+       source_count + target_count + 2 > pack->max_sequence_length veya
+       pack->count + source_count + target_count + 2 > pack->capacity ise { dondu 0; }
+    degisken start: tamsayi = pack->count;
+    degisken i: tamsayi = 0;
+    dongu i < source_count {
+        pack->input_ids[start + i] = source_ids[i];
+        i = i + 1;
+    }
+    pack->input_ids[start + source_count] = pack->separator_token_id;
+    i = 0;
+    dongu i < target_count {
+        pack->input_ids[start + source_count + 1 + i] = target_ids[i];
+        i = i + 1;
+    }
+    degisken eos_index: tamsayi = start + source_count + 1 + target_count;
+    pack->input_ids[eos_index] = pack->eos_token_id;
+    degisken total: tamsayi = source_count + target_count + 2;
+    i = 0;
+    dongu i < total - 1 {
+        eger i >= source_count ise {
+            pack->labels[start + i] = pack->input_ids[start + i + 1];
+            pack->loss_mask[start + i] = 1;
+        } yoksa {
+            pack->labels[start + i] = 0 - 100;
+            pack->loss_mask[start + i] = 0;
+        }
+        i = i + 1;
+    }
+    pack->labels[start + total - 1] = 0 - 100;
+    pack->loss_mask[start + total - 1] = 0;
+    pack->count = pack->count + total;
+    pack->segment_count = pack->segment_count + 1;
+    dondu total;
+}

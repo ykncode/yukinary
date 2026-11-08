@@ -1,0 +1,6 @@
+{
+  "exit_code": -1073741819,
+  "artifact_required": true,
+  "stdout": "",
+  "description": "HashMap UAF negatif test - runtime access violation (0xC0000005) beklenir"
+}

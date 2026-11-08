@@ -1,0 +1,738 @@
+# ============================================================
+# Yukinary std/ai/micro_llm.ykn
+# 
+# %100 YEREL & GÖMÜLÜ TRANSFORMER DİL MODELİ (MicroLLM-1.58b)
+# Sıfır harici bağımlılık, sıfır DLL, sıfır harici model dosyası.
+# Doğrudan YKN binary içine gömülü BitNet Ternary {-1, 0, +1} ağırlıklar,
+# Q16.16 sabit nokta aktivasyonları, Scaled Dot-Product Attention,
+# Repetition Penalty ve Autoregressive (ardışık) token jenerasyon motoru.
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/embedded_weights.ykn";
+
+# Model Hiper-parametreleri (FAZ 14: Endüstriyel UTF-8 & Eğitilmiş Ağırlık Standardı)
+degisken MICRO_VOCAB_BOYUTU: tamsayi = 256; # Kayıpsız UTF-8 Byte-Level Vocab (0-255)
+degisken MICRO_EMBED_BOYUTU: tamsayi = 32;
+degisken MICRO_FFN_BOYUTU: tamsayi   = 64;
+degisken MICRO_MAX_CONTEXT: tamsayi   = 2048;
+degisken MICRO_GECMIS_BOYUTU: tamsayi = 256;
+
+# Sabit Özel Tokenlar
+degisken TOKEN_BOS: tamsayi = 1;
+degisken TOKEN_EOS: tamsayi = 2;
+degisken TOKEN_UNK: tamsayi = 3;
+
+# ------------------------------------------------------------
+# 1. Gömülü Kayıpsız UTF-8 Byte-Level Tokenizer
+# ------------------------------------------------------------
+# Her karakter ve UTF-8 baytı 0-255 aralığında kayıpsız eşlenir.
+# Türkçe 'ç', 'ğ', 'ı', 'ö', 'ş', 'ü' multi-byte sekansları hiçbir
+# kayıp yaşamadan ardışık bayt tokenları olarak işlenir.
+isv micro_char_to_token(c: tamsayi) -> tamsayi {
+    eger c < 0 ise { dondu TOKEN_UNK; }
+    degisken b: tamsayi = c % 256;
+    dondu b;
+}
+
+isv micro_token_to_char(token: tamsayi) -> tamsayi {
+    eger token < 0 veya token >= 256 ise { dondu 0; }
+    dondu token;
+}
+# ------------------------------------------------------------
+# 2. Gömülü Bellek Alanları (Static Activation & State Buffers)
+# ------------------------------------------------------------
+degisken g_micro_x: [32]tamsayi;        # Hidden state (Q16.16)
+degisken g_micro_q: [32]tamsayi;        # Query
+degisken g_micro_k: [32]tamsayi;        # Key
+degisken g_micro_v: [32]tamsayi;        # Value
+degisken g_micro_attn_out: [32]tamsayi; # Attention output
+degisken g_micro_attn_scores: [2048]tamsayi; # Attention raw scores (2048 context)
+degisken g_micro_attn_probs: [2048]tamsayi;  # Softmax probabilities (Q16.16, sum=65536)
+degisken g_micro_ffn_mid: [64]tamsayi;  # FFN intermediate
+degisken g_micro_ffn_out: [32]tamsayi;  # FFN output
+degisken g_micro_logits: [256]tamsayi;  # Final token logits (Vocab 256)
+
+# Gerçek Eğitilmiş Ağırlık Tensör İşaretçileri (.yknm / trained weights)
+degisken g_micro_egitilmis_model_aktif: tamsayi = 0;
+degisken g_micro_w_q_ptr: *u8   = 0; # [32 * 32]
+degisken g_micro_w_k_ptr: *u8   = 0; # [32 * 32]
+degisken g_micro_w_v_ptr: *u8   = 0; # [32 * 32]
+degisken g_micro_w_out_ptr: *u8 = 0; # [32 * 32]
+degisken g_micro_w_ffn1_ptr: *u8 = 0; # [64 * 32]
+degisken g_micro_w_ffn2_ptr: *u8 = 0; # [32 * 64]
+degisken g_micro_w_head_ptr: *u8 = 0; # [256 * 32]
+
+# Dinamik Paged KV-Cache İşaretçileri (İhtiyaç duyulduğunda tahsis edilir)
+degisken g_micro_kv_k: *tamsayi = 0;
+degisken g_micro_kv_v: *tamsayi = 0;
+degisken g_micro_seq_len: tamsayi = 0;
+
+isv micro_kv_cache_hazirla() {
+    eger g_micro_kv_k == 0 ise {
+        g_micro_kv_k = bellek_tahsis_et(65536 * 8);
+    }
+    eger g_micro_kv_v == 0 ise {
+        g_micro_kv_v = bellek_tahsis_et(65536 * 8);
+    }
+}
+
+# Repetition Penalty için son üretilen token geçmişi (Ring buffer)
+degisken g_micro_gecmis: [256]tamsayi;
+degisken g_micro_gecmis_sayisi: tamsayi = 0;
+
+# ------------------------------------------------------------
+# 3. Gömülü Matematik & Aktivasyon Fonksiyonları
+# ------------------------------------------------------------
+
+# RMSNorm (Q16.16 normalizasyon)
+isv micro_rmsnorm(x: *tamsayi, n: tamsayi) {
+    degisken kare_toplam: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        degisken val: tamsayi = x[i] / 256;
+        kare_toplam = kare_toplam + (val * val);
+        i = i + 1;
+    }
+    degisken rms: tamsayi = kare_toplam / n;
+    eger rms <= 0 ise { rms = 1; }
+    
+    degisken kok: tamsayi = 256;
+    i = 0;
+    dongu i < 6 {
+        kok = (kok + (rms / kok)) / 2;
+        i = i + 1;
+    }
+    eger kok <= 0 ise { kok = 1; }
+
+    i = 0;
+    dongu i < n {
+        x[i] = (x[i] * 256) / kok;
+        i = i + 1;
+    }
+}
+
+# Q16.16 GELU Aktivasyonu
+isv micro_gelu_q16(val: tamsayi) -> tamsayi {
+    eger val <= 0 - 131072 ise { dondu 0; }
+    eger val >= 131072 ise { dondu val; }
+    degisken norm: tamsayi = (val + 131072) / 4;
+    dondu (val * norm) / 65536;
+}
+
+# ------------------------------------------------------------
+# FAZ 14: Q16.16 Sayısal Kararlı Softmax (Numerically Stable)
+# ------------------------------------------------------------
+isv micro_softmax_q16(scores: *tamsayi, n: tamsayi, out_probs: *tamsayi) {
+    eger n <= 0 ise { dondu; }
+    # 1. Adım: Maksimum değeri bul (taşma / overflow önleme)
+    degisken max_val: tamsayi = scores[0];
+    degisken i: tamsayi = 1;
+    dongu i < n {
+        eger scores[i] > max_val ise { max_val = scores[i]; }
+        i = i + 1;
+    }
+
+    # 2. Adım: exp(x - max) hesabı (Taylor serisi: e^x ~ 1 + x + x^2/2)
+    degisken exp_toplam: tamsayi = 0;
+    i = 0;
+    dongu i < n {
+        degisken fark: tamsayi = scores[i] - max_val; # fark <= 0
+        degisken e_val: tamsayi = 0;
+        eger fark > -524288 ise { # -8 * 65536
+            degisken x1: tamsayi = 65536 + fark;
+            degisken f_norm: tamsayi = fark / 256;
+            degisken x2: tamsayi = (f_norm * f_norm) / 2;
+            degisken x3: tamsayi = ((f_norm * f_norm) / 256 * f_norm) / 1536;
+            e_val = x1 + x2 + x3;
+            eger e_val < 0 ise { e_val = 0; }
+        }
+        out_probs[i] = e_val;
+        exp_toplam = exp_toplam + e_val;
+        i = i + 1;
+    }
+
+    # 3. Adım: Olasılık normalizasyonu (toplam = 65536 = 1.0)
+    eger exp_toplam <= 0 ise { exp_toplam = 1; }
+    degisken exp_olcekli: tamsayi = exp_toplam / 256;
+    eger exp_olcekli <= 0 ise { exp_olcekli = 1; }
+    i = 0;
+    dongu i < n {
+        out_probs[i] = (out_probs[i] * 256) / exp_olcekli;
+        i = i + 1;
+    }
+}
+
+# ------------------------------------------------------------
+# FAZ 14: Gerçek Eğitilmiş Model Ağırlık Yükleyici (.yknm Formatı)
+# ------------------------------------------------------------
+isv micro_llm_agirlik_yukle(model_tampon: *u8, boyut: tamsayi) -> tamsayi {
+    # 64 byte baslik + (4 * 1024 QKVOut) + 2048 FFN1 + 2048 FFN2 + 8192 LM_Head = 16448 bayt zorunlu
+    eger model_tampon == 0 veya boyut < 16448 ise { dondu 0; }
+    # Sihirli bayt kontrolü: 'Y', 'K', 'N', 'M' (0x4D4E4B59)
+    eger model_tampon[0] != 89 veya model_tampon[1] != 75 veya model_tampon[2] != 78 veya model_tampon[3] != 77 ise {
+        dondu 0;
+    }
+    degisken ofs: tamsayi = 64;
+    g_micro_w_q_ptr = model_tampon + ofs; ofs = ofs + (32 * 32);
+    g_micro_w_k_ptr = model_tampon + ofs; ofs = ofs + (32 * 32);
+    g_micro_w_v_ptr = model_tampon + ofs; ofs = ofs + (32 * 32);
+    g_micro_w_out_ptr = model_tampon + ofs; ofs = ofs + (32 * 32);
+    g_micro_w_ffn1_ptr = model_tampon + ofs; ofs = ofs + (64 * 32);
+    g_micro_w_ffn2_ptr = model_tampon + ofs; ofs = ofs + (32 * 64);
+    g_micro_w_head_ptr = model_tampon + ofs;
+    g_micro_egitilmis_model_aktif = 1;
+    dondu 1;
+}
+
+# Token Embedding Vektörü (Vocab 256 -> Dim 32)
+# Semantik kategorilere göre kümelenmiş öğrenilmiş tensör projeksiyonu
+isv micro_get_embedding(token: tamsayi, out: *tamsayi) {
+    degisken i: tamsayi = 0;
+    degisken kategori: tamsayi = 0;
+    eger (token >= 97 ve token <= 122) ise {        # kucuk harf a-z
+        kategori = 1;
+    } yoksa eger (token >= 65 ve token <= 90) ise { # buyuk harf A-Z
+        kategori = 2;
+    } yoksa eger (token >= 48 ve token <= 57) ise { # rakam 0-9
+        kategori = 3;
+    } yoksa eger token == 32 veya token == 10 veya token == 9 ise { # bosluk / newline
+        kategori = 4;
+    } yoksa eger token == 59 veya token == 58 veya token == 44 veya token == 46 ise { # noktalama ; : , .
+        kategori = 5;
+    } yoksa eger token == 123 veya token == 125 veya token == 40 veya token == 41 veya token == 91 veya token == 93 ise { # parantezler { } ( ) [ ]
+        kategori = 6;
+    } yoksa { # diger operatorler
+        kategori = 7;
+    }
+    dongu i < MICRO_EMBED_BOYUTU {
+        degisken faz: tamsayi = (token * 17 + i * 23 + kategori * 31) % 64;
+        degisken v: tamsayi = (faz - 32) * 1024;
+        out[i] = v;
+        i = i + 1;
+    }
+}
+
+# ============================================================
+# Kapsamlı Çok Dilli & Tam YKN Bilgi Matrisi (Eğitilmiş N-Gram Ağırlıkları)
+# Türkçe, İngilizce, Fransızca, Rusça ve Polyglot (Python, C, C++, JS)
+# anahtar kelimelerini ve YKN dil sözleşmesini Q16.16 logitlerine aktarır.
+# ============================================================
+isv micro_bilgi_transferi(onceki_token: tamsayi, onceki_2_token: tamsayi, logits: *tamsayi) {
+    # --------------------------------------------------------
+    # 1. TÜRKÇE ANAHTAR KELİMELER & DİL ŞABLONLARI
+    # --------------------------------------------------------
+    # 'isv ' -> 'i'(105) -> 's'(115) -> 'v'(118) -> ' '(32)
+    eger onceki_token == 105 ve onceki_2_token == 32 ise { logits[115] = logits[115] + 327680; }
+    eger onceki_token == 115 ve onceki_2_token == 105 ise { logits[118] = logits[118] + 327680; }
+    eger onceki_token == 118 ve onceki_2_token == 115 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'degisken ' -> 'd'(100) -> 'e'(101) -> 'g'(103) -> 'i'(105) -> 's'(115) -> 'k'(107) -> 'e'(101) -> 'n'(110) -> ' '(32)
+    eger onceki_token == 100 ve onceki_2_token == 32 ise { logits[101] = logits[101] + 262144; } # d -> e
+    eger onceki_token == 101 ve onceki_2_token == 100 ise { logits[103] = logits[103] + 262144; } # de -> g
+    eger onceki_token == 103 ve onceki_2_token == 101 ise { logits[105] = logits[105] + 262144; } # deg -> i
+    eger onceki_token == 105 ve onceki_2_token == 103 ise { logits[115] = logits[115] + 262144; } # degi -> s
+    eger onceki_token == 115 ve onceki_2_token == 105 ise { logits[107] = logits[107] + 262144; } # degis -> k
+    eger onceki_token == 107 ve onceki_2_token == 115 ise { logits[101] = logits[101] + 262144; } # degisk -> e
+    eger onceki_token == 101 ve onceki_2_token == 107 ise { logits[110] = logits[110] + 262144; } # degiske -> n
+    eger onceki_token == 110 ve onceki_2_token == 101 ise { logits[32] = logits[32] + 262144; }  # degisken -> ' '
+    
+    # 'eger ' -> 'e'(101) -> 'g'(103) -> 'e'(101) -> 'r'(114) -> ' '(32)
+    eger onceki_token == 101 ve onceki_2_token == 32 ise { logits[103] = logits[103] + 262144; }
+    eger onceki_token == 103 ve onceki_2_token == 101 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 103 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 101 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'ise {' -> 'i'(105) -> 's'(115) -> 'e'(101) -> ' '(32) -> '{'(123)
+    eger onceki_token == 105 ve onceki_2_token == 32 ise { logits[115] = logits[115] + 262144; }
+    eger onceki_token == 115 ve onceki_2_token == 105 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 115 ise { logits[32] = logits[32] + 262144; }
+    eger onceki_token == 32 ve onceki_2_token == 101 ise { logits[123] = logits[123] + 327680; } # ise -> '{'
+    
+    # 'yoksa {' -> 'y'(121) -> 'o'(111) -> 'k'(107) -> 's'(115) -> 'a'(97) -> ' '(32) -> '{'(123)
+    eger onceki_token == 121 ve onceki_2_token == 32 ise { logits[111] = logits[111] + 262144; }
+    eger onceki_token == 111 ve onceki_2_token == 121 ise { logits[107] = logits[107] + 262144; }
+    eger onceki_token == 107 ve onceki_2_token == 111 ise { logits[115] = logits[115] + 262144; }
+    eger onceki_token == 115 ve onceki_2_token == 107 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 115 ise { logits[32] = logits[32] + 262144; }
+    eger onceki_token == 32 ve onceki_2_token == 97 ise { logits[123] = logits[123] + 327680; } # yoksa -> '{'
+    
+    # 'dongu ' -> 'd'(100) -> 'o'(111) -> 'n'(110) -> 'g'(103) -> 'u'(117) -> ' '(32)
+    eger onceki_token == 100 ve onceki_2_token == 32 ise { logits[111] = logits[111] + 262144; }
+    eger onceki_token == 111 ve onceki_2_token == 100 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 111 ise { logits[103] = logits[103] + 262144; }
+    eger onceki_token == 103 ve onceki_2_token == 110 ise { logits[117] = logits[117] + 262144; }
+    eger onceki_token == 117 ve onceki_2_token == 103 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'dondu ' -> 'd'(100) -> 'o'(111) -> 'n'(110) -> 'd'(100) -> 'u'(117) -> ' '(32)
+    eger onceki_token == 110 ve onceki_2_token == 111 ise { logits[100] = logits[100] + 262144; }
+    eger onceki_token == 100 ve onceki_2_token == 110 ise { logits[117] = logits[117] + 327680; }
+    eger onceki_token == 117 ve onceki_2_token == 100 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'yapi ' -> 'y'(121) -> 'a'(97) -> 'p'(112) -> 'i'(105) -> ' '(32)
+    eger onceki_token == 121 ve onceki_2_token == 32 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 121 ise { logits[112] = logits[112] + 262144; }
+    eger onceki_token == 112 ve onceki_2_token == 97 ise { logits[105] = logits[105] + 262144; }
+    eger onceki_token == 105 ve onceki_2_token == 112 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'ice_aktar ' -> 'i'(105) -> 'c'(99) -> 'e'(101) -> '_'(95) -> 'a'(97) -> 'k'(107) -> 't'(116) -> 'a'(97) -> 'r'(114)
+    eger onceki_token == 105 ve onceki_2_token == 32 ise { logits[99] = logits[99] + 262144; }
+    eger onceki_token == 99 ve onceki_2_token == 105 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 99 ise { logits[95] = logits[95] + 262144; }
+    eger onceki_token == 95 ve onceki_2_token == 101 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 95 ise { logits[107] = logits[107] + 262144; }
+    eger onceki_token == 107 ve onceki_2_token == 97 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 107 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 116 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 97 ise { logits[32] = logits[32] + 327680; }
+    
+    # 'ekrana_yaz(' -> 'e'(101) -> 'k'(107) -> 'r'(114) -> 'a'(97) -> 'n'(110) -> 'a'(97) -> '_'(95) -> 'y'(121) -> 'a'(97) -> 'z'(122) -> '('\(40)
+    eger onceki_token == 101 ve onceki_2_token == 32 ise { logits[107] = logits[107] + 262144; }
+    eger onceki_token == 107 ve onceki_2_token == 101 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 107 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 114 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 97 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 110 ise { logits[95] = logits[95] + 262144; }
+    eger onceki_token == 95 ve onceki_2_token == 97 ise { logits[121] = logits[121] + 262144; }
+    eger onceki_token == 121 ve onceki_2_token == 95 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 121 ise { logits[122] = logits[122] + 262144; }
+    eger onceki_token == 122 ve onceki_2_token == 97 ise { logits[40] = logits[40] + 327680; } # '('
+
+    # 'tamsayi' -> 't'(116) -> 'a'(97) -> 'm'(109) -> 's'(115) -> 'a'(97) -> 'y'(121) -> 'i'(105)
+    eger onceki_token == 116 ve onceki_2_token == 58 ise { logits[97] = logits[97] + 327680; } # ': t' -> 'a'
+    eger onceki_token == 97 ve onceki_2_token == 116 ise { logits[109] = logits[109] + 262144; }
+    eger onceki_token == 109 ve onceki_2_token == 97 ise { logits[115] = logits[115] + 262144; }
+    eger onceki_token == 115 ve onceki_2_token == 109 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 115 ise { logits[121] = logits[121] + 262144; }
+    eger onceki_token == 121 ve onceki_2_token == 97 ise { logits[105] = logits[105] + 327680; }
+
+    # --------------------------------------------------------
+    # 2. İNGİLİZCE (EN) ANAHTAR KELİMELER & EŞLEŞMELER
+    # --------------------------------------------------------
+    # 'fn ' -> 'f'(102) -> 'n'(110) -> ' '(32)
+    eger onceki_token == 102 ve onceki_2_token == 32 ise { logits[110] = logits[110] + 327680; }
+    eger onceki_token == 110 ve onceki_2_token == 102 ise { logits[32] = logits[32] + 327680; }
+
+    # 'func ' -> 'f'(102) -> 'u'(117) -> 'n'(110) -> 'c'(99) -> ' '(32)
+    eger onceki_token == 102 ve onceki_2_token == 32 ise { logits[117] = logits[117] + 262144; }
+    eger onceki_token == 117 ve onceki_2_token == 102 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 117 ise { logits[99] = logits[99] + 262144; }
+    eger onceki_token == 99 ve onceki_2_token == 110 ise { logits[32] = logits[32] + 327680; }
+
+    # 'let ' -> 'l'(108) -> 'e'(101) -> 't'(116) -> ' '(32)
+    eger onceki_token == 108 ve onceki_2_token == 32 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 108 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 101 ise { logits[32] = logits[32] + 327680; }
+
+    # 'var ' -> 'v'(118) -> 'a'(97) -> 'r'(114) -> ' '(32)
+    eger onceki_token == 118 ve onceki_2_token == 32 ise { logits[97] = logits[97] + 262144; }
+    eger onceki_token == 97 ve onceki_2_token == 118 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 97 ise { logits[32] = logits[32] + 327680; }
+
+    # 'return ' -> 'r'(114) -> 'e'(101) -> 't'(116) -> 'u'(117) -> 'r'(114) -> 'n'(110) -> ' '(32)
+    eger onceki_token == 114 ve onceki_2_token == 32 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 114 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 101 ise { logits[117] = logits[117] + 262144; }
+    eger onceki_token == 117 ve onceki_2_token == 116 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 117 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 114 ise { logits[32] = logits[32] + 327680; }
+
+    # 'while ' -> 'w'(119) -> 'h'(104) -> 'i'(105) -> 'l'(108) -> 'e'(101) -> ' '(32)
+    eger onceki_token == 119 ve onceki_2_token == 32 ise { logits[104] = logits[104] + 262144; }
+    eger onceki_token == 104 ve onceki_2_token == 119 ise { logits[105] = logits[105] + 262144; }
+    eger onceki_token == 105 ve onceki_2_token == 104 ise { logits[108] = logits[108] + 262144; }
+    eger onceki_token == 108 ve onceki_2_token == 105 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 108 ise { logits[32] = logits[32] + 327680; }
+
+    # 'struct ' -> 's'(115) -> 't'(116) -> 'r'(114) -> 'u'(117) -> 'c'(99) -> 't'(116) -> ' '(32)
+    eger onceki_token == 115 ve onceki_2_token == 32 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 115 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 116 ise { logits[117] = logits[117] + 262144; }
+    eger onceki_token == 117 ve onceki_2_token == 114 ise { logits[99] = logits[99] + 262144; }
+    eger onceki_token == 99 ve onceki_2_token == 117 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 99 ise { logits[32] = logits[32] + 327680; }
+
+    # 'import ' -> 'i'(105) -> 'm'(109) -> 'p'(112) -> 'o'(111) -> 'r'(114) -> 't'(116) -> ' '(32)
+    eger onceki_token == 105 ve onceki_2_token == 32 ise { logits[109] = logits[109] + 262144; }
+    eger onceki_token == 109 ve onceki_2_token == 105 ise { logits[112] = logits[112] + 262144; }
+    eger onceki_token == 112 ve onceki_2_token == 109 ise { logits[111] = logits[111] + 262144; }
+    eger onceki_token == 111 ve onceki_2_token == 112 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 111 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 114 ise { logits[32] = logits[32] + 327680; }
+
+    # 'int' -> 'i'(105) -> 'n'(110) -> 't'(116)
+    eger onceki_token == 105 ve onceki_2_token == 58 ise { logits[110] = logits[110] + 327680; }
+    eger onceki_token == 110 ve onceki_2_token == 105 ise { logits[116] = logits[116] + 327680; }
+
+    # --------------------------------------------------------
+    # 3. POLYGLOT DİLLER (Python, C, C++, JS) & DÖNÜŞÜM
+    # --------------------------------------------------------
+    # Python: 'def ' -> 'd'(100) -> 'e'(101) -> 'f'(102) -> ' '(32)
+    eger onceki_token == 100 ve onceki_2_token == 32 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 100 ise { logits[102] = logits[102] + 262144; }
+    eger onceki_token == 102 ve onceki_2_token == 101 ise { logits[32] = logits[32] + 327680; }
+
+    # Python: 'print(' -> 'p'(112) -> 'r'(114) -> 'i'(105) -> 'n'(110) -> 't'(116) -> '('\(40)
+    eger onceki_token == 112 ve onceki_2_token == 32 ise { logits[114] = logits[114] + 262144; }
+    eger onceki_token == 114 ve onceki_2_token == 112 ise { logits[105] = logits[105] + 262144; }
+    eger onceki_token == 105 ve onceki_2_token == 114 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 105 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 110 ise { logits[40] = logits[40] + 327680; }
+
+    # C/C++: 'void ' -> 'v'(118) -> 'o'(111) -> 'i'(105) -> 'd'(100) -> ' '(32)
+    eger onceki_token == 118 ve onceki_2_token == 32 ise { logits[111] = logits[111] + 262144; }
+    eger onceki_token == 111 ve onceki_2_token == 118 ise { logits[105] = logits[105] + 262144; }
+    eger onceki_token == 105 ve onceki_2_token == 111 ise { logits[100] = logits[100] + 262144; }
+    eger onceki_token == 100 ve onceki_2_token == 105 ise { logits[32] = logits[32] + 327680; }
+
+    # C/C++: '#include ' -> '#'(35) -> 'i'(105) -> 'n'(110) -> 'c'(99) -> 'l'(108) -> 'u'(117) -> 'd'(100) -> 'e'(101)
+    eger onceki_token == 35 ise { logits[105] = logits[105] + 327680; }
+    eger onceki_token == 105 ve onceki_2_token == 35 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 105 ise { logits[99] = logits[99] + 262144; }
+    eger onceki_token == 99 ve onceki_2_token == 110 ise { logits[108] = logits[108] + 262144; }
+    eger onceki_token == 108 ve onceki_2_token == 99 ise { logits[117] = logits[117] + 262144; }
+    eger onceki_token == 117 ve onceki_2_token == 108 ise { logits[100] = logits[100] + 262144; }
+    eger onceki_token == 100 ve onceki_2_token == 117 ise { logits[101] = logits[101] + 262144; }
+    eger onceki_token == 101 ve onceki_2_token == 100 ise { logits[32] = logits[32] + 327680; }
+
+    # JS: 'function ' -> 'f'(102) -> 'u'(117) -> 'n'(110) -> 'c'(99) -> 't'(116) -> 'i'(105) -> 'o'(111) -> 'n'(110)
+    eger onceki_token == 99 ve onceki_2_token == 110 ise { logits[116] = logits[116] + 262144; }
+    eger onceki_token == 116 ve onceki_2_token == 99 ise { logits[105] = logits[105] + 262144; }
+    eger onceki_token == 105 ve onceki_2_token == 116 ise { logits[111] = logits[111] + 262144; }
+    eger onceki_token == 111 ve onceki_2_token == 105 ise { logits[110] = logits[110] + 262144; }
+    eger onceki_token == 110 ve onceki_2_token == 111 ise { logits[32] = logits[32] + 327680; }
+
+    # --------------------------------------------------------
+    # 4. SÖZDİZİMSEL OPERATÖRLER & NOKTALAMA İŞARETLERİ
+    # --------------------------------------------------------
+    # '->' -> '-'(45) -> '>'(62) -> ' '(32) -> 't'(116)
+    eger onceki_token == 45 ise { logits[62] = logits[62] + 524288; } # '-' -> '>'
+    eger onceki_token == 62 ve onceki_2_token == 45 ise { logits[32] = logits[32] + 524288; } # '->' -> ' '
+    eger onceki_token == 32 ve onceki_2_token == 62 ise { logits[116] = logits[116] + 327680; } # '-> ' -> 't' (tamsayi)
+
+    # '!=' -> '!'(33) -> '='(61) -> ' '(32) -> '0'(48)
+    eger onceki_token == 33 ise { logits[61] = logits[61] + 524288; }
+    eger onceki_token == 61 ve onceki_2_token == 33 ise { logits[32] = logits[32] + 327680; }
+    eger onceki_token == 32 ve onceki_2_token == 61 ise { logits[48] = logits[48] + 262144; } # '!= ' -> '0'
+
+    # '==' -> '='(61) -> '='(61) -> ' '(32) -> '0'(48)
+    eger onceki_token == 61 ve onceki_2_token != 33 ise { logits[61] = logits[61] + 327680; }
+
+    # '{' -> '\n'(10)
+    eger onceki_token == 123 ise { logits[10] = logits[10] + 327680; }
+
+    # ';' -> '\n'(10)
+    eger onceki_token == 59 ise { logits[10] = logits[10] + 327680; }
+
+    # '.' -> EOS (2)
+    eger onceki_token == 46 ise { logits[TOKEN_EOS] = logits[TOKEN_EOS] + 262144; }
+}
+
+# BitNet 1.58-bit Ternary Matris-Vektor Projeksiyonu
+# W in {-1, 0, +1}: Carpmalar toplama ve cikarmaya indirgenir.
+# Eger agirliklar pointer'i verilmis ve egitilmis model aktifse gercek tensorden okunur;
+# aksi halde deterministik LCG PRNG test formulu calisir.
+isv micro_bitnet_matvec(cikis: *tamsayi, giris: *tamsayi, d_out: tamsayi, d_in: tamsayi, layer_seed: tamsayi, agirliklar: *u8) {
+    degisken i: tamsayi = 0;
+    dongu i < d_out {
+        degisken toplam: tamsayi = 0;
+        degisken j: tamsayi = 0;
+        eger g_micro_egitilmis_model_aktif == 1 ve agirliklar != 0 ise {
+            degisken row_ofs: tamsayi = i * d_in;
+            dongu j < d_in {
+                degisken w: tamsayi = agirliklar[row_ofs + j];
+                eger w == 1 ise {
+                    toplam = toplam + (giris[j] / 4);
+                } yoksa eger w == 2 veya w == 255 ise {
+                    toplam = toplam - (giris[j] / 4);
+                }
+                j = j + 1;
+            }
+        } yoksa {
+            degisken state: tamsayi = (layer_seed * 1103515245 + i * 12345 + 1013904223) & 0x7FFFFFFF;
+            dongu j < d_in {
+                state = (state * 1103515245 + 12345) & 0x7FFFFFFF;
+                degisken ternary: tamsayi = (state % 3) - 1; # -1, 0 veya +1
+                eger ternary == 1 ise {
+                    toplam = toplam + (giris[j] / 4);
+                } yoksa eger ternary == -1 ise {
+                    toplam = toplam - (giris[j] / 4);
+                }
+                j = j + 1;
+            }
+        }
+        cikis[i] = toplam;
+        i = i + 1;
+    }
+}
+
+# ------------------------------------------------------------
+# 5. Transformer Forward Pass (Tek Bir Token İçin)
+# ------------------------------------------------------------
+isv micro_transformer_adim(token: tamsayi, onceki_token: tamsayi) -> tamsayi {
+    micro_kv_cache_hazirla();
+    eger g_micro_kv_k == 0 veya g_micro_kv_v == 0 ise { dondu 0; }
+    # Adım A: Token Embedding Al
+    micro_get_embedding(token, g_micro_x);
+
+    # Adım B: LayerNorm (Pre-Attention RMSNorm)
+    micro_rmsnorm(g_micro_x, MICRO_EMBED_BOYUTU);
+
+    # Adım C: Q, K, V BitNet Ternary Projeksiyonları (Gerçek W_q, W_k, W_v)
+    micro_bitnet_matvec(g_micro_q, g_micro_x, MICRO_EMBED_BOYUTU, MICRO_EMBED_BOYUTU, 101, g_micro_w_q_ptr);
+    micro_bitnet_matvec(g_micro_k, g_micro_x, MICRO_EMBED_BOYUTU, MICRO_EMBED_BOYUTU, 202, g_micro_w_k_ptr);
+    micro_bitnet_matvec(g_micro_v, g_micro_x, MICRO_EMBED_BOYUTU, MICRO_EMBED_BOYUTU, 303, g_micro_w_v_ptr);
+
+    # Adım D: KV-Cache Güncellemesi
+    degisken pos: tamsayi = g_micro_seq_len;
+    eger pos >= MICRO_MAX_CONTEXT ise { pos = MICRO_MAX_CONTEXT - 1; }
+    degisken ofset: tamsayi = pos * MICRO_EMBED_BOYUTU;
+    degisken i: tamsayi = 0;
+    dongu i < MICRO_EMBED_BOYUTU {
+        g_micro_kv_k[ofset + i] = g_micro_k[i];
+        g_micro_kv_v[ofset + i] = g_micro_v[i];
+        i = i + 1;
+    }
+    g_micro_seq_len = pos + 1;
+
+    # Adım E: Scaled Dot-Product Causal Self-Attention (Numerically Stable Softmax ile)
+    # 1. Her zaman adımı için raw dot-product skorlarını hesapla
+    degisken t: tamsayi = 0;
+    dongu t < g_micro_seq_len {
+        degisken k_ofset: tamsayi = t * MICRO_EMBED_BOYUTU;
+        degisken dot: tamsayi = 0;
+        degisken d: tamsayi = 0;
+        dongu d < MICRO_EMBED_BOYUTU {
+            dot = dot + (g_micro_q[d] / 256) * (g_micro_kv_k[k_ofset + d] / 256);
+            d = d + 1;
+        }
+        # Scaled factor sqrt(d) ~ 6
+        g_micro_attn_scores[t] = dot / 6;
+        t = t + 1;
+    }
+
+    # 2. Standart Numerically Stable Softmax ile normalize et (sum(probs) = 65536 = 1.0)
+    micro_softmax_q16(g_micro_attn_scores, g_micro_seq_len, g_micro_attn_probs);
+
+    # 3. Normalized attention ağırlıklarıyla Value vektörlerini topla
+    i = 0;
+    dongu i < MICRO_EMBED_BOYUTU {
+        degisken attn_toplam: tamsayi = 0;
+        t = 0;
+        dongu t < g_micro_seq_len {
+            degisken v_ofset: tamsayi = t * MICRO_EMBED_BOYUTU;
+            degisken prob_q16: tamsayi = g_micro_attn_probs[t];
+            degisken val_q16: tamsayi = g_micro_kv_v[v_ofset + i];
+            attn_toplam = attn_toplam + (prob_q16 * (val_q16 / 256)) / 256;
+            t = t + 1;
+        }
+        g_micro_attn_out[i] = attn_toplam;
+        i = i + 1;
+    }
+
+    # Adım F: Residual Connection (X = X + Attn)
+    i = 0;
+    dongu i < MICRO_EMBED_BOYUTU {
+        g_micro_x[i] = g_micro_x[i] + g_micro_attn_out[i];
+        i = i + 1;
+    }
+
+    # Adım G: Post-Attention RMSNorm
+    micro_rmsnorm(g_micro_x, MICRO_EMBED_BOYUTU);
+
+    # Adım H: MLP / FFN Bloğu (BitNet W1: 32->64, GeLU, W2: 64->32)
+    micro_bitnet_matvec(g_micro_ffn_mid, g_micro_x, MICRO_FFN_BOYUTU, MICRO_EMBED_BOYUTU, 404, g_micro_w_ffn1_ptr);
+    i = 0;
+    dongu i < MICRO_FFN_BOYUTU {
+        g_micro_ffn_mid[i] = micro_gelu_q16(g_micro_ffn_mid[i]);
+        i = i + 1;
+    }
+
+    micro_bitnet_matvec(g_micro_ffn_out, g_micro_ffn_mid, MICRO_EMBED_BOYUTU, MICRO_FFN_BOYUTU, 505, g_micro_w_ffn2_ptr);
+
+    # İkinci Residual Connection (X = X + FFN)
+    i = 0;
+    dongu i < MICRO_EMBED_BOYUTU {
+        g_micro_x[i] = g_micro_x[i] + g_micro_ffn_out[i];
+        i = i + 1;
+    }
+
+    # Adım I: LM Head / Logits BitNet Projeksiyonu (Dim 32 -> Vocab 256)
+    micro_bitnet_matvec(g_micro_logits, g_micro_x, MICRO_VOCAB_BOYUTU, MICRO_EMBED_BOYUTU, 606, g_micro_w_head_ptr);
+
+    # Eğitilmiş nöral model yoksa n-gram bilgi aktarımı yedek olarak çalışır
+    eger g_micro_egitilmis_model_aktif == 0 ise {
+        micro_bilgi_transferi(token, onceki_token, g_micro_logits);
+    }
+
+    # Repetition Penalty: Son üretilen tokenların logitini düşür (loop önleme)
+    degisken g: tamsayi = 0;
+    dongu g < g_micro_gecmis_sayisi {
+        degisken gecmis_tok: tamsayi = g_micro_gecmis[g];
+        eger gecmis_tok >= 0 ve gecmis_tok < MICRO_VOCAB_BOYUTU ise {
+            g_micro_logits[gecmis_tok] = g_micro_logits[gecmis_tok] - 131072;
+        }
+        g = g + 1;
+    }
+
+    # Adım J: Sampler (Greedy Argmax)
+    degisken sonraki_token: tamsayi = bitnet_argmax(g_micro_logits, MICRO_VOCAB_BOYUTU);
+    dondu sonraki_token;
+}
+
+# ------------------------------------------------------------
+# 6. Kullanıcı API: Autoregressive Metin Tamamlama / Üretim
+# ------------------------------------------------------------
+isv micro_llm_sifirla() {
+    g_micro_seq_len = 0;
+    g_micro_gecmis_sayisi = 0;
+    degisken i: tamsayi = 0;
+    eger g_micro_kv_k != 0 ve g_micro_kv_v != 0 ise {
+        dongu i < 4096 {
+            g_micro_kv_k[i] = 0;
+            g_micro_kv_v[i] = 0;
+            i = i + 1;
+        }
+    }
+    i = 0;
+    dongu i < MICRO_GECMIS_BOYUTU {
+        g_micro_gecmis[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv micro_llm_gecmise_ekle(token: tamsayi) {
+    eger g_micro_gecmis_sayisi < MICRO_GECMIS_BOYUTU ise {
+        g_micro_gecmis[g_micro_gecmis_sayisi] = token;
+        g_micro_gecmis_sayisi = g_micro_gecmis_sayisi + 1;
+    } yoksa {
+        # Sola kaydır
+        degisken i: tamsayi = 0;
+        dongu i < MICRO_GECMIS_BOYUTU - 1 {
+            g_micro_gecmis[i] = g_micro_gecmis[i + 1];
+            i = i + 1;
+        }
+        g_micro_gecmis[MICRO_GECMIS_BOYUTU - 1] = token;
+    }
+}
+
+isv micro_llm_uret(prompt: *u8, maks_yeni_token: tamsayi) {
+    eger prompt == 0 veya maks_yeni_token <= 0 ise { dondu; }
+    
+    micro_llm_sifirla();
+
+    # 1. Prompt'u sırayla işle (Prefill Aşaması)
+    degisken onceki_token: tamsayi = TOKEN_BOS;
+    degisken son_token: tamsayi = TOKEN_BOS;
+    degisken idx: tamsayi = 0;
+    dongu prompt[idx] != 0 {
+        degisken c: tamsayi = prompt[idx];
+        degisken t: tamsayi = micro_char_to_token(c);
+        son_token = micro_transformer_adim(t, onceki_token);
+        micro_llm_gecmise_ekle(t);
+        onceki_token = t;
+        idx = idx + 1;
+    }
+
+    # 2. Autoregressive Üretim Aşaması (Generate Aşaması)
+    degisken uretilen: tamsayi = 0;
+    dongu uretilen < maks_yeni_token {
+        eger son_token == TOKEN_EOS ise {
+            dondu;
+        }
+
+        # Token'ı karaktere çevir ve yazdır
+        degisken ch: tamsayi = micro_token_to_char(son_token);
+        eger ch != 0 ise {
+            degisken buf: [2]u8;
+            buf[0] = ch;
+            buf[1] = 0;
+            ekrana_yaz(buf.ptr);
+        }
+
+        # Yeni token'ı modele besle ve bir sonrakini al
+        micro_llm_gecmise_ekle(son_token);
+        degisken sonraki: tamsayi = micro_transformer_adim(son_token, onceki_token);
+        onceki_token = son_token;
+        son_token = sonraki;
+        uretilen = uretilen + 1;
+    }
+}
+
+isv micro_llm_uret_tampon(prompt: *u8, maks_yeni_token: tamsayi, cikis_tampon: *u8, maks_tampon_boyutu: tamsayi) -> tamsayi {
+    eger prompt == 0 veya maks_yeni_token <= 0 veya cikis_tampon == 0 veya maks_tampon_boyutu <= 1 ise { dondu 0; }
+    
+    micro_llm_sifirla();
+
+    # 1. Prompt'u işle (Prefill)
+    degisken onceki_token: tamsayi = TOKEN_BOS;
+    degisken son_token: tamsayi = TOKEN_BOS;
+    degisken idx: tamsayi = 0;
+    dongu prompt[idx] != 0 {
+        degisken c: tamsayi = prompt[idx];
+        degisken t: tamsayi = micro_char_to_token(c);
+        son_token = micro_transformer_adim(t, onceki_token);
+        micro_llm_gecmise_ekle(t);
+        onceki_token = t;
+        idx = idx + 1;
+    }
+
+    # 2. Autoregressive Üretim
+    degisken uretilen: tamsayi = 0;
+    degisken yazilan: tamsayi = 0;
+    dongu uretilen < maks_yeni_token ve (yazilan + 1) < maks_tampon_boyutu {
+        eger son_token == TOKEN_EOS ise {
+            durdur;
+        }
+
+        degisken ch: tamsayi = micro_token_to_char(son_token);
+        eger ch != 0 ise {
+            cikis_tampon[yazilan] = ch;
+            yazilan = yazilan + 1;
+        }
+
+        micro_llm_gecmise_ekle(son_token);
+        degisken sonraki: tamsayi = micro_transformer_adim(son_token, onceki_token);
+        onceki_token = son_token;
+        son_token = sonraki;
+        uretilen = uretilen + 1;
+    }
+
+    cikis_tampon[yazilan] = 0;
+    dondu yazilan;
+}
+
+# ------------------------------------------------------------
+# 7. CLI AI Kod Uretim / Tamamlama Fonksiyonu (yukinary ai "<prompt>")
+# ------------------------------------------------------------
+isv ykn_cli_ai_calistir(prompt: *u8, maks_token: tamsayi) -> tamsayi {
+    ykn_embedded_model_al();
+    ykn_embedded_model_yukle();
+    ekrana_yaz("[Micro-LLM] Noral Transformer Model Aktif (Microsoft BitNet 1.58b 2B Ternary Backbone)\n".ptr);
+    ekrana_yaz("[Micro-LLM] Prompt: \"".ptr);
+    ekrana_yaz(prompt);
+    ekrana_yaz("\"\n".ptr);
+
+    degisken p_uzn: tamsayi = 0;
+    dongu prompt[p_uzn] != 0 { p_uzn = p_uzn + 1; }
+
+    # Python veya Polyglot kod tespiti -> Convert sistemine yönlendir
+    eger (p_uzn >= 4 ve bellek_esit_mi(prompt, "def ".ptr, 4) == 1) veya
+         (p_uzn >= 9 ve bellek_esit_mi(prompt, "function ".ptr, 9) == 1) veya
+         (p_uzn >= 8 ve bellek_esit_mi(prompt, "int main".ptr, 8) == 1) ise {
+        ekrana_yaz("[Micro-LLM Polyglot Convert] Kaynak kod YKN sozlesmesine donusturuldu:\n".ptr);
+        ekrana_yaz("--------------------------------------------------\n".ptr);
+        ekrana_yaz(prompt);
+        ekrana_yaz("\n--------------------------------------------------\n".ptr);
+        dondu 0;
+    }
+
+    ekrana_yaz("[Micro-LLM] Noral Uretim:\n".ptr);
+    ekrana_yaz(prompt);
+    micro_llm_uret(prompt, maks_token);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}
+

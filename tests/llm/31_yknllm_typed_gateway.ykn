@@ -1,0 +1,123 @@
+# Saf YKN gateway contract ve JSON'suz binary frame acceptance testi.
+ice_aktar "std/ai/yknllm_gateway.ykn";
+ice_aktar "std/ai/yknllm_gateway_decoder.ykn";
+
+isv ana() -> tamsayi {
+    degisken intent: YKNLLMIntent;
+    intent.kullanici_metni = "bir YKN fonksiyonu yaz".ptr;
+    intent.islem = "implement".ptr;
+    intent.calisma_alani = "workspace".ptr;
+    intent.kisitlar = "yalniz YKN; shell yok; network yok".ptr;
+
+    degisken politika: YKNLLMCapabilityPolicy;
+    politika.dosya_yazma = 0;
+    politika.kabuk = 0;
+    politika.ag = 0;
+    politika.azami_kod_bayti = 4096;
+
+    eger yknllm_gateway_intent_dogrula(&intent) == 0 veya
+       yknllm_gateway_politika_dogrula(&politika) == 0 ise {
+        ekrana_yaz("FAIL: typed intent/policy reddedildi\n".ptr);
+        dondu 1;
+    }
+
+    degisken cevap: YKNLLMResponse;
+    cevap.tur = YKNLLM_KIND_CODE;
+    cevap.kod = "isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }".ptr;
+    cevap.model_surumu = "yknllm-test-1".ptr;
+    cevap.guven_q16 = 60000;
+    eger yknllm_gateway_response_dogrula(&cevap, &politika) == 0 ise {
+        ekrana_yaz("FAIL: valid YKN response reddedildi\n".ptr);
+        dondu 1;
+    }
+
+    degisken profil: YKNLLMModelProfile;
+    profil.model_yolu = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    profil.mimari = "bitnet-b1.58".ptr;
+    profil.gguf_versiyonu = 3;
+    profil.tensor_sayisi = 332;
+    profil.quant_tipi = 36;
+    profil.read_only = 1;
+    eger yknllm_gateway_model_profili_dogrula(&profil) == 0 ise {
+        ekrana_yaz("FAIL: read-only GGUF profile reddedildi\n".ptr);
+        dondu 1;
+    }
+
+    degisken frame_buffer: [512]u8;
+    degisken frame: YKNLLMBinaryFrame;
+    eger yknllm_gateway_istek_kodla(&frame_buffer, 512, &intent,
+                                     &profil, &frame) == 0 veya
+       frame.uzunluk <= 24 veya frame.veri[0] != 71 ise {
+        ekrana_yaz("FAIL: binary typed frame kodlanamadi\n".ptr);
+        dondu 1;
+    }
+    degisken decoded: YKNLLMDecodedRequest;
+    degisken decode_sonuc: tamsayi = yknllm_gateway_istek_coz(frame.veri, frame.uzunluk, &decoded);
+    eger decode_sonuc != 1 ise {
+        eger decode_sonuc == YKNLLM_DECODE_HATA_HEADER ise { ekrana_yaz("FAIL: decode header\n".ptr); }
+        eger decode_sonuc == YKNLLM_DECODE_HATA_SINIR ise { ekrana_yaz("FAIL: decode bounded field\n".ptr); }
+        eger decode_sonuc == YKNLLM_DECODE_HATA_ARTIK ise { ekrana_yaz("FAIL: decode trailing bytes\n".ptr); }
+        eger decode_sonuc == YKNLLM_DECODE_HATA_TIP ise {
+            degisken decoded_intent: YKNLLMIntent;
+            decoded_intent.kullanici_metni = decoded.kullanici_metni;
+            decoded_intent.islem = decoded.islem;
+            decoded_intent.calisma_alani = decoded.calisma_alani;
+            decoded_intent.kisitlar = decoded.kisitlar;
+            eger yknllm_gateway_intent_dogrula(&decoded_intent) == 0 {
+                ekrana_yaz("FAIL: decoded intent validation\n".ptr);
+            }
+            degisken decoded_model: YKNLLMModelProfile;
+            decoded_model.model_yolu = decoded.model_yolu;
+            decoded_model.mimari = decoded.mimari;
+            decoded_model.gguf_versiyonu = decoded.gguf_versiyonu;
+            decoded_model.tensor_sayisi = decoded.tensor_sayisi;
+            decoded_model.quant_tipi = decoded.quant_tipi;
+            decoded_model.read_only = decoded.read_only;
+            eger yknllm_gateway_model_profili_dogrula(&decoded_model) == 0 {
+                ekrana_yaz("FAIL: decoded model validation\n".ptr);
+            }
+        }
+        dondu 1;
+    }
+    eger decoded.rol != YKNLLM_ROLE_CODE_ONLY veya
+       yknllm_gateway_icerir(decoded.mimari, "bitnet".ptr) == 0 veya
+       yknllm_gateway_esit(decoded.islem, "implement".ptr) == 0 ise {
+        ekrana_yaz("FAIL: decoded fields mismatch\n".ptr);
+        dondu 1;
+    }
+    degisken trailing: [513]u8;
+    degisken kopya: tamsayi = 0;
+    dongu kopya < frame.uzunluk { trailing[kopya] = frame.veri[kopya]; kopya = kopya + 1; }
+    trailing[frame.uzunluk] = 1;
+    eger yknllm_gateway_istek_coz(&trailing, frame.uzunluk + 1, &decoded) != YKNLLM_DECODE_HATA_ARTIK ise {
+        ekrana_yaz("FAIL: trailing byte kabul edildi\n".ptr);
+        dondu 1;
+    }
+    trailing[0] = 0;
+    eger yknllm_gateway_istek_coz(&trailing, frame.uzunluk, &decoded) != YKNLLM_DECODE_HATA_HEADER ise {
+        ekrana_yaz("FAIL: header corruption kabul edildi\n".ptr);
+        dondu 1;
+    }
+
+    cevap.kod = "```python\ndef sahte(): pass\n```".ptr;
+    eger yknllm_gateway_response_dogrula(&cevap, &politika) != 0 ise {
+        ekrana_yaz("FAIL: non-YKN output kabul edildi\n".ptr);
+        dondu 1;
+    }
+
+    profil.read_only = 0;
+    eger yknllm_gateway_model_profili_dogrula(&profil) != 0 ise {
+        ekrana_yaz("FAIL: writable model profile kabul edildi\n".ptr);
+        dondu 1;
+    }
+    profil.read_only = 1;
+
+    intent.calisma_alani = "../escape".ptr;
+    eger yknllm_gateway_intent_dogrula(&intent) != 0 ise {
+        ekrana_yaz("FAIL: path traversal intent kabul edildi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("YKNLLM_TYPED_GATEWAY_PASS\n".ptr);
+    dondu 0;
+}

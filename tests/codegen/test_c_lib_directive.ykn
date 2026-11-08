@@ -1,0 +1,6 @@
+#c-lib "kernel32";
+harici isv ExitProcess(kod: tamsayi);
+isv ana() -> tamsayi {
+    ExitProcess(0);
+    dondu 0;
+}

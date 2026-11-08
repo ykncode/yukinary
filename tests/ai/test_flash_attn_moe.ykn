@@ -1,0 +1,67 @@
+# ============================================================
+# tests/ai/test_flash_attn_moe.ykn
+# FAZ 38: FlashAttention-2, MoE ve Speculative Decoding Testi
+# ============================================================
+
+ice_aktar "std/ai/flash_attention.ykn";
+ice_aktar "std/ai/moe.ykn";
+ice_aktar "std/ai/speculative.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 38: FlashAttention-2, MoE & Speculative Testi Basliyor...\n".ptr);
+
+    # 1. FlashAttention-2 Testi (seq=2, dim=2)
+    degisken Q: *tamsayi = bellek_tahsis_et(32);
+    degisken K: *tamsayi = bellek_tahsis_et(32);
+    degisken V: *tamsayi = bellek_tahsis_et(32);
+    degisken O: *tamsayi = bellek_tahsis_et(32);
+
+    Q[0] = 1; Q[1] = 0;
+    Q[2] = 0; Q[3] = 1;
+
+    K[0] = 1; K[1] = 0;
+    K[2] = 0; K[3] = 1;
+
+    V[0] = 10; V[1] = 20;
+    V[2] = 30; V[3] = 40;
+
+    flash_attention_2_cpu(Q, K, V, O, 2, 2);
+    eger O[0] <= 0 veya O[3] <= 0 ise {
+        ekrana_yaz("HATA: FlashAttention-2 cikti degeri hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. MoE Top-2 Uzman Yonlendirme Testi (4 uzman, dim=2)
+    degisken girdi: *tamsayi = bellek_tahsis_et(16);
+    girdi[0] = 5; girdi[1] = 10;
+
+    degisken gate_w: *tamsayi = bellek_tahsis_et(64); # 4x2
+    gate_w[0] = 1; gate_w[1] = 1; # e0: 15
+    gate_w[2] = 2; gate_w[3] = 4; # e1: 10 + 40 = 50 (1. en yuksek)
+    gate_w[4] = 3; gate_w[5] = 2; # e2: 15 + 20 = 35 (2. en yuksek)
+    gate_w[6] = 0; gate_w[7] = 1; # e3: 10
+
+    degisken moe_sonuc: MoEResult;
+    moe_top2_gating(girdi, 2, gate_w, 4, &moe_sonuc);
+
+    eger moe_sonuc.uzman_1 != 1 veya moe_sonuc.uzman_2 != 2 ise {
+        ekrana_yaz("HATA: MoE Top-2 uzman secimi hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Spekulatif Cikarim (Speculative Decoding) Testi
+    degisken taslak: *tamsayi = bellek_tahsis_et(32);
+    degisken hedef: *tamsayi = bellek_tahsis_et(32);
+
+    taslak[0] = 100; taslak[1] = 200; taslak[2] = 300; taslak[3] = 400;
+    hedef[0] = 100;  hedef[1] = 200;  hedef[2] = 300;  hedef[3] = 999; # 4. token farkli!
+
+    degisken kabul: tamsayi = speculative_dogrula(taslak, hedef, 4);
+    eger kabul != 3 ise {
+        ekrana_yaz("HATA: Spekulatif dogrulama sayisi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("FLASH_ATTN_MOE_PASS\n".ptr);
+    dondu 0;
+}

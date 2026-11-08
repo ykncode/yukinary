@@ -1,0 +1,165 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/ai/relational_core.ykn
+# YKN-CORE: Code-Oriented Relational Engine (Kod Odakli Iliskisel Cekirdek)
+# AST, Sembol Graflari ve Semantik Kod Temsil Motoru
+# SIFIR MOCK, %100 NATIVE YUKINARY (No Python, No PyTorch)
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Dugum ve Kenar Sabitleri
+# ------------------------------------------------------------
+degisken CORE_MAX_DUGUM: tamsayi = 256;
+degisken CORE_MAX_KENAR: tamsayi = 1024;
+
+degisken CORE_DUGUM_BOS: tamsayi = 0;
+degisken CORE_DUGUM_FONKSIYON: tamsayi = 1;
+degisken CORE_DUGUM_DEGISKEN: tamsayi = 2;
+degisken CORE_DUGUM_TIP: tamsayi = 3;
+degisken CORE_DUGUM_BLOK: tamsayi = 4;
+
+degisken CORE_KENAR_CALLS: tamsayi = 1;      # Fonksiyon baska fonksiyonu cagirir
+degisken CORE_KENAR_DEFINES: tamsayi = 2;    # Kapsam/Blok degiskeni tanimlar
+degisken CORE_KENAR_USES: tamsayi = 3;       # Kod blogu degiskeni kullanir
+degisken CORE_KENAR_RETURNS: tamsayi = 4;    # Fonksiyon belirli bir tipi dondurur
+degisken CORE_KENAR_HAS_TYPE: tamsayi = 5;   # Degisken belirli bir tipe sahiptir
+
+# ------------------------------------------------------------
+# 2. Iliskisel Bellek Tablolari (Sparse Graph / Static Adjacency)
+# ------------------------------------------------------------
+degisken g_core_dugum_sayisi: tamsayi = 0;
+degisken g_core_dugum_tipleri: [256]tamsayi;
+degisken g_core_dugum_skorlari: [256]tamsayi; # Q16.16 Centrality / Importance
+
+degisken g_core_kenar_sayisi: tamsayi = 0;
+degisken g_core_kenar_kaynak: [1024]tamsayi;
+degisken g_core_kenar_hedef: [1024]tamsayi;
+degisken g_core_kenar_tipi: [1024]tamsayi;
+degisken g_core_kenar_agirlik: [1024]tamsayi; # Q16.16 Agirlik
+
+# ------------------------------------------------------------
+# 3. YKN-CORE Motoru Ilklendirme ve Dugum/Kenar Yonetimi
+# ------------------------------------------------------------
+isv ykn_core_sifirla() {
+    g_core_dugum_sayisi = 0;
+    g_core_kenar_sayisi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < CORE_MAX_DUGUM {
+        g_core_dugum_tipleri[i] = CORE_DUGUM_BOS;
+        g_core_dugum_skorlari[i] = 65536; # 1.0 baslangic skoru (Q16.16)
+        i = i + 1;
+    }
+    i = 0;
+    dongu i < CORE_MAX_KENAR {
+        g_core_kenar_kaynak[i] = 0;
+        g_core_kenar_hedef[i] = 0;
+        g_core_kenar_tipi[i] = 0;
+        g_core_kenar_agirlik[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv ykn_core_dugum_ekle(dugum_id: tamsayi, dugum_tipi: tamsayi) -> tamsayi {
+    eger dugum_id < 0 veya dugum_id >= CORE_MAX_DUGUM ise { dondu 0; }
+    g_core_dugum_tipleri[dugum_id] = dugum_tipi;
+    g_core_dugum_skorlari[dugum_id] = 65536; # 1.0 (Q16.16)
+    eger dugum_id >= g_core_dugum_sayisi ise {
+        g_core_dugum_sayisi = dugum_id + 1;
+    }
+    dondu 1;
+}
+
+isv ykn_core_kenar_ekle(kaynak_id: tamsayi, hedef_id: tamsayi, kenar_tipi: tamsayi, agirlik_q16: tamsayi) -> tamsayi {
+    eger g_core_kenar_sayisi >= CORE_MAX_KENAR ise { dondu 0; }
+    eger kaynak_id < 0 veya kaynak_id >= CORE_MAX_DUGUM veya hedef_id < 0 veya hedef_id >= CORE_MAX_DUGUM ise { dondu 0; }
+
+    degisken k: tamsayi = g_core_kenar_sayisi;
+    g_core_kenar_kaynak[k] = kaynak_id;
+    g_core_kenar_hedef[k] = hedef_id;
+    g_core_kenar_tipi[k] = kenar_tipi;
+    g_core_kenar_agirlik[k] = agirlik_q16;
+    g_core_kenar_sayisi = g_core_kenar_sayisi + 1;
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# 4. Graflar Uzerinde PageRank / Centrality Algoritmasi (Q16.16)
+# Kod mimarisindeki kritik ve sik kullanilan sembolleri tespit eder
+# ------------------------------------------------------------
+isv ykn_core_pagerank_hesapla(adim_sayisi: tamsayi) {
+    degisken adim: tamsayi = 0;
+    degisken gecici_skorlar: [256]tamsayi;
+
+    dongu adim < adim_sayisi {
+        # Her dugum icin temel damping faktoru: (1 - d) = 0.15 * 65536 = 9830
+        degisken i: tamsayi = 0;
+        dongu i < g_core_dugum_sayisi {
+            gecici_skorlar[i] = 9830;
+            i = i + 1;
+        }
+
+        # Kenarlar uzerinden skor dagitimi (d = 0.85 transferi)
+        degisken e: tamsayi = 0;
+        dongu e < g_core_kenar_sayisi {
+            degisken src: tamsayi = g_core_kenar_kaynak[e];
+            degisken dst: tamsayi = g_core_kenar_hedef[e];
+            degisken w: tamsayi = g_core_kenar_agirlik[e];
+            
+            # Transfer skoru = src_skor * 0.85 (55705) / 65536 * (w / 65536)
+            degisken aktarilan: tamsayi = (g_core_dugum_skorlari[src] * 55705) / 65536;
+            aktarilan = (aktarilan * (w / 256)) / 256;
+
+            gecici_skorlar[dst] = gecici_skorlar[dst] + aktarilan;
+            e = e + 1;
+        }
+
+        # Skorlari guncelle
+        i = 0;
+        dongu i < g_core_dugum_sayisi {
+            g_core_dugum_skorlari[i] = gecici_skorlar[i];
+            i = i + 1;
+        }
+
+        adim = adim + 1;
+    }
+}
+
+# ------------------------------------------------------------
+# 5. Iliskisel Kod Tamamlama ve Baglam Skorlama
+# Belirli bir kapsam/dugum icinde en yuksek iliskili sembolu secer
+# ------------------------------------------------------------
+isv ykn_core_iliski_puani(kaynak_id: tamsayi, hedef_id: tamsayi) -> tamsayi {
+    degisken toplam_puan: tamsayi = 0;
+    degisken e: tamsayi = 0;
+    dongu e < g_core_kenar_sayisi {
+        eger g_core_kenar_kaynak[e] == kaynak_id ve g_core_kenar_hedef[e] == hedef_id ise {
+            toplam_puan = toplam_puan + g_core_kenar_agirlik[e];
+        }
+        e = e + 1;
+    }
+    dondu toplam_puan;
+}
+
+isv ykn_core_en_iyi_adayi_bul(aktif_dugum: tamsayi, hedef_tipi: tamsayi) -> tamsayi {
+    degisken en_iyi_id: tamsayi = -1;
+    degisken en_yuksek_skor: tamsayi = -1;
+
+    degisken d: tamsayi = 0;
+    dongu d < g_core_dugum_sayisi {
+        eger d != aktif_dugum ise {
+            eger hedef_tipi == 0 veya g_core_dugum_tipleri[d] == hedef_tipi ise {
+                degisken baglanti_puani: tamsayi = ykn_core_iliski_puani(aktif_dugum, d);
+                degisken genel_onem: tamsayi = g_core_dugum_skorlari[d];
+                
+                # Birlesik Semantik Skor: 60% Dogrudan Iliski + 40% Sembol Centrality
+                degisken bilesik_skor: tamsayi = (baglanti_puani * 39321) / 65536 + (genel_onem * 26214) / 65536;
+                eger bilesik_skor > en_yuksek_skor ise {
+                    en_yuksek_skor = bilesik_skor;
+                    en_iyi_id = d;
+                }
+            }
+        }
+        d = d + 1;
+    }
+
+    dondu en_iyi_id;
+}

@@ -1,0 +1,39 @@
+# FAZ 7 - std/matematik.ykn tek test
+# Calisma dizini: d:\YukiLLM\yukinary_vanilla
+
+isv bellek_tahsis_et(boyut: tamsayi) -> *u8 { dondu 0; }
+isv dosya_oku(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv diske_bas_ve_kapat(d: *u8, b: *u8, n: tamsayi) -> tamsayi { dondu 0; }
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    if sayi == 0 ise { buf[0]=48; buf[1]=0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    if n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i]=(n%10)+48; n=n/10; i=i+1; }
+    if neg == 1 ise { buf[i]=45; i=i+1; }
+    degisken j: tamsayi = 0;
+    dongu j < i/2 {
+        degisken t: u8 = buf[j]; buf[j]=buf[i-1-j]; buf[i-1-j]=t;
+        j=j+1;
+    }
+    buf[i]=0;
+    ekrana_yaz(buf);
+}
+
+ice_aktar "../../std/matematik.ykn";
+
+isv ana() -> tamsayi {
+    sayiyi_yazdir(mutlak_deger(-42)); ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(minimum(-10,5)); ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(maksimum(-10,5)); ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(sinirla(150,0,100)); ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(us_al(2,10)); ekrana_yaz(" ".ptr);       # 1024
+    sayiyi_yazdir(us_al(5,3)); ekrana_yaz(" ".ptr);        # 125
+    sayiyi_yazdir(isaret(-7)); ekrana_yaz(" ".ptr);
+    sayiyi_yazdir(isaret(99));
+    ekrana_yaz("\nstd-matematik-PASS\n".ptr);
+    dondu 0;
+}

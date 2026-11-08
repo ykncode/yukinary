@@ -1,0 +1,26 @@
+# ============================================================
+# Yukinary std/ai/transformer.ykn
+# Runtime-safe transformer layer descriptor.
+# Numeric kernels live in attention.ykn and are pointer/arena based.
+# ============================================================
+
+yapi BitNetTransformerKatmani {
+    model_boyutu: tamsayi;
+    kafa_sayisi: tamsayi;
+    kafa_boyutu: tamsayi;
+    kv_kapasitesi: tamsayi;
+}
+
+isv bitnet_transformer_katmani_kur(katman: *BitNetTransformerKatmani,
+                                    model_boyutu: tamsayi,
+                                    kafa_sayisi: tamsayi,
+                                    kafa_boyutu: tamsayi,
+                                    kv_kapasitesi: tamsayi) -> tamsayi {
+    eger katman == 0 veya model_boyutu <= 0 veya kafa_sayisi <= 0 veya
+       kafa_boyutu <= 0 veya kv_kapasitesi <= 0 ise { dondu 0; }
+    katman->model_boyutu = model_boyutu;
+    katman->kafa_sayisi = kafa_sayisi;
+    katman->kafa_boyutu = kafa_boyutu;
+    katman->kv_kapasitesi = kv_kapasitesi;
+    dondu 1;
+}

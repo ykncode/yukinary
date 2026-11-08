@@ -1,0 +1,63 @@
+# FIX 11+ Registry-Tabanli Paket Yoneticisi Testi
+ice_aktar "src/paket.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("--- REGISTRY PAKET YONETICISI TESTLERI ---\n".ptr);
+
+    # 1. SemVer karsilastirma testi
+    degisken cmp1: tamsayi = semver_karsilastir("1.2.3".ptr, "1.2.0".ptr);
+    eger cmp1 != 1 ise {
+        ekrana_yaz("HATA: semver_karsilastir 1.2.3 > 1.2.0 basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    degisken cmp2: tamsayi = semver_karsilastir("2.0.0".ptr, "2.0.0".ptr);
+    eger cmp2 != 0 ise {
+        ekrana_yaz("HATA: semver_karsilastir 2.0.0 == 2.0.0 basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. SemVer caret (^) kurali testi
+    degisken u1: tamsayi = semver_uyumlu_mu("^1.2.0".ptr, "1.5.3".ptr);
+    eger u1 != 1 ise {
+        ekrana_yaz("HATA: semver_uyumlu_mu caret ^1.2.0 ile 1.5.3 uyumlu olmaliydi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken u2: tamsayi = semver_uyumlu_mu("^1.2.0".ptr, "2.0.0".ptr);
+    eger u2 != 0 ise {
+        ekrana_yaz("HATA: semver_uyumlu_mu caret ^1.2.0 ile 2.0.0 uyumsuz olmaliydi!\n".ptr);
+        dondu 1;
+    }
+
+    # 3. SemVer tilde (~) kurali testi
+    degisken u3: tamsayi = semver_uyumlu_mu("~1.2.0".ptr, "1.2.5".ptr);
+    eger u3 != 1 ise {
+        ekrana_yaz("HATA: semver_uyumlu_mu tilde ~1.2.0 ile 1.2.5 uyumlu olmaliydi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken u4: tamsayi = semver_uyumlu_mu("~1.2.0".ptr, "1.3.0".ptr);
+    eger u4 != 0 ise {
+        ekrana_yaz("HATA: semver_uyumlu_mu tilde ~1.2.0 ile 1.3.0 uyumsuz olmaliydi!\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Registry paket cozumleme testi
+    degisken cozum_yol: [512]u8;
+    degisken res_ok: tamsayi = paket_registry_coz("http_client".ptr, "^2.1.0".ptr, cozum_yol, 512);
+    eger res_ok != 0 ise {
+        ekrana_yaz("HATA: paket_registry_coz basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    # 5. CLI paket ekleme simülasyonu
+    degisken ekle_ok: tamsayi = paket_ekle_komutu("json_parser".ptr, "^1.0.4".ptr, 1);
+    eger ekle_ok != 0 ise {
+        ekrana_yaz("HATA: paket_ekle_komutu basarisiz!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("REGISTRY_PACKAGE_MANAGER: PASS\n".ptr);
+    dondu 0;
+}

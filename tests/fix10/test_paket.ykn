@@ -1,0 +1,82 @@
+# ============================================================
+# tests/fix10/test_paket.ykn
+# src/paket.ykn manifest validation + path traversal + exit code testi
+# Beklenen cikti: "PAKET TESTLERI TAMAM\n"
+# ============================================================
+
+ice_aktar "src/paket.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # --- Exit code sabitleri dogru tanimlanmis olmali ---
+    eger CIKIS_BASARI != 0 ise {
+        ekrana_yaz("HATA: CIKIS_BASARI 0 olmali\n".ptr);
+        dondu 1;
+    }
+    eger CIKIS_MANIFEST_HATA != 2 ise {
+        ekrana_yaz("HATA: CIKIS_MANIFEST_HATA 2 olmali\n".ptr);
+        dondu 1;
+    }
+    eger CIKIS_BAGIMLILIK_HATA != 3 ise {
+        ekrana_yaz("HATA: CIKIS_BAGIMLILIK_HATA 3 olmali\n".ptr);
+        dondu 1;
+    }
+    eger CIKIS_KILIT_HATA != 4 ise {
+        ekrana_yaz("HATA: CIKIS_KILIT_HATA 4 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- path_guvenli_mi: ".." iceren yollar reddedilmeli ---
+    eger path_guvenli_mi("../kotu".ptr, 7) != 0 ise {
+        ekrana_yaz("HATA: '../kotu' guvenli sayilmamali\n".ptr);
+        dondu 1;
+    }
+    eger path_guvenli_mi("pkg/../gizli".ptr, 12) != 0 ise {
+        ekrana_yaz("HATA: '..' iceren yol guvenli sayilmamali\n".ptr);
+        dondu 1;
+    }
+    eger path_guvenli_mi("/mutlak/yol".ptr, 11) != 0 ise {
+        ekrana_yaz("HATA: Mutlak Unix yolu guvenli sayilmamali\n".ptr);
+        dondu 1;
+    }
+
+    # --- path_guvenli_mi: gecerli yollar kabul edilmeli ---
+    eger path_guvenli_mi("pkg/matematik".ptr, 13) != 1 ise {
+        ekrana_yaz("HATA: 'pkg/matematik' guvenli olmali\n".ptr);
+        dondu 1;
+    }
+    eger path_guvenli_mi("std/bellek".ptr, 10) != 1 ise {
+        ekrana_yaz("HATA: 'std/bellek' guvenli olmali\n".ptr);
+        dondu 1;
+    }
+
+    # --- str_tamsayi: duzgun ceviri ---
+    eger str_tamsayi("1".ptr) != 1 ise {
+        ekrana_yaz("HATA: str_tamsayi '1'\n".ptr);
+        dondu 1;
+    }
+    eger str_tamsayi("42".ptr) != 42 ise {
+        ekrana_yaz("HATA: str_tamsayi '42'\n".ptr);
+        dondu 1;
+    }
+    eger str_tamsayi("0".ptr) != 0 ise {
+        ekrana_yaz("HATA: str_tamsayi '0'\n".ptr);
+        dondu 1;
+    }
+
+    # --- cycle detection: bos liste ---
+    degisken bos_liste: [64]*Bagimlilik;
+    eger bagimlilik_cevrim_var_mi(bos_liste, 0) != 0 ise {
+        ekrana_yaz("HATA: Bos listede cevrim olmamali\n".ptr);
+        dondu 1;
+    }
+
+    # --- manifest yoksa CIKIS_MANIFEST_HATA doner ---
+    degisken kod: tamsayi = manifest_yukle("tests/fix10/olmayan_manifest.toml".ptr);
+    eger kod != CIKIS_MANIFEST_HATA ise {
+        ekrana_yaz("HATA: Olmayan manifest CIKIS_MANIFEST_HATA dondürmeli\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("PAKET TESTLERI TAMAM\n".ptr);
+    dondu 0;
+}

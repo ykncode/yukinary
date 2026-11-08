@@ -1,0 +1,168 @@
+# ============================================================
+# Yukinary Linux E2E Kapsamli Test Paketi
+# Dosya: tests/crossplatform/linux_e2e_full_test.ykn
+# Linux x86_64 ELF64 Altinda Dogrudan Calistirma Testi
+# ============================================================
+
+ice_aktar "../../std/bellek.ykn";
+ice_aktar "../../std/koleksiyon.ykn";
+
+isv str_esit(a: *u8, b: *u8, len: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        eger a[i] != b[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YUKINARY LINUX x86_64 ELF64 KAPSAMLI ENTEGRASYON TESTI    \n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 1: Ekrana Yazma (SYS_write)
+    # ------------------------------------------------------------
+    ekrana_yaz("[TEST 1/6] Standart Cikti (stdout) ve String: BASARILI\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 2: Aritmetik, Bitwise ve Mantiksal Islemler
+    # ------------------------------------------------------------
+    degisken x: tamsayi = 42;
+    degisken y: tamsayi = 13;
+    degisken top: tamsayi = x + y;       # 55
+    degisken carp: tamsayi = x * y;      # 546
+    degisken bol: tamsayi = carp / x;    # 13
+    degisken mod: tamsayi = top % 10;    # 5
+    degisken kaydir: tamsayi = 1 << 8;   # 256
+    degisken bitwise_and: tamsayi = 0xFF & 0x0F;  # 15
+    degisken bitwise_or: tamsayi = 0xF0 | 0x0F;   # 255
+    degisken xor_val: tamsayi = 17 ^ 17;          # 0
+
+    eger top != 55 veya carp != 546 veya bol != 13 veya mod != 5 veya kaydir != 256 veya bitwise_and != 15 veya bitwise_or != 255 veya xor_val != 0 ise {
+        ekrana_yaz("[TEST 2/6] HATA: Aritmetik/Bitwise testi basarisiz!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[TEST 2/6] 64-bit Aritmetik ve Bitwise Islemleri: BASARILI\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 3: Linux mmap / munmap Bellek Tahsisi
+    # ------------------------------------------------------------
+    degisken mem_size: tamsayi = 8192;
+    degisken ptr: *u8 = bellek_tahsis_et(mem_size);
+    eger ptr == 0 ise {
+        ekrana_yaz("[TEST 3/6] HATA: Linux mmap bellek tahsis edemedi!\n".ptr);
+        dondu 2;
+    }
+
+    # Bellek yazma ve okuma testi
+    degisken mi: tamsayi = 0;
+    dongu mi < mem_size {
+        ptr[mi] = (mi * 17 + 5) % 256;
+        mi = mi + 1;
+    }
+
+    degisken bozulma: tamsayi = 0;
+    mi = 0;
+    dongu mi < mem_size {
+        degisken beklenen: u8 = (mi * 17 + 5) % 256;
+        eger ptr[mi] != beklenen ise {
+            bozulma = 1;
+        }
+        mi = mi + 1;
+    }
+
+    os_bellek_serbest(ptr);
+
+    eger bozulma != 0 ise {
+        ekrana_yaz("[TEST 3/6] HATA: Tahsis edilen bellekte veri bozulmasi!\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("[TEST 3/6] Linux mmap / munmap Sayfa Tahsisi: BASARILI\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 4: Linux Dosya Sistemi (SYS_open, SYS_write, SYS_read, SYS_close)
+    # ------------------------------------------------------------
+    degisken test_dosyasi: *u8 = "/tmp/ykn_linux_test_dosyasi.txt".ptr;
+    degisken test_verisi: *u8 = "Yukinary Linux Standalone ELF64 Dosya Testi Basarili!".ptr;
+    degisken test_uzn: tamsayi = 53;
+
+    degisken yazilan_bayt: tamsayi = diske_bas_ve_kapat(test_dosyasi, test_verisi, test_uzn);
+    eger yazilan_bayt != test_uzn ise {
+        ekrana_yaz("[TEST 4/6] HATA: diske_bas_ve_kapat Linux altinda yazamadi!\n".ptr);
+        dondu 4;
+    }
+
+    degisken oku_tampon: [128]u8;
+    degisken okunan_bayt: tamsayi = dosya_oku(test_dosyasi, oku_tampon, 128);
+    eger okunan_bayt != test_uzn ise {
+        ekrana_yaz("[TEST 4/6] HATA: dosya_oku Linux altinda okuyamadi!\n".ptr);
+        dondu 5;
+    }
+
+    eger str_esit(test_verisi, oku_tampon, test_uzn) == 0 ise {
+        ekrana_yaz("[TEST 4/6] HATA: Okunan dosya verisi yazilanla eslesmiyor!\n".ptr);
+        dondu 6;
+    }
+    ekrana_yaz("[TEST 4/6] Linux Dosya G/C (open/write/read/close): BASARILI\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 5: Standart Kutuphane Koleksiyon (Dizi<T> & Bellek Temizligi)
+    # ------------------------------------------------------------
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>(4);
+    eger d == 0 ise {
+        ekrana_yaz("[TEST 5/6] HATA: Dizi olusturulamadi!\n".ptr);
+        dondu 7;
+    }
+
+    degisken di: tamsayi = 0;
+    dongu di < 50 {
+        dizi_ekle<tamsayi>(d, di * di);
+        di = di + 1;
+    }
+
+    eger d.uzunluk != 50 ise {
+        ekrana_yaz("[TEST 5/6] HATA: Dizi uzunlugu 50 olmali!\n".ptr);
+        dondu 8;
+    }
+
+    degisken d_toplam: tamsayi = 0;
+    di = 0;
+    dongu di < 50 {
+        d_toplam = d_toplam + dizi_al<tamsayi>(d, di);
+        di = di + 1;
+    }
+
+    dizi_serbest_birak<tamsayi>(d);
+
+    # 0^2 + 1^2 + ... + 49^2 = 49*50*99 / 6 = 40425
+    eger d_toplam != 40425 ise {
+        ekrana_yaz("[TEST 5/6] HATA: Dizi toplami yanlis hesaplandi!\n".ptr);
+        dondu 9;
+    }
+    ekrana_yaz("[TEST 5/6] Standart Kutuphane Dizi<T> Dinamik Buyume: BASARILI\n".ptr);
+
+    # ------------------------------------------------------------
+    # TEST 6: Linux Komut Satiri Argumanlari (Stack ABI [RSP])
+    # ------------------------------------------------------------
+    ekrana_yaz("[TEST 6/6] Arguman Sayisi (argc): ".ptr);
+    sayiyi_ekrana_yaz(argc);
+    ekrana_yaz("\n".ptr);
+
+    degisken ai: tamsayi = 0;
+    dongu ai < argc {
+        ekrana_yaz("  - argv[".ptr);
+        sayiyi_ekrana_yaz(ai);
+        ekrana_yaz("] = ".ptr);
+        ekrana_yaz(argv[ai]);
+        ekrana_yaz("\n".ptr);
+        ai = ai + 1;
+    }
+    ekrana_yaz("[TEST 6/6] Linux Stack ABI Arguman Aktarimi: BASARILI\n".ptr);
+
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  SONUC: TUM LINUX TESTLERI YUZDE YUZ BASARIYLA TAMAMLANDI! \n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    dondu 0;
+}

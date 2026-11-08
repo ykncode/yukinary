@@ -1,0 +1,42 @@
+# ============================================================
+# Örnek 29: Win32 Arayüzlü Dijital Osilaskop
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_dalga_tipi: tamsayi = 1; # 1: Sinus, 2: Kare, 3: Ucgen
+degisken g_frekans_hz: tamsayi = 1000;
+degisken g_voltaj_peak: tamsayi = 5;
+
+isv dalga_ornekle(zaman_ms: tamsayi) -> tamsayi {
+    eger g_dalga_tipi == 1 ise {
+        # Sinus yaklasimi
+        dondu (zaman_ms * g_frekans_hz % 100) - 50;
+    }
+    eger g_dalga_tipi == 2 ise {
+        # Kare dalga
+        eger (zaman_ms % 20) < 10 ise { dondu 50; } yoksa { dondu 0 - 50; }
+    }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Dijital Osilaskop".ptr, 650, 450);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Dalga Ekrani (Izgara Alani)
+    metin_kutusu_olustur(p_h, 100, 30, 20, 580, 280);
+
+    # Dalga Secim Butonlari
+    buton_olustur(p_h, "Sinus Dalgasi".ptr, 201, 30, 320, 130, 40);
+    buton_olustur(p_h, "Kare Dalga".ptr, 202, 170, 320, 130, 40);
+    buton_olustur(p_h, "Testere Disi".ptr, 203, 310, 320, 130, 40);
+    buton_olustur(p_h, "Frekans +100Hz".ptr, 204, 460, 320, 150, 40);
+
+    ekrana_yaz("Dijital osilaskop baslatildi (1000Hz, 5Vpp).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

@@ -1,0 +1,58 @@
+# ============================================================
+# Örnek 12: Konsol Tabanlı İkili Arama Ağacı (Binary Search Tree)
+# ============================================================
+
+yapi AgacDugumu {
+    deger: tamsayi;
+    sol_indis: tamsayi;
+    sag_indis: tamsayi;
+}
+
+degisken g_agac_dugumler: [64]AgacDugumu;
+degisken g_dugum_sayisi: tamsayi = 0;
+degisken g_kok_indis: tamsayi = 0 - 1;
+
+isv dugum_yarat(val: tamsayi) -> tamsayi {
+    degisken id: tamsayi = g_dugum_sayisi;
+    g_agac_dugumler[id].deger = val;
+    g_agac_dugumler[id].sol_indis = 0 - 1;
+    g_agac_dugumler[id].sag_indis = 0 - 1;
+    g_dugum_sayisi = g_dugum_sayisi + 1;
+    dondu id;
+}
+
+isv agaca_ekle(kok: tamsayi, val: tamsayi) -> tamsayi {
+    eger kok < 0 ise { dondu dugum_yarat(val); }
+
+    eger val < g_agac_dugumler[kok].deger ise {
+        g_agac_dugumler[kok].sol_indis = agaca_ekle(g_agac_dugumler[kok].sol_indis, val);
+    } yoksa {
+        g_agac_dugumler[kok].sag_indis = agaca_ekle(g_agac_dugumler[kok].sag_indis, val);
+    }
+    dondu kok;
+}
+
+isv agac_sirali_yaz(kok: tamsayi) {
+    eger kok < 0 ise { dondu; }
+    agac_sirali_yaz(g_agac_dugumler[kok].sol_indis);
+    sayiyi_ekrana_yaz(g_agac_dugumler[kok].deger);
+    ekrana_yaz(" -> ".ptr);
+    agac_sirali_yaz(g_agac_dugumler[kok].sag_indis);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Ikili Arama Agaci (BST) Olusturuluyor ===\n".ptr);
+
+    g_kok_indis = agaca_ekle(g_kok_indis, 50);
+    agaca_ekle(g_kok_indis, 30);
+    agaca_ekle(g_kok_indis, 70);
+    agaca_ekle(g_kok_indis, 20);
+    agaca_ekle(g_kok_indis, 40);
+    agaca_ekle(g_kok_indis, 60);
+    agaca_ekle(g_kok_indis, 80);
+
+    ekrana_yaz("Sirali (In-Order) Agac Doldurumu:\n".ptr);
+    agac_sirali_yaz(g_kok_indis);
+    ekrana_yaz("SON\n".ptr);
+    dondu 0;
+}

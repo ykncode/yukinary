@@ -1,0 +1,28 @@
+# Gercek RoPE frekans formulu ve Q16 trigonometrik range-reduction testi.
+ice_aktar "../../std/ai/attention.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken cos_tab: [4]tamsayi;
+    degisken sin_tab: [4]tamsayi;
+    # BitNet metadata: rope.dimension_count=128, rope.freq_base=500000.
+    eger bitnet_rope_tablosu_uret(cos_tab, sin_tab, 4, 1, 128, 32768000000) == 0 ise {
+        ekrana_yaz("ROPE-MATH-FAIL\n".ptr);
+        dondu 1;
+    }
+    # theta_0=1, theta_1=500000^(-2/128); değerler Q16 aralıklarıyla
+    # kontrol edilir. Aralık kontrolü platformlar arası yuvarlama farkını tolere eder.
+    eger cos_tab[0] < 35000 veya cos_tab[0] > 36000 veya
+       sin_tab[0] < 54500 veya sin_tab[0] > 55800 veya
+       cos_tab[1] < 44000 veya cos_tab[1] > 46000 ise {
+        ekrana_yaz("ROPE-MATH-FAIL\n".ptr);
+        dondu 2;
+    }
+    # theta=4 radian negative second quadrant: both sine and cosine are negative.
+    eger bitnet_rope_tablosu_uret(cos_tab, sin_tab, 4, 4, 128, 32768000000) == 0 veya
+       cos_tab[0] >= 0 veya sin_tab[0] >= 0 {
+        ekrana_yaz("ROPE-QUADRANT-FAIL\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("ROPE-MATH-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,432 @@
+# ============================================================
+# Yukinary (YKN) Diagnostics Motoru (src/diagnostics.ykn)
+# ANSI Renkli + Baglamli Hata Mesajlari ve Oneri Motoru
+# ============================================================
+
+# ANSI Renk Kodlari (Terminaller icin)
+degisken ANSI_SIFIRLA: *u8 = "\x1b[0m".ptr;
+degisken ANSI_KIRMIZI: *u8 = "\x1b[31m".ptr;
+degisken ANSI_YESIL:   *u8 = "\x1b[32m".ptr;
+degisken ANSI_SARI:    *u8 = "\x1b[33m".ptr;
+degisken ANSI_MAVI:    *u8 = "\x1b[34m".ptr;
+degisken ANSI_MAGENTA: *u8 = "\x1b[35m".ptr;
+degisken ANSI_CYAN:    *u8 = "\x1b[36m".ptr;
+degisken ANSI_KALIN:   *u8 = "\x1b[1m".ptr;
+
+degisken g_ansi_aktif: tamsayi = 1;
+degisken g_diagnostics_dosya_adi: *u8 = 0;
+degisken g_trait_hatasi: tamsayi = 0;
+
+# Stage-1 eski global emitter'ı çözülemeyen global adresini değer gibi
+# döndürebilir. Trait sayısı compiler kaynaklarında küçük ve sınırlıdır;
+# erişim katmanı yalnızca güvenilir aralığı dışarı verir.
+isv trait_hata_sayisini_al() -> tamsayi {
+    eger g_trait_hatasi < 0 veya g_trait_hatasi > 100000 ise { dondu 0; }
+    dondu g_trait_hatasi;
+}
+
+isv diagnostics_dosya_adi_ayarla(dosya_adi: *u8) {
+    g_diagnostics_dosya_adi = dosya_adi;
+}
+
+isv diagnostics_dosya_adi_al() -> *u8 {
+    dondu g_diagnostics_dosya_adi;
+}
+
+isv hata_kodu_adi(kod: tamsayi) -> *u8 {
+    eger kod == 1 ise { dondu "TC_UNDEFINED_SYMBOL".ptr; }
+    eger kod == 2 ise { dondu "PARSE_SYNTAX_ERROR".ptr; }
+    eger kod == 3 ise { dondu "TC_TYPE_MISMATCH".ptr; }
+    eger kod == 4 ise { dondu "TC_INVALID_RETURN".ptr; }
+    eger kod == 5 ise { dondu "TC_PARAM_COUNT".ptr; }
+    eger kod == 6 ise { dondu "IMPORT_CYCLE".ptr; }
+    eger kod == 7 ise { dondu "ERR_INVALID_UTF8".ptr; }
+    eger kod == 8 ise { dondu "ERR_INVALID_CHARACTER".ptr; }
+    eger kod == 9 ise { dondu "ERR_UNTERMINATED_STRING".ptr; }
+    eger kod == 10 ise { dondu "ERR_UNTERMINATED_COMMENT".ptr; }
+    eger kod == 11 ise { dondu "ERR_INTEGER_OVERFLOW".ptr; }
+    eger kod == 12 ise { dondu "ERR_MALFORMED_NUMBER".ptr; }
+    eger kod == 13 ise { dondu "ERR_TOKEN_LIMIT".ptr; }
+    eger kod == 14 ise { dondu "ERR_AST_LIMIT".ptr; }
+    eger kod == 15 ise { dondu "ERR_IMPORT_LIMIT".ptr; }
+    eger kod == 16 ise { dondu "ERR_FILE_LIMIT".ptr; }
+    eger kod == 17 ise { dondu "TC_NOMINAL_MISMATCH".ptr; }
+    eger kod == 18 ise { dondu "TC_INVALID_CONVERSION".ptr; }
+    eger kod == 19 ise { dondu "TC_RECURSIVE_TYPE".ptr; }
+    eger kod == 20 ise { dondu "TC_TRAIT_VIOLATION".ptr; }
+    eger kod == 21 ise { dondu "ERR_RECURSION_DEPTH".ptr; }
+    eger kod == 22 ise { dondu "ERR_MACRO_LIMIT".ptr; }
+    eger kod == 32 ise { dondu "ERR_IMPLICIT_NULL_DEREF".ptr; }
+    eger kod == 33 ise { dondu "ERR_NULLABLE_ACCESS_WITHOUT_CHECK".ptr; }
+    eger kod == 36 ise { dondu "CONVERT_SYNTAX_ERROR".ptr; }
+    eger kod == 37 ise { dondu "ERR_IMPORT_ALIAS_UNSUPPORTED".ptr; }
+    eger kod == 40 ise { dondu "USE_AFTER_MOVE".ptr; }
+    eger kod == 41 ise { dondu "BORROW_CONFLICT".ptr; }
+    eger kod == 46 ise { dondu "ERR_DANGLING_POINTER".ptr; }
+    eger kod == 42 ise { dondu "ERR_YKNLLM_CAPABILITY_DENIED".ptr; }
+    eger kod == 43 ise { dondu "ERR_UNSUPPORTED_AST_NODE".ptr; }
+    eger kod == 44 ise { dondu "ERR_AWAIT_REQUIRES_FUTURE".ptr; }
+    eger kod == 45 ise { dondu "ERR_INVALID_FUTURE_TYPE".ptr; }
+    eger kod == 47 ise { dondu "ERR_UNINITIALIZED_VARIABLE".ptr; }
+    eger kod == 48 ise { dondu "ERR_INDEX_OUT_OF_BOUNDS".ptr; }
+    eger kod == 49 ise { dondu "ERR_IMMUTABLE_ASSIGNMENT".ptr; }
+    eger kod == 50 ise { dondu "ERR_TYPE_SHADOWING".ptr; }
+    dondu "YKN_UNKNOWN_DIAGNOSTIC".ptr;
+}
+
+isv hata_sinifi_adi(kod: tamsayi) -> *u8 {
+    eger kod == 1 veya kod == 3 veya kod == 4 veya kod == 5 ise {
+        dondu "typechecker".ptr;
+    }
+    eger kod == 6 ise { dondu "import".ptr; }
+    eger kod == 7 veya kod == 8 veya kod == 9 veya kod == 10 veya kod == 11 veya kod == 12 veya kod == 13 veya kod == 14 ise {
+        dondu "lexer".ptr;
+    }
+    eger kod == 15 veya kod == 16 ise { dondu "import".ptr; }
+    eger kod == 17 veya kod == 18 veya kod == 19 veya kod == 20 veya kod == 32 ise { dondu "typechecker".ptr; }
+    eger kod == 33 ise { dondu "codegen".ptr; }
+    eger kod == 36 ise { dondu "parser".ptr; }
+    eger kod == 37 ise { dondu "import".ptr; }
+    eger kod == 40 veya kod == 41 veya kod == 46 ise { dondu "ownership".ptr; }
+    eger kod == 47 veya kod == 48 ise { dondu "safety".ptr; }
+    eger kod == 49 ise { dondu "typechecker".ptr; }
+    eger kod == 42 ise { dondu "security".ptr; }
+    eger kod == 43 ise { dondu "codegen".ptr; }
+    eger kod == 44 veya kod == 45 ise { dondu "typechecker".ptr; }
+    eger kod == 21 ise { dondu "parser".ptr; }
+    eger kod == 22 ise { dondu "macros".ptr; }
+    eger kod == 2 ise { dondu "parser".ptr; }
+    dondu "compiler".ptr;
+}
+
+isv hata_mesaji_adi(kod: tamsayi, eski_mesaj: *u8) -> *u8 {
+    eger kod == 1 ise { dondu "TC HATA: Tanimsiz sembol kullanildi".ptr; }
+    eger kod == 3 ise { dondu "TC HATA: Tip uyumsuzlugu".ptr; }
+    eger kod == 4 ise { dondu "TC_FAIL_RET: Donus tipi uyumsuzlugu".ptr; }
+    eger kod == 5 ise { dondu "TC HATA: Fonksiyon parametre sayisi uyumsuz".ptr; }
+    eger kod == 6 ise { dondu "IMPORT_CYCLE: import dongusu".ptr; }
+    eger kod == 7 ise { dondu "LEXER HATA: Gecersiz UTF-8 byte dizisi".ptr; }
+    eger kod == 8 ise { dondu "LEXER HATA: Gecersiz karakter".ptr; }
+    eger kod == 9 ise { dondu "LEXER HATA: Kapanmamis string".ptr; }
+    eger kod == 10 ise { dondu "LEXER HATA: Kapanmamis yorum".ptr; }
+    eger kod == 11 ise { dondu "LEXER HATA: Tamsayi tasmasi".ptr; }
+    eger kod == 12 ise { dondu "LEXER HATA: Hatali sayi literali".ptr; }
+    eger kod == 13 ise { dondu "LEXER HATA: Token kapasitesi asildi".ptr; }
+    eger kod == 14 ise { dondu "AST HATA: AST kapasitesi asildi".ptr; }
+    eger kod == 15 ise { dondu "IMPORT HATA: Import limiti asildi".ptr; }
+    eger kod == 16 ise { dondu "IMPORT HATA: Dosya boyutu limiti asildi".ptr; }
+    eger kod == 18 ise { dondu "TC HATA: Gecersiz implicit donusum".ptr; }
+    eger kod == 19 ise { dondu "TC HATA: Pointer'siz recursive type dongusu".ptr; }
+    eger kod == 20 ise { dondu "TC HATA: Generic trait ihlali".ptr; }
+    eger kod == 21 ise { dondu "Ozyineleme derinlik limiti asildi".ptr; }
+    eger kod == 22 ise { dondu "Makro limiti asildi".ptr; }
+    eger kod == 32 ise { dondu "FIX13 HATA: Nullable pointer null kontrolu olmadan donusturulemez".ptr; }
+    eger kod == 33 ise { dondu "FIX13 HATA: Nullable pointer erisimi kontrolsuz".ptr; }
+    eger kod == 37 ise { dondu "IMPORT HATA: Import alias desteklenmiyor".ptr; }
+    eger kod == 40 ise { dondu "OWNERSHIP HATA: Tasinmis degisken kullanildi (use-after-move)".ptr; }
+    eger kod == 41 ise { dondu "OWNERSHIP HATA: Ayni anda mutable ve baska odunc alma cakismasi (borrow conflict)".ptr; }
+    eger kod == 46 ise {
+        eger eski_mesaj != 0 ise { dondu eski_mesaj; }
+        dondu "SAFETY HATA: Yerel yigit (stack) degiskeninin adresi dondurulemez (dangling reference)".ptr;
+    }
+    eger kod == 42 ise { dondu "YKNLLM sandbox: capability politikasi bu AST dugumunu reddetti".ptr; }
+    eger kod == 43 ise { dondu "CODEGEN HATA: desteklenmeyen AST dugumu codegen'e ulasti".ptr; }
+    eger kod == 44 ise { dondu "TC HATA: await operandı Future<T> olmalı ve async govdede kullanılmalı".ptr; }
+    eger kod == 45 ise { dondu "TC HATA: gecersiz Future<T> tip bildirimi".ptr; }
+    eger kod == 47 ise { dondu "SAFETY HATA: Ilklenmemis degisken kullanildi (uninitialized variable read)".ptr; }
+    eger kod == 48 ise { dondu "SAFETY HATA: Sabit dizi indeks siniri asildi (fixed-size array index out of bounds)".ptr; }
+    eger kod == 49 ise { dondu "TC HATA: Sabit (immutable) degiskene yeniden atama yapilamaz".ptr; }
+    dondu eski_mesaj;
+}
+
+
+isv diagnostics_renkleri_baslat(aktif: tamsayi) {
+    g_ansi_aktif = aktif;
+    eger aktif != 0 ise {
+        ANSI_SIFIRLA = "\x1b[0m".ptr;
+        ANSI_KIRMIZI = "\x1b[31m".ptr;
+        ANSI_YESIL   = "\x1b[32m".ptr;
+        ANSI_SARI    = "\x1b[33m".ptr;
+        ANSI_MAVI    = "\x1b[34m".ptr;
+        ANSI_MAGENTA = "\x1b[35m".ptr;
+        ANSI_CYAN    = "\x1b[36m".ptr;
+        ANSI_KALIN   = "\x1b[1m".ptr;
+    } yoksa {
+        ANSI_SIFIRLA = "".ptr;
+        ANSI_KIRMIZI = "".ptr;
+        ANSI_YESIL   = "".ptr;
+        ANSI_SARI    = "".ptr;
+        ANSI_MAVI    = "".ptr;
+        ANSI_MAGENTA = "".ptr;
+        ANSI_CYAN    = "".ptr;
+        ANSI_KALIN   = "".ptr;
+    }
+}
+
+# Hata Kaydi Yapisi
+yapi HataKaydi {
+    kod: tamsayi;              # E001, E002 vb.
+    dosya_adi: *u8;
+    satir: tamsayi;
+    sutun: tamsayi;
+    mesaj: *u8;
+    ipucu: *u8;                # Oneri / Did you mean
+    kaynak_satir: *u8;
+    isaret_bas: tamsayi;
+    isaret_uzunluk: tamsayi;
+}
+
+# ------------------------------------------------------------
+# Levenshtein Duzenleme Mesafesi (Did you mean onerisi icin)
+# ------------------------------------------------------------
+isv min_uc(a: tamsayi, b: tamsayi, c: tamsayi) -> tamsayi {
+    degisken m: tamsayi = a;
+    eger b < m ise { m = b; }
+    eger c < m ise { m = c; }
+    dondu m;
+}
+
+isv levenshtein_mesafesi(s1: *u8, len1: tamsayi, s2: *u8, len2: tamsayi) -> tamsayi {
+    eger len1 == 0 ise { dondu len2; }
+    eger len2 == 0 ise { dondu len1; }
+    eger len1 > 30 ise { len1 = 30; }
+    eger len2 > 30 ise { len2 = 30; }
+
+    degisken d0: [32]tamsayi;
+    degisken d1: [32]tamsayi;
+
+    degisken j: tamsayi = 0;
+    dongu j <= len2 {
+        d0[j] = j;
+        j = j + 1;
+    }
+
+    degisken i: tamsayi = 0;
+    dongu i < len1 {
+        d1[0] = i + 1;
+        j = 0;
+        dongu j < len2 {
+            degisken maliyet: tamsayi = 1;
+            eger s1[i] == s2[j] ise { maliyet = 0; }
+            
+            # silme
+            degisken sil: tamsayi = d0[j + 1] + 1;
+            # ekleme
+            degisken ekle: tamsayi = d1[j] + 1;
+            # degistirme
+            degisken degis: tamsayi = d0[j] + maliyet;
+            
+            degisken en_az: tamsayi = sil;
+            eger ekle < en_az ise { en_az = ekle; }
+            eger degis < en_az ise { en_az = degis; }
+            
+            d1[j + 1] = en_az;
+            j = j + 1;
+        }
+        j = 0;
+        dongu j <= len2 {
+            d0[j] = d1[j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    dondu d0[len2];
+}
+
+# ------------------------------------------------------------
+# Formatli Hata Raporlama
+# ------------------------------------------------------------
+degisken g_diagnostics_sessiz: tamsayi = 0;
+degisken g_diagnostics_son_satir: tamsayi = 0;
+degisken g_diagnostics_son_sutun: tamsayi = 0;
+degisken g_diagnostics_son_kod: tamsayi = 0;
+degisken g_diagnostics_son_mesaj: *u8 = 0;
+degisken g_diagnostics_son_mesaj_uzunluk: tamsayi = 0;
+degisken g_diagnostics_hata_sayisi: tamsayi = 0;
+
+isv hata_kaydi_yazdir(h: *HataKaydi) {
+    eger h == 0 ise { dondu; }
+
+    g_diagnostics_son_satir = h.satir;
+    g_diagnostics_son_sutun = h.sutun;
+    g_diagnostics_son_kod = h.kod;
+    g_diagnostics_son_mesaj = h.mesaj;
+    g_diagnostics_son_mesaj_uzunluk = 0;
+    eger h.mesaj != 0 ise {
+        dongu h.mesaj[g_diagnostics_son_mesaj_uzunluk] != 0 {
+            g_diagnostics_son_mesaj_uzunluk = g_diagnostics_son_mesaj_uzunluk + 1;
+        }
+    }
+    g_diagnostics_hata_sayisi = g_diagnostics_hata_sayisi + 1;
+
+    eger g_diagnostics_sessiz == 1 ise {
+        dondu;
+    }
+
+    degisken rapor_dosyasi: *u8 = h.dosya_adi;
+    eger rapor_dosyasi == 0 ise { rapor_dosyasi = g_diagnostics_dosya_adi; }
+
+    ekrana_yaz(ANSI_KALIN);
+    ekrana_yaz(ANSI_KIRMIZI);
+    ekrana_yaz("HATA [E".ptr);
+    eger h.kod < 10 ise {
+        ekrana_yaz("00".ptr);
+    } yoksa eger h.kod < 100 ise {
+        ekrana_yaz("0".ptr);
+    }
+    sayiyi_yazdir(h.kod);
+    ekrana_yaz("] [".ptr);
+    ekrana_yaz(hata_kodu_adi(h.kod));
+    ekrana_yaz("] [class=".ptr);
+    ekrana_yaz(hata_sinifi_adi(h.kod));
+    ekrana_yaz("]:".ptr);
+
+    # Dosya ve satir:sutun. Dosya adi yoksa bile ':' ile baslatmak
+    # makinece okunabilir path:line:column sözleşmesini korur.
+    ekrana_yaz(ANSI_MAVI);
+    eger rapor_dosyasi != 0 ise {
+        ekrana_yaz(rapor_dosyasi);
+        ekrana_yaz(":".ptr);
+    }
+    sayiyi_yazdir(h.satir);
+    ekrana_yaz(":".ptr);
+    sayiyi_yazdir(h.sutun);
+
+    ekrana_yaz(ANSI_SIFIRLA);
+    ekrana_yaz(" — ".ptr);
+    
+    # Hata mesaji
+    ekrana_yaz(ANSI_KALIN);
+    ekrana_yaz(hata_mesaji_adi(h.kod, h.mesaj));
+    eger h.mesaj != 0 ve h.kod == 1 ise {
+        ekrana_yaz(" [detay: ".ptr);
+        ekrana_yaz(h.mesaj);
+        ekrana_yaz("]".ptr);
+    }
+    ekrana_yaz(ANSI_SIFIRLA);
+    ekrana_yaz("\n".ptr);
+
+    # Kaynak satir ve caret (^) gosterimi
+    eger h.kaynak_satir != 0 ise {
+        ekrana_yaz(ANSI_MAVI);
+        ekrana_yaz("   |\n".ptr);
+        sayiyi_yazdir(h.satir);
+        ekrana_yaz(" | ".ptr);
+        ekrana_yaz(ANSI_SIFIRLA);
+        ekrana_yaz(h.kaynak_satir);
+        ekrana_yaz("\n".ptr);
+
+        ekrana_yaz(ANSI_MAVI);
+        ekrana_yaz("   | ".ptr);
+        ekrana_yaz(ANSI_KIRMIZI);
+        degisken sp: tamsayi = 1;
+        dongu sp < h.sutun {
+            ekrana_yaz(" ".ptr);
+            sp = sp + 1;
+        }
+        degisken u: tamsayi = h.isaret_uzunluk;
+        eger u <= 0 ise { u = 1; }
+        degisken cp: tamsayi = 0;
+        dongu cp < u {
+            ekrana_yaz("^".ptr);
+            cp = cp + 1;
+        }
+        ekrana_yaz(ANSI_SIFIRLA);
+        ekrana_yaz("\n".ptr);
+    }
+
+    # Ipucu / Oneri (Rich Terminal Diagnostics)
+    degisken oneri: *u8 = h.ipucu;
+    eger oneri != 0 ise {
+        ekrana_yaz(ANSI_YESIL);
+        ekrana_yaz(ANSI_KALIN);
+        ekrana_yaz("  = ipucu: Bunu mu demek istediniz? '".ptr);
+        ekrana_yaz(ANSI_SIFIRLA);
+        ekrana_yaz(ANSI_YESIL);
+        ekrana_yaz(oneri);
+        ekrana_yaz(ANSI_KALIN);
+        ekrana_yaz("'\n".ptr);
+        ekrana_yaz(ANSI_SIFIRLA);
+    } yoksa {
+        oneri = yardim_onerisi_al(h.kod);
+        eger oneri != 0 ise {
+            ekrana_yaz(ANSI_YESIL);
+            ekrana_yaz(ANSI_KALIN);
+            ekrana_yaz("  = yardim: ".ptr);
+            ekrana_yaz(ANSI_SIFIRLA);
+            ekrana_yaz(ANSI_YESIL);
+            ekrana_yaz(oneri);
+            ekrana_yaz("\n".ptr);
+            ekrana_yaz(ANSI_SIFIRLA);
+        }
+    }
+}
+
+isv yardim_onerisi_al(kod: tamsayi) -> *u8 {
+    eger kod == 1 ise { dondu "Degisken veya fonksiyon adini kontrol edin, 'degisken ...' ile tanimlayin veya ilgili modulu 'ice_aktar' ile dahil edin.".ptr; }
+    eger kod == 2 ise { dondu "Sozdizimini kontrol edin; parantez, noktali virgul veya suslu parantezleri kapatin.".ptr; }
+    eger kod == 3 ise { dondu "Beklenen tip ile saglanan tip uyusmuyor; acik tur donusumu yapmayi veya imzayi esitlemeyi deneyin.".ptr; }
+    eger kod == 4 ise { dondu "Fonksiyonun donus tipi bildirimi ile 'dondu' ifadesindeki deger uyumlu olmali.".ptr; }
+    eger kod == 5 ise { dondu "Cagrilan fonksiyonun parametre sayisi ile girilen arguman adedini esitleyin.".ptr; }
+    eger kod == 6 ise { dondu "Cift tarafli bagimlilik (dongusel modul baglantisi) var; ortak tanimlari ucuncu bir module tasiyin.".ptr; }
+    eger kod == 15 ise { dondu "Derleme zamani yapay zeka modeli (GGUF) bulunamadi veya yol gecersiz.".ptr; }
+    eger kod == 33 ise { dondu "Bu isaretci null olabilir; erisimden once 'eger ptr != 0 ise { ... }' kontrolu ile tipi daraltin.".ptr; }
+    eger kod == 40 ise { dondu "Degisken baska yere tasindi (use-after-move); tasimak yerine '&' ile odunc alabilir veya 'std/arc.ykn' (Arc<T>) kullanabilirsiniz.".ptr; }
+    eger kod == 41 ise { dondu "Ayni anda hem degistirilebilir (mutable) hem paylasimli referans alinamaz; referans omrunu daraltin.".ptr; }
+    eger kod == 42 ise { dondu "YKNLLM sandbox politikasi guvensiz yetkisiz sistem cagrisini engelledi.".ptr; }
+    eger kod == 46 ise { dondu "Yerel stack veya ic blok degiskeninin adresi dis kapsama sizdirilamaz; degeri kopyalayarak donun/atayin veya heap uzerinde olusturun.".ptr; }
+    dondu "Hatanin ayrintilari icin 'yukinary' dil dokumantasyonuna ve ornek kodlara basvurun.".ptr;
+}
+
+# Yardimci Hata Uretici
+isv tani_olustur(h: *HataKaydi, kod: tamsayi, satir: tamsayi, sutun: tamsayi, mesaj: *u8, ipucu: *u8) {
+    eger h == 0 ise { dondu; }
+    h.kod = kod;
+    h.dosya_adi = 0;
+    h.satir = satir;
+    h.sutun = sutun;
+    h.mesaj = mesaj;
+    h.ipucu = ipucu;
+    h.kaynak_satir = 0;
+    h.isaret_bas = 0;
+    h.isaret_uzunluk = 1;
+}
+
+isv import_dongusu_hatasi(satir: tamsayi, sutun: tamsayi) {
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 6, satir, sutun, "import dongusu".ptr, 0);
+    hata_kaydi_yazdir(&hk);
+}
+
+# Kaynak/import limitleri sessizce kesilmez; derleme deterministik olarak reddedilir.
+isv import_limiti_hatasi(satir: tamsayi, sutun: tamsayi, mesaj: *u8) {
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 15, satir, sutun, mesaj, 0);
+    hata_kaydi_yazdir(&hk);
+}
+
+isv dosya_limiti_hatasi(satir: tamsayi, sutun: tamsayi, mesaj: *u8) {
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 16, satir, sutun, mesaj, 0);
+    hata_kaydi_yazdir(&hk);
+}
+
+isv trait_ihlali_hatasi(satir: tamsayi, sutun: tamsayi, mesaj: *u8) {
+    g_trait_hatasi = g_trait_hatasi + 1;
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 20, satir, sutun, mesaj, 0);
+    hata_kaydi_yazdir(&hk);
+}
+
+isv ozyineleme_derinlik_hatasi(satir: tamsayi, sutun: tamsayi, mesaj: *u8) {
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 21, satir, sutun, mesaj, 0);
+    hata_kaydi_yazdir(&hk);
+}
+
+isv makro_limit_hatasi(satir: tamsayi, sutun: tamsayi, mesaj: *u8) {
+    degisken hk: HataKaydi;
+    tani_olustur(&hk, 22, satir, sutun, mesaj, 0);
+    hata_kaydi_yazdir(&hk);
+}
+

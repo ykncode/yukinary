@@ -1,0 +1,578 @@
+# Real-model 32-token greedy acceptance harness for the BitNet GGUF.
+# Reads actual GGUF metadata and weight payloads and checks every generated
+# token against an independent llama.cpp reference sequence.
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+harici isv dosya_oku_aralik(dosya_adi: *u8, ofset: tamsayi, hedef: *u8, boyut: tamsayi) -> tamsayi;
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    degisken model_yolu: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    degisken durum_ptr: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_ptr == 0 { ekrana_yaz("FAIL: state allocation\n".ptr); dondu 1; }
+    eger gguf_yukle(model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("FAIL: GGUF parse\n".ptr); dondu 2;
+    }
+    # Independent Python parsing confirms this is token_embd row 128000
+    # (BOS), at this absolute byte offset in the bundled model.
+    degisken embedding_probe: [32]u8;
+    degisken probe_count: tamsayi = dosya_oku_aralik(
+        model_yolu, 663711360, embedding_probe, 32);
+    eger probe_count != 32 or embedding_probe[0] != 187 or embedding_probe[1] != 160 {
+        ekrana_yaz("FAIL: real embedding range read mismatch\n".ptr); dondu 11;
+    }
+
+    degisken token_offsets: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken token_lengths: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken merge_offsets: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken merge_lengths: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken token_count: tamsayi = 0;
+    degisken merge_count: tamsayi = 0;
+    eger token_offsets == 0 veya token_lengths == 0 veya merge_offsets == 0 veya merge_lengths == 0 veya
+       bitnet_tokenizer_metadata_yukle(durum_ptr, token_offsets, token_lengths, 128256,
+           merge_offsets, merge_lengths, 280147, &token_count, &merge_count) == 0 {
+        ekrana_yaz("FAIL: real model tokenizer metadata\n".ptr); dondu 12;
+    }
+
+    degisken spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&spec);
+    spec.model_adi = durum_ptr->mimari_adi;
+    spec.mimari = LLM_MIMARI_BITNET;
+    spec.quant_tipi = durum_ptr->quant_tipi;
+    spec.vocab_boyutu = durum_ptr->vocab_boyutu;
+    spec.gizli_boyut = durum_ptr->gizli_boyut;
+    spec.katman_sayisi = durum_ptr->katman_sayisi;
+    spec.context_boyutu = durum_ptr->context_boyutu;
+    spec.kafa_sayisi = durum_ptr->kafa_sayisi;
+    spec.kv_kafa_sayisi = durum_ptr->kv_kafa_sayisi;
+    spec.kafa_boyutu = durum_ptr->kafa_boyutu;
+    spec.ffn_boyutu = durum_ptr->ffn_boyutu;
+    spec.rope_boyutu = durum_ptr->rope_boyutu;
+    spec.rope_freq_base_q16 = durum_ptr->rope_freq_base_q16;
+    spec.norm_eps_q16 = durum_ptr->norm_eps_q16;
+    spec.bos_token_id = durum_ptr->bos_token_id;
+    spec.eos_token_id = durum_ptr->eos_token_id;
+    eger spec.bos_token_id != 128000 veya spec.eos_token_id != 128001 {
+        ekrana_yaz("FAIL: tokenizer BOS/EOS metadata parse\n".ptr); dondu 16;
+    }
+    eger llm_runtime_spec_dogrula(&spec) == 0 {
+        ekrana_yaz("FAIL: model spec rejected\n".ptr); dondu 3;
+    }
+
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("FAIL: range loader init\n".ptr); dondu 4;
+    }
+    degisken adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(spec.mimari, &adapter) == 0 {
+        ekrana_yaz("FAIL: architecture adapter init\n".ptr); dondu 5;
+    }
+
+    # Keep enough KV slots for the model-declared Human/BITNETAssistant
+    # chat prefix and a short generated continuation.
+    degisken cache_capacity: tamsayi = 64;
+    degisken hidden_bytes: tamsayi = spec.gizli_boyut * 8;
+    degisken kv_width: tamsayi = spec.kv_kafa_sayisi * spec.kafa_boyutu;
+    degisken kv_bytes: tamsayi = cache_capacity * spec.katman_sayisi * kv_width * 8;
+    degisken max_weight_bytes: tamsayi = 8388608;
+    degisken logits_bytes: tamsayi = spec.vocab_boyutu * 8;
+
+    degisken hidden: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken key: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken value: *tamsayi = bellek_tahsis_et(kv_width * 8);
+    degisken attention: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache: *tamsayi = bellek_tahsis_et(kv_bytes);
+    eger hidden == 0 veya residual == 0 veya q == 0 veya key == 0 veya
+       value == 0 veya attention == 0 veya ffn == 0 veya logits == 0 veya
+       weights == 0 or key_cache == 0 or value_cache == 0 {
+        ekrana_yaz("FAIL: inference buffer allocation\n".ptr); dondu 6;
+    }
+
+    ekrana_yaz("SPEC hidden/heads/kv_heads/head_dim=".ptr);
+    sayi_yaz(spec.gizli_boyut); ekrana_yaz("/".ptr);
+    sayi_yaz(spec.kafa_sayisi); ekrana_yaz("/".ptr);
+    sayi_yaz(spec.kv_kafa_sayisi); ekrana_yaz("/".ptr);
+    sayi_yaz(spec.kafa_boyutu); ekrana_yaz("\n".ptr);
+    degisken paket: LLMTransformerExecution;
+    paket.loader = &loader;
+    paket.adapter = &adapter;
+    paket.spec = &spec;
+    paket.hidden = hidden;
+    paket.residual = residual;
+    paket.q = q;
+    paket.key = key;
+    paket.value = value;
+    paket.attention = attention;
+    paket.ffn = ffn;
+    paket.logits = logits;
+    paket.logits_kapasitesi = spec.vocab_boyutu;
+    paket.logits_aktif = 1;
+    paket.agirlik_buffer = weights;
+    paket.agirlik_kapasitesi = max_weight_bytes;
+    paket.kv_anahtar = key_cache;
+    paket.kv_deger = value_cache;
+    paket.kafa_sayisi = spec.kafa_sayisi;
+    paket.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket.kv_kafa_boyutu = spec.kafa_boyutu;
+    paket.kv_kapasitesi = cache_capacity;
+    paket.token_konumu = 0;
+    paket.ffn_boyutu = spec.ffn_boyutu;
+    degisken icra: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra, &paket) == 0 {
+        ekrana_yaz("FAIL: transformer setup error=".ptr);
+        sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz("\n".ptr); dondu 7;
+    }
+
+    ekrana_yaz("ICRA hidden/vocab=".ptr); sayi_yaz(icra.model_gizli_boyutu);
+    ekrana_yaz("/".ptr); sayi_yaz(icra.model_vocab_boyutu);
+    ekrana_yaz(" token=".ptr); sayi_yaz(spec.bos_token_id); ekrana_yaz("\n".ptr);
+    degisken embed_info: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum_ptr, "token_embd.weight".ptr);
+    ekrana_yaz("EMBED TENSOR dims=".ptr); sayi_yaz(embed_info->dim_0);
+    ekrana_yaz("/".ptr); sayi_yaz(embed_info->dim_1);
+    ekrana_yaz(" bytes=".ptr); sayi_yaz(embed_info->bayt_sayisi); ekrana_yaz("\n".ptr);
+    eger llm_transformer_embedding_oku(&icra, durum_ptr, spec.bos_token_id) == 0 {
+        ekrana_yaz("FAIL: direct embedding read\n".ptr); dondu 10;
+    }
+    degisken initial_nonzero: tamsayi = 0;
+    degisken ei: tamsayi = 0;
+    dongu ei < spec.gizli_boyut { eger hidden[ei] != 0 { initial_nonzero = initial_nonzero + 1; } ei = ei + 1; }
+    ekrana_yaz("EMBEDDING_NONZERO=".ptr); sayi_yaz(initial_nonzero); ekrana_yaz("\n".ptr);
+    degisken prompt_ids: [64]tamsayi;
+    degisken prompt_text: *u8 = "Human: Tell me a short crepe recipe.\n\nBITNETAssistant: ".ptr;
+    degisken prompt_length: tamsayi = 0;
+    dongu prompt_text[prompt_length] != 0 { prompt_length = prompt_length + 1; }
+    degisken prompt_count: tamsayi = bitnet_bpe_ascii_kodla(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        merge_offsets, merge_lengths, merge_count, prompt_text, prompt_length,
+        prompt_ids, 64);
+    eger prompt_count != 17 veya prompt_count + 2 > 64 {
+        ekrana_yaz("FAIL: BitNet chat-template BPE token count differs from oracle\n".ptr); dondu 14;
+    }
+    # Independently produced by tools/bitnet_tokenizer_reference.py against
+    # the bundled GGUF vocab/merge tables and GPT-2 byte-level regex.
+    degisken expected_prompt_ids: [17]tamsayi;
+    expected_prompt_ids[0] = 35075; expected_prompt_ids[1] = 25;
+    expected_prompt_ids[2] = 25672; expected_prompt_ids[3] = 757;
+    expected_prompt_ids[4] = 264; expected_prompt_ids[5] = 2875;
+    expected_prompt_ids[6] = 1922; expected_prompt_ids[7] = 375;
+    expected_prompt_ids[8] = 11363; expected_prompt_ids[9] = 13;
+    expected_prompt_ids[10] = 198; expected_prompt_ids[11] = 198;
+    expected_prompt_ids[12] = 21587; expected_prompt_ids[13] = 15734;
+    expected_prompt_ids[14] = 72803; expected_prompt_ids[15] = 25;
+    expected_prompt_ids[16] = 220;
+    degisken verify_prompt: tamsayi = 0;
+    dongu verify_prompt < prompt_count {
+        eger prompt_ids[verify_prompt] != expected_prompt_ids[verify_prompt] {
+            ekrana_yaz("FAIL: BitNet prompt token ID mismatch\n".ptr); dondu 15;
+        }
+        verify_prompt = verify_prompt + 1;
+    }
+    degisken full_prompt: [66]tamsayi;
+    full_prompt[0] = spec.bos_token_id;
+    degisken prompt_copy: tamsayi = 0;
+    dongu prompt_copy < prompt_count {
+        full_prompt[prompt_copy + 1] = prompt_ids[prompt_copy];
+        prompt_copy = prompt_copy + 1;
+    }
+    # The GGUF template appends eos_token after the open assistant prefix.
+    full_prompt[prompt_count + 1] = spec.eos_token_id;
+
+
+
+    degisken generated_tokens: [32]tamsayi;
+    TRANSFORMER_TRACE_POSITION = 34;
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("FAIL: CUDA backend initialization error=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr); dondu 19;
+    }
+    degisken generation_request: LLMGreedyGenerationRequest;
+    generation_request.icra = &icra;
+    generation_request.durum = durum_ptr;
+    generation_request.prompt_tokenleri = full_prompt;
+    generation_request.prompt_adedi = prompt_count + 2;
+    generation_request.uretilen_tokenler = generated_tokens;
+    generation_request.uretilen_kapasitesi = 32;
+    generation_request.max_yeni_token = 32;
+    degisken generated_count: tamsayi = llm_transformer_greedy_generate(&generation_request);
+    eger generated_count != 32 veya TRANSFORMER_FORWARD_HATASI != 0 {
+        ekrana_yaz("FAIL: real-weight greedy decode error=".ptr);
+        sayi_yaz(generated_count);
+        ekrana_yaz("/".ptr); sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz(" tensor=".ptr); sayi_yaz(TRANSFORMER_TENSOR_HATASI);
+        ekrana_yaz(" loader=".ptr); sayi_yaz(LLM_LOADER_HATASI);
+        ekrana_yaz(" read=".ptr); sayi_yaz(loader.son_okunan);
+        ekrana_yaz(" wanted=".ptr); sayi_yaz(loader.son_bayt);
+        ekrana_yaz(" offset=".ptr); sayi_yaz(loader.son_ofset);
+        ekrana_yaz(" tensor_offset=".ptr); sayi_yaz(g_llm_tensor_bilgi->veri_offset);
+        ekrana_yaz(" tensor_bytes=".ptr); sayi_yaz(g_llm_tensor_bilgi->bayt_sayisi);
+        ekrana_yaz(" tensor_type=".ptr); sayi_yaz(g_llm_tensor_bilgi->ggml_type);
+        ekrana_yaz("\n".ptr);
+        dondu 8;
+    }
+
+
+
+
+    degisken trace_stage: tamsayi = 0;
+    dongu trace_stage < 13 {
+        degisken trace_layer: tamsayi = 0;
+        dongu trace_layer < 30 {
+            degisken trace_slot: tamsayi = trace_stage * 42 + trace_layer;
+            ekrana_yaz("TRACE_YKN stage=".ptr); sayi_yaz(trace_stage);
+            ekrana_yaz(" layer=".ptr); sayi_yaz(trace_layer);
+            ekrana_yaz(" sum_q16=".ptr); sayi_yaz(TRANSFORMER_TRACE_SUM[trace_slot]);
+            ekrana_yaz(" max_q16=".ptr); sayi_yaz(TRANSFORMER_TRACE_MAX[trace_slot]);
+            ekrana_yaz(" first_q16=".ptr);
+            sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4]); ekrana_yaz(",".ptr);
+            sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 1]); ekrana_yaz(",".ptr);
+            sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 2]); ekrana_yaz(",".ptr);
+            sayi_yaz(TRANSFORMER_TRACE_FIRST[trace_slot * 4 + 3]); ekrana_yaz("\\n".ptr);
+            trace_layer = trace_layer + 1;
+        }
+        trace_stage = trace_stage + 1;
+    }
+
+    degisken step16_top: [10]tamsayi;
+    degisken step16_rank: tamsayi = 0;
+    ekrana_yaz("STEP16_YKN_TOP:");
+    dongu step16_rank < 10 {
+        degisken step16_best: tamsayi = -1;
+        degisken step16_candidate: tamsayi = 0;
+        dongu step16_candidate < spec.vocab_boyutu {
+            degisken step16_selected: tamsayi = 0;
+            degisken step16_prior: tamsayi = 0;
+            dongu step16_prior < step16_rank {
+                eger step16_top[step16_prior] == step16_candidate { step16_selected = 1; }
+                step16_prior = step16_prior + 1;
+            }
+            eger step16_selected == 0 and (step16_best < 0 or
+                TRANSFORMER_TRACE_LOGITS[step16_candidate] > TRANSFORMER_TRACE_LOGITS[step16_best]) {
+                step16_best = step16_candidate;
+            }
+            step16_candidate = step16_candidate + 1;
+        }
+        step16_top[step16_rank] = step16_best;
+        ekrana_yaz(" ".ptr); sayi_yaz(step16_best); ekrana_yaz(":".ptr);
+        sayi_yaz(TRANSFORMER_TRACE_LOGITS[step16_best]);
+        step16_rank = step16_rank + 1;
+    }
+    ekrana_yaz("\\n".ptr);
+
+
+    degisken ref_subnorm_bytes: [10240]u8;
+    degisken ref_subnorm_q16: [2560]tamsayi;
+    degisken ref_attn_out_bytes: [10240]u8;
+    degisken ref_attn_out_q16: [2560]tamsayi;
+    degisken direct_cpu_out: [2560]tamsayi;
+    eger dosya_oku_aralik("scratch/bitnet_logits_ref/ref_attn_subnorm.bin".ptr,
+        0, ref_subnorm_bytes, 10240) != 10240 or
+       dosya_oku_aralik("scratch/bitnet_logits_ref/ref_attn_out.bin".ptr,
+        0, ref_attn_out_bytes, 10240) != 10240 {
+        ekrana_yaz("TRACE_REFERENCE_VECTOR_READ_FAIL\\n".ptr); dondu 30;
+    }
+    degisken ref_vec_i: tamsayi = 0;
+    dongu ref_vec_i < 2560 {
+
+        ref_subnorm_q16[ref_vec_i] = llm_f32_q16_coz(
+            ref_subnorm_bytes[ref_vec_i * 4], ref_subnorm_bytes[ref_vec_i * 4 + 1],
+            ref_subnorm_bytes[ref_vec_i * 4 + 2], ref_subnorm_bytes[ref_vec_i * 4 + 3]);
+        ref_attn_out_q16[ref_vec_i] = llm_f32_q16_coz(
+            ref_attn_out_bytes[ref_vec_i * 4], ref_attn_out_bytes[ref_vec_i * 4 + 1],
+            ref_attn_out_bytes[ref_vec_i * 4 + 2], ref_attn_out_bytes[ref_vec_i * 4 + 3]);
+        ref_vec_i = ref_vec_i + 1;
+    }
+
+    degisken trace_max_ref: tamsayi = 0;
+    degisken trace_max_ykn: tamsayi = 0;
+    degisken trace_max_delta: tamsayi = 0;
+    degisken trace_abs_delta_sum: tamsayi = 0;
+    ref_vec_i = 0;
+    dongu ref_vec_i < 2560 {
+        degisken ref_abs: tamsayi = ref_subnorm_q16[ref_vec_i];
+        degisken ykn_abs: tamsayi = TRANSFORMER_TRACE_ATTN_SUBNORM[ref_vec_i];
+        eger ref_abs < 0 { ref_abs = 0 - ref_abs; }
+        eger ykn_abs < 0 { ykn_abs = 0 - ykn_abs; }
+        eger ref_abs > trace_max_ref { trace_max_ref = ref_abs; }
+        eger ykn_abs > trace_max_ykn { trace_max_ykn = ykn_abs; }
+        degisken delta: tamsayi = ref_subnorm_q16[ref_vec_i] - TRANSFORMER_TRACE_ATTN_SUBNORM[ref_vec_i];
+        eger delta < 0 { delta = 0 - delta; }
+        eger delta > trace_max_delta { trace_max_delta = delta; }
+        trace_abs_delta_sum = trace_abs_delta_sum + delta;
+        ref_vec_i = ref_vec_i + 1;
+    }
+    degisken qdiff_count: tamsayi = 0;
+    ref_vec_i = 0;
+    dongu ref_vec_i < 2560 {
+        degisken ref_x: tamsayi = ref_subnorm_q16[ref_vec_i];
+        degisken ykn_x: tamsayi = TRANSFORMER_TRACE_ATTN_SUBNORM[ref_vec_i];
+        degisken ref_ax: tamsayi = ref_x;
+        degisken ykn_ax: tamsayi = ykn_x;
+        eger ref_ax < 0 { ref_ax = 0 - ref_ax; }
+        eger ykn_ax < 0 { ykn_ax = 0 - ykn_ax; }
+        degisken ref_q: tamsayi = (ref_ax * 127 + trace_max_ref / 2) / trace_max_ref;
+        degisken ykn_q: tamsayi = (ykn_ax * 127 + trace_max_ykn / 2) / trace_max_ykn;
+        eger ref_x < 0 { ref_q = 0 - ref_q; }
+        eger ykn_x < 0 { ykn_q = 0 - ykn_q; }
+        eger ref_q != ykn_q { qdiff_count = qdiff_count + 1; }
+        ref_vec_i = ref_vec_i + 1;
+    }
+    ekrana_yaz("TRACE_SUBNORM_DELTA max_q16=".ptr); sayi_yaz(trace_max_delta);
+    ekrana_yaz(" l1_q16=".ptr); sayi_yaz(trace_abs_delta_sum);
+    ekrana_yaz(" q8_mismatch=".ptr); sayi_yaz(qdiff_count); ekrana_yaz("\\n".ptr);
+
+    degisken out_max_delta: tamsayi = 0;
+    degisken out_l1_delta: tamsayi = 0;
+    ref_vec_i = 0;
+    dongu ref_vec_i < 2560 {
+        degisken out_delta: tamsayi = TRANSFORMER_TRACE_ATTN_OUT[ref_vec_i] - ref_attn_out_q16[ref_vec_i];
+        eger out_delta < 0 { out_delta = 0 - out_delta; }
+        eger out_delta > out_max_delta { out_max_delta = out_delta; }
+        out_l1_delta = out_l1_delta + out_delta;
+        ref_vec_i = ref_vec_i + 1;
+    }
+    ekrana_yaz("TRACE_ATTN_OUT_DELTA max_q16=".ptr); sayi_yaz(out_max_delta);
+    ekrana_yaz(" l1_q16=".ptr); sayi_yaz(out_l1_delta);
+    ekrana_yaz(" first_ykn=".ptr); sayi_yaz(TRANSFORMER_TRACE_ATTN_OUT[0]);
+    ekrana_yaz(" first_ref=".ptr); sayi_yaz(ref_attn_out_q16[0]); ekrana_yaz("\\n".ptr);
+
+    degisken layer0_o_proj: *GGUFTensorInfo = llm_architecture_tensor_bul_sade(
+        durum_ptr, 0, 0, ".attn_output.weight".ptr);
+    eger layer0_o_proj == 0 or llm_model_tensor_oku(&loader, layer0_o_proj,
+        weights, max_weight_bytes) <= 0 or
+       bitnet_i2s_paketli_matris_carp(weights, ref_subnorm_q16,
+        direct_cpu_out, 1, 2560, 2560) != 1 {
+        ekrana_yaz("TRACE_REFERENCE_MATVEC_FAIL\\n".ptr); dondu 31;
+    }
+    degisken cpu_ref_max_delta: tamsayi = 0;
+    degisken cpu_ref_l1_delta: tamsayi = 0;
+    degisken ykn_cpu_max_delta: tamsayi = 0;
+    degisken ykn_cpu_l1_delta: tamsayi = 0;
+    ref_vec_i = 0;
+    dongu ref_vec_i < 2560 {
+        degisken cpu_ref_delta: tamsayi = direct_cpu_out[ref_vec_i] - ref_attn_out_q16[ref_vec_i];
+        degisken ykn_cpu_delta: tamsayi = TRANSFORMER_TRACE_ATTN_OUT[ref_vec_i] - direct_cpu_out[ref_vec_i];
+        eger cpu_ref_delta < 0 { cpu_ref_delta = 0 - cpu_ref_delta; }
+        eger ykn_cpu_delta < 0 { ykn_cpu_delta = 0 - ykn_cpu_delta; }
+        eger cpu_ref_delta > cpu_ref_max_delta { cpu_ref_max_delta = cpu_ref_delta; }
+        eger ykn_cpu_delta > ykn_cpu_max_delta { ykn_cpu_max_delta = ykn_cpu_delta; }
+        cpu_ref_l1_delta = cpu_ref_l1_delta + cpu_ref_delta;
+        ykn_cpu_l1_delta = ykn_cpu_l1_delta + ykn_cpu_delta;
+        ref_vec_i = ref_vec_i + 1;
+    }
+    ekrana_yaz("TRACE_CPU_REF_DELTA max_q16=".ptr); sayi_yaz(cpu_ref_max_delta);
+    ekrana_yaz(" l1_q16=".ptr); sayi_yaz(cpu_ref_l1_delta); ekrana_yaz("\\n".ptr);
+    ekrana_yaz("TRACE_YKN_CPU_DELTA max_q16=".ptr); sayi_yaz(ykn_cpu_max_delta);
+    ekrana_yaz(" l1_q16=".ptr); sayi_yaz(ykn_cpu_l1_delta); ekrana_yaz("\\n".ptr);
+
+    ekrana_yaz("TRACE_PROJ_ROW0 expected_q16=".ptr);
+    sayi_yaz(ref_attn_out_q16[0]); ekrana_yaz(" ykn_ref_input_q16=".ptr);
+    sayi_yaz(direct_cpu_out[0]); ekrana_yaz("\\n".ptr);
+
+    degisken produced: tamsayi = generated_tokens[0];
+    # Official BitNet C API oracle for this exact BOS + chat-template token
+    # sequence (including the template EOS): greedy next token is 264.
+    eger produced != 264 {
+        ekrana_yaz("FAIL: independent BitNet first-token oracle expected 264, got ".ptr);
+        sayi_yaz(produced); ekrana_yaz("\n".ptr); dondu 28;
+    }
+    eger produced < 0 veya produced >= spec.vocab_boyutu or
+       generated_tokens[1] < 0 or generated_tokens[1] >= spec.vocab_boyutu {
+        ekrana_yaz("FAIL: generated token outside vocabulary\n".ptr); dondu 17;
+    }
+    degisken nonzero_hidden: tamsayi = 0;
+    degisken hi: tamsayi = 0;
+    dongu hi < spec.gizli_boyut { eger hidden[hi] != 0 { nonzero_hidden = nonzero_hidden + 1; } hi = hi + 1; }
+    ekrana_yaz("NONZERO_HIDDEN=".ptr); sayi_yaz(nonzero_hidden); ekrana_yaz("\n".ptr);
+    degisken nonzero_logits: tamsayi = 0;
+    degisken max_abs_logit: tamsayi = 0;
+    degisken li: tamsayi = 0;
+    dongu li < spec.vocab_boyutu {
+        degisken lv: tamsayi = logits[li];
+        eger lv != 0 { nonzero_logits = nonzero_logits + 1; }
+        eger lv < 0 { lv = 0 - lv; }
+        eger lv > max_abs_logit { max_abs_logit = lv; }
+        li = li + 1;
+    }
+    eger nonzero_logits == 0 {
+        ekrana_yaz("FAIL: all output logits are zero\n".ptr); dondu 9;
+    }
+    # The F16 tied output projection runs in bounded CUDA chunks. Check rows
+    # on both sides of chunk boundaries against an independent scalar Q16 dot.
+    degisken parity_ids: [8]tamsayi;
+    parity_ids[0] = 0; parity_ids[1] = 11;
+    parity_ids[2] = 1637; parity_ids[3] = 1638;
+    parity_ids[4] = 3275; parity_ids[5] = 3276;
+    parity_ids[6] = 12551; parity_ids[7] = 128000;
+    degisken parity_i: tamsayi = 0;
+    dongu parity_i < 8 {
+        degisken row_id: tamsayi = parity_ids[parity_i];
+        degisken row_bytes: tamsayi = spec.gizli_boyut * 2;
+        eger llm_model_aralik_oku(&loader,
+            embed_info->veri_offset + row_id * row_bytes,
+            weights, row_bytes) != row_bytes {
+            ekrana_yaz("FAIL: output parity weight read\n".ptr); dondu 26;
+        }
+        degisken scalar_logit: tamsayi = 0;
+        degisken scalar_dot_q32: tamsayi = 0;
+        degisken parity_k: tamsayi = 0;
+        dongu parity_k < spec.gizli_boyut {
+            degisken weight_q16: tamsayi = llm_f16_q16_coz(
+                weights[parity_k * 2], weights[parity_k * 2 + 1]);
+            scalar_dot_q32 = scalar_dot_q32 + hidden[parity_k] * weight_q16;
+            parity_k = parity_k + 1;
+        }
+        scalar_logit = scalar_dot_q32 / 65536;
+        eger logits[row_id] != scalar_logit {
+            ekrana_yaz("FAIL: CUDA F16 output logit parity row=".ptr);
+            sayi_yaz(row_id); ekrana_yaz(" gpu=".ptr); sayi_yaz(logits[row_id]);
+            ekrana_yaz(" scalar=".ptr); sayi_yaz(scalar_logit); ekrana_yaz("\n".ptr);
+            dondu 27;
+        }
+        parity_i = parity_i + 1;
+    }
+    ekrana_yaz("BITNET_F16_OUTPUT_PARITY=8\n".ptr);
+    degisken raw_token: [256]u8;
+    degisken raw_token_length: tamsayi = bitnet_token_kopyala(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        produced, raw_token, 256);
+    degisken decoded: [256]u8;
+    degisken decoded_length: tamsayi = bitnet_gpt2_byte_decode(
+        raw_token, raw_token_length, decoded, 256);
+    eger raw_token_length <= 0 veya decoded_length < 0 {
+        ekrana_yaz("FAIL: generated token decode\n".ptr); dondu 13;
+    }
+
+    eger TRANSFORMER_CUDA_KERNEL_CALLS <= 0 or TRANSFORMER_CUDA_FALLBACKS != 0 {
+        ekrana_yaz("FAIL: decode CUDA dispatch/fallback invariant\n".ptr); dondu 20;
+    }
+    ekrana_yaz("CUDA_KERNEL_CALLS=".ptr); sayi_yaz(TRANSFORMER_CUDA_KERNEL_CALLS);
+    ekrana_yaz(" CUDA_FALLBACKS=".ptr); sayi_yaz(TRANSFORMER_CUDA_FALLBACKS);
+    ekrana_yaz("\nBITNET_REAL_WEIGHT_GREEDY_TOKEN=".ptr);
+    sayi_yaz(produced);
+    ekrana_yaz(" DECODED_BYTES=".ptr); sayi_yaz(decoded_length);
+    ekrana_yaz(" TEXT=".ptr); ekrana_yaz(decoded);
+    ekrana_yaz(" NONZERO_LOGITS=".ptr); sayi_yaz(nonzero_logits);
+    ekrana_yaz(" MAX_ABS_LOGIT=".ptr); sayi_yaz(max_abs_logit);
+    degisken raw_second: [256]u8;
+    degisken raw_second_length: tamsayi = bitnet_token_kopyala(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        generated_tokens[1], raw_second, 256);
+    degisken decoded_second: [256]u8;
+    degisken decoded_second_length: tamsayi = bitnet_gpt2_byte_decode(
+        raw_second, raw_second_length, decoded_second, 256);
+    eger raw_second_length <= 0 veya decoded_second_length < 0 {
+        ekrana_yaz("FAIL: second generated token decode\n".ptr); dondu 18;
+    }
+    ekrana_yaz(" SECOND_TOKEN=".ptr); sayi_yaz(generated_tokens[1]);
+    ekrana_yaz(" TEXT=".ptr); ekrana_yaz(decoded_second);
+    ekrana_yaz("\nGENERATED_TOKEN_IDS=".ptr);
+    degisken token_i: tamsayi = 0;
+    dongu token_i < generated_count {
+        eger generated_tokens[token_i] < 0 veya generated_tokens[token_i] >= spec.vocab_boyutu {
+            ekrana_yaz("FAIL: generated token outside vocabulary\n".ptr); dondu 21;
+        }
+        sayi_yaz(generated_tokens[token_i]); ekrana_yaz(" ".ptr);
+        token_i = token_i + 1;
+    }
+    ekrana_yaz("\nGENERATED_TEXT=".ptr);
+    degisken generated_text: [4096]u8;
+    degisken generated_text_len: tamsayi = 0;
+    token_i = 0;
+    dongu token_i < generated_count {
+        degisken piece_raw: [256]u8;
+        degisken piece_raw_len: tamsayi = bitnet_token_kopyala(
+            durum_ptr->buffer, token_offsets, token_lengths, token_count,
+            generated_tokens[token_i], piece_raw, 256);
+        degisken piece_decoded: [256]u8;
+        degisken piece_len: tamsayi = bitnet_gpt2_byte_decode(
+            piece_raw, piece_raw_len, piece_decoded, 256);
+        eger piece_raw_len <= 0 veya piece_len < 0 veya generated_text_len + piece_len >= 4096 {
+            ekrana_yaz("FAIL: generated text decode/size error\n".ptr); dondu 25;
+        }
+        degisken piece_i: tamsayi = 0;
+        dongu piece_i < piece_len {
+            generated_text[generated_text_len] = piece_decoded[piece_i];
+            generated_text_len = generated_text_len + 1;
+            piece_i = piece_i + 1;
+        }
+        token_i = token_i + 1;
+    }
+    generated_text[generated_text_len] = 0;
+    ekrana_yaz(generated_text.ptr);
+    ekrana_yaz("\n".ptr);
+    degisken expected_generated: [32]tamsayi;
+    expected_generated[0] = 264; expected_generated[1] = 2875;
+    expected_generated[2] = 1922; expected_generated[3] = 375;
+    expected_generated[4] = 11363; expected_generated[5] = 1473;
+    expected_generated[6] = 46847; expected_generated[7] = 512;
+    expected_generated[8] = 12; expected_generated[9] = 220;
+    expected_generated[10] = 16; expected_generated[11] = 10747;
+    expected_generated[12] = 315; expected_generated[13] = 20415;
+    expected_generated[14] = 198; expected_generated[15] = 12;
+    expected_generated[16] = 220; expected_generated[17] = 16;
+    expected_generated[18] = 10747; expected_generated[19] = 315;
+    expected_generated[20] = 13465; expected_generated[21] = 198;
+    expected_generated[22] = 12; expected_generated[23] = 220;
+    expected_generated[24] = 16; expected_generated[25] = 10747;
+    expected_generated[26] = 315; expected_generated[27] = 3090;
+    expected_generated[28] = 198; expected_generated[29] = 12;
+    expected_generated[30] = 220; expected_generated[31] = 16;
+    degisken verify_generated: tamsayi = 0;
+    dongu verify_generated < 32 {
+        eger generated_tokens[verify_generated] != expected_generated[verify_generated] {
+            ekrana_yaz("FAIL: reference greedy token mismatch step=".ptr);
+            sayi_yaz(verify_generated); ekrana_yaz(" expected=".ptr);
+            sayi_yaz(expected_generated[verify_generated]); ekrana_yaz(" actual=".ptr);
+            sayi_yaz(generated_tokens[verify_generated]); ekrana_yaz("\n".ptr);
+            ykn_cuda_backend_stop();
+            dondu 29;
+        }
+        verify_generated = verify_generated + 1;
+    }
+    ekrana_yaz("BITNET_REAL_WEIGHT_32_TOKEN_CUDA_PASS\n".ptr);
+    ykn_cuda_backend_stop();
+    dondu 0;
+}

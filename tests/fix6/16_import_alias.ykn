@@ -1,0 +1,5 @@
+ice_aktar "std/moduller/matematik_modul.ykn" olarak mat;
+
+isv ana() -> tamsayi {
+    dondu mat::kare(6);
+}

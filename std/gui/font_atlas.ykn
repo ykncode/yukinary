@@ -1,0 +1,125 @@
+# ============================================================
+# std/gui/font_atlas.ykn
+# FAZ 62: Saf Yukinary Doku Font Atlası (Texture Atlas) ve GPU Çizim Motoru
+# Dinamik 2D Glif Önbelleği, Slot Haritalama ve RGBA Framebuffer Metin Çizimi
+# ============================================================
+
+yapi FontAtlas {
+    genislik:       tamsayi;
+    yukseklik:      tamsayi;
+    glif_genislik:  tamsayi;
+    glif_yukseklik: tamsayi;
+    doku:           *u8;
+    slot_haritasi:  *u8;
+}
+
+isv font_atlas_olustur(gen: tamsayi, yuk: tamsayi, gw: tamsayi, gh: tamsayi) -> *FontAtlas {
+    degisken fa: *FontAtlas = bellek_tahsis_et(64);
+    fa.genislik = gen;
+    fa.yukseklik = yuk;
+    fa.glif_genislik = gw;
+    fa.glif_yukseklik = gh;
+
+    degisken doku_alani: *u8 = bellek_tahsis_et(gen * yuk);
+    fa.doku = doku_alani;
+
+    degisken harita_alani: *u8 = bellek_tahsis_et(256);
+    fa.slot_haritasi = harita_alani;
+
+    degisken d: *u8 = fa.doku;
+    degisken i: tamsayi = 0;
+    dongu i < (gen * yuk) {
+        d[i] = 0;
+        i = i + 1;
+    }
+
+    degisken sh: *u8 = fa.slot_haritasi;
+    i = 0;
+    dongu i < 256 {
+        sh[i] = 0;
+        i = i + 1;
+    }
+    dondu fa;
+}
+
+# Atlas uzerine bir karakterin (gw x gh) desenini yerlestirir
+isv font_atlas_glif_yaz(fa: *FontAtlas, slot: tamsayi, desen: *u8) {
+    degisken gen: tamsayi = fa.genislik;
+    degisken gw: tamsayi = fa.glif_genislik;
+    degisken gh: tamsayi = fa.glif_yukseklik;
+    degisken d: *u8 = fa.doku;
+
+    degisken sutun_sayisi: tamsayi = gen / gw;
+    degisken slot_x: tamsayi = (slot % sutun_sayisi) * gw;
+    degisken slot_y: tamsayi = (slot / sutun_sayisi) * gh;
+
+    degisken py: tamsayi = 0;
+    dongu py < gh {
+        degisken px: tamsayi = 0;
+        dongu px < gw {
+            degisken atlas_ofset: tamsayi = (slot_y + py) * gen + (slot_x + px);
+            degisken desen_ofset: tamsayi = py * gw + px;
+            d[atlas_ofset] = desen[desen_ofset];
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+
+    eger slot < 256 ise {
+        degisken sh: *u8 = fa.slot_haritasi;
+        sh[slot] = 1;
+    }
+}
+
+# Atlas uzerinden metin dizesini 32-bit RGBA framebuffer'a cizer
+isv font_atlas_metin_ciz(fa: *FontAtlas, fb: *u8, fb_w: tamsayi, fb_h: tamsayi, bas_x: tamsayi, bas_y: tamsayi, metin: *u8, len: tamsayi) -> tamsayi {
+    degisken gen: tamsayi = fa.genislik;
+    degisken gw: tamsayi = fa.glif_genislik;
+    degisken gh: tamsayi = fa.glif_yukseklik;
+    degisken d: *u8 = fa.doku;
+    degisken sh: *u8 = fa.slot_haritasi;
+
+    degisken imlec_x: tamsayi = bas_x;
+    degisken i: tamsayi = 0;
+    degisken cizilen: tamsayi = 0;
+
+    dongu i < len {
+        degisken c: tamsayi = metin[i] & 255;
+        degisken slot: tamsayi = c;
+        # Eger dogrudan ASCII slotunda veri yoksa, modulo 16 slotuna bak
+        eger sh[slot] == 0 ise {
+            slot = c % 16;
+        }
+
+        degisken sutun_sayisi: tamsayi = gen / gw;
+        degisken slot_x: tamsayi = (slot % sutun_sayisi) * gw;
+        degisken slot_y: tamsayi = (slot / sutun_sayisi) * gh;
+
+        degisken py: tamsayi = 0;
+        dongu py < gh {
+            degisken px: tamsayi = 0;
+            dongu px < gw {
+                degisken atlas_ofset: tamsayi = (slot_y + py) * gen + (slot_x + px);
+                degisken piksel_degeri: u8 = d[atlas_ofset];
+                eger piksel_degeri > 0 ise {
+                    degisken hedef_x: tamsayi = imlec_x + px;
+                    degisken hedef_y: tamsayi = bas_y + py;
+                    eger hedef_x < fb_w ve hedef_y < fb_h ise {
+                        degisken fb_ofset: tamsayi = (hedef_y * fb_w + hedef_x) * 4;
+                        fb[fb_ofset]     = piksel_degeri;
+                        fb[fb_ofset + 1] = piksel_degeri;
+                        fb[fb_ofset + 2] = piksel_degeri;
+                        fb[fb_ofset + 3] = 255;
+                        cizilen = cizilen + 1;
+                    }
+                }
+                px = px + 1;
+            }
+            py = py + 1;
+        }
+
+        imlec_x = imlec_x + gw + 1;
+        i = i + 1;
+    }
+    dondu cizilen;
+}

@@ -1,0 +1,72 @@
+# ============================================================
+# FAZ 6 Kabul Kriter Testi:
+# - Constant folding: 2+3*4 = 14 (derleme aninda hesaplanir)
+# - Algebraic simplification: x+0, x*1, x*0, x/1
+# - DCE: dondu sonrasi olu kod temizlenir
+# - CFG: dongu ve eger/yoksa BB'leri olusur
+# - Kural: Optimizasyon ACIK ile derlenmis ciktinin stdout'u OPT KAPALI ile ayni olmali.
+# ============================================================
+
+isv ekrana_yaz(mesaj: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {}
+
+isv ana() -> tamsayi {
+    # --- Constant Folding testi ---
+    # 2 + 3 * 4 = 14 (derleme aninda 14'e katlanir)
+    degisken katli: tamsayi = 2 + 3 * 4;
+    sayiyi_yazdir(katli);
+    ekrana_yaz(" ".ptr);
+
+    # 100 / 5 + 12 = 32
+    degisken katli2: tamsayi = (100 / 5) + 12;
+    sayiyi_yazdir(katli2);
+    ekrana_yaz(" ".ptr);
+
+    # --- Algebraic Simplification testi ---
+    degisken x: tamsayi = 42;
+    # x + 0 -> x  (cebirsel indirgeme)
+    degisken s1: tamsayi = x + 0;
+    sayiyi_yazdir(s1);
+    ekrana_yaz(" ".ptr);
+    # x * 1 -> x
+    degisken s2: tamsayi = x * 1;
+    sayiyi_yazdir(s2);
+    ekrana_yaz(" ".ptr);
+    # x * 0 -> 0
+    degisken s3: tamsayi = x * 0;
+    sayiyi_yazdir(s3);
+    ekrana_yaz(" ".ptr);
+    # x / 1 -> x
+    degisken s4: tamsayi = x / 1;
+    sayiyi_yazdir(s4);
+    ekrana_yaz("\n".ptr);
+
+    # --- DCE testi: olu kod (dondu sonrasi) temizlenir ---
+    degisken kosul: tamsayi = 1;
+    eger kosul == 1 ise {
+        ekrana_yaz("DCE-TEST: Kosul dogru\n".ptr);
+        dondu 0;
+        # --- BU SATIRLAR ASLA CALISMAZ (olu kod) ---
+        ekrana_yaz("DCE-HATA: Bu mesaj gorulmemeli\n".ptr);
+        degisken olu1: tamsayi = 999;
+        sayiyi_yazdir(olu1);
+    } yoksa {
+        ekrana_yaz("DCE-TEST: Kosul yanlis (gormemeliyiz)\n".ptr);
+    }
+
+    # --- CFG testi: dongu ve eger/yoksa BB olusturmali ---
+    degisken i: tamsayi = 0;
+    degisken toplam: tamsayi = 0;
+    dongu i < 3 {
+        eger i == 1 ise {
+            toplam = toplam + 100;
+        } yoksa {
+            toplam = toplam + i;
+        }
+        i = i + 1;
+    }
+    sayiyi_yazdir(toplam);
+    ekrana_yaz("\n".ptr);
+
+    dondu 0;
+}

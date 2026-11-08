@@ -1,0 +1,18 @@
+# HTTP/1.1 request-line parser acceptance.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken gecerli: *u8 = "POST /api/v1/durum HTTP/1.1".ptr;
+    eger gecerli[4] != 32 veya gecerli[18] != 32 ise { dondu 20; }
+    degisken req: Istek;
+    eger http_ayristir(gecerli, 27, &req) == 0 veya req.durum != 1 ise { dondu 10; }
+    eger req.metod_uzunluk != 4 ise { dondu 11; }
+    eger req.yol_uzunluk != 13 ise { dondu 12; }
+    eger req.surum_uzunluk != 8 ise { dondu 13; }
+    eger req.metod == 0 veya req.yol == 0 veya req.surum == 0 ise { dondu 14; }
+
+    degisken bozuk: *u8 = "GET/bozuk HTTP/1.1\r\n".ptr;
+    degisken hata: Istek;
+    eger http_ayristir(bozuk, 20, &hata) != 0 veya hata.durum != 0 veya hata.metod != 0 veya hata.yol != 0 ise { dondu 2; }
+    dondu 0;
+}

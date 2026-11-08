@@ -1,0 +1,31 @@
+ice_aktar "src/fallback_dinamik.ykn";
+
+isv ana() -> tamsayi {
+    degisken h: tamsayi = dyn_lib_yukle("/workspace/build/test-work/fallback-dynamic-linux/libdynamic_fixture.so".ptr);
+    eger h != 0 ise {
+        ekrana_yaz("DYNLOAD: load OK\n".ptr);
+        degisken fn_ptr: *u8 = dyn_sym_al("dyn_add".ptr);
+        eger fn_ptr != 0 ise {
+            degisken sonuc: tamsayi = dyn_sym_cagir_i64("dyn_add".ptr, 19, 23);
+            sayiyi_yazdir(sonuc);
+            ekrana_yaz("\n".ptr);
+            eger sonuc == 42 ise {
+                ekrana_yaz("DYNLOAD: symbol call OK\n".ptr);
+            } yoksa {
+                dyn_lib_kapat();
+                dondu 3;
+            }
+            eger dyn_sym_cagir_i64("missing_symbol".ptr, 1, 2) != 0 - 1 ise {
+                dyn_lib_kapat();
+                dondu 4;
+            }
+        } yoksa {
+            dyn_lib_kapat();
+            dondu 2;
+        }
+        dyn_lib_kapat();
+        dondu 0;
+    }
+    ekrana_yaz("DYNLOAD: load FAIL\n".ptr);
+    dondu 1;
+}

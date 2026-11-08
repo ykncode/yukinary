@@ -1,0 +1,134 @@
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv bellek_serbest_birak(ptr: *u8);
+
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf.ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken neg: tamsayi = 0;
+    eger n < 0 ise { neg = 1; n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger neg == 1 ise { buf[i] = 45; i = i + 1; }
+    degisken j: tamsayi = 0;
+    dongu j < i / 2 {
+        degisken t: u8 = buf[j]; buf[j] = buf[i - 1 - j]; buf[i - 1 - j] = t;
+        j = j + 1;
+    }
+    buf[i] = 0;
+    ekrana_yaz(buf.ptr);
+}
+
+yapi Dugum {
+    anahtar: tamsayi;
+    deger: tamsayi;
+    sol: *Dugum;
+    sag: *Dugum;
+}
+
+degisken g_arena_ptr: *u8 = 0;
+degisken g_arena_ofs: tamsayi = 0;
+
+isv yeni_dugum(anahtar: tamsayi, deger: tamsayi) -> *Dugum {
+    eger g_arena_ptr == 0 ise {
+        g_arena_ptr = bellek_tahsis_et(100000 * 32); # 100k nodes x 32 bytes
+        g_arena_ofs = 0;
+    }
+    degisken p: *Dugum = g_arena_ptr + g_arena_ofs;
+    g_arena_ofs = g_arena_ofs + 32;
+    p.anahtar = anahtar;
+    p.deger = deger;
+    p.sol = 0;
+    p.sag = 0;
+    dondu p;
+}
+
+isv agac_ekle(kok: *Dugum, anahtar: tamsayi, deger: tamsayi) -> *Dugum {
+    eger kok == 0 ise {
+        dondu yeni_dugum(anahtar, deger);
+    }
+    degisken cur: *Dugum = kok;
+    dongu 1 == 1 {
+        eger anahtar < cur.anahtar ise {
+            eger cur.sol == 0 ise {
+                cur.sol = yeni_dugum(anahtar, deger);
+                durdur;
+            }
+            cur = cur.sol;
+        } yoksa eger anahtar > cur.anahtar ise {
+            eger cur.sag == 0 ise {
+                cur.sag = yeni_dugum(anahtar, deger);
+                durdur;
+            }
+            cur = cur.sag;
+        } yoksa {
+            cur.deger = deger;
+            durdur;
+        }
+    }
+    dondu kok;
+}
+
+isv agac_ara(kok: *Dugum, anahtar: tamsayi) -> tamsayi {
+    degisken cur: *Dugum = kok;
+    dongu cur != 0 {
+        eger anahtar == cur.anahtar ise { dondu cur.deger; }
+        eger anahtar < cur.anahtar ise { cur = cur.sol; }
+        yoksa { cur = cur.sag; }
+    }
+    dondu 0 - 1;
+}
+
+isv agac_aralik_toplami(kok: *Dugum, min_k: tamsayi, max_k: tamsayi) -> tamsayi {
+    eger kok == 0 ise { dondu 0; }
+    degisken toplam: tamsayi = 0;
+    eger kok.anahtar >= min_k ve kok.anahtar <= max_k ise {
+        toplam = toplam + kok.deger;
+    }
+    eger kok.anahtar > min_k ise {
+        toplam = toplam + agac_aralik_toplami(kok.sol, min_k, max_k);
+    }
+    eger kok.anahtar < max_k ise {
+        toplam = toplam + agac_aralik_toplami(kok.sag, min_k, max_k);
+    }
+    dondu toplam;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken kok: *Dugum = 0;
+    degisken pseudo_rand: tamsayi = 133742;
+
+    # 1. Insertion
+    degisken i: tamsayi = 0;
+    dongu i < 100000 {
+        pseudo_rand = (pseudo_rand * 1103515245 + 12345) & 0x7FFFFFFF;
+        degisken k: tamsayi = pseudo_rand % 200000;
+        degisken v: tamsayi = i * 3;
+        kok = agac_ekle(kok, k, v);
+        i = i + 1;
+    }
+
+    # 2. Lookups
+    degisken found_count: tamsayi = 0;
+    i = 0;
+    dongu i < 50000 {
+        pseudo_rand = (pseudo_rand * 1103515245 + 12345) & 0x7FFFFFFF;
+        degisken k: tamsayi = pseudo_rand % 200000;
+        eger agac_ara(kok, k) >= 0 ise {
+            found_count = found_count + 1;
+        }
+        i = i + 1;
+    }
+
+    # 3. Range Aggregation
+    degisken total_sum: tamsayi = agac_aralik_toplami(kok, 50000, 150000);
+
+    ekrana_yaz("[YUKINARY-NATIVE] Systems Workload Tamamlandi! Found: ".ptr);
+    sayiyi_yazdir(found_count);
+    ekrana_yaz(" | RangeSum: ".ptr);
+    sayiyi_yazdir(total_sum);
+    ekrana_yaz("\n".ptr);
+
+    dondu 0;
+}
+

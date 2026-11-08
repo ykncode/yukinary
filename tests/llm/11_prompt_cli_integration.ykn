@@ -1,0 +1,18 @@
+# ============================================================
+# tests/llm/11_prompt_cli_integration.ykn
+# FAZ 8 / GÖREV 6.6: #prompt ve --llm-model Entegrasyon Testi
+# ============================================================
+
+#prompt "faktoriyel fonksiyonu hesapla"
+
+isv sayiyi_yazdir(s: tamsayi) {}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken f5: tamsayi = faktoriyel(5);
+    eger f5 == 120 ise {
+        ekrana_yaz("PROMPT-CLI-INTEGRATION-PASS\n".ptr);
+    } yoksa {
+        ekrana_yaz("FAIL: Faktoriyel beklenen 120\n".ptr);
+    }
+    dondu 0;
+}

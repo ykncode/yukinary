@@ -1,0 +1,9 @@
+# FIX-13 negatif: p veya q kosulu iki pointer'i birden acmaz.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    degisken q: ?*u8 = bos;
+    eger p != bos veya q != bos ise {
+        p[0] = 83;
+    }
+    dondu 0;
+}

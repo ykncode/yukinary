@@ -1,0 +1,37 @@
+# Saf YKN YKNA decoder/recovery testi.
+ice_aktar "src/yknllm_audit.ykn";
+ice_aktar "src/yknllm_audit_reader.ykn";
+
+isv ana() -> tamsayi {
+    degisken input: YKNLLMAuditInput;
+    input.correlation_id = "reader-corr-0001".ptr;
+    input.intent = "audit kaydini dogrula".ptr;
+    input.ykn_code = "isv ana() -> tamsayi { dondu 0; }".ptr;
+    input.model_version = "yknllm-reader-1".ptr;
+    input.selected_model = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    input.diagnostics = "accepted=1".ptr;
+    input.compiler_exit = 0;
+    input.accepted = 1;
+
+    degisken yol: *u8 = "build/test-work/yknllm-audit-reader.bin".ptr;
+    eger yknllm_audit_append(yol, &input) <= 0 veya
+       yknllm_audit_append(yol, &input) <= 0 ise {
+        ekrana_yaz("FAIL: reader fixture append basarisiz\n".ptr);
+        dondu 1;
+    }
+    degisken adet: tamsayi = 0;
+    eger yknllm_audit_dosya_dogrula(yol, &adet) == 0 veya adet < 2 ise {
+        ekrana_yaz("FAIL: audit dosya recovery dogrulamadi\n".ptr);
+        dondu 1;
+    }
+
+    degisken bozuk: [16]u8;
+    degisken konum: tamsayi = 0;
+    degisken bozuk_kayit: YKNLLMAuditDecoded;
+    eger yknllm_audit_kayit_coz(&bozuk, 16, &konum, &bozuk_kayit) != 2 ise {
+        ekrana_yaz("FAIL: bozuk header kabul edildi\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("YKNLLM_AUDIT_READER_PASS\n".ptr);
+    dondu 0;
+}

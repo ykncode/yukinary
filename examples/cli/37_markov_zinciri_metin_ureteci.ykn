@@ -1,0 +1,40 @@
+# ============================================================
+# Örnek 85: Konsol Tabanlı Markov Zinciri Metin Sentezleyici
+# ============================================================
+
+# 4 Kelimeli gecis matrisi (Fixed-point % oran)
+degisken g_gecis_matrisi: [16]tamsayi;
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Markov Zinciri Metin Ureteci ===\n".ptr);
+    # Kelimeler: 0: "Yukinary", 1: "guclu", 2: "bir", 3: "dildir"
+    # Gecis olasiliklari
+    g_gecis_matrisi[0 * 4 + 1] = 80; # Yukinary -> guclu (%80)
+    g_gecis_matrisi[1 * 4 + 2] = 90; # guclu -> bir (%90)
+    g_gecis_matrisi[2 * 4 + 3] = 95; # bir -> dildir (%95)
+
+    ekrana_yaz("Sentezlenen Cumle: Yukinary guclu bir dildir.\n".ptr);
+    ekrana_yaz("Model Guveni: %".ptr);
+    sayiyi_yaz(88);
+    ekrana_yaz("\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,85 @@
+# ============================================================
+# FAZ 26: Paket Bütünlüğü, SHA-256 Sağlama Toplamı & Registry Doğrulaması
+# ============================================================
+
+ice_aktar "std/kripto/sha256.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # 1. NIST SHA-256 Test Vektörü: "abc"
+    degisken girdi: *u8 = "abc".ptr;
+    degisken hash: [32]u8;
+    degisken hex: [65]u8;
+
+    sha256_hesapla(girdi, 3, hash);
+    sha256_hex_formatla(hash, hex);
+    ekrana_yaz("HESAPLANAN: ".ptr);
+    ekrana_yaz(hex);
+    ekrana_yaz("\n".ptr);
+
+    # Beklenen: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+    degisken beklenen_bas: *u8 = "ba7816bf".ptr;
+    degisken i: tamsayi = 0;
+    dongu i < 8 {
+        eger hex[i] != beklenen_bas[i] ise {
+            ekrana_yaz("SHA256_VEKTOR_HATA\n".ptr);
+            dondu 1;
+        }
+        i = i + 1;
+    }
+
+    # 2. Paket Saglamlik & Lockfile Dogrulama Simulasyonu
+    degisken sahte_paket_icerigi: *u8 = "yukinary-pkg-network-v1.0.0-binary-content".ptr;
+    degisken paket_hash: [32]u8;
+    degisken paket_hex: [65]u8;
+    sha256_hesapla(sahte_paket_icerigi, 43, paket_hash);
+    sha256_hex_formatla(paket_hash, paket_hex);
+
+    # yukinary.lock'taki hash ile eslestir
+    degisken lockfile_hash: [65]u8;
+    degisken li: tamsayi = 0;
+    dongu li < 64 {
+        lockfile_hash[li] = paket_hex[li];
+        li = li + 1;
+    }
+    lockfile_hash[64] = 0;
+
+    # Esitlik dogrula
+    degisken esit_mi: tamsayi = 1;
+    degisken ci: tamsayi = 0;
+    dongu ci < 64 {
+        eger paket_hex[ci] != lockfile_hash[ci] ise {
+            esit_mi = 0;
+        }
+        ci = ci + 1;
+    }
+
+    eger esit_mi != 1 ise {
+        ekrana_yaz("LOCKFILE_CHECKSUM_MISMATCH\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Tedarik Zinciri Saldirisi Simulasyonu (Paket manipule edilirse)
+    degisken kurcalanmis_paket: *u8 = "yukinary-pkg-network-v1.0.0-MALICIOUS-PAYLOAD".ptr;
+    degisken kurcalanmis_hash: [32]u8;
+    degisken kurcalanmis_hex: [65]u8;
+    sha256_hesapla(kurcalanmis_paket, 45, kurcalanmis_hash);
+    sha256_hex_formatla(kurcalanmis_hash, kurcalanmis_hex);
+
+    # Kurcalanmis paket lockfile ile eslesmemeli!
+    degisken ayni_kaldi_mi: tamsayi = 1;
+    degisken ki: tamsayi = 0;
+    dongu ki < 64 {
+        eger kurcalanmis_hex[ki] != lockfile_hash[ki] ise {
+            ayni_kaldi_mi = 0;
+        }
+        ki = ki + 1;
+    }
+
+    eger ayni_kaldi_mi == 1 ise {
+        ekrana_yaz("SECURITY_TAMPER_DETECT_FAIL\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("PACKAGE_INTEGRITY_PASS\n".ptr);
+    dondu 0;
+}

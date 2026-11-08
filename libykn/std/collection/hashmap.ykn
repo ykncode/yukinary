@@ -1,0 +1,302 @@
+# ============================================================
+# Yukinary (YKN) Hash Tablosu Kutuphanesi (libykn/std/collection/hashmap.ykn)
+# HashMap<K,V>: FNV-1a Hash + Linear Probing (Acik Adresleme), O(1) Erisim, Otomatik Rehash
+# ============================================================
+
+yapi HashMap {
+    tablo_anahtar: **u8;
+    tablo_hash: *tamsayi;
+    tablo_deger: *tamsayi;
+    tablo_dolu: *tamsayi;    # 0 = Bos, 1 = Dolu, 2 = Silindi (Tombstone)
+    kapasite: tamsayi;
+    uzunluk: tamsayi;
+}
+
+# ------------------------------------------------------------
+# Hash ve Esitlik Fonksiyonlari
+# ------------------------------------------------------------
+
+# FNV-1a 64-bit Hash
+isv libykn_fnv1a_hash(s: *u8) -> tamsayi {
+    eger s == 0 { dondu 0; }
+    degisken h: tamsayi = 2166136261;
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        h = h ^ s[i];
+        h = h * 16777619;
+        i = i + 1;
+    }
+    eger h < 0 {
+        h = 0 - h;
+    }
+    dondu h;
+}
+
+# String karsilastirma
+isv libykn_str_esit(s1: *u8, s2: *u8) -> tamsayi {
+    eger s1 == 0 veya s2 == 0 {
+        eger s1 == 0 ve s2 == 0 { dondu 1; }
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu s1[i] != 0 ve s2[i] != 0 {
+        eger s1[i] != s2[i] { dondu 0; }
+        i = i + 1;
+    }
+    eger s1[i] == 0 ve s2[i] == 0 { dondu 1; }
+    dondu 0;
+}
+
+# ------------------------------------------------------------
+# Yapici ve Yonetim Fonksiyonlari
+# ------------------------------------------------------------
+
+# hashmap_yeni: Belirtilen kapasite ile yeni HashMap olusturur
+isv hashmap_yeni(kapasite: tamsayi) -> *HashMap {
+    degisken cap: tamsayi = kapasite;
+    eger cap < 16 { cap = 16; }
+
+    degisken hm: *HashMap = bellek_tahsis_et(48);
+    hm.tablo_anahtar = bellek_tahsis_et(cap * 8);
+    hm.tablo_hash    = bellek_tahsis_et(cap * 8);
+    hm.tablo_deger   = bellek_tahsis_et(cap * 8);
+    hm.tablo_dolu    = bellek_tahsis_et(cap * 8);
+    hm.kapasite = cap;
+    hm.uzunluk = 0;
+
+    degisken i: tamsayi = 0;
+    degisken dolu_ptr: *tamsayi = hm.tablo_dolu;
+    dongu i < cap {
+        dolu_ptr[i] = 0;
+        i = i + 1;
+    }
+
+    dondu hm;
+}
+
+# hashmap_uzunluk (len): Kayitli eleman sayisi
+isv hashmap_uzunluk(hm: *HashMap) -> tamsayi {
+    eger hm == 0 { dondu 0; }
+    dondu hm.uzunluk;
+}
+
+# hashmap_bos_mu (is_empty)
+isv hashmap_bos_mu(hm: *HashMap) -> tamsayi {
+    eger hm == 0 { dondu 1; }
+    dondu hm.uzunluk == 0;
+}
+
+# ------------------------------------------------------------
+# Rehash (Kapasiteyi Genisletme)
+# ------------------------------------------------------------
+isv hashmap_rehash(hm: *HashMap, yeni_kapasite: tamsayi) {
+    degisken eski_cap: tamsayi = hm.kapasite;
+    degisken eski_k: **u8 = hm.tablo_anahtar;
+    degisken eski_v: *tamsayi = hm.tablo_deger;
+    degisken eski_d: *tamsayi = hm.tablo_dolu;
+
+    hm.tablo_anahtar = bellek_tahsis_et(yeni_kapasite * 8);
+    hm.tablo_hash    = bellek_tahsis_et(yeni_kapasite * 8);
+    hm.tablo_deger   = bellek_tahsis_et(yeni_kapasite * 8);
+    hm.tablo_dolu    = bellek_tahsis_et(yeni_kapasite * 8);
+    hm.kapasite = yeni_kapasite;
+    hm.uzunluk = 0;
+
+    degisken i: tamsayi = 0;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    dongu i < yeni_kapasite {
+        d_ptr[i] = 0;
+        i = i + 1;
+    }
+
+    # Eski elemanlari yeni tabloya ekle
+    i = 0;
+    dongu i < eski_cap {
+        eger eski_d[i] == 1 {
+            hashmap_koy(hm, eski_k[i], eski_v[i]);
+        }
+        i = i + 1;
+    }
+}
+
+# ------------------------------------------------------------
+# Temel Map Islemleri
+# ------------------------------------------------------------
+
+# hashmap_koy (insert): Anahtar-Deger ciftini ekler veya gunceller
+isv hashmap_koy(hm: *HashMap, anahtar: *u8, deger: tamsayi) {
+    eger hm == 0 veya anahtar == 0 { dondu; }
+
+    # Load factor > 0.70 ise genislet
+    eger (hm.uzunluk * 10) >= (hm.kapasite * 7) {
+        hashmap_rehash(hm, hm.kapasite * 2);
+    }
+
+    degisken h: tamsayi = libykn_fnv1a_hash(anahtar);
+    degisken cap: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % cap;
+
+    degisken k_ptr: **u8 = hm.tablo_anahtar;
+    degisken v_ptr: *tamsayi = hm.tablo_deger;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    degisken h_ptr: *tamsayi = hm.tablo_hash;
+
+    degisken ilk_silinen: tamsayi = -1;
+    degisken adim: tamsayi = 0;
+
+    dongu adim < cap {
+        degisken durum: tamsayi = d_ptr[idx];
+
+        eger durum == 0 {
+            # Bos slot bulundu
+            degisken hedef_idx: tamsayi = idx;
+            eger ilk_silinen != -1 {
+                hedef_idx = ilk_silinen;
+            }
+            k_ptr[hedef_idx] = anahtar;
+            v_ptr[hedef_idx] = deger;
+            h_ptr[hedef_idx] = h;
+            d_ptr[hedef_idx] = 1;
+            hm.uzunluk = hm.uzunluk + 1;
+            dondu;
+        } yoksa eger durum == 2 {
+            # Silinmis slot (tombstone)
+            eger ilk_silinen == -1 {
+                ilk_silinen = idx;
+            }
+        } yoksa eger durum == 1 {
+            # Dolu slot - ayni anahtar mi?
+            eger h_ptr[idx] == h {
+                eger libykn_str_esit(k_ptr[idx], anahtar) == 1 {
+                    v_ptr[idx] = deger; # Guncelle
+                    dondu;
+                }
+            }
+        }
+
+        idx = (idx + 1) % cap;
+        adim = adim + 1;
+    }
+
+    # Tum tablo dolasilmis ve bos yer yoksa (silinmis slota koy)
+    eger ilk_silinen != -1 {
+        k_ptr[ilk_silinen] = anahtar;
+        v_ptr[ilk_silinen] = deger;
+        h_ptr[ilk_silinen] = h;
+        d_ptr[ilk_silinen] = 1;
+        hm.uzunluk = hm.uzunluk + 1;
+    }
+}
+
+# hashmap_al (get): Anahtara karsilik gelen degeri dondurur
+isv hashmap_al(hm: *HashMap, anahtar: *u8, varsayilan_deger: tamsayi) -> tamsayi {
+    eger hm == 0 veya anahtar == 0 veya hm.uzunluk == 0 {
+        dondu varsayilan_deger;
+    }
+
+    degisken h: tamsayi = libykn_fnv1a_hash(anahtar);
+    degisken cap: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % cap;
+
+    degisken k_ptr: **u8 = hm.tablo_anahtar;
+    degisken v_ptr: *tamsayi = hm.tablo_deger;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    degisken h_ptr: *tamsayi = hm.tablo_hash;
+
+    degisken adim: tamsayi = 0;
+    dongu adim < cap {
+        degisken durum: tamsayi = d_ptr[idx];
+
+        eger durum == 0 {
+            # Bos slota denk gelindi -> anahtar tabloda yok
+            dondu varsayilan_deger;
+        } yoksa eger durum == 1 {
+            eger h_ptr[idx] == h {
+                eger libykn_str_esit(k_ptr[idx], anahtar) == 1 {
+                    dondu v_ptr[idx];
+                }
+            }
+        }
+        # durum == 2 ise aramaya devam et (linear probing)
+
+        idx = (idx + 1) % cap;
+        adim = adim + 1;
+    }
+
+    dondu varsayilan_deger;
+}
+
+# hashmap_var_mi (contains_key)
+isv hashmap_var_mi(hm: *HashMap, anahtar: *u8) -> tamsayi {
+    eger hm == 0 veya anahtar == 0 veya hm.uzunluk == 0 {
+        dondu 0;
+    }
+    degisken h: tamsayi = libykn_fnv1a_hash(anahtar);
+    degisken cap: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % cap;
+
+    degisken k_ptr: **u8 = hm.tablo_anahtar;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    degisken h_ptr: *tamsayi = hm.tablo_hash;
+
+    degisken adim: tamsayi = 0;
+    dongu adim < cap {
+        degisken durum: tamsayi = d_ptr[idx];
+        eger durum == 0 { dondu 0; }
+        eger durum == 1 ve h_ptr[idx] == h {
+            eger libykn_str_esit(k_ptr[idx], anahtar) == 1 {
+                dondu 1;
+            }
+        }
+        idx = (idx + 1) % cap;
+        adim = adim + 1;
+    }
+    dondu 0;
+}
+
+# hashmap_sil (remove): Anahtari siler (tombstone birakir)
+isv hashmap_sil(hm: *HashMap, anahtar: *u8) -> tamsayi {
+    eger hm == 0 veya anahtar == 0 veya hm.uzunluk == 0 {
+        dondu 0;
+    }
+
+    degisken h: tamsayi = libykn_fnv1a_hash(anahtar);
+    degisken cap: tamsayi = hm.kapasite;
+    degisken idx: tamsayi = h % cap;
+
+    degisken k_ptr: **u8 = hm.tablo_anahtar;
+    degisken v_ptr: *tamsayi = hm.tablo_deger;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    degisken h_ptr: *tamsayi = hm.tablo_hash;
+
+    degisken adim: tamsayi = 0;
+    dongu adim < cap {
+        degisken durum: tamsayi = d_ptr[idx];
+        eger durum == 0 { dondu 0; }
+        eger durum == 1 ve h_ptr[idx] == h {
+            eger libykn_str_esit(k_ptr[idx], anahtar) == 1 {
+                degisken eski_deger: tamsayi = v_ptr[idx];
+                d_ptr[idx] = 2; # Tombstone
+                k_ptr[idx] = 0;
+                hm.uzunluk = hm.uzunluk - 1;
+                dondu eski_deger;
+            }
+        }
+        idx = (idx + 1) % cap;
+        adim = adim + 1;
+    }
+    dondu 0;
+}
+
+# hashmap_temizle (clear)
+isv hashmap_temizle(hm: *HashMap) {
+    eger hm == 0 { dondu; }
+    degisken i: tamsayi = 0;
+    degisken d_ptr: *tamsayi = hm.tablo_dolu;
+    degisken cap: tamsayi = hm.kapasite;
+    dongu i < cap {
+        d_ptr[i] = 0;
+        i = i + 1;
+    }
+    hm.uzunluk = 0;
+}

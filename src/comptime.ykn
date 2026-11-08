@@ -1,0 +1,168 @@
+# ============================================================
+# src/comptime.ykn
+# FAZ 37 & FAZ 4: Derleme Zamani Yurutme (Comptime) Yorumlayicisi
+# Derleme aninda sabit hesaplamalari, lookup tablolarini ve
+# AST ifadelerini derleme aninda yurutur (Compile-Time Function Execution).
+# ============================================================
+
+ice_aktar "ast.ykn";
+ice_aktar "lexer.ykn";
+ice_aktar "utils.ykn";
+
+# Comptime Faktöriyel (Derleme Anı Yürütme)
+isv comptime_faktoriyel(n: tamsayi) -> tamsayi {
+    eger n <= 1 ise {
+        dondu 1;
+    }
+    dondu n * comptime_faktoriyel(n - 1);
+}
+
+# Comptime FNV-1a String Hashing
+isv comptime_string_hash(str: *u8, len: tamsayi) -> tamsayi {
+    degisken hash: tamsayi = 2166136261; # FNV_OFFSET_BASIS (32-bit)
+    degisken i: tamsayi = 0;
+    dongu i < len {
+        hash = hash ^ str[i];
+        hash = hash * 16777619; # FNV_PRIME
+        i = i + 1;
+    }
+    dondu (hash & 2147483647); # Pozitif maske
+}
+
+# Comptime Gucler Tablosu Olusturucu
+isv comptime_kareler_tablosu(tablo: *tamsayi, eleman_sayisi: tamsayi) {
+    degisken i: tamsayi = 0;
+    dongu i < eleman_sayisi {
+        tablo[i] = i * i;
+        i = i + 1;
+    }
+}
+
+# Genel AST Ifade Degerlendirici (Recursive Compile-Time Expression Evaluator)
+# Sabit katlama, aritmetik, mantiksal islemler ve dizi boyutlarini cozumler.
+isv comptime_ifade_degerlendir(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    
+    # 1. Sayi Sabiti
+    eger dugum.tip == AST_SAYI ise {
+        eger dugum.ilk_jeton != 0 ise {
+            dondu string_tamsayiya(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk);
+        }
+        dondu 0;
+    }
+    
+    # 2. Mantiksal Sabit
+    eger dugum.tip == AST_MANTIK ise {
+        eger dugum.ilk_jeton != 0 ise {
+            eger dugum.ilk_jeton.tip == TIP_DOGRU ise { dondu 1; }
+            dondu 0;
+        }
+        dondu 0;
+    }
+
+    # 3. Tekil Operatorler (Unary -, ~, !)
+    eger dugum.tip == AST_UNARY ise {
+        degisken ic_deger: tamsayi = 0;
+        eger dugum.sol != 0 ise {
+            ic_deger = comptime_ifade_degerlendir(dugum.sol);
+        } yoksa eger dugum.sag != 0 ise {
+            ic_deger = comptime_ifade_degerlendir(dugum.sag);
+        }
+        
+        eger dugum.ilk_jeton != 0 ise {
+            degisken op: tamsayi = dugum.ilk_jeton.tip;
+            eger op == TIP_EKSI ise { dondu 0 - ic_deger; }
+            eger op == TIP_TILDE ise { dondu ~ic_deger; }
+            eger op == TIP_DEGIL ise {
+                eger ic_deger == 0 ise { dondu 1; }
+                dondu 0;
+            }
+        }
+        dondu ic_deger;
+    }
+
+    # 4. Ikili Operatorler (+, -, *, /, %, ^, &, |, <<, >>, ==, !=, <, >, <=, >=, &&, ||)
+    eger dugum.tip == AST_IKILI_OP veya dugum.tip == AST_ATAMA ise {
+        degisken sol_deger: tamsayi = comptime_ifade_degerlendir(dugum.sol);
+        degisken sag_deger: tamsayi = comptime_ifade_degerlendir(dugum.sag);
+        
+        eger dugum.ilk_jeton != 0 ise {
+            degisken b_op: tamsayi = dugum.ilk_jeton.tip;
+            eger b_op == TIP_ARTI ise { dondu sol_deger + sag_deger; }
+            eger b_op == TIP_EKSI ise { dondu sol_deger - sag_deger; }
+            eger b_op == TIP_CARPI ise { dondu sol_deger * sag_deger; }
+            eger b_op == TIP_BOLME ise {
+                eger sag_deger != 0 ise { dondu sol_deger / sag_deger; }
+                dondu 0;
+            }
+            eger b_op == TIP_MODULO ise {
+                eger sag_deger != 0 ise { dondu sol_deger % sag_deger; }
+                dondu 0;
+            }
+            eger b_op == TIP_XOR ise { dondu sol_deger ^ sag_deger; }
+            eger b_op == TIP_VE ise {
+                eger sol_deger != 0 ve sag_deger != 0 ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_VEYA ise {
+                eger sol_deger != 0 veya sag_deger != 0 ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_ESIT_MI ise {
+                eger sol_deger == sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_ESIT_DEGIL ise {
+                eger sol_deger != sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_KUCUK_MU ise {
+                eger sol_deger < sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_BUYUK_MU ise {
+                eger sol_deger > sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_KUCUK_ESIT ise {
+                eger sol_deger <= sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_BUYUK_ESIT ise {
+                eger sol_deger >= sag_deger ise { dondu 1; }
+                dondu 0;
+            }
+            eger b_op == TIP_SOL_KAYDIR ise { dondu sol_deger << sag_deger; }
+            eger b_op == TIP_SAG_KAYDIR ise { dondu sol_deger >> sag_deger; }
+            eger b_op == TIP_DIKEY_CUBUK ise { dondu sol_deger | sag_deger; }
+        }
+        dondu 0;
+    }
+
+    # 5. Gruplama / Parantez
+    eger dugum.tip == AST_PARANTEZ_IFADE ise {
+        dondu comptime_ifade_degerlendir(dugum.sol);
+    }
+
+    # 6. Fonksiyon Cagrisi (comptime faktoriyel, string_hash vb.)
+    eger dugum.tip == AST_ISLEV_CAGRISI veya dugum.tip == 11 ise {
+        eger dugum.sol != 0 ve dugum.sol.ilk_jeton != 0 ise {
+            degisken fn_isim: *u8 = dugum.sol.ilk_jeton.baslangic;
+            degisken fn_uzn: tamsayi = dugum.sol.ilk_jeton.uzunluk;
+            eger fn_uzn == 19 ve bellek_esit_mi(fn_isim, "comptime_faktoriyel".ptr, 19) == 1 ise {
+                degisken arg_v: tamsayi = comptime_ifade_degerlendir(dugum.sag);
+                dondu comptime_faktoriyel(arg_v);
+            }
+        }
+    }
+
+    dondu 0;
+}
+
+# Derleme Zamaninda Dizi Boyutu Hesaplama
+isv comptime_dizi_boyutu(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    degisken boyut: tamsayi = comptime_ifade_degerlendir(dugum);
+    eger boyut < 0 ise { dondu 0; }
+    dondu boyut;
+}

@@ -1,0 +1,69 @@
+ice_aktar "..\src\lexer.ykn";
+ice_aktar "..\src\ast.ykn";
+ice_aktar "..\src\parser.ykn";
+ice_aktar "..\src\macros.ykn";
+
+isv dosya_test_et(dosya_adi: *u8) {
+    ekrana_yaz("--- TEST EDILIYOR: ".ptr);
+    ekrana_yaz(dosya_adi);
+    ekrana_yaz("\n".ptr);
+
+    degisken kod_buf: *u8 = bellek_tahsis_et(2097152);
+    degisken n: tamsayi = dosya_oku(dosya_adi, kod_buf, 2097152);
+    eger n <= 0 ise {
+        ekrana_yaz("HATA: Dosya okunamadi!\n".ptr);
+        dondu;
+    }
+
+    degisken lx: *LexerState = bellek_tahsis_et(128);
+    lx.kaynak = kod_buf;
+    lx.dosya_boyutu = n;
+    lx.guncel_offset = 0;
+    lx.satir = 1;
+    lx.sutun = 1;
+    lx.jetonlar = bellek_tahsis_et(16777216);
+    lx.jeton_sayisi = 0;
+    lx.jeton_kapasite = 65536;
+    lx.pool = 0;
+
+    degisken js: tamsayi = tokenize_et(lx);
+
+    degisken arena: *AstArena = bellek_tahsis_et(128);
+    arena.bellek = bellek_tahsis_et(67108864);
+    arena.kapasite = 67108864;
+    arena.kullanilan = 0;
+
+    degisken pd: *ParserDurumu = bellek_tahsis_et(128);
+    pd.jetonlar = lx.jetonlar;
+    pd.jeton_sayisi = js;
+    pd.guncel_index = 0;
+    pd.arena = arena;
+
+    degisken ast: *AstDugum = parser_cozumle(pd);
+    ekrana_yaz("PARSER OK. Makrolar genisletiliyor...\n".ptr);
+
+    degisken kural_mem: *MakroKural = bellek_tahsis_et(65536);
+    degisken motor: *MakroMotoru = bellek_tahsis_et(128);
+    motor.kurallar = kural_mem;
+    motor.kapasite = 1024;
+    motor.kayitli_sayi = 0;
+    motor.arena = arena;
+
+    makrolari_genislet(motor, ast);
+    ekrana_yaz("MAKROLAR OK!\n".ptr);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    dosya_test_et("src\\lexer.ykn".ptr);
+    dosya_test_et("src\\ast.ykn".ptr);
+    dosya_test_et("src\\parser.ykn".ptr);
+    dosya_test_et("src\\macros.ykn".ptr);
+    dosya_test_et("src\\typechecker.ykn".ptr);
+    dosya_test_et("src\\generics.ykn".ptr);
+    dosya_test_et("src\\optimizer.ykn".ptr);
+    dosya_test_et("src\\codegen.ykn".ptr);
+    dosya_test_et("src\\llm.ykn".ptr);
+    dosya_test_et("src\\main.ykn".ptr);
+    ekrana_yaz("TUM DOSYALAR BASARIYLA TEST EDILDI!\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,18 @@
+# FAZ 2.4 NEGATIF TEST: Donus tipi uyumsuz
+ozellik Toplanabilir {
+    isv topla(self: Self, diger: tamsayi) -> tamsayi;
+}
+
+yapi Sayac {
+    deger: tamsayi;
+}
+
+uygula Toplanabilir Sayac {
+    isv topla(self: Sayac, diger: tamsayi) -> gercek {
+        dondu 1.5;
+    }
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

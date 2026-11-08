@@ -1,0 +1,243 @@
+# ============================================================
+# YKNLLM audit native append emitter
+#
+# Uretilen kod hedefte gercek dosya append islemi yapar:
+# Linux/macOS syscall, Windows CreateFileA/WriteFile/CloseHandle.
+# Fonksiyonlar kucuk tutulur; self-hosted IR register limitini asmaz.
+# ============================================================
+
+isv yknllm_audit_linux_open(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF); # RDI=path (R15)
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC6); int32_yaz(a, 1089);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 420);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 2);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7); # R15=fd
+}
+
+isv yknllm_audit_linux_write(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 1);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF); # RDI=fd
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF6); # RSI=buffer (R14)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xEA); # RDX=size (R13)
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC3); # RBX=written
+}
+
+isv yknllm_audit_linux_close(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 3);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD8); # RAX=written
+}
+
+isv yknllm_audit_linux_append(a: *MakineKoduArenasi) {
+    yknllm_audit_linux_open(a);
+    yknllm_audit_linux_write(a);
+    yknllm_audit_linux_close(a);
+}
+
+isv yknllm_audit_macos_open(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC6); int32_yaz(a, 521);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 420);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x2000005);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);
+}
+
+isv yknllm_audit_macos_write(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x2000004);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF6);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xEA);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC3);
+}
+
+isv yknllm_audit_macos_close(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x2000006);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xFF);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD8);
+}
+
+isv yknllm_audit_macos_append(a: *MakineKoduArenasi) {
+    yknllm_audit_macos_open(a);
+    yknllm_audit_macos_write(a);
+    yknllm_audit_macos_close(a);
+}
+
+isv yknllm_audit_windows_open(a: *MakineKoduArenasi) {
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu; }
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE4); byte_yaz(a, 0xF0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x40);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # RCX=path
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 0x40000000);
+    byte_yaz(a, 0x41); byte_yaz(a, 0xB8); int32_yaz(a, 1); # FILE_SHARE_READ
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9); # security=NULL
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 4);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x28); int32_yaz(a, 128);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x30); int32_yaz(a, 0);
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat] = a.kullanilan;
+    g_iat_yama_slot[iat] = 4;
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x40);
+    byte_yaz(a, 0x49); byte_yaz(a, 0x89); byte_yaz(a, 0xC7); # R15=hFile
+}
+
+isv yknllm_audit_windows_seek_end(a: *MakineKoduArenasi) {
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu; }
+    # SetFilePointerEx(hFile, 0, &newPosition, FILE_END=2).
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x85); int32_yaz(a, 0 - 528); int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE4); byte_yaz(a, 0xF0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # RCX=hFile
+    byte_yaz(a, 0x48); byte_yaz(a, 0x31); byte_yaz(a, 0xD2); # RDX=distance=0 (LARGE_INTEGER by value)
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x85); int32_yaz(a, 0 - 528); # R8=&newPosition
+    byte_yaz(a, 0x41); byte_yaz(a, 0xB9); int32_yaz(a, 2); # R9=FILE_END
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat] = a.kullanilan;
+    g_iat_yama_slot[iat] = 8;
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20);
+}
+
+isv yknllm_audit_windows_write(a: *MakineKoduArenasi) {
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu; }
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x85); int32_yaz(a, 0 - 512); int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE4); byte_yaz(a, 0xF0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x30);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # RCX=hFile
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF2); # RDX=buffer
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x89); byte_yaz(a, 0xE8); # R8=size
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x8D); byte_yaz(a, 0x8D); int32_yaz(a, 0 - 512); # R9=&bytesWritten
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0x44); byte_yaz(a, 0x24); byte_yaz(a, 0x20); int32_yaz(a, 0);
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat] = a.kullanilan;
+    g_iat_yama_slot[iat] = 1;
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    byte_yaz(a, 0x8B); byte_yaz(a, 0x85); int32_yaz(a, 0 - 512);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC3); # RBX=bytesWritten
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x30);
+}
+
+isv yknllm_audit_windows_close(a: *MakineKoduArenasi) {
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu; }
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE4); byte_yaz(a, 0xF0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20);
+    byte_yaz(a, 0x4C); byte_yaz(a, 0x89); byte_yaz(a, 0xF9); # RCX=hFile
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat] = a.kullanilan;
+    g_iat_yama_slot[iat] = 6;
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xD8); # RAX=bytesWritten
+}
+
+isv yknllm_audit_windows_append(a: *MakineKoduArenasi) {
+    yknllm_audit_windows_open(a);
+    yknllm_audit_windows_seek_end(a);
+    yknllm_audit_windows_write(a);
+    yknllm_audit_windows_close(a);
+}
+
+# Linux mmap allocator: the returned pointer carries a page-rounded length
+# in the eight bytes immediately before it, so the matching free operation can
+# issue a real munmap without a hidden runtime table.
+isv yknllm_memory_linux_alloc(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC6); # RSI=size
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC6); byte_yaz(a, 8); # + header
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xC6); int32_yaz(a, 4095); # page round up
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xE6); int32_yaz(a, 0 - 4096); # align
+    byte_yaz(a, 0x56); # PUSH RSI (save map length safely on stack, zero callee-saved clobbers)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x31); byte_yaz(a, 0xFF); # RDI=NULL
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 3); # RDX=PROT_READ|WRITE
+    byte_yaz(a, 0x49); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 34); # R10=MAP_PRIVATE|ANONYMOUS
+    byte_yaz(a, 0x49); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0 - 1); # R8=-1
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9); # R9=0
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 9); # SYS_mmap
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x5A); # POP RDX (restore map length into scratch register RDX)
+    byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0); # test error result
+    byte_yaz(a, 0x78); byte_yaz(a, 7); # skip header write on negative errno
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x10); # [RAX]=RDX
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC0); byte_yaz(a, 8); # return after header
+}
+
+isv yknllm_memory_macos_alloc(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC6);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC6); byte_yaz(a, 8);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xC6); int32_yaz(a, 4095);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x81); byte_yaz(a, 0xE6); int32_yaz(a, 0 - 4096);
+    byte_yaz(a, 0x56); # PUSH RSI
+    byte_yaz(a, 0x48); byte_yaz(a, 0x31); byte_yaz(a, 0xFF);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 3);
+    byte_yaz(a, 0x49); byte_yaz(a, 0xC7); byte_yaz(a, 0xC2); int32_yaz(a, 0x1002);
+    byte_yaz(a, 0x49); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0 - 1);
+    byte_yaz(a, 0x4D); byte_yaz(a, 0x31); byte_yaz(a, 0xC9);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x20000C5);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x5A); # POP RDX
+    byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0);
+    byte_yaz(a, 0x78); byte_yaz(a, 7);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0x10);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC0); byte_yaz(a, 8);
+}
+
+isv yknllm_memory_linux_free(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0); # null is a safe no-op
+    byte_yaz(a, 0x74); byte_yaz(a, 19);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE8); byte_yaz(a, 8); # header
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x30); # RSI=length
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC7); # RDI=base
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 11); # SYS_munmap
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x31); byte_yaz(a, 0xC0); # return 0
+}
+
+isv yknllm_memory_macos_free(a: *MakineKoduArenasi) {
+    byte_yaz(a, 0x48); byte_yaz(a, 0x85); byte_yaz(a, 0xC0);
+    byte_yaz(a, 0x74); byte_yaz(a, 19);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xE8); byte_yaz(a, 8);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x8B); byte_yaz(a, 0x30);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC7);
+    byte_yaz(a, 0x48); byte_yaz(a, 0xC7); byte_yaz(a, 0xC0); int32_yaz(a, 0x2000049);
+    byte_yaz(a, 0x0F); byte_yaz(a, 0x05);
+    byte_yaz(a, 0x31); byte_yaz(a, 0xC0);
+}
+
+isv yknllm_memory_windows_free(a: *MakineKoduArenasi) {
+    eger iat_yama_kapasite_kontrol() == 0 ise { dondu; }
+    byte_yaz(a, 0x48); byte_yaz(a, 0x89); byte_yaz(a, 0xC1); # RCX=ptr
+    byte_yaz(a, 0x48); byte_yaz(a, 0x31); byte_yaz(a, 0xD2); # dwSize=0
+    byte_yaz(a, 0x41); byte_yaz(a, 0xB8); int32_yaz(a, 0x8000); # MEM_RELEASE
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xEC); byte_yaz(a, 0x20);
+    byte_yaz(a, 0xFF); byte_yaz(a, 0x15);
+    degisken iat: tamsayi = g_iat_yama_adet;
+    g_iat_yama_text_offset[iat] = a.kullanilan;
+    g_iat_yama_slot[iat] = 9; # VirtualFree
+    g_iat_yama_adet = g_iat_yama_adet + 1;
+    int32_yaz(a, 0);
+    byte_yaz(a, 0x48); byte_yaz(a, 0x83); byte_yaz(a, 0xC4); byte_yaz(a, 0x20);
+    byte_yaz(a, 0x31); byte_yaz(a, 0xC0);
+}
+
+isv yknllm_audit_native_append_emit(a: *MakineKoduArenasi) {
+    eger g_target_platform == 1 ise {
+        yknllm_audit_linux_append(a);
+    } yoksa eger g_target_platform == 2 ise {
+        yknllm_audit_macos_append(a);
+    } yoksa {
+        yknllm_audit_windows_append(a);
+    }
+}

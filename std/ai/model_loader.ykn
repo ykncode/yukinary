@@ -1,0 +1,165 @@
+# ============================================================
+# YKN std/ai/model_loader.ykn
+# GGUF tensor range loader.
+#
+# Modelin tamamını RAM'e kopyalamaz. GGUF tensor metadata'sındaki mutlak
+# offset/byte sayısını doğrular ve yalnız istenen aralığı native
+# dosya_oku_aralik primitive'i ile getirir.
+# ============================================================
+
+degisken LLM_LOADER_HATASI = 0;
+degisken LLM_LOADER_OK = 1;
+degisken LLM_LOADER_GECERSIZ = 2;
+degisken LLM_LOADER_ARALIK = 3;
+degisken LLM_LOADER_TASMA = 4;
+
+yapi LLMModelLoader {
+    dosya_adi: *u8;
+    durum: *GGUFDurum;
+    son_ofset: tamsayi;
+    son_bayt: tamsayi;
+    son_okunan: tamsayi;
+    # Büyük matrislerde satır başına ReadFile yerine sliding window kullanılır.
+    pencere: *u8;
+    pencere_ofseti: tamsayi;
+    pencere_bayti: tamsayi;
+    pencere_kapasitesi: tamsayi;
+}
+
+isv llm_model_loader_baslat(yukleyici: *LLMModelLoader,
+                            dosya_adi: *u8,
+                            durum: *GGUFDurum) -> tamsayi {
+    LLM_LOADER_HATASI = 0;
+    eger yukleyici == 0 veya dosya_adi == 0 veya durum == 0 veya
+       durum->buffer == 0 veya durum->ilk_veri_offset <= 0 ise {
+        LLM_LOADER_HATASI = LLM_LOADER_GECERSIZ;
+        dondu 0;
+    }
+    yukleyici->dosya_adi = dosya_adi;
+    yukleyici->durum = durum;
+    yukleyici->son_ofset = 0;
+    yukleyici->son_bayt = 0;
+    yukleyici->son_okunan = 0;
+    # 4 MiB pencere, 2B modelin IQ2_S output satırlarını binlerce küçük
+    # sistem çağrısı yerine toplu okur. Tahsis başarısızsa güvenli scalar
+    # direct-read fallback devam eder.
+    yukleyici->pencere = bellek_tahsis_et(4194304);
+    yukleyici->pencere_ofseti = 0;
+    yukleyici->pencere_bayti = 0;
+    yukleyici->pencere_kapasitesi = 4194304;
+    dondu 1;
+}
+
+isv llm_model_loader_ram_yukle(yukleyici: *LLMModelLoader, dosya_boyutu: tamsayi) -> tamsayi {
+    eger yukleyici == 0 veya yukleyici->dosya_adi == 0 veya dosya_boyutu <= 0 ise { dondu 0; }
+    degisken ram_buf: *u8 = bellek_tahsis_et(dosya_boyutu + 1024);
+    eger ram_buf == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku_aralik(yukleyici->dosya_adi, 0, ram_buf, dosya_boyutu);
+    eger okunan != dosya_boyutu ise { dondu 0; }
+    yukleyici->pencere = ram_buf;
+    yukleyici->pencere_ofseti = 0;
+    yukleyici->pencere_bayti = okunan;
+    yukleyici->pencere_kapasitesi = dosya_boyutu + 1024;
+    dondu 1;
+}
+
+# Tensor metadata'sını dosya sınırları ve hedef kapasitesiyle doğrular.
+isv llm_model_tensor_araligi_dogrula(yukleyici: *LLMModelLoader,
+                                     tensor: *GGUFTensorInfo,
+                                     hedef: *u8,
+                                     hedef_kapasitesi: tamsayi) -> tamsayi {
+    LLM_LOADER_HATASI = 0;
+    eger yukleyici == 0 veya yukleyici->dosya_adi == 0 veya
+       yukleyici->durum == 0 veya tensor == 0 veya hedef == 0 veya
+       hedef_kapasitesi <= 0 veya tensor->veri_offset < yukleyici->durum->ilk_veri_offset veya
+       tensor->bayt_sayisi <= 0 veya tensor->bayt_sayisi > hedef_kapasitesi ise {
+        LLM_LOADER_HATASI = LLM_LOADER_GECERSIZ;
+        dondu 0;
+    }
+    dondu 1;
+}
+
+# Model loader, std/bellek import sırasına bağımlı olmamalıdır. Cache pencere
+# kopyası için küçük ve deterministik bir byte loop kullanılır.
+isv llm_model_bayt_kopyala(hedef: *u8, kaynak: *u8, boyut: tamsayi) -> tamsayi {
+    eger hedef == 0 veya kaynak == 0 veya boyut <= 0 ise { dondu 0; }
+    degisken p_src64: *tamsayi = kaynak;
+    degisken p_dst64: *tamsayi = hedef;
+    degisken words: tamsayi = boyut / 8;
+    degisken w: tamsayi = 0;
+    dongu w < words {
+        p_dst64[w] = p_src64[w];
+        w = w + 1;
+    }
+    degisken i: tamsayi = words * 8;
+    dongu i < boyut {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+    dondu boyut;
+}
+
+# Tek tensor payload'ını range-read eder. Dönüş değeri gerçek byte sayıdır.
+isv llm_model_tensor_oku(yukleyici: *LLMModelLoader,
+                         tensor: *GGUFTensorInfo,
+                         hedef: *u8,
+                         hedef_kapasitesi: tamsayi) -> tamsayi {
+    LLM_LOADER_HATASI = 0;
+    eger llm_model_tensor_araligi_dogrula(yukleyici, tensor, hedef, hedef_kapasitesi) == 0 ise { dondu 0; }
+    eger yukleyici->pencere != 0 ve yukleyici->pencere_bayti > 0 ve
+       tensor->veri_offset >= yukleyici->pencere_ofseti ve
+       tensor->veri_offset + tensor->bayt_sayisi <= yukleyici->pencere_ofseti + yukleyici->pencere_bayti ise {
+        llm_model_bayt_kopyala(hedef,
+            yukleyici->pencere + (tensor->veri_offset - yukleyici->pencere_ofseti), tensor->bayt_sayisi);
+        yukleyici->son_ofset = tensor->veri_offset;
+        yukleyici->son_bayt = tensor->bayt_sayisi;
+        yukleyici->son_okunan = tensor->bayt_sayisi;
+        dondu tensor->bayt_sayisi;
+    }
+    degisken okunan: tamsayi = dosya_oku_aralik(
+        yukleyici->dosya_adi, tensor->veri_offset, hedef, tensor->bayt_sayisi);
+    eger okunan != tensor->bayt_sayisi ise {
+        LLM_LOADER_HATASI = LLM_LOADER_ARALIK;
+        yukleyici->son_okunan = okunan;
+        dondu 0;
+    }
+    yukleyici->son_ofset = tensor->veri_offset;
+    yukleyici->son_bayt = tensor->bayt_sayisi;
+    yukleyici->son_okunan = okunan;
+    dondu okunan;
+}
+
+# Büyük tensorler için caller'ın verdiği pencereyi doğrudan doldurur.
+isv llm_model_aralik_oku(yukleyici: *LLMModelLoader,
+                         ofset: tamsayi,
+                         hedef: *u8,
+                         bayt_sayisi: tamsayi) -> tamsayi {
+    LLM_LOADER_HATASI = 0;
+    eger yukleyici == 0 veya yukleyici->dosya_adi == 0 veya yukleyici->durum == 0 veya
+       hedef == 0 veya ofset < yukleyici->durum->ilk_veri_offset veya
+       bayt_sayisi <= 0 ise {
+        LLM_LOADER_HATASI = LLM_LOADER_GECERSIZ;
+        dondu 0;
+    }
+    # Önce pencere hit kontrolü. Her satır cache içinde ise disk çağrısı yoktur.
+    eger yukleyici->pencere != 0 ve yukleyici->pencere_bayti > 0 ve
+       ofset >= yukleyici->pencere_ofseti ve
+       ofset + bayt_sayisi <= yukleyici->pencere_ofseti + yukleyici->pencere_bayti ise {
+        llm_model_bayt_kopyala(hedef,
+            yukleyici->pencere + (ofset - yukleyici->pencere_ofseti), bayt_sayisi);
+        yukleyici->son_ofset = ofset;
+        yukleyici->son_bayt = bayt_sayisi;
+        yukleyici->son_okunan = bayt_sayisi;
+        dondu bayt_sayisi;
+    }
+    # Cache miss: yalnız istenen tensor aralığını oku. GGUF dosyasının sonuna
+    # yakın büyük pencere okumaları kısa dönebilir; bunları tam tensor okuması
+    # gibi yorumlamak yerine tam aralık okuması yap.
+    degisken okunan: tamsayi = dosya_oku_aralik(
+        yukleyici->dosya_adi, ofset, hedef, bayt_sayisi);
+    eger okunan != bayt_sayisi ise { LLM_LOADER_HATASI = LLM_LOADER_ARALIK; dondu 0; }
+    yukleyici->son_ofset = ofset;
+    yukleyici->son_bayt = bayt_sayisi;
+    yukleyici->son_okunan = okunan;
+    dondu okunan;
+}

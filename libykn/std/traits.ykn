@@ -1,0 +1,58 @@
+# ============================================================
+# Yukinary (YKN) Temel Trait ve Arayuz Fonksiyonlari (libykn/std/traits.ykn)
+# Generic <T> Kisitlamalari ve Tip Destek Fonksiyonlari
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Boyut Bilgisi: Tip bayt boyutlari
+# ------------------------------------------------------------
+isv tip_bayt_boyutu_tamsayi() -> tamsayi { dondu 8; }
+isv tip_bayt_boyutu_gercek() -> tamsayi { dondu 8; }
+isv tip_bayt_boyutu_u8() -> tamsayi { dondu 1; }
+isv tip_bayt_boyutu_pointer() -> tamsayi { dondu 8; }
+
+# ------------------------------------------------------------
+# 2. Kopyala (Copy/Clone): Bellek blok kopyalama
+# ------------------------------------------------------------
+isv bellek_blok_kopyala(hedef: *u8, kaynak: *u8, bayt_sayisi: tamsayi) {
+    eger hedef == 0 veya kaynak == 0 veya bayt_sayisi <= 0 {
+        dondu;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < bayt_sayisi {
+        hedef[i] = kaynak[i];
+        i = i + 1;
+    }
+}
+
+# ------------------------------------------------------------
+# 3. Esitlik (Eq): Iki bellek blogunun karsilastirmasi
+# ------------------------------------------------------------
+isv bellek_blok_esit_mi(a: *u8, b: *u8, bayt_sayisi: tamsayi) -> tamsayi {
+    eger a == 0 veya b == 0 {
+        eger a == 0 ve b == 0 { dondu 1; }
+        dondu 0;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < bayt_sayisi {
+        eger a[i] != b[i] { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# 4. Hash: FNV-1a bellek hashleme
+# ------------------------------------------------------------
+isv bellek_blok_hash(veri: *u8, bayt_sayisi: tamsayi) -> tamsayi {
+    eger veri == 0 veya bayt_sayisi <= 0 { dondu 0; }
+    degisken h: tamsayi = 2166136261;
+    degisken i: tamsayi = 0;
+    dongu i < bayt_sayisi {
+        h = h ^ veri[i];
+        h = h * 16777619;
+        i = i + 1;
+    }
+    eger h < 0 { h = 0 - h; }
+    dondu h;
+}

@@ -1,0 +1,169 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - Web Sunucusu (Zero-Copy HTTP)
+# SIFIR HARICI BAGIMLILIK (No Node.js, No Python, No C++)
+# ============================================================
+ice_aktar "std/ag/soket.ykn";
+ice_aktar "std/ag/http.ykn";
+ice_aktar "std/os/common.ykn";
+
+yapi WebSunucu {
+    port: tamsayi;
+    soket_fd: tamsayi;
+    rota_sayisi: tamsayi;
+    rotalar_yol: *tamsayi;
+    rotalar_yol_uzn: *tamsayi;
+    rotalar_yanit: *tamsayi;
+    rotalar_yanit_uzn: *tamsayi;
+}
+
+isv web_sunucu_hazirla(s: *WebSunucu, port: tamsayi) {
+    eger s == 0 ise { dondu; }
+    s.port = port;
+    s.soket_fd = -1;
+    s.rota_sayisi = 0;
+    s.rotalar_yol = os_bellek_tahsis(256);
+    s.rotalar_yol_uzn = os_bellek_tahsis(256);
+    s.rotalar_yanit = os_bellek_tahsis(256);
+    s.rotalar_yanit_uzn = os_bellek_tahsis(256);
+}
+
+isv web_sunucu_rota_ekle(s: *WebSunucu, yol: *u8, yol_uzn: tamsayi, yanit: *u8, yanit_uzn: tamsayi) -> tamsayi {
+    eger s == 0 veya s.rotalar_yol == 0 ise { dondu -1; }
+    eger s.rota_sayisi >= 32 ise { dondu -1; }
+    
+    degisken idx: tamsayi = s.rota_sayisi;
+    degisken yollar: *tamsayi = s.rotalar_yol;
+    degisken yollar_uzn: *tamsayi = s.rotalar_yol_uzn;
+    degisken yanitlar: *tamsayi = s.rotalar_yanit;
+    degisken yanitlar_uzn: *tamsayi = s.rotalar_yanit_uzn;
+    
+    yollar[idx] = yol as tamsayi;
+    yollar_uzn[idx] = yol_uzn;
+    yanitlar[idx] = yanit as tamsayi;
+    yanitlar_uzn[idx] = yanit_uzn;
+    
+    s.rota_sayisi = idx + 1;
+    dondu 0;
+}
+
+isv web_sunucu_baslat(s: *WebSunucu) -> tamsayi {
+    eger s == 0 ise { dondu -1; }
+    degisken fd: tamsayi = sunucu_olustur(s.port);
+    eger fd < 0 ise { dondu -1; }
+    s.soket_fd = fd;
+    dondu fd;
+}
+
+isv web_sunucu_tek_istek_isle(s: *WebSunucu) -> tamsayi {
+    eger s == 0 veya s.soket_fd < 0 ise { dondu -1; }
+    degisken istemci: tamsayi = sunucu_kabul(s.soket_fd);
+    eger istemci < 0 ise { dondu -1; }
+
+    degisken tampon: [2048]u8;
+    degisken okunan: tamsayi = yukinary_sys_socket_recv(istemci, tampon, 2047);
+    eger okunan <= 0 ise {
+        soket_kapat(istemci);
+        dondu 0;
+    }
+    tampon[okunan] = 0;
+
+    degisken req: Istek;
+    degisken gecerli: tamsayi = http_ayristir(tampon, okunan, &req);
+
+    # Coklu Rota tablosundan eslestir
+    degisken eslesen_idx: tamsayi = -1;
+    eger gecerli == 1 ve req.yol != 0 ise {
+        degisken yollar: *tamsayi = s.rotalar_yol;
+        degisken yollar_uzn: *tamsayi = s.rotalar_yol_uzn;
+        degisken ri: tamsayi = 0;
+        dongu ri < s.rota_sayisi {
+            degisken r_uzn: tamsayi = yollar_uzn[ri];
+            eger r_uzn == req.yol_uzunluk ise {
+                degisken r_yol: *u8 = yollar[ri] as *u8;
+                degisken q_yol: *u8 = req.yol;
+                degisken esit: tamsayi = 1;
+                degisken k: tamsayi = 0;
+                dongu k < r_uzn {
+                    eger r_yol[k] != q_yol[k] ise {
+                        esit = 0;
+                        durdur;
+                    }
+                    k = k + 1;
+                }
+                eger esit == 1 ise {
+                    eslesen_idx = ri;
+                    durdur;
+                }
+            }
+            ri = ri + 1;
+        }
+    }
+
+    eger eslesen_idx >= 0 ise {
+        degisken yanitlar: *tamsayi = s.rotalar_yanit;
+        degisken yanitlar_uzn: *tamsayi = s.rotalar_yanit_uzn;
+        degisken govde: *u8 = yanitlar[eslesen_idx] as *u8;
+        degisken govde_uzn: tamsayi = yanitlar_uzn[eslesen_idx];
+        
+        # HTTP/1.1 200 OK + Dinamik Content-Length + Connection: close
+        degisken baslik_tampon: [256]u8;
+        degisken b_pos: tamsayi = 0;
+        degisken h_prefix: *u8 = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: ".ptr;
+        degisken hi: tamsayi = 0;
+        dongu hi < 72 {
+            baslik_tampon[b_pos] = h_prefix[hi];
+            b_pos = b_pos + 1;
+            hi = hi + 1;
+        }
+        degisken g_tmp: [32]u8;
+        degisken gi: tamsayi = 0;
+        degisken gn: tamsayi = govde_uzn;
+        eger gn == 0 ise {
+            baslik_tampon[b_pos] = 48;
+            b_pos = b_pos + 1;
+        } yoksa {
+            dongu gn > 0 {
+                g_tmp[gi] = (gn % 10) + 48;
+                gn = gn / 10;
+                gi = gi + 1;
+            }
+            dongu gi > 0 {
+                gi = gi - 1;
+                baslik_tampon[b_pos] = g_tmp[gi];
+                b_pos = b_pos + 1;
+            }
+        }
+        degisken h_suffix: *u8 = "\r\nConnection: close\r\n\r\n".ptr;
+        hi = 0;
+        dongu hi < 23 {
+            baslik_tampon[b_pos] = h_suffix[hi];
+            b_pos = b_pos + 1;
+            hi = hi + 1;
+        }
+        yukinary_sys_socket_send(istemci, baslik_tampon, b_pos);
+        eger govde != 0 ve govde_uzn > 0 ise {
+            yukinary_sys_socket_send(istemci, govde, govde_uzn);
+        }
+    } yoksa {
+        # 404 Not Found Yaniti
+        degisken hata404: *u8 = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found".ptr;
+        degisken hata_uzn: tamsayi = 97;
+        yukinary_sys_socket_send(istemci, hata404, hata_uzn);
+    }
+
+    soket_kapat(istemci);
+    dondu 1;
+}
+
+isv web_sunucu_kapat(s: *WebSunucu) {
+    eger s == 0 ise { dondu; }
+    eger s.soket_fd >= 0 ise {
+        soket_kapat(s.soket_fd);
+        s.soket_fd = -1;
+    }
+    eger s.rotalar_yol != 0 ise { os_bellek_serbest(s.rotalar_yol); s.rotalar_yol = 0; }
+    eger s.rotalar_yol_uzn != 0 ise { os_bellek_serbest(s.rotalar_yol_uzn); s.rotalar_yol_uzn = 0; }
+    eger s.rotalar_yanit != 0 ise { os_bellek_serbest(s.rotalar_yanit); s.rotalar_yanit = 0; }
+    eger s.rotalar_yanit_uzn != 0 ise { os_bellek_serbest(s.rotalar_yanit_uzn); s.rotalar_yanit_uzn = 0; }
+    s.rota_sayisi = 0;
+}

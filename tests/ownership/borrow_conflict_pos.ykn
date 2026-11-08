@@ -1,0 +1,14 @@
+# Ownership Test POZITIF: borrow cakismadan gecerli kullanim.
+isv degistir(x: *tamsayi) {
+    x[0] = 99;
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 10;
+    degistir(&x);
+    # Duzenleme bittikten sonra okuma — gecerli
+    degisken y: tamsayi = x;
+    eger y == 99 ise {
+        ekrana_yaz("BORROW_CONFLICT_POS: OK\n".ptr);
+    }
+    dondu 0;
+}

@@ -1,0 +1,14 @@
+# Saf YKN multi-read HTTP/1.1 acceptance.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken tampon: [8192]u8;
+    degisken cevap: Cevap;
+    degisken sonuc: tamsayi = http_get(ipv4_adres(127, 0, 0, 1), 18082, "/parcali".ptr, tampon, 8192, &cevap);
+    eger sonuc != 0 ise { dondu 50; }
+    eger cevap.gecerli != 1 veya cevap.durum_kodu != 200 ise { dondu 51; }
+    eger cevap.icerik_uzunlugu != 11 veya cevap.govde_uzunlugu != 11 ise { dondu 52; }
+    eger tampon[cevap.govde_baslangici] != 72 veya tampon[cevap.govde_baslangici + 5] != 32 veya
+       tampon[cevap.govde_baslangici + 6] != 87 veya tampon[cevap.govde_baslangici + 10] != 68 ise { dondu 53; }
+    dondu 0;
+}

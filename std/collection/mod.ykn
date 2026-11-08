@@ -1,0 +1,6 @@
+# ============================================================
+# Yukinary Standart Koleksiyon Modulu (std/collection/mod.ykn)
+# ============================================================
+
+ice_aktar "std/collection/vec.ykn";
+ice_aktar "std/collection/hashmap.ykn";

@@ -1,0 +1,23 @@
+# Saf YKN gerçek TCP HTTP GET + response parse acceptance.
+ice_aktar "../../std/ag/http.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken tampon: [8192]u8;
+    degisken cevap: Cevap;
+    degisken sonuc: tamsayi = http_get(ipv4_adres(127, 0, 0, 1), 18081, "/durum".ptr, tampon, 8192, &cevap);
+    eger sonuc == -1 ise { dondu 21; }
+    eger sonuc == -2 ise { dondu 22; }
+    eger sonuc == -3 ise { dondu 23; }
+    eger sonuc == -4 ise { dondu 24; }
+    eger sonuc == -5 ise { dondu 25; }
+    eger sonuc == -6 ise { dondu 26; }
+    eger sonuc == -7 ise { dondu 27; }
+    eger sonuc != 0 ise { dondu 20; }
+    eger cevap.gecerli != 1 veya cevap.durum_kodu != 200 ise { dondu 21; }
+    eger cevap.govde_uzunlugu != 5 veya cevap.govde_baslangici < 0 veya
+           cevap.govde_baslangici + cevap.govde_uzunlugu > 8192 ise { dondu 22; }
+        eger tampon[cevap.govde_baslangici] != 72 veya tampon[cevap.govde_baslangici + 1] != 69 veya
+           tampon[cevap.govde_baslangici + 2] != 76 veya tampon[cevap.govde_baslangici + 3] != 76 veya
+           tampon[cevap.govde_baslangici + 4] != 79 ise { dondu 23; }
+    dondu 0;
+}

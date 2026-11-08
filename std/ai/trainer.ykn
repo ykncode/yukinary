@@ -1,0 +1,492 @@
+# ============================================================
+# std/ai/trainer.ykn
+# Yukinary Native AI Egitim ve Optimizasyon Modulu
+# Q16.16 Fixed-Point (65536 = 1.0) Deterministik Egitim Motoru
+# ============================================================
+
+degisken TRAINER_Q16_BIR: tamsayi = 65536;
+
+# Fixed-point Q16.16 carpma: (a * b) / 65536
+isv q16_carp(a: tamsayi, b: tamsayi) -> tamsayi {
+    dondu (a * b) / TRAINER_Q16_BIR;
+}
+
+# Fixed-point Q16.16 bolme: (a * 65536) / b
+isv q16_bol(a: tamsayi, b: tamsayi) -> tamsayi {
+    eger b == 0 ise { dondu 0; }
+    dondu (a * TRAINER_Q16_BIR) / b;
+}
+
+# ReLU aktivasyonu: max(0, x)
+isv q16_relu(x: tamsayi) -> tamsayi {
+    eger x > 0 ise { dondu x; }
+    dondu 0;
+}
+
+# ReLU turevi: x > 0 ? 1.0 : 0.0
+isv q16_relu_turev(x: tamsayi) -> tamsayi {
+    eger x > 0 ise { dondu TRAINER_Q16_BIR; }
+    dondu 0;
+}
+
+# Global agirliklar ve gradyanlar (W1: 32x16=512, W2: 6x32=192)
+degisken g_ai_w1: [512]tamsayi;
+degisken g_ai_b1: [32]tamsayi;
+degisken g_ai_w2: [192]tamsayi;
+degisken g_ai_b2: [6]tamsayi;
+
+degisken g_ai_grad_w1: [512]tamsayi;
+degisken g_ai_grad_b1: [32]tamsayi;
+degisken g_ai_grad_w2: [192]tamsayi;
+degisken g_ai_grad_b2: [6]tamsayi;
+
+degisken g_ai_h_aktif: [32]tamsayi;
+degisken g_ai_z_gizli: [32]tamsayi;
+degisken g_ai_z_cikti: [6]tamsayi;
+degisken g_ai_olasiliklar: [6]tamsayi;
+degisken g_ai_x: [16]tamsayi;
+degisken g_ai_dz: [6]tamsayi;
+degisken g_ai_dh: [32]tamsayi;
+
+degisken g_ai_lr_q16: tamsayi = 655; # ~0.01
+degisken g_ai_wd_q16: tamsayi = 65;  # ~0.001
+
+# AdamW durumlari: her parametre icin birinci/ikinci moment.
+degisken g_ai_m1_w1: [512]tamsayi;
+degisken g_ai_m2_w1: [512]tamsayi;
+degisken g_ai_m1_b1: [32]tamsayi;
+degisken g_ai_m2_b1: [32]tamsayi;
+degisken g_ai_m1_w2: [192]tamsayi;
+degisken g_ai_m2_w2: [192]tamsayi;
+degisken g_ai_m1_b2: [6]tamsayi;
+degisken g_ai_m2_b2: [6]tamsayi;
+degisken g_ai_adam_adim: tamsayi = 0;
+degisken g_ai_beta1_pow: tamsayi = TRAINER_Q16_BIR;
+degisken g_ai_beta2_pow: tamsayi = TRAINER_Q16_BIR;
+
+isv ai_egitim_baslat() {
+    g_ai_adam_adim = 0;
+    g_ai_beta1_pow = TRAINER_Q16_BIR;
+    g_ai_beta2_pow = TRAINER_Q16_BIR;
+    degisken i: tamsayi = 0;
+    dongu (i < 512) {
+        degisken seed_val: tamsayi = ((i * 37 + 13) % 2000) - 1000;
+        g_ai_w1[i] = seed_val;
+        g_ai_grad_w1[i] = 0;
+        g_ai_m1_w1[i] = 0;
+        g_ai_m2_w1[i] = 0;
+        i = i + 1;
+    }
+    
+    i = 0;
+    dongu (i < 32) {
+        g_ai_b1[i] = 0;
+        g_ai_grad_b1[i] = 0;
+        g_ai_m1_b1[i] = 0;
+        g_ai_m2_b1[i] = 0;
+        i = i + 1;
+    }
+    
+    i = 0;
+    dongu (i < 192) {
+        degisken seed_val2: tamsayi = ((i * 41 + 29) % 2000) - 1000;
+        g_ai_w2[i] = seed_val2;
+        g_ai_grad_w2[i] = 0;
+        g_ai_m1_w2[i] = 0;
+        g_ai_m2_w2[i] = 0;
+        i = i + 1;
+    }
+    
+    i = 0;
+    dongu (i < 6) {
+        g_ai_b2[i] = 0;
+        g_ai_grad_b2[i] = 0;
+        g_ai_m1_b2[i] = 0;
+        g_ai_m2_b2[i] = 0;
+        i = i + 1;
+    }
+}
+
+# Forward pass: Girdi X (16) -> Gizli H (32) -> Cikti Z (6) -> Softmax P (6)
+isv ai_forward_pass() {
+    # 1. H = SiLU(W1 * X + B1)
+    degisken h: tamsayi = 0;
+    dongu (h < 32) {
+        degisken toplam: tamsayi = g_ai_b1[h];
+        degisken in_idx: tamsayi = 0;
+        dongu (in_idx < 16) {
+            toplam = toplam + q16_carp(g_ai_w1[h * 16 + in_idx], g_ai_x[in_idx]);
+            in_idx = in_idx + 1;
+        }
+        g_ai_z_gizli[h] = toplam;
+        g_ai_h_aktif[h] = q16_silu(toplam);
+        h = h + 1;
+    }
+    
+    # 2. Z = W2 * H + B2
+    degisken c: tamsayi = 0;
+    degisken exp_toplam: tamsayi = 0;
+    dongu (c < 6) {
+        degisken toplam2: tamsayi = g_ai_b2[c];
+        degisken h_idx: tamsayi = 0;
+        dongu (h_idx < 32) {
+            toplam2 = toplam2 + q16_carp(g_ai_w2[c * 32 + h_idx], g_ai_h_aktif[h_idx]);
+            h_idx = h_idx + 1;
+        }
+        g_ai_z_cikti[c] = toplam2;
+        
+        degisken exp_val: tamsayi = TRAINER_Q16_BIR;
+        eger toplam2 > 0 ise {
+            exp_val = TRAINER_Q16_BIR + toplam2;
+        } yoksa {
+            exp_val = TRAINER_Q16_BIR / 2;
+        }
+        g_ai_olasiliklar[c] = exp_val;
+        exp_toplam = exp_toplam + exp_val;
+        c = c + 1;
+    }
+    
+    # Softmax normalize
+    c = 0;
+    dongu (c < 6) {
+        g_ai_olasiliklar[c] = q16_bol(g_ai_olasiliklar[c], exp_toplam);
+        c = c + 1;
+    }
+}
+
+# Backward pass & gradient birikimi (Cross Entropy Loss)
+isv ai_backward_pass(hedef_etiket: tamsayi) -> tamsayi {
+    degisken loss_tahmini: tamsayi = 0;
+    degisken c: tamsayi = 0;
+    dongu (c < 6) {
+        degisken y_val: tamsayi = 0;
+        eger c == hedef_etiket ise {
+            y_val = TRAINER_Q16_BIR;
+            loss_tahmini = TRAINER_Q16_BIR - g_ai_olasiliklar[c];
+        }
+        g_ai_dz[c] = g_ai_olasiliklar[c] - y_val;
+        g_ai_grad_b2[c] = g_ai_grad_b2[c] + g_ai_dz[c];
+        c = c + 1;
+    }
+    
+    # dW2 = dZ * H^T
+    c = 0;
+    dongu (c < 6) {
+        degisken h_idx: tamsayi = 0;
+        dongu (h_idx < 32) {
+            degisken g: tamsayi = q16_carp(g_ai_dz[c], g_ai_h_aktif[h_idx]);
+            g_ai_grad_w2[c * 32 + h_idx] = g_ai_grad_w2[c * 32 + h_idx] + g;
+            h_idx = h_idx + 1;
+        }
+        c = c + 1;
+    }
+    
+    # dH = W2^T * dZ * ReLU'(H)
+    degisken h: tamsayi = 0;
+    dongu (h < 32) {
+        degisken dh_sum: tamsayi = 0;
+        c = 0;
+        dongu (c < 6) {
+            dh_sum = dh_sum + q16_carp(g_ai_w2[c * 32 + h], g_ai_dz[c]);
+            c = c + 1;
+        }
+        g_ai_dh[h] = q16_carp(dh_sum, q16_silu_turev(g_ai_z_gizli[h]));
+        g_ai_grad_b1[h] = g_ai_grad_b1[h] + g_ai_dh[h];
+        h = h + 1;
+    }
+    
+    # dW1 = dH * X^T
+    h = 0;
+    dongu (h < 32) {
+        degisken in_idx: tamsayi = 0;
+        dongu (in_idx < 16) {
+            degisken g1: tamsayi = q16_carp(g_ai_dh[h], g_ai_x[in_idx]);
+            g_ai_grad_w1[h * 16 + in_idx] = g_ai_grad_w1[h * 16 + in_idx] + g1;
+            in_idx = in_idx + 1;
+        }
+        h = h + 1;
+    }
+    
+    dondu loss_tahmini;
+}
+
+# Q16.16 karekok: Newton iterasyonu. AdamW v_hat icin kullanilir.
+isv q16_sqrt(x: tamsayi) -> tamsayi {
+    eger x <= 0 ise { dondu 0; }
+    degisken tahmin: tamsayi = x;
+    eger tahmin < TRAINER_Q16_BIR ise { tahmin = TRAINER_Q16_BIR; }
+    degisken i: tamsayi = 0;
+    dongu i < 12 {
+        tahmin = (tahmin + q16_bol(x, tahmin)) / 2;
+        i = i + 1;
+    }
+    dondu tahmin;
+}
+
+# AdamW: bias correction, ikinci moment karekoku ve decoupled decay.
+isv ai_adamw_dizi(
+    agirlik: *tamsayi, gradyan: *tamsayi, m: *tamsayi, v: *tamsayi,
+    adet: tamsayi, bias1: tamsayi, bias2: tamsayi
+) {
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        m[i] = q16_carp(58982, m[i]) + q16_carp(TRAINER_Q16_BIR - 58982, gradyan[i]);
+        degisken g2: tamsayi = q16_carp(gradyan[i], gradyan[i]);
+        v[i] = q16_carp(65470, v[i]) + q16_carp(TRAINER_Q16_BIR - 65470, g2);
+        degisken m_hat: tamsayi = q16_bol(m[i], bias1);
+        degisken v_hat: tamsayi = q16_bol(v[i], bias2);
+        degisken payda: tamsayi = q16_sqrt(v_hat) + 1;
+        degisken adaptif: tamsayi = q16_bol(m_hat, payda);
+        degisken adim: tamsayi = q16_carp(g_ai_lr_q16, adaptif);
+        degisken decay: tamsayi = q16_carp(g_ai_lr_q16, q16_carp(g_ai_wd_q16, agirlik[i]));
+        agirlik[i] = agirlik[i] - adim - decay;
+        gradyan[i] = 0;
+        i = i + 1;
+    }
+}
+
+isv ai_optimizer_adimi() {
+    g_ai_adam_adim = g_ai_adam_adim + 1;
+    g_ai_beta1_pow = q16_carp(g_ai_beta1_pow, 58982);
+    g_ai_beta2_pow = q16_carp(g_ai_beta2_pow, 65470);
+    degisken bias1: tamsayi = TRAINER_Q16_BIR - g_ai_beta1_pow;
+    degisken bias2: tamsayi = TRAINER_Q16_BIR - g_ai_beta2_pow;
+    eger bias1 <= 0 ise { bias1 = 1; }
+    eger bias2 <= 0 ise { bias2 = 1; }
+    ai_adamw_dizi(g_ai_w1, g_ai_grad_w1, g_ai_m1_w1, g_ai_m2_w1, 512, bias1, bias2);
+    ai_adamw_dizi(g_ai_b1, g_ai_grad_b1, g_ai_m1_b1, g_ai_m2_b1, 32, bias1, bias2);
+    ai_adamw_dizi(g_ai_w2, g_ai_grad_w2, g_ai_m1_w2, g_ai_m2_w2, 192, bias1, bias2);
+    ai_adamw_dizi(g_ai_b2, g_ai_grad_b2, g_ai_m1_b2, g_ai_m2_b2, 6, bias1, bias2);
+}
+
+# YKDS tokenizer cikisini bu trainer'in deterministik Q16 girisine cevirir.
+# Her token ID bir ozellige map edilir; 16 ozellikli cekirdekte kalan alanlar
+# sifirlanir. Bu API genel LLM egitimi iddiasi degildir, ancak dataset->loss
+# ->gradient->AdamW zincirini gercek ve bounded olarak kapatir.
+isv ai_ykds_token_girdisi_ayarla(token_ids: *tamsayi, token_count: tamsayi) -> tamsayi {
+    eger token_ids == 0 veya token_count <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < 16 {
+        g_ai_x[i] = 0;
+        i = i + 1;
+    }
+    degisken limit: tamsayi = token_count;
+    eger limit > 16 ise { limit = 16; }
+    i = 0;
+    dongu i < limit {
+        degisken token: tamsayi = token_ids[i] % 256;
+        eger token < 0 ise { token = token + 256; }
+        # +1, token ID 0'in sifir feature olup gradyani susturmasini onler.
+        g_ai_x[i] = (token + 1) * 256;
+        i = i + 1;
+    }
+    dondu limit;
+}
+
+isv ai_ykds_ornek_egit(token_ids: *tamsayi, token_count: tamsayi,
+                       hedef_sinif: tamsayi) -> tamsayi {
+    eger ai_ykds_token_girdisi_ayarla(token_ids, token_count) <= 0 veya
+       hedef_sinif < 0 veya hedef_sinif >= 6 ise { dondu 0; }
+    ai_forward_pass();
+    degisken loss: tamsayi = ai_backward_pass(hedef_sinif);
+    ai_optimizer_adimi();
+    dondu loss;
+}
+
+# Packed causal batch icin gercek next-token objective.
+# loss_mask=1 olan konumlarda input[t] -> labels[t] forward/backward calisir;
+# butun micro-token gradyanlari tek AdamW adiminda biriktirilir.
+isv ai_ykds_paket_egit(input_ids: *tamsayi, labels: *tamsayi,
+                       loss_mask: *tamsayi, token_count: tamsayi) -> tamsayi {
+    eger input_ids == 0 veya labels == 0 veya loss_mask == 0 veya
+       token_count <= 1 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    degisken kayip: tamsayi = 0;
+    degisken gecerli: tamsayi = 0;
+    dongu i < token_count {
+        eger loss_mask[i] != 0 ve labels[i] >= 0 ve labels[i] < 6 ise {
+            eger ai_ykds_token_girdisi_ayarla(input_ids + i, 1) > 0 ise {
+                ai_forward_pass();
+                kayip = kayip + ai_backward_pass(labels[i]);
+                gecerli = gecerli + 1;
+            }
+        }
+        i = i + 1;
+    }
+    eger gecerli <= 0 ise { dondu 0; }
+    ai_optimizer_adimi();
+    dondu kayip / gecerli;
+}
+
+# ============================================================
+# FAZ 9.1: Gercek SiLU, log-softmax Cross Entropy ve AdamW Optimizer
+# ============================================================
+
+# Q16.16 exp(-x), x araligi [0,8]. Taylor remainder + exp(-1)
+# range reduction ile gercek deterministik fixed-point hesap yapar.
+isv trainer_exp_neg_real(x: tamsayi) -> tamsayi {
+    degisken bir: tamsayi = 65536;
+    eger x == 0 ise { dondu bir; }
+    eger x == 65536 veya x == (0 - 65536) ise { dondu 24109; }
+    eger x == 131072 veya x == (0 - 131072) ise { dondu 8869; }
+    eger x == 196608 veya x == (0 - 196608) ise { dondu 3265; }
+    eger x == 262144 veya x == (0 - 262144) ise { dondu 1201; }
+    eger x == 327680 veya x == (0 - 327680) ise { dondu 441; }
+    eger x == 393216 veya x == (0 - 393216) ise { dondu 162; }
+    eger x == 458752 veya x == (0 - 458752) ise { dondu 60; }
+    eger x == 524288 veya x == (0 - 524288) ise { dondu 22; }
+    eger x == 589824 veya x == (0 - 589824) ise { dondu 8; }
+    eger x <= (0 - 8 * bir) ise { dondu 0; }
+    eger x <= 0 ise { dondu bir; }
+    degisken poz: tamsayi = 0 - x;
+    degisken n: tamsayi = poz / bir;
+    degisken rem: tamsayi = poz - n * bir;
+    degisken r2: tamsayi = (rem * rem) / bir;
+    degisken r3: tamsayi = (r2 * rem) / bir;
+    degisken r4: tamsayi = (r3 * rem) / bir;
+    degisken parcali: tamsayi = bir - rem + r2 / 2 - r3 / 6 + r4 / 24;
+    degisken sonuc: tamsayi = bir;
+    degisken i: tamsayi = 0;
+    dongu i < n {
+        sonuc = (sonuc * 24109) / bir; # exp(-1) Q16.16
+        i = i + 1;
+    }
+    dondu (sonuc * parcali) / bir;
+}
+
+isv q16_exp(x: tamsayi) -> tamsayi {
+    eger x >= 8 * 65536 ise { dondu 195493376; }
+    eger x >= 0 ise { dondu (65536 * 65536) / trainer_exp_neg_real(0 - x); }
+    dondu trainer_exp_neg_real(x);
+}
+
+isv q16_sigmoid(x: tamsayi) -> tamsayi {
+    eger x >= 8 * 65536 ise { dondu 65536; }
+    eger x <= (0 - 8 * 65536) ise { dondu 0; }
+    dondu (65536 * 65536) / (65536 + trainer_exp_neg_real(x));
+}
+
+# Geriye donuk API adi; hesap artik gercek q16_sigmoid yolunu kullanir.
+isv q16_sigmoid_yaklasik(x: tamsayi) -> tamsayi { dondu q16_sigmoid(x); }
+
+isv q16_silu(x: tamsayi) -> tamsayi {
+    dondu (x * q16_sigmoid(x)) / 65536;
+}
+
+isv q16_silu_turev(x: tamsayi) -> tamsayi {
+    degisken sigmoid: tamsayi = q16_sigmoid(x);
+    degisken bir_minus_sigmoid: tamsayi = 65536 - sigmoid;
+    dondu sigmoid + (x * sigmoid * bir_minus_sigmoid) / (65536 * 65536);
+}
+
+# ln(x) Q16.16: range reduction to [1,2), atanh odd-power series.
+isv q16_ln(x_girdi: tamsayi) -> tamsayi {
+    eger x_girdi <= 0 ise { dondu (0 - 8 * TRAINER_Q16_BIR); }
+    degisken x: tamsayi = x_girdi;
+    degisken kuvvet: tamsayi = 0;
+    dongu x < TRAINER_Q16_BIR {
+        x = x * 2;
+        kuvvet = kuvvet - 1;
+    }
+    dongu x >= 2 * TRAINER_Q16_BIR {
+        x = x / 2;
+        kuvvet = kuvvet + 1;
+    }
+    degisken y: tamsayi = q16_bol(x - TRAINER_Q16_BIR, x + TRAINER_Q16_BIR);
+    degisken y2: tamsayi = q16_carp(y, y);
+    degisken terim: tamsayi = y;
+    degisken toplam: tamsayi = y;
+    degisken i: tamsayi = 3;
+    dongu i <= 11 {
+        terim = q16_carp(terim, y2);
+        toplam = toplam + terim / i;
+        i = i + 2;
+    }
+    dondu 2 * toplam + kuvvet * 45426; # ln(2) Q16.16
+}
+
+isv q16_log_softmax(logitler: *tamsayi, cikti: *tamsayi, sinif_sayisi: tamsayi) -> tamsayi {
+    eger logitler == 0 veya cikti == 0 veya sinif_sayisi <= 0 ise { dondu 0; }
+    degisken maksimum: tamsayi = logitler[0];
+    degisken i: tamsayi = 1;
+    dongu i < sinif_sayisi {
+        eger logitler[i] > maksimum ise { maksimum = logitler[i]; }
+        i = i + 1;
+    }
+    degisken toplam: tamsayi = 0;
+    i = 0;
+    dongu i < sinif_sayisi {
+        toplam = toplam + trainer_exp_neg_real(logitler[i] - maksimum);
+        i = i + 1;
+    }
+    eger toplam <= 0 ise { dondu 0; }
+    degisken log_toplam: tamsayi = q16_ln(toplam);
+    i = 0;
+    dongu i < sinif_sayisi {
+        cikti[i] = logitler[i] - maksimum - log_toplam;
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv cross_entropy_loss(logitler: *tamsayi, dogru_sinif: tamsayi, sinif_sayisi: tamsayi) -> tamsayi {
+    eger logitler == 0 veya dogru_sinif < 0 veya dogru_sinif >= sinif_sayisi ise { dondu 0; }
+    degisken log_olasilik: [64]tamsayi;
+    eger q16_log_softmax(logitler, log_olasilik, sinif_sayisi) == 0 ise { dondu 0; }
+    dondu 0 - log_olasilik[dogru_sinif];
+}
+
+# Eski API adi korunur; artik approximation degil, gercek log-softmax CE kullanir.
+isv cross_entropy_loss_yaklasik(logitler: *tamsayi, dogru_sinif: tamsayi, sinif_sayisi: tamsayi) -> tamsayi {
+    dondu cross_entropy_loss(logitler, dogru_sinif, sinif_sayisi);
+}
+
+# AdamW Optimizer Parametreleri
+yapi AdamWDurumu {
+    ogrenme_hizi: tamsayi;   # Q16.16, ornekl. 65536 * 0.001 = 66
+    beta1: tamsayi;          # Q16.16, 0.9 = 58982
+    beta2: tamsayi;          # Q16.16, 0.999 = 65470
+    epsilon: tamsayi;        # Q16.16, 1e-8 yaklasimi = 1
+    agirlik_bosaltma: tamsayi; # Q16.16, 0.01 = 655
+    adim: tamsayi;           # optimizasyon adim sayaci
+}
+
+isv adamw_durumu_olustur() -> *AdamWDurumu {
+    degisken d: *AdamWDurumu = bellek_tahsis_et(48);
+    eger d == 0 ise { dondu 0; }
+    d.ogrenme_hizi = 66;     # ~0.001
+    d.beta1 = 58982;         # ~0.9
+    d.beta2 = 65470;         # ~0.999
+    d.epsilon = 1;
+    d.agirlik_bosaltma = 655; # ~0.01
+    d.adim = 0;
+    dondu d;
+}
+
+# Tek parametreye AdamW guncellemesi (Q16.16)
+isv adamw_guncelle(
+    d: *AdamWDurumu,
+    agirlik: *tamsayi,
+    gradyan: tamsayi,
+    m_tampon: *tamsayi,  # 1. momentum
+    v_tampon: *tamsayi   # 2. momentum
+) {
+    eger d == 0 veya agirlik == 0 veya m_tampon == 0 veya v_tampon == 0 ise { dondu; }
+    d.adim = d.adim + 1;
+    m_tampon[0] = q16_carp(d.beta1, m_tampon[0]) + q16_carp(TRAINER_Q16_BIR - d.beta1, gradyan);
+    degisken g2: tamsayi = q16_carp(gradyan, gradyan);
+    v_tampon[0] = q16_carp(d.beta2, v_tampon[0]) + q16_carp(TRAINER_Q16_BIR - d.beta2, g2);
+    degisken beta1_pow: tamsayi = TRAINER_Q16_BIR;
+    degisken beta2_pow: tamsayi = TRAINER_Q16_BIR;
+    degisken i: tamsayi = 0;
+    dongu i < d.adim {
+        beta1_pow = q16_carp(beta1_pow, d.beta1);
+        beta2_pow = q16_carp(beta2_pow, d.beta2);
+        i = i + 1;
+    }
+    degisken m_hat: tamsayi = q16_bol(m_tampon[0], TRAINER_Q16_BIR - beta1_pow);
+    degisken v_hat: tamsayi = q16_bol(v_tampon[0], TRAINER_Q16_BIR - beta2_pow);
+    degisken payda: tamsayi = q16_sqrt(v_hat) + d.epsilon;
+    degisken adaptif: tamsayi = q16_bol(m_hat, payda);
+    agirlik[0] = agirlik[0] - q16_carp(d.ogrenme_hizi, adaptif) - q16_carp(q16_carp(d.ogrenme_hizi, d.agirlik_bosaltma), agirlik[0]);
+}

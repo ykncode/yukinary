@@ -1,0 +1,31 @@
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv ana() -> tamsayi {
+    degisken dizi: [16]tamsayi;
+    
+    # 1. Sabit indisli yazma (BCE Write Fast Path)
+    dizi[0] = 10;
+    dizi[1] = 20;
+    dizi[2] = 30;
+    dizi[3] = 40;
+    dizi[15] = 150;
+
+    # 2. Sabit indisli okuma (BCE Read Fast Path)
+    degisken t0: tamsayi = dizi[0];
+    degisken t1: tamsayi = dizi[1];
+    degisken t2: tamsayi = dizi[2];
+    degisken t3: tamsayi = dizi[3];
+    degisken t15: tamsayi = dizi[15];
+
+    degisken toplam: tamsayi = t0 + t1 + t2 + t3 + t15;
+    
+    # 10 + 20 + 30 + 40 + 150 = 250
+    eger toplam == 250 {
+        ekrana_yaz("BCE OPTIMIZATION TEST PASS: toplam = 250\n".ptr);
+        dondu 0;
+    }
+    
+    ekrana_yaz("HATA: BCE toplam uyuşmuyor!\n".ptr);
+    dondu 1;
+}
+

@@ -1,0 +1,73 @@
+# ============================================================
+# Örnek 17: Konsol Tabanlı Adam Asmaca (Hangman Oyunu)
+# ============================================================
+
+degisken g_kelime: *u8 = "YUKINARY".ptr;
+degisken g_kelime_len: tamsayi = 8;
+degisken g_tahminler: [8]u8;
+degisken g_kalan_hak: tamsayi = 6;
+
+isv tahta_baslat() {
+    degisken i: tamsayi = 0;
+    dongu (i < g_kelime_len) {
+        g_tahminler[i] = 95; # '_' karakteri
+        i = i + 1;
+    }
+}
+
+isv harf_dene(harf: u8) -> tamsayi {
+    degisken bulundu: tamsayi = 0;
+    degisken i: tamsayi = 0;
+
+    dongu (i < g_kelime_len) {
+        eger g_kelime[i] == harf ise {
+            g_tahminler[i] = harf;
+            bulundu = 1;
+        }
+        i = i + 1;
+    }
+
+    eger bulundu == 0 ise {
+        g_kalan_hak = g_kalan_hak - 1;
+        ekrana_yaz("Yanlis harf! Kalan hak: ".ptr);
+        sayiyi_ekrana_yaz(g_kalan_hak);
+        ekrana_yaz("\n".ptr);
+    } yoksa {
+        ekrana_yaz("Dogru harf!\n".ptr);
+    }
+    dondu bulundu;
+}
+
+isv durumu_yazdir() {
+    ekrana_yaz("Kelime: ".ptr);
+    degisken i: tamsayi = 0;
+    dongu (i < g_kelime_len) {
+        degisken b: [2]u8;
+        b[0] = g_tahminler[i];
+        b[1] = 0;
+        ekrana_yaz(b);
+        ekrana_yaz(" ".ptr);
+        i = i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Adam Asmaca Oyunu Baslatildi ===\n".ptr);
+    tahta_baslat();
+    durumu_yazdir();
+
+    harf_dene(65); # 'A'
+    durumu_yazdir();
+
+    harf_dene(89); # 'Y'
+    durumu_yazdir();
+
+    harf_dene(90); # 'Z' (yanlis)
+    durumu_yazdir();
+
+    harf_dene(85); # 'U'
+    durumu_yazdir();
+
+    dondu 0;
+}

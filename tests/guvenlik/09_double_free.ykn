@@ -1,0 +1,34 @@
+# ============================================================
+# tests/guvenlik/09_double_free.ykn
+# Faz 3.2 & 14 - Double-Free Tespiti ve Guvenlik Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Guvenli tahsis yap (64 bayt)
+    degisken t: *GuvenliTahsis = guvenli_tahsis_et(64);
+    eger t == 0 veya t.durum != 1 ise {
+        ekrana_yaz("FAIL: tahsis basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Ilk serbest birakma (basarili olmali)
+    degisken r1: tamsayi = guvenli_serbest_birak(t);
+    eger r1 != 1 veya t.durum != 2 ise {
+        ekrana_yaz("FAIL: ilk serbest birakma basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Ikinci serbest birakma (Double-Free tespit edilmeli)
+    degisken r2: tamsayi = guvenli_serbest_birak(t);
+    eger r2 != (0 - 1) ise {
+        ekrana_yaz("FAIL: double-free tespit edilemedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-DOUBLE-FREE-PASS\n".ptr);
+    dondu 0;
+}

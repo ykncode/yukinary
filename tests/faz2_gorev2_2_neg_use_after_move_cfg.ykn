@@ -1,0 +1,24 @@
+# Faz 2 Görev 2.2 Negatif Test 3: CFG Branch Merge - Use After Move
+
+yapi Kutu {
+    deger: tamsayi;
+}
+
+isv tuket(k: Kutu) {
+}
+
+isv main() -> tamsayi {
+    degisken k: Kutu;
+    k.deger = 10;
+
+    eger 1 == 1 ise {
+        tuket(k); # Sahiplik tasindi (moved in then branch)
+    } yoksa {
+        # yoksa dali
+    }
+
+    # CFG merge sonrasinda k tasinmis kabul edilmelidir:
+    degisken oku: tamsayi = k.deger; # HATA [E040]: Use of moved value!
+    dondu 0;
+}
+

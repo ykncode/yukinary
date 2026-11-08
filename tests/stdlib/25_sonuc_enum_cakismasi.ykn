@@ -1,0 +1,11 @@
+isv ekrana_yaz(m: *u8) {}
+isv bellek_tahsis_et(n: tamsayi) -> *u8 { dondu 0; }
+ice_aktar "../../std/sonuc.ykn";
+ice_aktar "../../std/enum.ykn";
+
+isv ana() -> tamsayi {
+    degisken s1: *Sonuc = tamam(42);
+    degisken s2: *EnumSonuc = sonuc_tamam(42);
+    ekrana_yaz("25_SONUC_PASS\n".ptr);
+    dondu 0;
+}

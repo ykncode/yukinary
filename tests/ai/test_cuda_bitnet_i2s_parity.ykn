@@ -1,0 +1,83 @@
+# CUDA parity for Microsoft's type-36 BitNet I2_S representation.
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/cuda_backend.ykn";
+ice_aktar "std/ai/attention.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken buf: [32]u8;
+    degisken count: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 { buf[count] = 48 + n % 10; count = count + 1; n = n / 10; }
+    dongu count > 0 { count = count - 1; degisken ch: [2]u8; ch[0] = buf[count]; ch[1] = 0; ekrana_yaz(ch); }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("BITNET_I2S_CUDA_UNAVAILABLE\n".ptr); dondu 20;
+    }
+    degisken packed: [96]u8;
+    degisken activation: [128]tamsayi;
+    degisken cpu: [2]tamsayi;
+    degisken gpu: [2]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 64 { packed[i] = 170; i = i + 1; }
+    # Tensor-wide f32 scale 1.0 follows the N*K/4 packed payload.
+    packed[64] = 0; packed[65] = 0; packed[66] = 128; packed[67] = 63;
+    i = 0; dongu i < 128 { activation[i] = 65536; i = i + 1; }
+    eger bitnet_i2s_paketli_matris_carp(packed, activation, cpu, 1, 128, 2) != 1 {
+        ekrana_yaz("BITNET_I2S_CPU_FAIL\n".ptr); dondu 21;
+    }
+    eger ykn_cuda_bitnet_i2s_matvec(packed, activation, gpu, 128, 2, 96, 0) != 1 {
+        ekrana_yaz("BITNET_I2S_CUDA_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\\n".ptr);
+        ExitProcess(YKN_CUDA_LAST_ERROR); dondu 22;
+    }
+    eger gpu[0] != cpu[0] veya gpu[1] != cpu[1] {
+        ekrana_yaz("BITNET_I2S_CUDA_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(cpu[0]); ekrana_yaz("/".ptr); sayi_yaz(gpu[0]); ekrana_yaz(" ".ptr);
+        sayi_yaz(cpu[1]); ekrana_yaz("/".ptr); sayi_yaz(gpu[1]); ekrana_yaz("\\n".ptr); dondu 23;
+    }
+
+    # Exercise signed, fractional Q16 inputs and all three legal ternary codes.
+    i = 0;
+    dongu i < 64 {
+        eger i % 4 == 0 { packed[i] = 22; }
+        yoksa eger i % 4 == 1 { packed[i] = 146; }
+        yoksa eger i % 4 == 2 { packed[i] = 85; }
+        yoksa { packed[i] = 170; }
+        i = i + 1;
+    }
+    packed[64] = 0; packed[65] = 0; packed[66] = 0; packed[67] = 62;
+    i = 0;
+    dongu i < 128 { activation[i] = ((i * 7919) % 200003) - 100001; i = i + 1; }
+    eger bitnet_i2s_paketli_matris_carp(packed, activation, cpu, 1, 128, 2) != 1 {
+        ekrana_yaz("BITNET_I2S_CPU_FRACTIONAL_FAIL\\n".ptr); dondu 24;
+    }
+    eger ykn_cuda_bitnet_i2s_matvec(packed, activation, gpu, 128, 2, 96, 129) != 1 {
+        ekrana_yaz("BITNET_I2S_CUDA_FRACTIONAL_FAIL status=".ptr);
+        sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\\n".ptr); dondu 25;
+    }
+    # Independent scalar oracle for this fixed fixture (amax=100001,
+    # quantized ternary dot=421, tensor scale=0.125): trunc(421*100001/127*0.125)=41437.
+    eger cpu[0] != 41437 veya cpu[1] != 41437 {
+        ekrana_yaz("BITNET_I2S_FRACTIONAL_ORACLE_FAIL cpu=".ptr);
+        sayi_yaz(cpu[0]); ekrana_yaz(" ".ptr); sayi_yaz(cpu[1]); ekrana_yaz("\\n".ptr); dondu 27;
+    }
+    eger gpu[0] != 41437 veya gpu[1] != 41437 {
+        ekrana_yaz("BITNET_I2S_FRACTIONAL_CUDA_ORACLE_FAIL gpu=".ptr);
+        sayi_yaz(gpu[0]); ekrana_yaz(" ".ptr); sayi_yaz(gpu[1]); ekrana_yaz("\\n".ptr); dondu 28;
+    }
+    eger gpu[0] != cpu[0] veya gpu[1] != cpu[1] {
+        ekrana_yaz("BITNET_I2S_FRACTIONAL_PARITY_FAIL cpu/gpu=".ptr);
+        sayi_yaz(cpu[0]); ekrana_yaz("/".ptr); sayi_yaz(gpu[0]); ekrana_yaz(" ".ptr);
+        sayi_yaz(cpu[1]); ekrana_yaz("/".ptr); sayi_yaz(gpu[1]); ekrana_yaz("\\n".ptr); dondu 26;
+    }
+    ekrana_yaz("BITNET_I2S_CUDA_PARITY_PASS\\n".ptr);
+    ykn_cuda_backend_stop();
+    dondu 0;
+}

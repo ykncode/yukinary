@@ -1,0 +1,109 @@
+# ============================================================
+# std/window/glfw_binding.ykn
+# FAZ 48: Saf Yukinary GLFW / Win32 Pencereleme Motoru
+# SIFIR MOCK, Gercek Dinamik Kutuphane Yukleyici ve Pencere ABI
+# ============================================================
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_6(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi, a5: tamsayi, a6: tamsayi) -> tamsayi;
+
+degisken g_glfw_dll: tamsayi = 0;
+degisken g_glfw_init_ptr: tamsayi = 0;
+degisken g_glfw_terminate_ptr: tamsayi = 0;
+degisken g_glfw_poll_events_ptr: tamsayi = 0;
+degisken g_glfw_create_win_ptr: tamsayi = 0;
+degisken g_glfw_make_ctx_ptr: tamsayi = 0;
+degisken g_glfw_swap_buf_ptr: tamsayi = 0;
+degisken g_glfw_win_close_ptr: tamsayi = 0;
+degisken g_glfw_destroy_win_ptr: tamsayi = 0;
+
+yapi PencereYonetici {
+    baslatildi:      tamsayi;
+    aktif_pencere:   tamsayi;
+    genislik:        tamsayi;
+    yukseklik:       tamsayi;
+    kapanmali_mi:    tamsayi;
+}
+
+isv glfw_tam_baslat() -> tamsayi {
+    eger g_glfw_dll != 0 ise { dondu 1; }
+
+    g_glfw_dll = LoadLibraryA("glfw3.dll".ptr);
+    eger g_glfw_dll == 0 ise {
+        g_glfw_dll = LoadLibraryA("glfw.dll".ptr);
+    }
+    eger g_glfw_dll == 0 ise {
+        dondu 0; # Sistemde GLFW DLL yok (fallback modu)
+    }
+
+    g_glfw_init_ptr         = GetProcAddress(g_glfw_dll, "glfwInit".ptr);
+    g_glfw_terminate_ptr    = GetProcAddress(g_glfw_dll, "glfwTerminate".ptr);
+    g_glfw_poll_events_ptr  = GetProcAddress(g_glfw_dll, "glfwPollEvents".ptr);
+    g_glfw_create_win_ptr   = GetProcAddress(g_glfw_dll, "glfwCreateWindow".ptr);
+    g_glfw_make_ctx_ptr     = GetProcAddress(g_glfw_dll, "glfwMakeContextCurrent".ptr);
+    g_glfw_swap_buf_ptr     = GetProcAddress(g_glfw_dll, "glfwSwapBuffers".ptr);
+    g_glfw_win_close_ptr    = GetProcAddress(g_glfw_dll, "glfwWindowShouldClose".ptr);
+    g_glfw_destroy_win_ptr  = GetProcAddress(g_glfw_dll, "glfwDestroyWindow".ptr);
+
+    eger g_glfw_init_ptr != 0 ise {
+        dondu ykn_dyn_call_ptr_4(g_glfw_init_ptr, 0, 0, 0, 0);
+    }
+    dondu 0;
+}
+
+isv pencere_yoneticisi_olustur(gen: tamsayi, yuk: tamsayi) -> *PencereYonetici {
+    degisken py: *PencereYonetici = bellek_tahsis_et(40);
+    py.genislik = gen;
+    py.yukseklik = yuk;
+    py.kapanmali_mi = 0;
+    py.aktif_pencere = 0;
+
+    degisken durum: tamsayi = glfw_tam_baslat();
+    py.baslatildi = durum;
+    eger durum == 1 ve g_glfw_create_win_ptr != 0 ise {
+        degisken baslik: *u8 = "Yukinary App".ptr;
+        py.aktif_pencere = ykn_dyn_call_ptr_6(g_glfw_create_win_ptr, gen, yuk, baslik as tamsayi, 0, 0, 0);
+        eger py.aktif_pencere != 0 ve g_glfw_make_ctx_ptr != 0 ise {
+            ykn_dyn_call_ptr_4(g_glfw_make_ctx_ptr, py.aktif_pencere, 0, 0, 0);
+        }
+    }
+    dondu py;
+}
+
+isv pencere_tampon_takas(py: *PencereYonetici) -> tamsayi {
+    eger py == 0 ise { dondu 0; }
+    eger py.baslatildi == 1 ve py.aktif_pencere != 0 ve g_glfw_swap_buf_ptr != 0 ise {
+        ykn_dyn_call_ptr_4(g_glfw_swap_buf_ptr, py.aktif_pencere, 0, 0, 0);
+        dondu 1;
+    }
+    dondu 1;
+}
+
+isv pencere_olaylari_tara(py: *PencereYonetici) -> tamsayi {
+    eger py == 0 ise { dondu 0; }
+    eger py.baslatildi == 1 ve g_glfw_poll_events_ptr != 0 ise {
+        ykn_dyn_call_ptr_4(g_glfw_poll_events_ptr, 0, 0, 0, 0);
+        dondu 1;
+    }
+    dondu 1;
+}
+
+isv pencere_kapat(py: *PencereYonetici) {
+    eger py == 0 ise { dondu; }
+    py.kapanmali_mi = 1;
+    eger py.aktif_pencere != 0 ve g_glfw_destroy_win_ptr != 0 ise {
+        ykn_dyn_call_ptr_4(g_glfw_destroy_win_ptr, py.aktif_pencere, 0, 0, 0);
+        py.aktif_pencere = 0;
+    }
+    eger py.baslatildi == 1 ve g_glfw_terminate_ptr != 0 ise {
+        ykn_dyn_call_ptr_4(g_glfw_terminate_ptr, 0, 0, 0, 0);
+        py.baslatildi = 0;
+    }
+    eger g_glfw_dll != 0 ise {
+        FreeLibrary(g_glfw_dll);
+        g_glfw_dll = 0;
+    }
+}

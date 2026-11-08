@@ -1,0 +1,50 @@
+# ============================================================
+# Faz 8.5 — Gerçek GGUF tokenizer vocab/merge metadata testi
+# ============================================================
+
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/tokenizer.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    degisken yol: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    eger gguf_yukle(yol, durum) == 0 ise {
+        ekrana_yaz("TEST 09 FAZ 8: FAILED (GGUF parse)\n".ptr);
+        dondu 1;
+    }
+
+    degisken token_ofsetleri: *tamsayi = bellek_tahsis_et(1026048);
+    degisken token_uzunluklari: *tamsayi = bellek_tahsis_et(1026048);
+    degisken merge_ofsetleri: *tamsayi = bellek_tahsis_et(2241176);
+    degisken merge_uzunluklari: *tamsayi = bellek_tahsis_et(2241176);
+    degisken token_adet: tamsayi = 0;
+    degisken merge_adet: tamsayi = 0;
+
+    eger bitnet_tokenizer_metadata_yukle(durum, token_ofsetleri, token_uzunluklari,
+       128256, merge_ofsetleri, merge_uzunluklari, 280147,
+       &token_adet, &merge_adet) == 0 ise {
+        ekrana_yaz("TEST 09 FAZ 8: FAILED (vocab/merge metadata)\n".ptr);
+        dondu 2;
+    }
+    eger token_adet != 128256 veya merge_adet != 280147 ise {
+        ekrana_yaz("TEST 09 FAZ 8: FAILED (vocab/merge count)\n".ptr);
+        dondu 3;
+    }
+
+    degisken id: tamsayi = bitnet_token_id_bul(durum->buffer, token_ofsetleri,
+                                               token_uzunluklari, token_adet,
+                                               "!".ptr, 1);
+    degisken kopya: [8]u8;
+    degisken uzunluk: tamsayi = bitnet_token_kopyala(durum->buffer,
+        token_ofsetleri, token_uzunluklari, token_adet, id, kopya, 8);
+    eger id != 0 veya uzunluk != 1 veya kopya[0] != 33 veya kopya[1] != 0 ise {
+        ekrana_yaz("TEST 09 FAZ 8: FAILED (token lookup/decode)\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("TEST 09 FAZ 8: GERCEK VOCAB+MERGE METADATA OK\n".ptr);
+    dondu 0;
+}

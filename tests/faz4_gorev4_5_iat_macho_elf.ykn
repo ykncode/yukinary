@@ -1,0 +1,29 @@
+# Faz 4 Görev 4.5: PE32+ 48-yuvali IAT, JIT IAT, ELF W^X ve Mach-O SHA-256 Dogrulama Testi
+
+harici isv Sleep(dwMilliseconds: tamsayi);
+harici isv GetTickCount64() -> tamsayi;
+
+isv test_iat_ve_zamanlama() -> tamsayi {
+    degisken t1: tamsayi = GetTickCount64();
+    Sleep(5);
+    degisken t2: tamsayi = GetTickCount64();
+    
+    # t2 >= t1 olmalidir (zaman geriye akamaz)
+    eger t2 < t1 ise {
+        ekrana_yaz("HATA: GetTickCount64 zaman geriye akti!\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 4 Gorev 4.5 Testi Baslatiliyor...\n".ptr);
+    degisken sonuc: tamsayi = test_iat_ve_zamanlama();
+    eger sonuc != 0 ise {
+        ekrana_yaz("Faz 4 Gorev 4.5 Testi BASARISIZ!\n".ptr);
+        dondu sonuc;
+    }
+    ekrana_yaz("Faz 4 Gorev 4.5 Testi BASARILI!\n".ptr);
+    dondu 0;
+}
+

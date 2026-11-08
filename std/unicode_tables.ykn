@@ -1,0 +1,128 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/unicode_tables.ykn
+# Unicode NFC/NFKC Normalizasyon Tablolari
+# Kapsam: Latin Extended + Turkce karakterler (Unicode 15)
+# ============================================================
+# Decompose tablosu: precomposed -> [base, combining mark]
+# Her girisin formati: kod_noktasi, temel, birlesik_isaret
+# Latin Extended + Turkce odakli
+
+# NFC Canonical Decomposition tablosu (ozet - yaygın Turkce ve Latin Ext)
+# Yapilar: girisBirlesmis, cikisTemel, cikisIsaret
+yapi UnicodeDecomposeGirisi {
+    birlesmis: tamsayi;  # precomposed code point
+    temel: tamsayi;      # base code point
+    isaret: tamsayi;     # combining mark code point (0 = yok)
+}
+
+yapi UnicodeComposeGirisi {
+    temel: tamsayi;      # base code point
+    isaret: tamsayi;     # combining mark code point
+    birlesmis: tamsayi;  # resulting precomposed code point
+}
+
+# Decompose tablosu boyutu
+degisken DECOMPOSE_TABLO_BOYUT: tamsayi = 64;
+degisken COMPOSE_TABLO_BOYUT: tamsayi = 64;
+
+# Turkce ve Latin Extended yaygın precomposed -> decompose eslemeleri
+# (Unicode Canonical Decomposition Mapping ozeti)
+isv unicode_decompose_tablosu_olustur(tablo: *UnicodeDecomposeGirisi) -> tamsayi {
+    eger tablo == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    # Latin Extended: cedilla, acute, grave, circumflex, diaeresis, macron...
+    tablo[n].birlesmis = 192; tablo[n].temel = 65;  tablo[n].isaret = 768; n = n + 1; # À = A + grave
+    tablo[n].birlesmis = 193; tablo[n].temel = 65;  tablo[n].isaret = 769; n = n + 1; # Á = A + acute
+    tablo[n].birlesmis = 194; tablo[n].temel = 65;  tablo[n].isaret = 770; n = n + 1; # Â = A + circumflex
+    tablo[n].birlesmis = 195; tablo[n].temel = 65;  tablo[n].isaret = 771; n = n + 1; # Ã = A + tilde
+    tablo[n].birlesmis = 196; tablo[n].temel = 65;  tablo[n].isaret = 776; n = n + 1; # Ä = A + diaeresis
+    tablo[n].birlesmis = 197; tablo[n].temel = 65;  tablo[n].isaret = 778; n = n + 1; # Å = A + ring above
+    tablo[n].birlesmis = 199; tablo[n].temel = 67;  tablo[n].isaret = 807; n = n + 1; # Ç = C + cedilla
+    tablo[n].birlesmis = 200; tablo[n].temel = 69;  tablo[n].isaret = 768; n = n + 1; # È = E + grave
+    tablo[n].birlesmis = 201; tablo[n].temel = 69;  tablo[n].isaret = 769; n = n + 1; # É = E + acute
+    tablo[n].birlesmis = 202; tablo[n].temel = 69;  tablo[n].isaret = 770; n = n + 1; # Ê = E + circumflex
+    tablo[n].birlesmis = 203; tablo[n].temel = 69;  tablo[n].isaret = 776; n = n + 1; # Ë = E + diaeresis
+    tablo[n].birlesmis = 214; tablo[n].temel = 79;  tablo[n].isaret = 776; n = n + 1; # Ö = O + diaeresis (TR)
+    tablo[n].birlesmis = 220; tablo[n].temel = 85;  tablo[n].isaret = 776; n = n + 1; # Ü = U + diaeresis (TR)
+    tablo[n].birlesmis = 286; tablo[n].temel = 71;  tablo[n].isaret = 774; n = n + 1; # Ğ = G + breve (TR)
+    tablo[n].birlesmis = 304; tablo[n].temel = 73;  tablo[n].isaret = 775; n = n + 1; # İ = I + dot above (TR)
+    tablo[n].birlesmis = 350; tablo[n].temel = 83;  tablo[n].isaret = 807; n = n + 1; # Ş = S + cedilla (TR)
+    # Lowercase equivalents
+    tablo[n].birlesmis = 224; tablo[n].temel = 97;  tablo[n].isaret = 768; n = n + 1; # à = a + grave
+    tablo[n].birlesmis = 225; tablo[n].temel = 97;  tablo[n].isaret = 769; n = n + 1; # á = a + acute
+    tablo[n].birlesmis = 231; tablo[n].temel = 99;  tablo[n].isaret = 807; n = n + 1; # ç = c + cedilla
+    tablo[n].birlesmis = 246; tablo[n].temel = 111; tablo[n].isaret = 776; n = n + 1; # ö = o + diaeresis (TR)
+    tablo[n].birlesmis = 252; tablo[n].temel = 117; tablo[n].isaret = 776; n = n + 1; # ü = u + diaeresis (TR)
+    tablo[n].birlesmis = 287; tablo[n].temel = 103; tablo[n].isaret = 774; n = n + 1; # ğ = g + breve (TR)
+    tablo[n].birlesmis = 305; tablo[n].temel = 105; tablo[n].isaret = 0;   n = n + 1; # ı = dotless i (TR, no combining)
+    tablo[n].birlesmis = 351; tablo[n].temel = 115; tablo[n].isaret = 807; n = n + 1; # ş = s + cedilla (TR)
+    dondu n;
+}
+
+# Compose tablosu: (base, mark) -> precomposed
+isv unicode_compose_tablosu_olustur(tablo: *UnicodeComposeGirisi) -> tamsayi {
+    eger tablo == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    tablo[n].temel = 65;  tablo[n].isaret = 768; tablo[n].birlesmis = 192; n = n + 1; # A + grave -> À
+    tablo[n].temel = 65;  tablo[n].isaret = 769; tablo[n].birlesmis = 193; n = n + 1; # A + acute -> Á
+    tablo[n].temel = 65;  tablo[n].isaret = 770; tablo[n].birlesmis = 194; n = n + 1; # A + circumflex -> Â
+    tablo[n].temel = 65;  tablo[n].isaret = 771; tablo[n].birlesmis = 195; n = n + 1; # A + tilde -> Ã
+    tablo[n].temel = 65;  tablo[n].isaret = 776; tablo[n].birlesmis = 196; n = n + 1; # A + diaeresis -> Ä
+    tablo[n].temel = 67;  tablo[n].isaret = 807; tablo[n].birlesmis = 199; n = n + 1; # C + cedilla -> Ç
+    tablo[n].temel = 69;  tablo[n].isaret = 769; tablo[n].birlesmis = 201; n = n + 1; # E + acute -> É
+    tablo[n].temel = 79;  tablo[n].isaret = 776; tablo[n].birlesmis = 214; n = n + 1; # O + diaeresis -> Ö
+    tablo[n].temel = 85;  tablo[n].isaret = 776; tablo[n].birlesmis = 220; n = n + 1; # U + diaeresis -> Ü
+    tablo[n].temel = 71;  tablo[n].isaret = 774; tablo[n].birlesmis = 286; n = n + 1; # G + breve -> Ğ
+    tablo[n].temel = 73;  tablo[n].isaret = 775; tablo[n].birlesmis = 304; n = n + 1; # I + dot above -> İ
+    tablo[n].temel = 83;  tablo[n].isaret = 807; tablo[n].birlesmis = 350; n = n + 1; # S + cedilla -> Ş
+    tablo[n].temel = 97;  tablo[n].isaret = 768; tablo[n].birlesmis = 224; n = n + 1; # a + grave -> à
+    tablo[n].temel = 97;  tablo[n].isaret = 769; tablo[n].birlesmis = 225; n = n + 1; # a + acute -> á
+    tablo[n].temel = 99;  tablo[n].isaret = 807; tablo[n].birlesmis = 231; n = n + 1; # c + cedilla -> ç
+    tablo[n].temel = 111; tablo[n].isaret = 776; tablo[n].birlesmis = 246; n = n + 1; # o + diaeresis -> ö
+    tablo[n].temel = 117; tablo[n].isaret = 776; tablo[n].birlesmis = 252; n = n + 1; # u + diaeresis -> ü
+    tablo[n].temel = 103; tablo[n].isaret = 774; tablo[n].birlesmis = 287; n = n + 1; # g + breve -> ğ
+    tablo[n].temel = 115; tablo[n].isaret = 807; tablo[n].birlesmis = 351; n = n + 1; # s + cedilla -> ş
+    dondu n;
+}
+
+# Tek bir Unicode code point'i decompose et (NFC/NFD)
+# dondu: temel kod noktası (isaret_cikis != 0 ise combining mark da verilir)
+isv unicode_kod_noktasi_decompose(
+    tablo: *UnicodeDecomposeGirisi,
+    tablo_boyutu: tamsayi,
+    kod_noktasi: tamsayi,
+    isaret_cikis: *tamsayi
+) -> tamsayi {
+    eger tablo == 0 ise {
+        eger isaret_cikis != 0 ise { isaret_cikis[0] = 0; }
+        dondu kod_noktasi;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < tablo_boyutu {
+        eger tablo[i].birlesmis == kod_noktasi ise {
+            eger isaret_cikis != 0 ise { isaret_cikis[0] = tablo[i].isaret; }
+            dondu tablo[i].temel;
+        }
+        i = i + 1;
+    }
+    eger isaret_cikis != 0 ise { isaret_cikis[0] = 0; }
+    dondu kod_noktasi;
+}
+
+# (base, mark) ciftini compose et
+isv unicode_kod_noktasi_compose(
+    tablo: *UnicodeComposeGirisi,
+    tablo_boyutu: tamsayi,
+    temel: tamsayi,
+    isaret: tamsayi
+) -> tamsayi {
+    eger tablo == 0 veya isaret == 0 ise { dondu temel; }
+    degisken i: tamsayi = 0;
+    dongu i < tablo_boyutu {
+        eger tablo[i].temel == temel ve tablo[i].isaret == isaret ise {
+            dondu tablo[i].birlesmis;
+        }
+        i = i + 1;
+    }
+    dondu temel;
+}

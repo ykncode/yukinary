@@ -1,0 +1,68 @@
+# ============================================================
+# Örnek 77: Win32 Grafiksel XOX Oyunu (Tic-Tac-Toe GUI)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 3x3 Tahta: 0=Bos, 1=X, 2=O
+degisken g_xox_tahta: [9]tamsayi;
+degisken g_siradaki_oyuncu: tamsayi = 1; # 1: X, 2: O
+degisken g_xox_bitti: tamsayi = 0;
+
+isv tahta_sifirla() {
+    degisken i: tamsayi = 0;
+    dongu (i < 9) {
+        g_xox_tahta[i] = 0;
+        i = i + 1;
+    }
+    g_siradaki_oyuncu = 1;
+    g_xox_bitti = 0;
+}
+
+isv hamle_yap(kare_id: tamsayi) -> tamsayi {
+    eger kare_id < 0 veya kare_id >= 9 ise { dondu 0; }
+    eger g_xox_tahta[kare_id] != 0 veya g_xox_bitti == 1 ise { dondu 0; }
+
+    g_xox_tahta[kare_id] = g_siradaki_oyuncu;
+    ekrana_yaz("Hamle Yapildi: Kare ");
+    sayiyi_ekrana_yaz(kare_id);
+    eger g_siradaki_oyuncu == 1 ise {
+        ekrana_yaz(" -> Oyuncu X\n".ptr);
+        g_siradaki_oyuncu = 2;
+    } yoksa {
+        ekrana_yaz(" -> Oyuncu O\n".ptr);
+        g_siradaki_oyuncu = 1;
+    }
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Tic-Tac-Toe (XOX)".ptr, 320, 360);
+    eger p_h == 0 ise { dondu 1; }
+
+    tahta_sifirla();
+
+    # 3x3 Buton Izgarasi
+    degisken satir: tamsayi = 0;
+    degisken sutun: tamsayi = 0;
+    degisken bid: tamsayi = 6000;
+
+    dongu (satir < 3) {
+        sutun = 0;
+        dongu (sutun < 3) {
+            degisken x: tamsayi = 35 + (sutun * 80);
+            degisken y: tamsayi = 30 + (satir * 80);
+            buton_olustur(p_h, "-".ptr, bid, x, y, 75, 75);
+            bid = bid + 1;
+            sutun = sutun + 1;
+        }
+        satir = satir + 1;
+    }
+
+    # Yeniden Baslat Butonu
+    buton_olustur(p_h, "Yeni Oyun".ptr, 6099, 35, 275, 235, 35);
+
+    ekrana_yaz("XOX Oyunu Arayuzu Basariyla Kuruldu.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

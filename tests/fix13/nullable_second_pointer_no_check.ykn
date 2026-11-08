@@ -1,0 +1,9 @@
+# FIX-13 olumsuz: q guard edilmeden erisilemez.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    degisken q: ?*u8 = bos;
+    eger p != bos ise {
+        q[0] = 75;
+    }
+    dondu 0;
+}

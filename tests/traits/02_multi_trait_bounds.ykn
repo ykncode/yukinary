@@ -1,0 +1,18 @@
+# YUKINARY Test: Coklu Trait Kisitlari (F11.13)
+# <T: Toplama + Esit> biciminde coklu trait bound dogrulamasi
+
+isv topla_ve_karsilastir<T: Toplama + Esit>(a: T, b: T) -> T {
+    eger a == b ise {
+        dondu a + b;
+    }
+    dondu a;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken sonuc: tamsayi = topla_ve_karsilastir<tamsayi>(10, 10);
+    eger sonuc == 20 ise {
+        ekrana_yaz("F11.13 PASS: Coklu Trait Kisitlari Basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

@@ -1,0 +1,103 @@
+# ============================================================
+# MIR CFG DALLANMA VE DÖNGÜ KONTROL AKIŞI DOĞRULAMA TESTİ
+# hir_ifade_to_mir uzerinde HIR_EGER (if/else) ve HIR_DONGU (while)
+# yapilarinin gercek basic block'lar, MIR_JMP_Z ve MIR_JMP
+# komutlariyla CFG olusturdugunu ve mir_to_ir'in hatasiz
+# gectigini dogrular.
+# ============================================================
+ice_aktar "../../src/utils.ykn";
+ice_aktar "../../src/diagnostics.ykn";
+ice_aktar "../../src/lexer.ykn";
+ice_aktar "../../src/ast.ykn";
+ice_aktar "../../src/parser.ykn";
+ice_aktar "../../src/typechecker.ykn";
+ice_aktar "../../src/hir.ykn";
+ice_aktar "../../src/mir.ykn";
+ice_aktar "../../src/ir.ykn";
+ice_aktar "../../src/ir_lower.ykn";
+
+isv compiler_tahsis_et(n: tamsayi) -> *u8 { dondu bellek_tahsis_et(n); }
+
+isv ana() -> tamsayi {
+    degisken hir: *HirMotoru = hir_motoru_olustur(65536);
+    degisken mir: *MirMotoru = mir_motoru_olustur(65536);
+    degisken ir: *IrMotoru = ir_motoru_olustur(1048576);
+    eger hir == 0 veya mir == 0 veya ir == 0 ise {
+        ekrana_yaz("FAIL: motor olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # HIR İşlevi: 501
+    degisken h_islev: *HirDugum = hir_dugum_olustur(hir, HIR_ISLEV, 0);
+    h_islev.deger = 501;
+
+    # Blok: govde
+    degisken blok: *HirDugum = hir_dugum_olustur(hir, HIR_BLOK, 0);
+    h_islev.govde = blok;
+
+    # 1. Atama: x = 10
+    degisken var_x: *HirDugum = hir_dugum_olustur(hir, HIR_KIMLIK, 0);
+    var_x.deger = 101; # 'x'
+    degisken num_10: *HirDugum = hir_dugum_olustur(hir, HIR_SAYI, 0);
+    num_10.deger = 10;
+    degisken ata: *HirDugum = hir_dugum_olustur(hir, HIR_ATAMA, 0);
+    ata.sol = var_x;
+    ata.sag = num_10;
+    blok.sol = ata;
+
+    # 2. HIR_EGER: eger (x) { dondu 1 } yoksa { dondu 2 }
+    degisken eger_dugum: *HirDugum = hir_dugum_olustur(hir, HIR_EGER, 0);
+    eger_dugum.sol = var_x; # kosul
+    degisken ret1: *HirDugum = hir_dugum_olustur(hir, HIR_DONDUR, 0);
+    degisken num_1: *HirDugum = hir_dugum_olustur(hir, HIR_SAYI, 0);
+    num_1.deger = 1;
+    ret1.sol = num_1;
+    eger_dugum.govde = ret1; # then
+
+    degisken ret2: *HirDugum = hir_dugum_olustur(hir, HIR_DONDUR, 0);
+    degisken num_2: *HirDugum = hir_dugum_olustur(hir, HIR_SAYI, 0);
+    num_2.deger = 2;
+    ret2.sol = num_2;
+    eger_dugum.sag = ret2; # else
+
+    ata.sonraki = eger_dugum;
+
+    # HIR -> MIR donusumu
+    hir_to_mir_islev(mir, h_islev);
+
+    degisken f: *MirIslev = mir.ilk_islev;
+    eger f == 0 ise {
+        ekrana_yaz("FAIL: MIR islevi olusturulamadi\n".ptr);
+        dondu 1;
+    }
+
+    # Blok sayisi kontrolu: giris + then + else + join = en az 4 blok
+    degisken b_sayisi: tamsayi = 0;
+    degisken b_iter: *MirBloku = f.ilk_blok;
+    dongu b_iter != 0 {
+        b_sayisi = b_sayisi + 1;
+        b_iter = b_iter.sonraki;
+    }
+
+    eger b_sayisi < 4 ise {
+        ekrana_yaz("FAIL: Yetersiz basic block sayisi (<4)\n".ptr);
+        dondu 1;
+    }
+
+    # MIR -> IR donusumu
+    mir_to_ir(ir, mir);
+    eger ir.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: mir_to_ir hata verdi\n".ptr);
+        dondu 1;
+    }
+
+    # IR Verifier kontrolu
+    degisken v_hata: tamsayi = ir_verifier_calistir(ir);
+    eger v_hata != 0 veya ir.hata_sayisi != 0 ise {
+        ekrana_yaz("FAIL: IR Verifier gecmedi\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("MIR_CFG_PASS\n".ptr);
+    dondu 0;
+}

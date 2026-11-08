@@ -1,0 +1,52 @@
+# ============================================================
+# tests/ai/test_lora_finetuning.ykn
+# FAZ 39: LoRA Ince Ayar (Fine-Tuning) ve Adaptor Egitim Testi
+# ============================================================
+
+ice_aktar "std/ai/lora.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 39: LoRA Fine-Tuning & Adaptor Testi Basliyor...\n".ptr);
+
+    # Girdi: in_dim=2, out_dim=1, rank=2, alpha=2 (olcek = 1)
+    degisken katman: *LoRAKatmani = lora_olustur(2, 1, 2, 2);
+
+    # Dondurulmus W0 = [2, 2]
+    tensor_koy_2d(katman.W0, 0, 0, 2);
+    tensor_koy_2d(katman.W0, 0, 1, 2);
+
+    # Girdi: X = [3, 4]
+    degisken X: *Tensor = tensor_olustur_2d(1, 2, 0);
+    tensor_koy_2d(X, 0, 0, 3);
+    tensor_koy_2d(X, 0, 1, 4);
+
+    # Hedef: Y_hedef = 30
+    # W0 ile ilk cikis: Y_0 = 3*2 + 4*2 = 6 + 8 = 14 (cunku B=0 oldugundan lora_skor=0)
+    degisken Y0: *Tensor = lora_ileri_1d(katman, X);
+    degisken ilk_deger: tamsayi = tensor_al_2d(Y0, 0, 0);
+
+    eger ilk_deger != 14 ise {
+        ekrana_yaz("HATA: LoRA baslangic cikisi dondurulmus modelle uyusmuyor!\n".ptr);
+        dondu 1;
+    }
+
+    # Hedef 30, ilk cikis 14 -> Hata = 14 - 30 = -16
+    degisken hata: tamsayi = ilk_deger - 30;
+
+    # LoRA Adaptor Guncellemesi (lr=1, hata=-16 oldugundan B degeri artacak ve cikti hedefe yaklasacak)
+    lora_adim_guncelle(katman, hata, 1);
+
+    # Guncelleme sonrasi ikinci ileri gecis
+    degisken Y1: *Tensor = lora_ileri_1d(katman, X);
+    degisken yeni_deger: tamsayi = tensor_al_2d(Y1, 0, 0);
+
+    # Yeni deger 14'ten buyuk olmali (30 hedefine dogru ilerlemeli)
+    eger yeni_deger <= 14 ise {
+        ekrana_yaz("HATA: LoRA adaptoru egitim sonrasi ciktiyi iyilestirmedi!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("LORA_FINETUNING_PASS\n".ptr);
+    dondu 0;
+}
+

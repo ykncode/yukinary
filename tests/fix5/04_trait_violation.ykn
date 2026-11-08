@@ -1,0 +1,10 @@
+isv esit<T: Esit>(a: T, b: T) -> tamsayi {
+    eger a == b ise { dondu 1; }
+    dondu 0;
+}
+yapi Desteksiz {
+    deger: tamsayi;
+}
+isv ana() -> tamsayi {
+    dondu esit<Desteksiz>(0, 0);
+}

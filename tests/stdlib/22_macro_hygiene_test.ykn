@@ -1,0 +1,65 @@
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi; eger n < 0 ise { n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger sayi < 0 ise { buf[i] = 45; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+# ============================================================
+# GOREV 5.3 - Macro Hygiene Testi
+# Macro icindeki degisken isimlerinin dis kapsama sizdigi
+# durumlar hygiene ile engellenir.
+# ============================================================
+
+# Macro icinde degisken tanimlayan macro
+makro hesapla(taban) { taban * taban + taban }
+
+# Iki farkli noktada ayni macro cagrildiginda ic degiskenler
+# birbirini etkilememeli (hygiene)
+makro ikikat_ic(sayi) { sayi + sayi }
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+
+    # Test 1: Dis kapsamda 'taban' degiskeni var
+    degisken taban: tamsayi = 100;
+
+    # Macro cagrisinda 'taban' parametresi dis 'taban' ile cakismamali
+    degisken sonuc1: tamsayi = hesapla(5);
+    eger sonuc1 == 30 ise { # 5*5+5 = 30
+        ekrana_yaz("TEST HYGIENE: hesapla(5)=30 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST HYGIENE: hesapla FAILED sonuc=".ptr);
+        sayiyi_yazdir(sonuc1);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Dis kapsam degiskeni bozulmamis olmali
+    eger taban == 100 ise {
+        ekrana_yaz("TEST HYGIENE: dis taban=100 korundu OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST HYGIENE: dis taban bozuldu! taban=".ptr);
+        sayiyi_yazdir(taban);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Test 2: Cift macro cagrisi — ic degiskenler birbirini etkilememeli
+    degisken a: tamsayi = 7;
+    degisken r1: tamsayi = ikikat_ic(a);
+    degisken r2: tamsayi = ikikat_ic(3);
+    eger r1 == 14 ve r2 == 6 ise {
+        ekrana_yaz("TEST HYGIENE: cift cagri OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST HYGIENE: cift cagri FAILED\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("MACRO-HYGIENE-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,245 @@
+# ============================================================
+# YKN std/ai/runtime.ykn
+# Ortak, performans odaklı LLM runtime sözleşmesi.
+#
+# Model verisi zero-copy/mmap ile dışarıdan sağlanır;
+# bu katman model mimarisi, quantization ve backend dispatch kararını
+# belirler. Gerçek kernel ve loader'lar bu sözleşmeye bağlanır.
+# ============================================================
+
+degisken LLM_MIMARI_BILINMIYOR: tamsayi = 0;
+degisken LLM_MIMARI_BITNET: tamsayi = 1;
+degisken LLM_MIMARI_BITNET_MOE: tamsayi = 2;
+degisken LLM_MIMARI_LLAMA: tamsayi = 3;
+degisken LLM_MIMARI_MISTRAL: tamsayi = 4;
+degisken LLM_MIMARI_QWEN: tamsayi = 5;
+degisken LLM_MIMARI_GEMMA: tamsayi = 6;
+degisken LLM_MIMARI_PHI: tamsayi = 7;
+degisken LLM_MIMARI_TRANSFORMER: tamsayi = 8;
+
+degisken LLM_BACKEND_BILINMIYOR: tamsayi = 0;
+degisken LLM_BACKEND_BITNET_NATIVE: tamsayi = 1;
+degisken LLM_BACKEND_BITNET_MOE_NATIVE: tamsayi = 2;
+degisken LLM_BACKEND_ARCH_ADAPTER: tamsayi = 3;
+
+degisken LLM_QUANT_F32: tamsayi = 0;
+degisken LLM_QUANT_F16: tamsayi = 1;
+# GGML enum ID 22 and the Microsoft BitNet GGUF extension ID 36.
+degisken LLM_QUANT_IQ2_S: tamsayi = 36;
+degisken LLM_QUANT_IQ2_S_GGML: tamsayi = 22;
+degisken LLM_QUANT_IQ2_S_LEGACY: tamsayi = 22;
+degisken LLM_QUANT_Q4_0: tamsayi = 2;
+degisken LLM_QUANT_Q1_0: tamsayi = 41;
+degisken LLM_QUANT_Q4_K: tamsayi = 12;
+degisken LLM_QUANT_Q6_K: tamsayi = 14;
+degisken LLM_QUANT_IQ4_NL: tamsayi = 20;
+degisken LLM_QUANT_BF16: tamsayi = 30;
+degisken LLM_QUANT_TQ2_0: tamsayi = 35;
+
+degisken LLM_RUNTIME_HATASI: tamsayi = 0;
+
+yapi LLMModelSpec {
+    model_adi: *u8;
+    model_adi_uzunluk: tamsayi;
+    mimari: tamsayi;
+    quant_tipi: tamsayi;
+    vocab_boyutu: tamsayi;
+    gizli_boyut: tamsayi;
+    katman_sayisi: tamsayi;
+    expert_sayisi: tamsayi;
+    top_k: tamsayi;
+    context_boyutu: tamsayi;
+    kafa_sayisi: tamsayi;
+    kv_kafa_sayisi: tamsayi;
+    kafa_boyutu: tamsayi;
+    ffn_boyutu: tamsayi;
+    rope_boyutu: tamsayi;
+    rope_freq_base_q16: tamsayi;
+    norm_eps_q16: tamsayi;
+    bos_token_id: tamsayi;
+    eos_token_id: tamsayi;
+}
+
+yapi LLMRuntimeState {
+    spec: *LLMModelSpec;
+    model_verisi: *u8;
+    model_verisi_uzunlugu: tamsayi;
+    backend: tamsayi;
+    yuklendi: tamsayi;
+    token_sayisi: tamsayi;
+}
+
+isv llm_runtime_alt_metin_var_mi(kaynak: *u8, kaynak_uzn: tamsayi, aranan: *u8, aranan_uzn: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya aranan == 0 veya aranan_uzn <= 0 veya kaynak_uzn < aranan_uzn ise { dondu 0; }
+    degisken limit: tamsayi = kaynak_uzn - aranan_uzn;
+    degisken i: tamsayi = 0;
+    dongu i <= limit {
+        degisken j: tamsayi = 0;
+        degisken esit: tamsayi = 1;
+        dongu j < aranan_uzn {
+            degisken a: u8 = kaynak[i + j];
+            degisken b: u8 = aranan[j];
+            eger a >= 65 ve a <= 90 ise { a = a + 32; }
+            eger b >= 65 ve b <= 90 ise { b = b + 32; }
+            eger a != b ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Model dosya adı/etiketi için hızlı mimari keşfi. GGUF metadata varsa
+# çağıran bunu metadata tabanlı değerle override edebilir.
+isv llm_runtime_mimari_bul(ad: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger ad == 0 veya uzunluk <= 0 ise { dondu LLM_MIMARI_BILINMIYOR; }
+    degisken bitnet: tamsayi = llm_runtime_alt_metin_var_mi(ad, uzunluk, "bitnet".ptr, 6);
+    degisken moe: tamsayi = llm_runtime_alt_metin_var_mi(ad, uzunluk, "moe".ptr, 3);
+    eger bitnet == 1 ve moe == 1 ise { dondu LLM_MIMARI_BITNET_MOE; }
+    eger bitnet == 1 ise { dondu LLM_MIMARI_BITNET; }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "llama".ptr, 5) == 1 ise {
+        dondu LLM_MIMARI_LLAMA;
+    }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "mistral".ptr, 7) == 1 ise {
+        dondu LLM_MIMARI_MISTRAL;
+    }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "qwen".ptr, 4) == 1 ise {
+        dondu LLM_MIMARI_QWEN;
+    }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "gemma".ptr, 5) == 1 ise {
+        dondu LLM_MIMARI_GEMMA;
+    }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "phi".ptr, 3) == 1 ise {
+        dondu LLM_MIMARI_PHI;
+    }
+    eger llm_runtime_alt_metin_var_mi(ad, uzunluk, "transformer".ptr, 11) == 1 ise {
+        dondu LLM_MIMARI_TRANSFORMER;
+    }
+    dondu LLM_MIMARI_BILINMIYOR;
+}
+
+isv llm_runtime_backend_bul(mimari: tamsayi) -> tamsayi {
+    eger mimari == LLM_MIMARI_BITNET ise { dondu LLM_BACKEND_BITNET_NATIVE; }
+    eger mimari == LLM_MIMARI_BITNET_MOE ise { dondu LLM_BACKEND_BITNET_MOE_NATIVE; }
+    eger mimari == LLM_MIMARI_LLAMA veya mimari == LLM_MIMARI_MISTRAL veya
+       mimari == LLM_MIMARI_QWEN veya mimari == LLM_MIMARI_GEMMA veya
+       mimari == LLM_MIMARI_PHI veya mimari == LLM_MIMARI_TRANSFORMER ise {
+        dondu LLM_BACKEND_ARCH_ADAPTER;
+    }
+    dondu LLM_BACKEND_BILINMIYOR;
+}
+
+isv llm_runtime_spec_sifirla(spec: *LLMModelSpec) {
+    eger spec == 0 ise { dondu; }
+    spec.model_adi = 0;
+    spec.model_adi_uzunluk = 0;
+    spec.mimari = LLM_MIMARI_BILINMIYOR;
+    spec.quant_tipi = LLM_QUANT_F32;
+    spec.vocab_boyutu = 0;
+    spec.gizli_boyut = 0;
+    spec.katman_sayisi = 0;
+    spec.expert_sayisi = 0;
+    spec.top_k = 0;
+    spec->context_boyutu = 0;
+    spec->kafa_sayisi = 0;
+    spec->kv_kafa_sayisi = 0;
+    spec->kafa_boyutu = 0;
+    spec->ffn_boyutu = 0;
+    spec->rope_boyutu = 0;
+    spec->rope_freq_base_q16 = 0;
+    spec->norm_eps_q16 = 1;
+    spec->bos_token_id = 0 - 1;
+    spec->eos_token_id = 0 - 1;
+}
+
+# Metadata tamamlanmadan inference başlatılmaz. MoE için expert/top-k
+# invariant'ları burada tek noktadan korunur.
+isv llm_runtime_spec_dogrula(spec: *LLMModelSpec) -> tamsayi {
+    LLM_RUNTIME_HATASI = 0;
+    eger spec == 0 veya spec.mimari == LLM_MIMARI_BILINMIYOR ise { LLM_RUNTIME_HATASI = 1; dondu 0; }
+    eger llm_runtime_backend_bul(spec.mimari) == LLM_BACKEND_BILINMIYOR ise { LLM_RUNTIME_HATASI = 2; dondu 0; }
+    eger spec.vocab_boyutu <= 0 veya spec.gizli_boyut <= 0 veya
+       spec.katman_sayisi <= 0 veya spec.context_boyutu <= 0 ise { LLM_RUNTIME_HATASI = 3; dondu 0; }
+    # Eski embedding/runtime fixture'ları yalnız temel spec taşır; gerçek
+    # transformer kurulurken yeni alanlar ayrıca zorunlu kılınır.
+    eger spec.kafa_sayisi > 0 veya spec.kv_kafa_sayisi > 0 veya spec.kafa_boyutu > 0 ise {
+        eger spec.kafa_sayisi <= 0 veya spec.kv_kafa_sayisi <= 0 veya spec.kafa_boyutu <= 0 veya
+           spec.kafa_sayisi % spec.kv_kafa_sayisi != 0 ise {
+            LLM_RUNTIME_HATASI = 7; dondu 0;
+        }
+        # Gemma4's Q projection is per-layer and can be wider than the model
+        # hidden state (e.g. 8 heads x 512 while hidden=2560). Its GGUF profile
+        # supplies the real per-layer widths; the generic equality is invalid.
+        eger spec.mimari == LLM_MIMARI_GEMMA ise {
+            eger spec.kv_kafa_sayisi * spec.kafa_boyutu > 65536 ise {
+                LLM_RUNTIME_HATASI = 7; dondu 0;
+            }
+        } yoksa eger spec.kafa_sayisi * spec.kafa_boyutu != spec.gizli_boyut veya
+           spec.kv_kafa_sayisi * spec.kafa_boyutu > spec.gizli_boyut ise {
+            LLM_RUNTIME_HATASI = 7; dondu 0;
+        }
+    }
+    eger spec.mimari == LLM_MIMARI_BITNET veya spec.mimari == LLM_MIMARI_BITNET_MOE ise {
+        eger spec.quant_tipi != LLM_QUANT_IQ2_S ve spec.quant_tipi != LLM_QUANT_IQ2_S_LEGACY ise { LLM_RUNTIME_HATASI = 4; dondu 0; }
+    }
+    eger spec.mimari != LLM_MIMARI_BITNET ve spec.mimari != LLM_MIMARI_BITNET_MOE ve
+       spec.quant_tipi != LLM_QUANT_F32 ve spec.quant_tipi != LLM_QUANT_F16 ve
+       spec->quant_tipi != LLM_QUANT_Q4_0 ve spec->quant_tipi != LLM_QUANT_Q1_0 ve
+       spec->quant_tipi != LLM_QUANT_Q4_K ve spec->quant_tipi != LLM_QUANT_Q6_K ve
+       spec->quant_tipi != LLM_QUANT_IQ4_NL ve spec->quant_tipi != LLM_QUANT_BF16 ve
+       spec->quant_tipi != LLM_QUANT_TQ2_0 ise {
+        LLM_RUNTIME_HATASI = 6; dondu 0;
+    }
+    eger spec.mimari == LLM_MIMARI_BITNET_MOE ise {
+        eger spec.expert_sayisi <= 0 veya spec.expert_sayisi > 64 veya
+           spec.top_k <= 0 veya spec.top_k > spec.expert_sayisi ise { LLM_RUNTIME_HATASI = 5; dondu 0; }
+    }
+    dondu 1;
+}
+
+isv llm_runtime_baslat(durum: *LLMRuntimeState, spec: *LLMModelSpec, model_verisi: *u8, model_uzunlugu: tamsayi) -> tamsayi {
+    eger durum == 0 veya spec == 0 veya model_verisi == 0 veya model_uzunlugu <= 0 ise { dondu 0; }
+    eger llm_runtime_spec_dogrula(spec) == 0 ise { dondu 0; }
+    durum.spec = spec;
+    durum.model_verisi = model_verisi;
+    durum.model_verisi_uzunlugu = model_uzunlugu;
+    durum.backend = llm_runtime_backend_bul(spec.mimari);
+    durum.yuklendi = 1;
+    durum.token_sayisi = 0;
+    dondu 1;
+}
+
+isv llm_runtime_hazir_mi(durum: *LLMRuntimeState) -> tamsayi {
+    eger durum == 0 veya durum.yuklendi == 0 veya durum.spec == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# Deterministic top-k router: eşit skorlar düşük expert index'i kazanır.
+# SIMD/native router daha sonra aynı sözleşmenin optimize implementasyonu olur.
+isv llm_runtime_moe_topk(logitler: *tamsayi, expert_sayisi: tamsayi, top_k: tamsayi, secilen: *tamsayi) -> tamsayi {
+    eger logitler == 0 veya secilen == 0 veya expert_sayisi <= 0 veya top_k <= 0 ise { dondu 0; }
+    degisken tarama_limiti: tamsayi = expert_sayisi;
+    eger tarama_limiti > 64 ise { tarama_limiti = 64; }
+    degisken secim_limiti: tamsayi = top_k;
+    eger secim_limiti > tarama_limiti ise { secim_limiti = tarama_limiti; }
+    degisken kullanildi: [64]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 64 { kullanildi[i] = 0; i = i + 1; }
+    degisken secim: tamsayi = 0;
+    dongu secim < secim_limiti {
+        degisken en_iyi: tamsayi = 0 - 1;
+        i = 0;
+        dongu i < tarama_limiti {
+            eger kullanildi[i] == 0 ve (en_iyi == 0 - 1 veya logitler[i] > logitler[en_iyi]) ise {
+                en_iyi = i;
+            }
+            i = i + 1;
+        }
+        eger en_iyi == 0 - 1 ise { dondu secim; }
+        secilen[secim] = en_iyi;
+        kullanildi[en_iyi] = 1;
+        secim = secim + 1;
+    }
+    dondu secim;
+}

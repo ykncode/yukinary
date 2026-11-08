@@ -1,0 +1,28 @@
+# ============================================================
+# Örnek 15: Konsol Tabanlı Sayı Tahmin Oyunu Simülatörü
+# ============================================================
+
+isv tahmin_degerlendir(tahmin: tamsayi, hedef: tamsayi) -> tamsayi {
+    sayiyi_ekrana_yaz(tahmin);
+    eger tahmin < hedef ise {
+        ekrana_yaz(" -> Daha BUYUK bir sayi soyleyin!\n".ptr);
+        dondu 0;
+    } yoksa eger tahmin > hedef ise {
+        ekrana_yaz(" -> Daha KUCUK bir sayi soyleyin!\n".ptr);
+        dondu 0;
+    } yoksa {
+        ekrana_yaz(" -> TEBRIKLER! Dogru bildiniz!\n".ptr);
+        dondu 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken gizli_sayi: tamsayi = 42;
+    ekrana_yaz("=== 1-100 Arasi Sayi Tahmin Oyunu ===\n".ptr);
+
+    tahmin_degerlendir(20, gizli_sayi);
+    tahmin_degerlendir(60, gizli_sayi);
+    tahmin_degerlendir(35, gizli_sayi);
+    tahmin_degerlendir(42, gizli_sayi);
+    dondu 0;
+}

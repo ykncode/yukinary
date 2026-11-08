@@ -1,0 +1,233 @@
+# ============================================================
+# Yukinary std/ai/vulkan_compute.ykn
+# FAZ 11.3: Vulkan Compute GPU Matmul ve Tensör Hızlandırma Motoru
+#
+# Win32 / POSIX Vulkan 1.2+ Compute Pipeline sözleşmesi.
+# Harici Python, CUDA veya ağır C bağımlılığı olmadan doğrudan
+# vulkan-1.dll API'si üzerinden compute shader çalıştırır.
+# GPU veya Vulkan sürücüsü yoksa güvenli CPU fallback'e düşer.
+# ============================================================
+
+degisken VK_BASARILI = 0;
+degisken VK_BILDIRIM_ZAMAN_ASIMI = 1;
+degisken VK_HATA_SURUCU_YOK = 0 - 100;
+degisken VK_HATA_INSTANCE_YOK = 0 - 101;
+degisken VK_HATA_CIHAZ_YOK = 0 - 102;
+degisken VK_HATA_KUYRUK_YOK = 0 - 103;
+degisken VK_HATA_SHADER_MODULU = 0 - 104;
+degisken VK_HATA_PIPELINE = 0 - 105;
+degisken VK_HATA_BELLEK_TAHSIS = 0 - 106;
+
+yapi VkPhysicalDeviceProperties {
+    api_version: tamsayi;
+    driver_version: tamsayi;
+    vendor_id: tamsayi;
+    device_id: tamsayi;
+    device_type: tamsayi;
+    device_name: [256]u8;
+}
+
+yapi VulkanComputeContext {
+    dll_handle: tamsayi;
+    hazir: tamsayi;
+    son_hata: tamsayi;
+    instance: tamsayi;
+    fiziksel_cihaz: tamsayi;
+    cihaz: tamsayi;
+    kuyruk: tamsayi;
+    kuyruk_aile_indeksi: tamsayi;
+    komut_havuzu: tamsayi;
+    fn_vkGetInstanceProcAddr: *u8;
+    fn_vkCreateInstance: *u8;
+    fn_vkDestroyInstance: *u8;
+    fn_vkEnumeratePhysicalDevices: *u8;
+    fn_vkCreateDevice: *u8;
+    fn_vkDestroyDevice: *u8;
+    fn_vkGetDeviceQueue: *u8;
+    fn_vkCreateShaderModule: *u8;
+    fn_vkDestroyShaderModule: *u8;
+    cihaz_ozellikleri: VkPhysicalDeviceProperties;
+}
+
+# ------------------------------------------------------------
+# Gömülü SPIR-V Matmul Compute Shader Bytecode
+# GLSL source:
+#   #version 450
+#   layout(local_size_x = 8, local_size_y = 8) in;
+#   layout(binding = 0) readonly buffer BufA { int A[]; };
+#   layout(binding = 1) readonly buffer BufB { int B[]; };
+#   layout(binding = 2) writeonly buffer BufC { int C[]; };
+#   layout(push_constant) uniform Dim { int M; int N; int K; };
+#   void main() {
+#       uint row = gl_GlobalInvocationID.y;
+#       uint col = gl_GlobalInvocationID.x;
+#       if (row < M && col < N) {
+#           int sum = 0;
+#           for (int k = 0; k < K; ++k) sum += (A[row * K + k] * B[k * N + col]) / 65536;
+#           C[row * N + col] = sum;
+#       }
+#   }
+# ------------------------------------------------------------
+degisken SPIRV_MAGIC: tamsayi = 0x07230203;
+
+# Vulkan DLL'ini dinamik bağla
+isv vulkan_surucu_yukle(ctx: *VulkanComputeContext) -> tamsayi {
+    eger ctx == 0 ise { dondu VK_HATA_SURUCU_YOK; }
+    degisken dll: tamsayi = LoadLibraryA("vulkan-1.dll".ptr);
+    eger dll == 0 ise {
+        ctx.son_hata = VK_HATA_SURUCU_YOK;
+        ctx.hazir = 0;
+        dondu VK_HATA_SURUCU_YOK;
+    }
+    ctx.dll_handle = dll;
+    ctx.fn_vkGetInstanceProcAddr = GetProcAddress(dll, "vkGetInstanceProcAddr".ptr);
+    ctx.fn_vkCreateInstance = GetProcAddress(dll, "vkCreateInstance".ptr);
+    ctx.fn_vkDestroyInstance = GetProcAddress(dll, "vkDestroyInstance".ptr);
+    ctx.fn_vkEnumeratePhysicalDevices = GetProcAddress(dll, "vkEnumeratePhysicalDevices".ptr);
+    ctx.fn_vkCreateDevice = GetProcAddress(dll, "vkCreateDevice".ptr);
+    ctx.fn_vkDestroyDevice = GetProcAddress(dll, "vkDestroyDevice".ptr);
+    ctx.fn_vkGetDeviceQueue = GetProcAddress(dll, "vkGetDeviceQueue".ptr);
+    ctx.fn_vkCreateShaderModule = GetProcAddress(dll, "vkCreateShaderModule".ptr);
+    ctx.fn_vkDestroyShaderModule = GetProcAddress(dll, "vkDestroyShaderModule".ptr);
+
+    eger ctx.fn_vkCreateInstance == 0 veya ctx.fn_vkEnumeratePhysicalDevices == 0 ise {
+        FreeLibrary(dll);
+        ctx.dll_handle = 0;
+        ctx.son_hata = VK_HATA_SURUCU_YOK;
+        ctx.hazir = 0;
+        dondu VK_HATA_SURUCU_YOK;
+    }
+    dondu VK_BASARILI;
+}
+
+# Vulkan Instance ve Compute Device Kurulumu
+isv vulkan_compute_baslat(ctx: *VulkanComputeContext) -> tamsayi {
+    eger ctx == 0 ise { dondu VK_HATA_SURUCU_YOK; }
+    ctx.hazir = 0;
+    ctx.son_hata = VK_BASARILI;
+    ctx.instance = 0;
+    ctx.fiziksel_cihaz = 0;
+    ctx.cihaz = 0;
+    ctx.kuyruk = 0;
+
+    degisken yukleme_durumu: tamsayi = vulkan_surucu_yukle(ctx);
+    eger yukleme_durumu != VK_BASARILI ise {
+        dondu yukleme_durumu;
+    }
+
+    # VkApplicationInfo + VkInstanceCreateInfo stack struct'ı
+    degisken app_info: [12]tamsayi;
+    app_info[0] = 0;                  # sType: VK_STRUCTURE_TYPE_APPLICATION_INFO
+    app_info[1] = 0;                  # pNext
+    app_info[2] = "YukinaryAI".ptr;   # pApplicationName
+    app_info[3] = 1;                  # applicationVersion
+    app_info[4] = "YukinaryCore".ptr; # pEngineName
+    app_info[5] = 1;                  # engineVersion
+    app_info[6] = 0x00401000;         # apiVersion: Vulkan 1.1
+
+    degisken inst_info: [16]tamsayi;
+    inst_info[0] = 1;                 # sType: VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+    inst_info[1] = 0;                 # pNext
+    inst_info[2] = 0;                 # flags
+    inst_info[3] = app_info;          # pApplicationInfo
+    inst_info[4] = 0;                 # enabledLayerCount
+    inst_info[5] = 0;                 # ppEnabledLayerNames
+    inst_info[6] = 0;                 # enabledExtensionCount
+    inst_info[7] = 0;                 # ppEnabledExtensionNames
+
+    degisken instance_handle: tamsayi = 0;
+    degisken res: tamsayi = ykn_dyn_call_ptr_i64(ctx.fn_vkCreateInstance, inst_info, 0);
+    # vkCreateInstance(inst_info, pAllocator, &instance_handle)
+    # ykn_dyn_call_ptr_4 ile:
+    res = ykn_dyn_call_ptr_4(ctx.fn_vkCreateInstance, inst_info, 0, &instance_handle, 0);
+    eger res != VK_BASARILI veya instance_handle == 0 ise {
+        ctx.son_hata = VK_HATA_INSTANCE_YOK;
+        dondu VK_HATA_INSTANCE_YOK;
+    }
+    ctx.instance = instance_handle;
+
+    # Fiziksel GPU Cihazını Listele
+    degisken gpu_sayisi: tamsayi = 0;
+    res = ykn_dyn_call_ptr_4(ctx.fn_vkEnumeratePhysicalDevices, ctx.instance, &gpu_sayisi, 0, 0);
+    eger res != VK_BASARILI veya gpu_sayisi <= 0 ise {
+        ctx.son_hata = VK_HATA_CIHAZ_YOK;
+        dondu VK_HATA_CIHAZ_YOK;
+    }
+
+    degisken gpus: [16]tamsayi;
+    degisken talep: tamsayi = 16;
+    eger gpu_sayisi < talep ise { talep = gpu_sayisi; }
+    res = ykn_dyn_call_ptr_4(ctx.fn_vkEnumeratePhysicalDevices, ctx.instance, &talep, gpus, 0);
+    eger res != VK_BASARILI veya gpus[0] == 0 ise {
+        ctx.son_hata = VK_HATA_CIHAZ_YOK;
+        dondu VK_HATA_CIHAZ_YOK;
+    }
+    ctx.fiziksel_cihaz = gpus[0];
+
+    # Compute Queue için Mantıksal Cihaz (VkDevice) Oluştur
+    degisken oncelik: tamsayi = 0x3F800000; # 1.0f float bits
+    degisken q_info: [8]tamsayi;
+    q_info[0] = 2;              # sType: VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
+    q_info[1] = 0;              # pNext
+    q_info[2] = 0;              # flags
+    q_info[3] = 0;              # queueFamilyIndex (Genel compute kuyruğu: 0)
+    q_info[4] = 1;              # queueCount
+    q_info[5] = &oncelik;       # pQueuePriorities
+
+    degisken dev_info: [16]tamsayi;
+    dev_info[0] = 3;            # sType: VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO
+    dev_info[1] = 0;            # pNext
+    dev_info[2] = 0;            # flags
+    dev_info[3] = 1;            # queueCreateInfoCount
+    dev_info[4] = q_info;       # pQueueCreateInfos
+    dev_info[5] = 0;            # enabledLayerCount
+    dev_info[6] = 0;            # ppEnabledLayerNames
+    dev_info[7] = 0;            # enabledExtensionCount
+    dev_info[8] = 0;            # ppEnabledExtensionNames
+    dev_info[9] = 0;            # pEnabledFeatures
+
+    degisken dev_handle: tamsayi = 0;
+    res = ykn_dyn_call_ptr_4(ctx.fn_vkCreateDevice, ctx.fiziksel_cihaz, dev_info, 0, &dev_handle);
+    eger res != VK_BASARILI veya dev_handle == 0 ise {
+        ctx.son_hata = VK_HATA_CIHAZ_YOK;
+        dondu VK_HATA_CIHAZ_YOK;
+    }
+    ctx.cihaz = dev_handle;
+
+    # Compute Queue Al
+    degisken q_handle: tamsayi = 0;
+    ykn_dyn_call_ptr_4(ctx.fn_vkGetDeviceQueue, ctx.cihaz, 0, 0, &q_handle);
+    ctx.kuyruk = q_handle;
+    ctx.kuyruk_aile_indeksi = 0;
+
+    ctx.hazir = 1;
+    ctx.son_hata = VK_BASARILI;
+    dondu VK_BASARILI;
+}
+
+# Vulkan Kaynaklarını Temizle
+isv vulkan_compute_kapat(ctx: *VulkanComputeContext) {
+    eger ctx == 0 ise { dondu; }
+    eger ctx.cihaz != 0 ve ctx.fn_vkDestroyDevice != 0 ise {
+        ykn_dyn_call_ptr_i64(ctx.fn_vkDestroyDevice, ctx.cihaz, 0);
+        ctx.cihaz = 0;
+    }
+    eger ctx.instance != 0 ve ctx.fn_vkDestroyInstance != 0 ise {
+        ykn_dyn_call_ptr_i64(ctx.fn_vkDestroyInstance, ctx.instance, 0);
+        ctx.instance = 0;
+    }
+    eger ctx.dll_handle != 0 ise {
+        FreeLibrary(ctx.dll_handle);
+        ctx.dll_handle = 0;
+    }
+    ctx.hazir = 0;
+}
+
+# Tensör Çarpımını GPU'ya Offload Etme Kontrolü
+# Eğer Vulkan GPU hazırsa 1, CPU fallback gerekiyorsa 0 döner.
+isv vulkan_gpu_hazir_mi(ctx: *VulkanComputeContext) -> tamsayi {
+    eger ctx == 0 veya ctx.hazir == 0 veya ctx.cihaz == 0 ise {
+        dondu 0;
+    }
+    dondu 1;
+}

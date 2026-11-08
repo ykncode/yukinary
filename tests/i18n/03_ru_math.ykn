@@ -1,0 +1,10 @@
+# Русский Тест: Функции и циклы
+функция главная(argc: tamsayi, argv: **u8) -> tamsayi {
+    перем x: tamsayi = 10;
+    если x > 5 то {
+        ekrana_yaz("Привет из Yukinary на русском!\n".ptr);
+    } иначе {
+        ekrana_yaz("Ошибка!\n".ptr);
+    }
+    вернуть 0;
+}

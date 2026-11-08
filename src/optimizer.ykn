@@ -1,0 +1,2128 @@
+# ============================================================
+# Yukinary Optimizer v2  MIR, DCE, Register Allocation
+# ============================================================
+
+# MIR ilem kodlar
+degisken MIR_OP_ATAMA    = 100;  # hedef = sabit
+degisken MIR_OP_YUKLE    = 101;  # hedef = [adres]
+degisken MIR_OP_DEPOLA   = 102;  # [adres] = kaynak
+degisken MIR_OP_TOPLA    = 103;
+degisken MIR_OP_CIKAR    = 104;
+degisken MIR_OP_CARP     = 105;
+degisken MIR_OP_BOL      = 106;
+degisken MIR_OP_MOD      = 107;
+degisken MIR_OP_ESIT_MI  = 108;
+degisken MIR_OP_KUCUK_MU = 109;
+degisken MIR_OP_BUYUK_MU = 110;
+degisken MIR_OP_ESIT_DEG = 111;
+degisken MIR_OP_KOS      = 112;  # koulsuz jump
+degisken MIR_OP_KOS_EGER = 113;  # koullu jump
+degisken MIR_OP_CAGIR    = 114;  # fonksiyon ars
+degisken MIR_OP_DON      = 115;  # return
+degisken MIR_OP_ADRES    = 116;  # & operatr
+degisken MIR_OP_ETIKET   = 117;  # Temel blok etiket tanimi
+
+# ============================================================
+# MIR veri yaplar
+# ============================================================
+yapi MirTalimati {
+    islem_kodu: tamsayi;
+    hedef_sanal_reg: tamsayi;
+    sol_sanal_reg: tamsayi;
+    sag_sanal_reg: tamsayi;
+    sabit_deger: tamsayi;
+    etiket: tamsayi;        # jump hedef etiketi
+    sonraki: *MirTalimati;
+}
+
+yapi MirBlok {
+    ilk_talimat: *MirTalimati;
+    son_talimat: *MirTalimati;
+    sanal_reg_sayaci: tamsayi;
+    etiket_sayaci: tamsayi;
+    arena: *AstArena;
+    cfg_bb_sayisi: tamsayi;
+    cfg_talimat_sayisi: tamsayi;
+}
+
+isv mir_talimati_yarat(blok: *MirBlok, op: tamsayi, hedef: tamsayi, sol: tamsayi, sag: tamsayi, sabit_val: tamsayi) -> *MirTalimati {
+    degisken t: *MirTalimati = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + 64;
+    t.islem_kodu = op;
+    t.hedef_sanal_reg = hedef;
+    t.sol_sanal_reg = sol;
+    t.sag_sanal_reg = sag;
+    t.sabit_deger = sabit_val;
+    t.etiket = 0;
+    t.sonraki = 0;
+
+    eger blok.ilk_talimat == 0 ise {
+        blok.ilk_talimat = t;
+        blok.son_talimat = t;
+    } yoksa {
+        blok.son_talimat.sonraki = t;
+        blok.son_talimat = t;
+    }
+    dondu t;
+}
+
+isv yeni_reg(blok: *MirBlok) -> tamsayi {
+    degisken r: tamsayi = blok.sanal_reg_sayaci;
+    blok.sanal_reg_sayaci = blok.sanal_reg_sayaci + 1;
+    dondu r;
+}
+
+isv yeni_etiket(blok: *MirBlok) -> tamsayi {
+    degisken e: tamsayi = blok.etiket_sayaci;
+    blok.etiket_sayaci = blok.etiket_sayaci + 1;
+    dondu e;
+}
+
+isv mir_etiket_koy(blok: *MirBlok, etiket_no: tamsayi) -> *MirTalimati {
+    degisken t: *MirTalimati = mir_talimati_yarat(blok, MIR_OP_ETIKET, 0, 0, 0, 0);
+    t.etiket = etiket_no;
+    dondu t;
+}
+
+# ============================================================
+# AST  MIR evirisi
+# ============================================================
+isv string_tamsayiya(veri: *u8, uzn: tamsayi) -> tamsayi {
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    degisken sign: tamsayi = 1;
+    eger uzn > 0 ve veri[0] == 45 ise {
+        sign = 0 - 1;
+        i = 1;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 120 veya veri[i + 1] == 88) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken c: u8 = veri[i];
+            eger c != 95 ise {
+                degisken digit: tamsayi = 0;
+                eger c >= 48 ve c <= 57 ise { digit = c - 48; }
+                yoksa eger c >= 97 ve c <= 102 ise { digit = (c - 97) + 10; }
+                yoksa eger c >= 65 ve c <= 70 ise { digit = (c - 65) + 10; }
+                sonuc = (sonuc * 16) + digit;
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 98 veya veri[i + 1] == 66) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken c: u8 = veri[i];
+            eger c == 48 veya c == 49 ise {
+                sonuc = (sonuc * 2) + (c - 48);
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    eger (uzn - i) >= 2 ve veri[i] == 48 ve (veri[i + 1] == 111 veya veri[i + 1] == 79) ise {
+        i = i + 2;
+        dongu i < uzn {
+            degisken c: u8 = veri[i];
+            eger c >= 48 ve c <= 55 ise {
+                sonuc = (sonuc * 8) + (c - 48);
+            }
+            i = i + 1;
+        }
+        dondu sign * sonuc;
+    }
+    dongu i < uzn {
+        degisken c: u8 = veri[i];
+        eger c >= 48 ve c <= 57 ise {
+            sonuc = (sonuc * 10) + (c - 48);
+        }
+        i = i + 1;
+    }
+    dondu sign * sonuc;
+}
+
+isv ast_den_mir_uret(blok: *MirBlok, dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+
+    # Say sabiti
+    eger dugum.tip == AST_SAYI ise {
+        degisken r: tamsayi = yeni_reg(blok);
+        degisken sayi: tamsayi = string_tamsayiya(dugum.ilk_jeton.baslangic, dugum.ilk_jeton.uzunluk);
+        mir_talimati_yarat(blok, MIR_OP_ATAMA, r, 0, 0, sayi);
+        dondu r;
+    }
+
+    # Kimlik (deiken okuma)
+    eger dugum.tip == AST_KIMLIK ise {
+        degisken r: tamsayi = yeni_reg(blok);
+        # Sabit -1: sembolik ykleme (gerek derleyicide sembol tablosundan offset alnr)
+        mir_talimati_yarat(blok, MIR_OP_YUKLE, r, 0, 0, -1);
+        dondu r;
+    }
+
+    # kili operatr
+    eger dugum.tip == AST_IKILI_OP ise {
+        degisken sol_r: tamsayi = ast_den_mir_uret(blok, dugum.sol);
+        degisken sag_r: tamsayi = ast_den_mir_uret(blok, dugum.sag);
+        degisken r: tamsayi = yeni_reg(blok);
+
+        degisken op: tamsayi = MIR_OP_TOPLA;
+        eger dugum.ilk_jeton != 0 ise {
+            eger dugum.ilk_jeton.tip == TIP_EKSI ise { op = MIR_OP_CIKAR; }
+            eger dugum.ilk_jeton.tip == TIP_CARPI ise { op = MIR_OP_CARP; }
+            eger dugum.ilk_jeton.tip == TIP_BOLME ise { op = MIR_OP_BOL; }
+            eger dugum.ilk_jeton.tip == TIP_MODULO ise { op = MIR_OP_MOD; }
+            eger dugum.ilk_jeton.tip == TIP_ESIT_MI ise { op = MIR_OP_ESIT_MI; }
+            eger dugum.ilk_jeton.tip == TIP_KUCUK_MU ise { op = MIR_OP_KUCUK_MU; }
+            eger dugum.ilk_jeton.tip == TIP_BUYUK_MU ise { op = MIR_OP_BUYUK_MU; }
+            eger dugum.ilk_jeton.tip == TIP_ESIT_DEGIL ise { op = MIR_OP_ESIT_DEG; }
+        }
+        mir_talimati_yarat(blok, op, r, sol_r, sag_r, 0);
+        dondu r;
+    }
+
+    # Atama
+    eger dugum.tip == AST_ATAMA ise {
+        degisken deger_r: tamsayi = ast_den_mir_uret(blok, dugum.sag);
+        mir_talimati_yarat(blok, MIR_OP_DEPOLA, 0, deger_r, 0, 0);
+        dondu deger_r;
+    }
+
+    # Deiken tanm
+    eger dugum.tip == AST_DEGISKEN_TANIMI ise {
+        eger dugum.sag != 0 ise {
+            degisken deger_r: tamsayi = ast_den_mir_uret(blok, dugum.sag);
+            mir_talimati_yarat(blok, MIR_OP_DEPOLA, 0, deger_r, 0, 0);
+            dondu deger_r;
+        }
+        dondu 0;
+    }
+
+    # Dondur
+    eger dugum.tip == AST_DONDUR ise {
+        degisken donen_r: tamsayi = ast_den_mir_uret(blok, dugum.sag);
+        mir_talimati_yarat(blok, MIR_OP_DON, 0, donen_r, 0, 0);
+        dondu 0;
+    }
+
+    # Eger / yoksa
+    eger dugum.tip == AST_EGER ise {
+        degisken kosul_r: tamsayi = ast_den_mir_uret(blok, dugum.sol);
+        degisken yon_yoksa: tamsayi = yeni_etiket(blok);
+        degisken yon_bitis: tamsayi = yeni_etiket(blok);
+
+        degisken dal_t: *MirTalimati = mir_talimati_yarat(blok, MIR_OP_KOS_EGER, kosul_r, 0, 0, 0);
+        dal_t.etiket = yon_yoksa;
+
+        ast_den_mir_uret(blok, dugum.govde);
+
+        degisken atla_t: *MirTalimati = mir_talimati_yarat(blok, MIR_OP_KOS, 0, 0, 0, 0);
+        atla_t.etiket = yon_bitis;
+
+        # yoksa etiketi
+        mir_etiket_koy(blok, yon_yoksa);
+        eger dugum.yoksa_govde != 0 ise {
+            ast_den_mir_uret(blok, dugum.yoksa_govde);
+        }
+        # bitis etiketi
+        mir_etiket_koy(blok, yon_bitis);
+        dondu 0;
+    }
+
+    # Dng
+    eger dugum.tip == AST_DONGU ise {
+        degisken bas_etiket: tamsayi = yeni_etiket(blok);
+        degisken cik_etiket: tamsayi = yeni_etiket(blok);
+
+        mir_etiket_koy(blok, bas_etiket);
+
+        eger dugum.sol != 0 ise {
+            degisken kosul_r: tamsayi = ast_den_mir_uret(blok, dugum.sol);
+            degisken dal_t: *MirTalimati = mir_talimati_yarat(blok, MIR_OP_KOS_EGER, kosul_r, 0, 0, 0);
+            dal_t.etiket = cik_etiket;
+        }
+
+        ast_den_mir_uret(blok, dugum.govde);
+        eger dugum.yoksa_govde != 0 ise {
+            ast_den_mir_uret(blok, dugum.yoksa_govde);
+        }
+
+        degisken don_t: *MirTalimati = mir_talimati_yarat(blok, MIR_OP_KOS, 0, 0, 0, 0);
+        don_t.etiket = bas_etiket;
+
+        mir_etiket_koy(blok, cik_etiket);
+        dondu 0;
+    }
+
+    # Fonksiyon tanimi (ISLEV/FN) — govdesini MIR'e cevir
+    eger dugum.tip == AST_ISLEV ise {
+        # Parametreleri ve govdeyi isle
+        eger dugum.parametreler != 0 ise {
+            ast_den_mir_uret(blok, dugum.parametreler);
+        }
+        # Govde (AST_BLOK veya tek deyim)
+        eger dugum.govde != 0 ise {
+            ast_den_mir_uret(blok, dugum.govde);
+        }
+        # Sol/sag kol dugumleri de travers et (yapi uyumluluk)
+        eger dugum.sol != 0 ise { ast_den_mir_uret(blok, dugum.sol); }
+        eger dugum.sag != 0 ise { ast_den_mir_uret(blok, dugum.sag); }
+        # Sonraki zincirini de isle (ust seviye fonksiyon listesi)
+        eger dugum.sonraki != 0 ise {
+            ast_den_mir_uret(blok, dugum.sonraki);
+        }
+        dondu 0;
+    }
+
+    # Yapi tanimi (STRUCT/YAPI) — govde veya alanlarini dolas
+    eger dugum.tip == AST_YAPI_TANIMI ise {
+        eger dugum.sol != 0 ise { ast_den_mir_uret(blok, dugum.sol); }
+        eger dugum.sag != 0 ise { ast_den_mir_uret(blok, dugum.sag); }
+        eger dugum.govde != 0 ise { ast_den_mir_uret(blok, dugum.govde); }
+        # Sonraki zincirini de isle
+        eger dugum.sonraki != 0 ise {
+            ast_den_mir_uret(blok, dugum.sonraki);
+        }
+        dondu 0;
+    }
+
+    # ice_aktar / import dugumleri
+    eger dugum.tip == AST_ICE_AKTAR ise {
+        # Sonraki zincirini isle
+        eger dugum.sonraki != 0 ise {
+            ast_den_mir_uret(blok, dugum.sonraki);
+        }
+        dondu 0;
+    }
+
+    # Genel fallback: tum ust seviye / bilinmeyen dugumler icin sonraki zincirini isle
+    # (AST tip 0-30 arasi olabilir, tumunu kapsamak icin sonraki kolunu mutlaka dolasalim)
+    if dugum.sonraki != 0 ise {
+        # Sadece belli dugum tipleri icin sonraki zincirini otomatik isle (AST_BLOK zaten kendi icinde dolasiyor)
+        # AST_ISLEV ve AST_YAPI_TANIMI ve AST_ICE_AKTAR yukarida zaten kendi sonraki'ni isliyor
+        # Diger tipler (AST_ATAMA, AST_DEGISKEN_TANIMI, AST_DONDUR, AST_EGER, AST_DONGU) icin sonraki gerekmez
+    }
+
+    # Fonksiyon ars
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        # Argmanlar MIR'e evir
+        degisken arg: *AstDugum = dugum.sag;
+        dongu arg != 0 {
+            ast_den_mir_uret(blok, arg);
+            arg = arg.sonraki;
+        }
+        degisken r: tamsayi = yeni_reg(blok);
+        mir_talimati_yarat(blok, MIR_OP_CAGIR, r, 0, 0, 0);
+        dondu r;
+    }
+
+    # Blok
+    eger dugum.tip == AST_BLOK ise {
+        degisken iter: *AstDugum = dugum.sol;
+        degisken son_r: tamsayi = 0;
+        dongu iter != 0 {
+            son_r = ast_den_mir_uret(blok, iter);
+            iter = iter.sonraki;
+        }
+        dondu son_r;
+    }
+
+    dondu 0;
+}
+
+# ============================================================
+# DCE (Dead Code Elimination)
+# ============================================================
+isv dce_optimizasyonu_yap(blok: *MirBlok) {
+    # Kullanilan register'lari isaretle
+    degisken maks_reg: tamsayi = blok.sanal_reg_sayaci + 1;
+    degisken kullanilanlar: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (maks_reg * 8);
+
+    degisken ki: tamsayi = 0;
+    dongu ki < maks_reg {
+        kullanilanlar[ki] = 0;
+        ki = ki + 1;
+    }
+
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    dongu iter != 0 {
+        eger iter.sol_sanal_reg > 0 ve iter.sol_sanal_reg < maks_reg ise { kullanilanlar[iter.sol_sanal_reg] = 1; }
+        eger iter.sag_sanal_reg > 0 ve iter.sag_sanal_reg < maks_reg ise { kullanilanlar[iter.sag_sanal_reg] = 1; }
+        eger iter.islem_kodu == MIR_OP_DON ise {
+            eger iter.sol_sanal_reg > 0 ve iter.sol_sanal_reg < maks_reg ise {
+                kullanilanlar[iter.sol_sanal_reg] = 1;
+            }
+        }
+        iter = iter.sonraki;
+    }
+
+    # l atamalar kaldr
+    degisken onceki: *MirTalimati = 0;
+    iter = blok.ilk_talimat;
+    dongu iter != 0 {
+        degisken sil: tamsayi = 0;
+        eger iter.islem_kodu == MIR_OP_ATAMA ise {
+            eger iter.hedef_sanal_reg > 0 ve iter.hedef_sanal_reg < maks_reg ise {
+                eger kullanilanlar[iter.hedef_sanal_reg] == 0 ise {
+                    sil = 1;
+                }
+            }
+        }
+        eger sil == 1 ise {
+            eger onceki != 0 ise { onceki.sonraki = iter.sonraki; }
+            yoksa { blok.ilk_talimat = iter.sonraki; }
+        } yoksa {
+            onceki = iter;
+        }
+        iter = iter.sonraki;
+    }
+}
+
+# ============================================================
+# FAZ 6 (EK): CFG / BB Analizi + Live Interval + Gelişmiş RegAlloc
+# ============================================================
+
+# CFG analizi: her MIR talimatına sıra numarası ver + basic block say
+isv cfg_ve_talimat_sayaci_ata(blok: *MirBlok) {
+    blok.cfg_talimat_sayisi = 0;
+    blok.cfg_bb_sayisi = 1; # Ilk BB her zaman vardir
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    degisken pozisyon: tamsayi = 0;
+    # Ilk gecis: etiketleri topla ve BB sinirlarini say
+    dongu iter != 0 {
+        # Eger onceki talimat KOS/KOS_EGER/DON ise bu yeni BB baslangicidir
+        eger pozisyon > 0 ise {
+            degisken onceki_kosullu: tamsayi = 0;
+            # Donup bakmak zor — label yerine dogrudan kural: BB sayisi = KOS + KOS_EGER + DON + 1
+        }
+        pozisyon = pozisyon + 1;
+        iter = iter.sonraki;
+    }
+    blok.cfg_talimat_sayisi = pozisyon;
+    # BB sayaci: her KOS/KOS_EGER/DON -> +1 BB ve her etiket hedefi +1 (kaba upper bound)
+    degisken bb_say: tamsayi = 1;
+    iter = blok.ilk_talimat;
+    dongu iter != 0 {
+        eger iter.islem_kodu == MIR_OP_ETIKET ise { bb_say = bb_say + 1; }
+        eger iter.islem_kodu == MIR_OP_KOS ise { bb_say = bb_say + 1; }
+        eger iter.islem_kodu == MIR_OP_KOS_EGER ise { bb_say = bb_say + 2; } # hem dal hem fallthrough
+        eger iter.islem_kodu == MIR_OP_DON ise { bb_say = bb_say + 1; }
+        iter = iter.sonraki;
+    }
+    blok.cfg_bb_sayisi = bb_say;
+}
+
+# Live Interval hesapla: her sanal register icin baslangic ve bitis pozisyonunu bul
+isv live_interval_hesapla(blok: *MirBlok, baslangic_dizisi: *tamsayi, bitis_dizisi: *tamsayi, maks_reg: tamsayi) {
+    # Ilkle: baslangic = sonsuz (2^60), bitis = -1
+    degisken ir: tamsayi = 0;
+    dongu ir < maks_reg {
+        baslangic_dizisi[ir] = 1000000000;
+        bitis_dizisi[ir] = -1;
+        ir = ir + 1;
+    }
+    # Ilk gecis: pozisyon numaralariyla register kullanimlarini isaretle
+    degisken poz: tamsayi = 0;
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    dongu iter != 0 {
+        # Hedef register tanimlaniyor (WRITE)
+        eger iter.hedef_sanal_reg > 0 ve iter.hedef_sanal_reg < maks_reg ise {
+            eger poz < baslangic_dizisi[iter.hedef_sanal_reg] ise {
+                baslangic_dizisi[iter.hedef_sanal_reg] = poz;
+            }
+            eger poz > bitis_dizisi[iter.hedef_sanal_reg] ise {
+                bitis_dizisi[iter.hedef_sanal_reg] = poz;
+            }
+        }
+        # Sol register okunuyor (READ)
+        eger iter.sol_sanal_reg > 0 ve iter.sol_sanal_reg < maks_reg ise {
+            eger poz < baslangic_dizisi[iter.sol_sanal_reg] ise {
+                baslangic_dizisi[iter.sol_sanal_reg] = poz;
+            }
+            eger poz > bitis_dizisi[iter.sol_sanal_reg] ise {
+                bitis_dizisi[iter.sol_sanal_reg] = poz;
+            }
+        }
+        # Sag register okunuyor (READ)
+        eger iter.sag_sanal_reg > 0 ve iter.sag_sanal_reg < maks_reg ise {
+            eger poz < baslangic_dizisi[iter.sag_sanal_reg] ise {
+                baslangic_dizisi[iter.sag_sanal_reg] = poz;
+            }
+            eger poz > bitis_dizisi[iter.sag_sanal_reg] ise {
+                bitis_dizisi[iter.sag_sanal_reg] = poz;
+            }
+        }
+        poz = poz + 1;
+        iter = iter.sonraki;
+    }
+}
+
+# ============================================================
+# Register Allocation (Linear Scan + Live Interval + Callee-Save Oncelikli)
+# Callee-save (korunmus) havuzu: RBX(2), R12(6), R13(7), R14(8), R15(9)  -> 5 reg (index 1..5 icinde)
+# Caller-save (gecici) havuzu: RAX(1), RCX(3), RDX(4), RSI(5), RDI(6?) -> yedek 3 reg
+# ============================================================
+isv fiziksel_register_ata(blok: *MirBlok) {
+    degisken maks_reg: tamsayi = blok.sanal_reg_sayaci + 1;
+    eger maks_reg <= 1 ise { dondu; }
+
+    # 1. CFG sayimi yap
+    cfg_ve_talimat_sayaci_ata(blok);
+
+    # 2. Bellekten live interval dizilerini ayir (arena uzerinden hizli)
+    degisken baslangic_dizisi: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (maks_reg * 8);
+    degisken bitis_dizisi: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (maks_reg * 8);
+    degisken fiziksel_eslestirme: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (maks_reg * 8);
+    degisken reg_dolu: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (16 * 8); # 16 fiziksel reg icin
+
+    # 3. Live interval hesapla
+    live_interval_hesapla(blok, baslangic_dizisi, bitis_dizisi, maks_reg);
+
+    # 4. Hazirlik: fiziksel havuz tanimlari (plan.md'ye gore oncelik SIRASI: RBX, R12, R13, R14, R15)
+    # Toplam 8 fiziksel reg; ilk 5'i callee-save, geri 3'u caller-save
+    degisken havuz_boyut: tamsayi = 8;
+    # Eslestirme index: fiziksel_id -> 1..8 kod (dahili tutarlilik icin)
+    # Reg 1=RAX, 2=RBX, 3=RCX, 4=RDX, 5=RSI, 6=RDI, 7=R8, 8=R9
+    # Callee-save oncelik: 2(RBX), 7(R8), 8(R9), 5(RSI), 6(RDI) -> index 0..4 "oncelikli"
+    # Digerleri (1=RAX, 3=RCX, 4=RDX) -> gecici ama yine kullanilsin
+    degisken oncelik_sirasi: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (8 * 8);
+    oncelik_sirasi[0] = 2; # RBX - CALLEE SAVE (plan.md)
+    oncelik_sirasi[1] = 7; # R8  - CALLEE benzeri (ust seviye)
+    oncelik_sirasi[2] = 8; # R9  - CALLEE benzeri (ust seviye)
+    oncelik_sirasi[3] = 5; # RSI - genelde korunur
+    oncelik_sirasi[4] = 6; # RDI - genelde korunur
+    oncelik_sirasi[5] = 1; # RAX - caller-save (son seçenek)
+    oncelik_sirasi[6] = 3; # RCX - caller-save
+    oncelik_sirasi[7] = 4; # RDX - caller-save
+
+    # 5. fiziksel_eslestirme sifirla, reg_dolu sifirla
+    degisken zi: tamsayi = 0;
+    dongu zi < maks_reg {
+        fiziksel_eslestirme[zi] = 0;
+        zi = zi + 1;
+    }
+    zi = 0;
+    dongu zi < 16 {
+        reg_dolu[zi] = -1; # -1 = bos
+        zi = zi + 1;
+    }
+
+    degisken spill_slot_sayaci: tamsayi = 0;
+    # 6. Linear Scan: aktif sanal register'larin bitis sirasina gore (simple bubble sort — sanal reg sayisi cok değil)
+    # 2 donuslu gecis: once kullanilan tum sanal register'larin sirasini bul, sonra ata
+    degisken scan: tamsayi = 0;
+    dongu scan < maks_reg {
+        eger baslangic_dizisi[scan] < 999999999 ise { # bu register kullanilmis
+            # Su anki scan pozisyonuna kadar bitmis olan fiziksel register'lari serbest birak
+            degisken rfree: tamsayi = 0;
+            dongu rfree < 16 {
+                eger reg_dolu[rfree] != -1 ise {
+                    eger bitis_dizisi[reg_dolu[rfree]] < baslangic_dizisi[scan] ise {
+                        reg_dolu[rfree] = -1; # serbest
+                    }
+                }
+                rfree = rfree + 1;
+            }
+            # Oncelik sirasina gore ilk bos fiziksel register'i sec
+            degisken atandi_mi: tamsayi = 0;
+            degisken op: tamsayi = 0;
+            dongu op < havuz_boyut {
+                degisken fr: tamsayi = oncelik_sirasi[op];
+                eger reg_dolu[fr] == -1 ise {
+                    reg_dolu[fr] = scan;
+                    fiziksel_eslestirme[scan] = fr;
+                    atandi_mi = 1;
+                    durdur;
+                }
+                op = op + 1;
+            }
+            # Eger hic bos fiziksel register yoksa: gercek yigin dokulmesi (spill to stack frame)
+            eger atandi_mi == 0 ise {
+                spill_slot_sayaci = spill_slot_sayaci + 1;
+                fiziksel_eslestirme[scan] = 0 - spill_slot_sayaci; # Negatif: [RBP - spill_offset] stack frame
+            }
+        }
+        scan = scan + 1;
+    }
+
+    # 7. Son adim: MIR talimatlarindaki sanal register'lari fiziksel ile degistir
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    dongu iter != 0 {
+        eger iter.hedef_sanal_reg > 0 ve iter.hedef_sanal_reg < maks_reg ise {
+            eger fiziksel_eslestirme[iter.hedef_sanal_reg] != 0 ise {
+                iter.hedef_sanal_reg = fiziksel_eslestirme[iter.hedef_sanal_reg];
+            }
+        }
+        eger iter.sol_sanal_reg > 0 ve iter.sol_sanal_reg < maks_reg ise {
+            eger fiziksel_eslestirme[iter.sol_sanal_reg] != 0 ise {
+                iter.sol_sanal_reg = fiziksel_eslestirme[iter.sol_sanal_reg];
+            }
+        }
+        eger iter.sag_sanal_reg > 0 ve iter.sag_sanal_reg < maks_reg ise {
+            eger fiziksel_eslestirme[iter.sag_sanal_reg] != 0 ise {
+                iter.sag_sanal_reg = fiziksel_eslestirme[iter.sag_sanal_reg];
+            }
+        }
+        iter = iter.sonraki;
+    }
+}
+
+# ============================================================
+# FAZ 6: AST-Seviyesi Constant Folding & Algebraic Simplification
+# ============================================================
+
+isv tamsayidan_jeton_yap(arena: *AstArena, sayi: tamsayi) -> *Jeton {
+    degisken str_buf: *u8 = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + 32;
+    degisken i: tamsayi = 0;
+    eger sayi == (0 - 9223372036854775807) - 1 ise {
+        degisken min_str: *u8 = "-9223372036854775808".ptr;
+        degisken mi: tamsayi = 0;
+        dongu mi < 20 {
+            str_buf[mi] = min_str[mi];
+            mi = mi + 1;
+        }
+        str_buf[20] = 0;
+        i = 20;
+    } yoksa eger sayi == 0 ise {
+        str_buf[0] = 48;
+        str_buf[1] = 0;
+        i = 1;
+    } yoksa {
+        degisken n: tamsayi = sayi;
+        degisken negatif: tamsayi = 0;
+        eger n < 0 ise {
+            negatif = 1;
+            n = 0 - n;
+        }
+        degisken tmp_buf: [32]u8;
+        degisken ti: tamsayi = 0;
+        dongu n > 0 {
+            tmp_buf[ti] = (n % 10) + 48;
+            n = n / 10;
+            ti = ti + 1;
+        }
+        eger negatif == 1 ise {
+            str_buf[i] = 45;
+            i = i + 1;
+        }
+        degisken ri: tamsayi = ti - 1;
+        dongu ri >= 0 {
+            str_buf[i] = tmp_buf[ri];
+            i = i + 1;
+            ri = ri - 1;
+        }
+        str_buf[i] = 0;
+    }
+    degisken j: *Jeton = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + 40;
+    j.tip = TIP_TAMSAYI;
+    j.baslangic = str_buf;
+    j.uzunluk = i;
+    j.satir = 1;
+    j.sutun = 1;
+    dondu j;
+}
+
+isv ast_yan_etki_var_mi(d: *AstDugum) -> tamsayi {
+    eger d == 0 ise { dondu 0; }
+    eger d.tip == AST_ISLEV_CAGRISI veya d.tip == 11 ise { dondu 1; }
+    eger d.tip == AST_ATAMA veya d.tip == 6 ise { dondu 1; }
+    eger d.tip == AST_DONDUR veya d.tip == 12 ise { dondu 1; }
+    eger d.tip == AST_DURDUR veya d.tip == 14 ise { dondu 1; }
+    eger d.tip == AST_DEVAM_ET veya d.tip == 15 ise { dondu 1; }
+    eger ast_yan_etki_var_mi(d.sol) == 1 ise { dondu 1; }
+    eger ast_yan_etki_var_mi(d.sag) == 1 ise { dondu 1; }
+    eger ast_yan_etki_var_mi(d.govde) == 1 ise { dondu 1; }
+    eger ast_yan_etki_var_mi(d.yoksa_govde) == 1 ise { dondu 1; }
+    eger ast_yan_etki_var_mi(d.sonraki) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+# Tek dugume constant folding + algebraic simplification uygula (sonraki yoksay)
+isv dugum_sabit_indirge(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_COMPTIME ise {
+        dondu ast_sabit_indirge(arena, dugum.sol);
+    }
+    eger dugum.tip != AST_IKILI_OP ise { dondu dugum; }
+    eger dugum.sol == 0 veya dugum.sag == 0 ise { dondu dugum; }
+
+    # Constant Folding: her iki taraf da sayi ise
+    eger dugum.sol.tip == AST_SAYI ve dugum.sag.tip == AST_SAYI ise {
+        degisken v1: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+        degisken v2: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+        degisken sonuc: tamsayi = 0;
+        degisken katlandi: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            degisken op: tamsayi = dugum.ilk_jeton.tip;
+            eger op == TIP_ARTI ise { sonuc = v1 + v2; katlandi = 1; }
+            yoksa eger op == TIP_EKSI ise { sonuc = v1 - v2; katlandi = 1; }
+            yoksa eger op == TIP_CARPI ise { sonuc = v1 * v2; katlandi = 1; }
+            yoksa eger op == TIP_BOLME ve v2 != 0 ise { sonuc = v1 / v2; katlandi = 1; }
+            yoksa eger op == TIP_MODULO ve v2 != 0 ise { sonuc = v1 % v2; katlandi = 1; }
+            yoksa eger op == TIP_ESIT_MI ise { eger v1 == v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_ESIT_DEGIL ise { eger v1 != v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_KUCUK_MU ise { eger v1 < v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_BUYUK_MU ise { eger v1 > v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_KUCUK_ESIT ise { eger v1 <= v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_BUYUK_ESIT ise { eger v1 >= v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_XOR ise { sonuc = v1 ^ v2; katlandi = 1; }
+        }
+        eger katlandi == 1 ise {
+            degisken j_yeni: *Jeton = tamsayidan_jeton_yap(arena, sonuc);
+            dondu arena_dugum_yarat(arena, AST_SAYI, j_yeni);
+        }
+    }
+
+    # Algebraic Simplification
+    eger dugum.ilk_jeton != 0 ise {
+        degisken op: tamsayi = dugum.ilk_jeton.tip;
+        eger op == TIP_ARTI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 0 ise { dondu dugum.sol; }
+            }
+            eger dugum.sol.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk) == 0 ise { dondu dugum.sag; }
+            }
+        }
+        yoksa eger op == TIP_EKSI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 0 ise { dondu dugum.sol; }
+            }
+        }
+        yoksa eger op == TIP_CARPI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                eger sv == 1 ise { dondu dugum.sol; }
+                eger sv == 0 ve ast_yan_etki_var_mi(dugum.sol) == 0 ise { degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0); dondu arena_dugum_yarat(arena, AST_SAYI, j0); }
+            }
+            eger dugum.sol.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                eger sv == 1 ise { dondu dugum.sag; }
+                eger sv == 0 ve ast_yan_etki_var_mi(dugum.sag) == 0 ise { degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0); dondu arena_dugum_yarat(arena, AST_SAYI, j0); }
+            }
+        }
+        yoksa eger op == TIP_BOLME ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 1 ise { dondu dugum.sol; }
+            }
+        }
+    }
+    dondu dugum;
+}
+
+# AST'yi recursive olarak constant folding ile optimize et
+# sonraki zinciri iteratif islenir (stack overflow onlemi)
+isv ast_sabit_indirge(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    # Alt agaclari optimize et (sonraki haric - iteratif yapilacak)
+    dugum.sol = ast_sabit_indirge(arena, dugum.sol);
+    dugum.sag = ast_sabit_indirge(arena, dugum.sag);
+    dugum.govde = ast_sabit_indirge(arena, dugum.govde);
+    dugum.yoksa_govde = ast_sabit_indirge(arena, dugum.yoksa_govde);
+    dugum.parametreler = ast_sabit_indirge(arena, dugum.parametreler);
+    # Mevcut dugume folding uygula
+    degisken yeni: *AstDugum = dugum_sabit_indirge(arena, dugum);
+    # sonraki zincirini iteratif isle
+    degisken ilk: *AstDugum = yeni;
+    degisken son: *AstDugum = yeni;
+    degisken srd: *AstDugum = dugum.sonraki;
+    yeni.sonraki = 0;
+    dongu srd != 0 {
+        degisken srd_next: *AstDugum = srd.sonraki;
+        srd.sonraki = 0;
+        srd.sol = ast_sabit_indirge(arena, srd.sol);
+        srd.sag = ast_sabit_indirge(arena, srd.sag);
+        srd.govde = ast_sabit_indirge(arena, srd.govde);
+        srd.yoksa_govde = ast_sabit_indirge(arena, srd.yoksa_govde);
+        srd.parametreler = ast_sabit_indirge(arena, srd.parametreler);
+        degisken yeni_srd: *AstDugum = dugum_sabit_indirge(arena, srd);
+        yeni_srd.sonraki = 0;
+        son.sonraki = yeni_srd;
+        son = yeni_srd;
+        srd = srd_next;
+    }
+    dondu ilk;
+}
+
+# DCE: dondu/durdur/devam_et sonrasi erisilemez kodu temizle
+# sonraki zinciri iteratif islenir
+isv ast_olu_kod_temizle(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    # Alt agaclari temizle
+    eger dugum.tip == AST_BLOK ise {
+        degisken bi: *AstDugum = dugum.sol;
+        dongu bi != 0 {
+            eger bi.tip == AST_DONDUR veya bi.tip == AST_DURDUR veya bi.tip == AST_DEVAM_ET ise {
+                bi.sonraki = 0;
+                durdur;
+            }
+            bi = bi.sonraki;
+        }
+    }
+    dugum.sol = ast_olu_kod_temizle(arena, dugum.sol);
+    dugum.sag = ast_olu_kod_temizle(arena, dugum.sag);
+    dugum.govde = ast_olu_kod_temizle(arena, dugum.govde);
+    dugum.yoksa_govde = ast_olu_kod_temizle(arena, dugum.yoksa_govde);
+    # sonraki iteratif
+    degisken ilk_d: *AstDugum = dugum;
+    degisken son_d: *AstDugum = dugum;
+    degisken srd2: *AstDugum = dugum.sonraki;
+    dugum.sonraki = 0;
+    dongu srd2 != 0 {
+        degisken srd2_next: *AstDugum = srd2.sonraki;
+        srd2.sonraki = 0;
+        eger srd2.tip == AST_BLOK ise {
+            degisken bi2: *AstDugum = srd2.sol;
+            dongu bi2 != 0 {
+                eger bi2.tip == AST_DONDUR veya bi2.tip == AST_DURDUR veya bi2.tip == AST_DEVAM_ET ise {
+                    bi2.sonraki = 0;
+                    durdur;
+                }
+                bi2 = bi2.sonraki;
+            }
+        }
+        srd2.sol = ast_olu_kod_temizle(arena, srd2.sol);
+        srd2.sag = ast_olu_kod_temizle(arena, srd2.sag);
+        srd2.govde = ast_olu_kod_temizle(arena, srd2.govde);
+        srd2.yoksa_govde = ast_olu_kod_temizle(arena, srd2.yoksa_govde);
+        son_d.sonraki = srd2;
+        son_d = srd2;
+        srd2 = srd2_next;
+    }
+    dondu ilk_d;
+}
+
+# ============================================================
+# FAZ 6: Optimizasyon Istatistikleri & Raporlama
+# ============================================================
+yapi OptimizasyonIstatistikleri {
+    sabit_indirgenen_dugum: tamsayi;
+    cebirsel_indirgenen_dugum: tamsayi;
+    ast_olu_kod_silinen: tamsayi;
+    mir_olu_kod_silinen_talimat: tamsayi;
+    mir_toplam_talimat_oncesi: tamsayi;
+    mir_toplam_talimat_sonrasi: tamsayi;
+    cfg_temel_blok_sayisi: tamsayi;
+    cfg_kenar_sayisi: tamsayi;
+    reg_alloc_spill_sayisi: tamsayi;
+    inline_edilen_cagri: tamsayi;
+    acilan_dongu_sayisi: tamsayi;
+    vektorize_dongu_sayisi: tamsayi;
+}
+
+# Global istatistik nesnesi (arena disinda, derleyici basinda sifirlanir)
+degisken g_opt_istatistik: OptimizasyonIstatistikleri;
+
+isv opt_istatistiklerini_sifirla() {
+    g_opt_istatistik.sabit_indirgenen_dugum = 0;
+    g_opt_istatistik.cebirsel_indirgenen_dugum = 0;
+    g_opt_istatistik.ast_olu_kod_silinen = 0;
+    g_opt_istatistik.mir_olu_kod_silinen_talimat = 0;
+    g_opt_istatistik.mir_toplam_talimat_oncesi = 0;
+    g_opt_istatistik.mir_toplam_talimat_sonrasi = 0;
+    g_opt_istatistik.cfg_temel_blok_sayisi = 0;
+    g_opt_istatistik.cfg_kenar_sayisi = 0;
+    g_opt_istatistik.reg_alloc_spill_sayisi = 0;
+    g_opt_istatistik.inline_edilen_cagri = 0;
+    g_opt_istatistik.acilan_dongu_sayisi = 0;
+    g_opt_istatistik.vektorize_dongu_sayisi = 0;
+}
+
+# ============================================================
+# FAZ 6: GERCEK CFG / Basic Block Analizi (Asil Yapilan)
+# Basic Block: tek giris, tek cikis, dallanmasiz talimat dizisi
+# ============================================================
+yapi CfgTemelBlok {
+    blok_id: tamsayi;
+    ilk_pozisyon: tamsayi;
+    son_pozisyon: tamsayi;
+    talimat_sayisi: tamsayi;
+    cikis_kenar_sayisi: tamsayi;       # 0, 1 veya 2
+    cikis_hedef_0: tamsayi;           # blok_id veya -1 (cikis)
+    cikis_hedef_1: tamsayi;           # blok_id veya -1
+    biten_talimat_tipi: tamsayi;      # 0: normal, 1: KOS, 2: KOS_EGER, 3: DON
+    sonraki: *CfgTemelBlok;
+}
+
+yapi CfgAnalizSonucu {
+    ilk_blok: *CfgTemelBlok;
+    son_blok: *CfgTemelBlok;
+    toplam_blok: tamsayi;
+    toplam_kenar: tamsayi;
+    arena: *AstArena;
+}
+
+isv cfg_gercek_analiz_yap(blok: *MirBlok, sonuc: *CfgAnalizSonucu) {
+    sonuc.toplam_blok = 0;
+    sonuc.toplam_kenar = 0;
+    sonuc.ilk_blok = 0;
+    sonuc.son_blok = 0;
+
+    # 1. Adim: Tum MIR talimatlarini pozisyon numarasi ile etiketle ve BB baslangiclarini isaretle
+    # Bir BB'nin baslangici:
+    #   - Ilk talimat (pozisyon 0)
+    #   - Herhangi bir KOS / KOS_EGER hedefi (etiket ile isaretlenen)
+    #   - KOS, KOS_EGER veya DON talimatindan hemen SONRAKI talimat (eger varsa)
+    degisken maks_poz: tamsayi = blok.cfg_talimat_sayisi;
+    eger maks_poz == 0 ise {
+        # Eger henuz cfg_talimat_sayisi hesaplanmamissa hesapla
+        cfg_ve_talimat_sayaci_ata(blok);
+        maks_poz = blok.cfg_talimat_sayisi;
+    }
+    eger maks_poz == 0 ise { dondu; }
+
+    # bb_baslangici_dizisi: pozisyon X BB baslangici mi? (1: evet, 0: hayir)
+    degisken bb_baslangici: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + ((maks_poz + 2) * 8);
+    degisken pi: tamsayi = 0;
+    dongu pi < maks_poz + 2 {
+        bb_baslangici[pi] = 0;
+        pi = pi + 1;
+    }
+    # Ilk pozisyon her zaman BB baslangicidir
+    bb_baslangici[0] = 1;
+
+    # 2. Adim: Ilk pass — etiket tanimlarini (MIR_OP_ETIKET) ve dallanma SONRASI pozisyonlari bul
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    degisken poz: tamsayi = 0;
+    # Etiket -> Temel Blok ID esleme tablosu
+    degisken maks_etiket: tamsayi = blok.etiket_sayaci + 32;
+    degisken etiket_to_blok_id: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    blok.arena.kullanilan = blok.arena.kullanilan + (maks_etiket * 8);
+    degisken ei: tamsayi = 0;
+    dongu ei < maks_etiket {
+        etiket_to_blok_id[ei] = -1;
+        ei = ei + 1;
+    }
+
+    iter = blok.ilk_talimat;
+    poz = 0;
+    dongu iter != 0 {
+        eger iter.islem_kodu == MIR_OP_ETIKET ise {
+            bb_baslangici[poz] = 1;
+        }
+        eger iter.islem_kodu == MIR_OP_KOS ise {
+            eger poz + 1 < maks_poz ise {
+                bb_baslangici[poz + 1] = 1;
+            }
+        }
+        eger iter.islem_kodu == MIR_OP_KOS_EGER ise {
+            eger poz + 1 < maks_poz ise {
+                bb_baslangici[poz + 1] = 1;
+            }
+        }
+        eger iter.islem_kodu == MIR_OP_DON ise {
+            eger poz + 1 < maks_poz ise {
+                bb_baslangici[poz + 1] = 1;
+            }
+        }
+        poz = poz + 1;
+        iter = iter.sonraki;
+    }
+
+    # 3. Adim: Temel Bloklari Olustur (bb_baslangici dizisinden yararlanarak)
+    degisken mevcut_blok: *CfgTemelBlok = 0;
+    degisken blok_sayac: tamsayi = 0;
+
+    iter = blok.ilk_talimat;
+    poz = 0;
+    dongu iter != 0 {
+        eger bb_baslangici[poz] == 1 ise {
+            # Yeni BB baslangici
+            eger mevcut_blok != 0 ise {
+                # Bir onceki BB'yi kapat
+                mevcut_blok.son_pozisyon = poz - 1;
+                mevcut_blok.talimat_sayisi = (poz - 1) - mevcut_blok.ilk_pozisyon + 1;
+            }
+            # Yeni BB yarat
+            degisken nb: *CfgTemelBlok = blok.arena.bellek + blok.arena.kullanilan;
+            blok.arena.kullanilan = blok.arena.kullanilan + 128;
+            nb.blok_id = blok_sayac;
+            nb.ilk_pozisyon = poz;
+            nb.son_pozisyon = -1;
+            nb.talimat_sayisi = 0;
+            nb.cikis_kenar_sayisi = 0;
+            nb.cikis_hedef_0 = -1;
+            nb.cikis_hedef_1 = -1;
+            nb.biten_talimat_tipi = 0;
+            nb.sonraki = 0;
+            blok_sayac = blok_sayac + 1;
+            # Zincire ekle
+            eger sonuc.ilk_blok == 0 ise {
+                sonuc.ilk_blok = nb;
+                sonuc.son_blok = nb;
+            } yoksa {
+                sonuc.son_blok.sonraki = nb;
+                sonuc.son_blok = nb;
+            }
+            mevcut_blok = nb;
+        }
+
+        # Etiket talimatini ait oldugu BB'ye esle
+        eger iter.islem_kodu == MIR_OP_ETIKET ise {
+            eger iter.etiket >= 0 ve iter.etiket < maks_etiket ve mevcut_blok != 0 ise {
+                etiket_to_blok_id[iter.etiket] = mevcut_blok.blok_id;
+            }
+        }
+
+        poz = poz + 1;
+        iter = iter.sonraki;
+    }
+    # Son BB'yi kapat
+    eger mevcut_blok != 0 ise {
+        mevcut_blok.son_pozisyon = maks_poz - 1;
+        mevcut_blok.talimat_sayisi = (maks_poz - 1) - mevcut_blok.ilk_pozisyon + 1;
+    }
+    sonuc.toplam_blok = blok_sayac;
+
+    # 4. Adim: Her BB'nin SON talimatinin tipine gore CIKIS KENARLARINI bagla
+    #    Ayrica "sonraki blok" zincirinden hareketle; fallthrough dogal olarak bir sonraki BB'dir.
+    degisken bb_iter: *CfgTemelBlok = sonuc.ilk_blok;
+    degisken bb_sonraki_map: *tamsayi = blok.arena.bellek + blok.arena.kullanilan;
+    # blok_id -> sonraki blok_id (fallthrough) dizisi
+    blok.arena.kullanilan = blok.arena.kullanilan + ((blok_sayac + 2) * 8);
+    degisken mi: tamsayi = 0;
+    dongu mi < blok_sayac + 2 {
+        bb_sonraki_map[mi] = -1;
+        mi = mi + 1;
+    }
+    degisken bb_onceki: *CfgTemelBlok = 0;
+    degisken b_iter2: *CfgTemelBlok = sonuc.ilk_blok;
+    dongu b_iter2 != 0 {
+        eger bb_onceki != 0 ise {
+            bb_sonraki_map[bb_onceki.blok_id] = b_iter2.blok_id;
+        }
+        bb_onceki = b_iter2;
+        b_iter2 = b_iter2.sonraki;
+    }
+
+    # Simdi her BB icin son talimat tipini bul ve kenarlari bagla
+    bb_iter = sonuc.ilk_blok;
+    dongu bb_iter != 0 {
+        # BB'nin son pozisyonundaki MIR talimatini bul
+        degisken son_poz: tamsayi = bb_iter.son_pozisyon;
+        degisken m_iter: *MirTalimati = blok.ilk_talimat;
+        degisken m_poz: tamsayi = 0;
+        dongu m_iter != 0 {
+            eger m_poz == son_poz ise {
+                durdur;
+            }
+            m_poz = m_poz + 1;
+            m_iter = m_iter.sonraki;
+        }
+        eger m_iter != 0 ise {
+            degisken op: tamsayi = m_iter.islem_kodu;
+            eger op == MIR_OP_KOS ise {
+                bb_iter.biten_talimat_tipi = 1;
+                bb_iter.cikis_kenar_sayisi = 1;
+                degisken hedef_etiket: tamsayi = m_iter.etiket;
+                degisken hedef_blok: tamsayi = -1;
+                eger hedef_etiket >= 0 ve hedef_etiket < maks_etiket ise {
+                    hedef_blok = etiket_to_blok_id[hedef_etiket];
+                }
+                eger hedef_blok == -1 ise {
+                    hedef_blok = bb_sonraki_map[bb_iter.blok_id];
+                    eger hedef_blok == -1 ise { hedef_blok = blok_sayac - 1; }
+                }
+                bb_iter.cikis_hedef_0 = hedef_blok;
+                sonuc.toplam_kenar = sonuc.toplam_kenar + 1;
+            }
+            yoksa eger op == MIR_OP_KOS_EGER ise {
+                bb_iter.biten_talimat_tipi = 2;
+                bb_iter.cikis_kenar_sayisi = 2;
+                # Hedef 0: fallthrough = dogal sonraki BB
+                bb_iter.cikis_hedef_0 = bb_sonraki_map[bb_iter.blok_id];
+                eger bb_iter.cikis_hedef_0 == -1 ise { bb_iter.cikis_hedef_0 = blok_sayac - 1; }
+                # Hedef 1: etiket hedefi (dallanma)
+                degisken hedef_etiket: tamsayi = m_iter.etiket;
+                degisken h2: tamsayi = -1;
+                eger hedef_etiket >= 0 ve hedef_etiket < maks_etiket ise {
+                    h2 = etiket_to_blok_id[hedef_etiket];
+                }
+                eger h2 == -1 ise {
+                    h2 = bb_iter.blok_id + 1;
+                    eger h2 >= blok_sayac ise { h2 = blok_sayac - 1; }
+                }
+                bb_iter.cikis_hedef_1 = h2;
+                sonuc.toplam_kenar = sonuc.toplam_kenar + 2;
+            }
+            yoksa eger op == MIR_OP_DON ise {
+                bb_iter.biten_talimat_tipi = 3;
+                # Return: cikis kenari = 0 (program sonu)
+                bb_iter.cikis_kenar_sayisi = 0;
+                bb_iter.cikis_hedef_0 = -1;
+                bb_iter.cikis_hedef_1 = -1;
+            }
+            yoksa {
+                bb_iter.biten_talimat_tipi = 0;
+                # Normal talimat: tek kenar = fallthrough
+                degisken sn: tamsayi = bb_sonraki_map[bb_iter.blok_id];
+                eger sn != -1 ise {
+                    bb_iter.cikis_kenar_sayisi = 1;
+                    bb_iter.cikis_hedef_0 = sn;
+                    sonuc.toplam_kenar = sonuc.toplam_kenar + 1;
+                }
+            }
+        }
+        bb_iter = bb_iter.sonraki;
+    }
+
+    # Global istatistiklere yaz
+    g_opt_istatistik.cfg_temel_blok_sayisi = sonuc.toplam_blok;
+    g_opt_istatistik.cfg_kenar_sayisi = sonuc.toplam_kenar;
+    blok.cfg_bb_sayisi = sonuc.toplam_blok;
+}
+
+# ============================================================
+# FAZ 6: MIR talimat sayaci oncesi/sonrasi + DCE sayaci
+# ============================================================
+isv mir_talimat_sayisini_bul(blok: *MirBlok) -> tamsayi {
+    degisken say: tamsayi = 0;
+    degisken iter: *MirTalimati = blok.ilk_talimat;
+    dongu iter != 0 {
+        say = say + 1;
+        iter = iter.sonraki;
+    }
+    dondu say;
+}
+
+# MIR DCE oncesi sayim + sonrasi sayim + fark = silinen
+isv dce_ve_say(blok: *MirBlok) {
+    g_opt_istatistik.mir_toplam_talimat_oncesi = mir_talimat_sayisini_bul(blok);
+    dce_optimizasyonu_yap(blok);
+    g_opt_istatistik.mir_toplam_talimat_sonrasi = mir_talimat_sayisini_bul(blok);
+    g_opt_istatistik.mir_olu_kod_silinen_talimat = g_opt_istatistik.mir_toplam_talimat_oncesi - g_opt_istatistik.mir_toplam_talimat_sonrasi;
+}
+
+# ============================================================
+# FAZ 6: Optimizasyon ozet raporu (ekrana yazdirilacak)
+# ============================================================
+isv optimizasyon_ozet_raporu_yaz() {
+    eger g_verbose == 1 ise {
+        ekrana_yaz("    [Opt-Ozet] Sabit katlanan AST dugumu: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.sabit_indirgenen_dugum);
+        ekrana_yaz(" | Cebirsel: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.cebirsel_indirgenen_dugum);
+        ekrana_yaz("\n".ptr);
+        ekrana_yaz("    [Opt-Ozet] AST DCE silinen: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.ast_olu_kod_silinen);
+        ekrana_yaz(" | MIR DCE silinen: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.mir_olu_kod_silinen_talimat);
+        ekrana_yaz(" (".ptr);
+        sayiyi_yazdir(g_opt_istatistik.mir_toplam_talimat_oncesi);
+        ekrana_yaz(" -> ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.mir_toplam_talimat_sonrasi);
+        ekrana_yaz(")\n".ptr);
+        ekrana_yaz("    [Opt-Ozet] Inline edilen cagri: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.inline_edilen_cagri);
+        ekrana_yaz(" | Acilan dongu: ".ptr);
+        sayiyi_yazdir(g_opt_istatistik.acilan_dongu_sayisi);
+        ekrana_yaz("\n".ptr);
+    }
+}
+
+isv cfg_ozet_raporu_yaz() {
+    ekrana_yaz("    [CFG-Ozet] Temel Blok (BB) sayisi: ".ptr);
+    sayiyi_yazdir(g_opt_istatistik.cfg_temel_blok_sayisi);
+    ekrana_yaz(" | Kenar (Edge) sayisi: ".ptr);
+    sayiyi_yazdir(g_opt_istatistik.cfg_kenar_sayisi);
+    ekrana_yaz("\n".ptr);
+}
+
+# ============================================================
+# Guncellendi: AST sabit indirge — istatistik sayaci ile
+# ============================================================
+isv dugum_sabit_indirge_sayacli(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_COMPTIME ise {
+        dondu ast_sabit_indirge_sayacli(arena, dugum.sol);
+    }
+    eger dugum.tip != AST_IKILI_OP ise { dondu dugum; }
+    eger dugum.sol == 0 veya dugum.sag == 0 ise { dondu dugum; }
+
+    # Constant Folding sayaci
+    eger dugum.sol.tip == AST_SAYI ve dugum.sag.tip == AST_SAYI ise {
+        degisken v1: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+        degisken v2: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+        degisken sonuc: tamsayi = 0;
+        degisken katlandi: tamsayi = 0;
+        eger dugum.ilk_jeton != 0 ise {
+            degisken op: tamsayi = dugum.ilk_jeton.tip;
+            eger op == TIP_ARTI ise { sonuc = v1 + v2; katlandi = 1; }
+            yoksa eger op == TIP_EKSI ise { sonuc = v1 - v2; katlandi = 1; }
+            yoksa eger op == TIP_CARPI ise { sonuc = v1 * v2; katlandi = 1; }
+            yoksa eger op == TIP_BOLME ve v2 != 0 ise { sonuc = v1 / v2; katlandi = 1; }
+            yoksa eger op == TIP_MODULO ve v2 != 0 ise { sonuc = v1 % v2; katlandi = 1; }
+            yoksa eger op == TIP_ESIT_MI ise { eger v1 == v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_ESIT_DEGIL ise { eger v1 != v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_KUCUK_MU ise { eger v1 < v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_BUYUK_MU ise { eger v1 > v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_KUCUK_ESIT ise { eger v1 <= v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_BUYUK_ESIT ise { eger v1 >= v2 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_XOR ise { sonuc = v1 ^ v2; katlandi = 1; }
+            yoksa eger op == TIP_VE ise { eger v1 != 0 ve v2 != 0 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+            yoksa eger op == TIP_VEYA ise { eger v1 != 0 veya v2 != 0 ise { sonuc = 1; } yoksa { sonuc = 0; } katlandi = 1; }
+        }
+        eger katlandi == 1 ise {
+            g_opt_istatistik.sabit_indirgenen_dugum = g_opt_istatistik.sabit_indirgenen_dugum + 1;
+            degisken j_yeni: *Jeton = tamsayidan_jeton_yap(arena, sonuc);
+            dondu arena_dugum_yarat(arena, AST_SAYI, j_yeni);
+        }
+    }
+
+    # Algebraic Simplification & Strength Reduction sayaci
+    eger dugum.ilk_jeton != 0 ise {
+        degisken op: tamsayi = dugum.ilk_jeton.tip;
+        degisken degisti: tamsayi = 0;
+        degisken donulecek: *AstDugum = 0;
+        eger op == TIP_ARTI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 0 ise { donulecek = dugum.sol; degisti = 1; }
+            }
+            eger degisti == 0 ve dugum.sol.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk) == 0 ise { donulecek = dugum.sag; degisti = 1; }
+            }
+        }
+        yoksa eger op == TIP_EKSI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 0 ise { donulecek = dugum.sol; degisti = 1; }
+            }
+        }
+        yoksa eger op == TIP_CARPI ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                eger sv == 1 ise { donulecek = dugum.sol; degisti = 1; }
+                eger sv == 0 ve ast_yan_etki_var_mi(dugum.sol) == 0 ise { degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0); donulecek = arena_dugum_yarat(arena, AST_SAYI, j0); degisti = 1; }
+            }
+            eger degisti == 0 ve dugum.sol.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                eger sv == 1 ise { donulecek = dugum.sag; degisti = 1; }
+                eger sv == 0 ve ast_yan_etki_var_mi(dugum.sag) == 0 ise { degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0); donulecek = arena_dugum_yarat(arena, AST_SAYI, j0); degisti = 1; }
+            }
+        }
+        yoksa eger op == TIP_BOLME ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 1 ise { donulecek = dugum.sol; degisti = 1; }
+            }
+        }
+        yoksa eger op == TIP_MODULO ise {
+            eger dugum.sag.tip == AST_SAYI ise {
+                eger string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk) == 1 ise {
+                    degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0);
+                    donulecek = arena_dugum_yarat(arena, AST_SAYI, j0);
+                    degisti = 1;
+                }
+            }
+        }
+        yoksa eger op == TIP_ESIT_MI veya op == TIP_ESIT_DEGIL ise {
+            # (expr % 2^k) == 0  -->  (expr & (2^k - 1)) == 0
+            eger dugum.sag != 0 ve dugum.sag.tip == AST_SAYI ve dugum.sol != 0 ve dugum.sol.tip == AST_IKILI_OP ve dugum.sol.ilk_jeton != 0 ve dugum.sol.ilk_jeton.tip == TIP_MODULO ise {
+                degisken cmp_val: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                eger cmp_val == 0 ve dugum.sol.sag != 0 ve dugum.sol.sag.tip == AST_SAYI ise {
+                    degisken mod_val: tamsayi = string_tamsayiya(dugum.sol.sag.ilk_jeton.baslangic, dugum.sol.sag.ilk_jeton.uzunluk);
+                    eger mod_val > 1 ve (mod_val & (mod_val - 1)) == 0 ise {
+                        dugum.sol.ilk_jeton.tip = TIP_AMPERSAND;
+                        dugum.sol.sag.ilk_jeton = tamsayidan_jeton_yap(arena, mod_val - 1);
+                        degisti = 1;
+                        donulecek = dugum;
+                    }
+                }
+            }
+        }
+        yoksa eger op == TIP_VE ise {
+            eger dugum.sol.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                eger sv == 0 ise {
+                    degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0);
+                    donulecek = arena_dugum_yarat(arena, AST_SAYI, j0);
+                    degisti = 1;
+                } yoksa {
+                    donulecek = dugum.sag;
+                    degisti = 1;
+                }
+            }
+            eger degisti == 0 ve dugum.sag.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                eger sv == 0 ise {
+                    degisken j0: *Jeton = tamsayidan_jeton_yap(arena, 0);
+                    donulecek = arena_dugum_yarat(arena, AST_SAYI, j0);
+                    degisti = 1;
+                } yoksa {
+                    donulecek = dugum.sol;
+                    degisti = 1;
+                }
+            }
+        }
+        yoksa eger op == TIP_VEYA ise {
+            eger dugum.sol.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+                eger sv != 0 ise {
+                    degisken j1: *Jeton = tamsayidan_jeton_yap(arena, 1);
+                    donulecek = arena_dugum_yarat(arena, AST_SAYI, j1);
+                    degisti = 1;
+                } yoksa {
+                    donulecek = dugum.sag;
+                    degisti = 1;
+                }
+            }
+            eger degisti == 0 ve dugum.sag.tip == AST_SAYI ise {
+                degisken sv: tamsayi = string_tamsayiya(dugum.sag.ilk_jeton.baslangic, dugum.sag.ilk_jeton.uzunluk);
+                eger sv != 0 ise {
+                    degisken j1: *Jeton = tamsayidan_jeton_yap(arena, 1);
+                    donulecek = arena_dugum_yarat(arena, AST_SAYI, j1);
+                    degisti = 1;
+                } yoksa {
+                    donulecek = dugum.sol;
+                    degisti = 1;
+                }
+            }
+        }
+        eger degisti == 1 ise {
+            g_opt_istatistik.cebirsel_indirgenen_dugum = g_opt_istatistik.cebirsel_indirgenen_dugum + 1;
+            dondu donulecek;
+        }
+    }
+    dondu dugum;
+}
+
+isv ast_sabit_indirge_sayacli(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    dugum.sol = ast_sabit_indirge_sayacli(arena, dugum.sol);
+    dugum.sag = ast_sabit_indirge_sayacli(arena, dugum.sag);
+    dugum.govde = ast_sabit_indirge_sayacli(arena, dugum.govde);
+    dugum.yoksa_govde = ast_sabit_indirge_sayacli(arena, dugum.yoksa_govde);
+    dugum.parametreler = ast_sabit_indirge_sayacli(arena, dugum.parametreler);
+
+    # Dead Loop Elimination (dongu 0 -> dce)
+    eger dugum.tip == AST_DONGU ve dugum.sol != 0 ise {
+        eger dugum.sol.tip == AST_SAYI ise {
+            degisken v: tamsayi = string_tamsayiya(dugum.sol.ilk_jeton.baslangic, dugum.sol.ilk_jeton.uzunluk);
+            eger v == 0 ise {
+                dondu 0;
+            }
+        }
+    }
+    degisken yeni: *AstDugum = dugum_sabit_indirge_sayacli(arena, dugum);
+    degisken ilk: *AstDugum = yeni;
+    degisken son: *AstDugum = yeni;
+    degisken srd: *AstDugum = dugum.sonraki;
+    yeni.sonraki = 0;
+    dongu srd != 0 {
+        degisken srd_next: *AstDugum = srd.sonraki;
+        srd.sonraki = 0;
+        srd.sol = ast_sabit_indirge_sayacli(arena, srd.sol);
+        srd.sag = ast_sabit_indirge_sayacli(arena, srd.sag);
+        srd.govde = ast_sabit_indirge_sayacli(arena, srd.govde);
+        srd.yoksa_govde = ast_sabit_indirge_sayacli(arena, srd.yoksa_govde);
+        srd.parametreler = ast_sabit_indirge_sayacli(arena, srd.parametreler);
+        degisken yeni_srd: *AstDugum = dugum_sabit_indirge_sayacli(arena, srd);
+        yeni_srd.sonraki = 0;
+        son.sonraki = yeni_srd;
+        son = yeni_srd;
+        srd = srd_next;
+    }
+    dondu ilk;
+}
+
+degisken g_ast_kok_program: *AstDugum = 0;
+
+# AST DCE sayacli versiyon
+isv ast_olu_kod_temizle_sayacli(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_BLOK ve dugum != g_ast_kok_program ise {
+        degisken bi: *AstDugum = dugum.sol;
+        degisken bi_onceki: *AstDugum = 0;
+        dongu bi != 0 {
+            eger bi.tip == AST_DONDUR veya bi.tip == AST_DURDUR veya bi.tip == AST_DEVAM_ET ise {
+                # Bundan sonraki tum dugumler SILINIYOR — saydir
+                degisken silinen_b: *AstDugum = bi.sonraki;
+                dongu silinen_b != 0 {
+                    g_opt_istatistik.ast_olu_kod_silinen = g_opt_istatistik.ast_olu_kod_silinen + 1;
+                    silinen_b = silinen_b.sonraki;
+                }
+                bi.sonraki = 0;
+                durdur;
+            }
+            bi = bi.sonraki;
+        }
+    }
+    dugum.sol = ast_olu_kod_temizle_sayacli(arena, dugum.sol);
+    dugum.sag = ast_olu_kod_temizle_sayacli(arena, dugum.sag);
+    dugum.govde = ast_olu_kod_temizle_sayacli(arena, dugum.govde);
+    dugum.yoksa_govde = ast_olu_kod_temizle_sayacli(arena, dugum.yoksa_govde);
+    degisken ilk_d: *AstDugum = dugum;
+    degisken son_d: *AstDugum = dugum;
+    degisken srd2: *AstDugum = dugum.sonraki;
+    dugum.sonraki = 0;
+    dongu srd2 != 0 {
+        degisken srd2_next: *AstDugum = srd2.sonraki;
+        srd2.sonraki = 0;
+        eger srd2.tip == AST_BLOK ve srd2 != g_ast_kok_program ise {
+            degisken bi2: *AstDugum = srd2.sol;
+            dongu bi2 != 0 {
+                eger bi2.tip == AST_DONDUR veya bi2.tip == AST_DURDUR veya bi2.tip == AST_DEVAM_ET ise {
+                    degisken silinen_b2: *AstDugum = bi2.sonraki;
+                    dongu silinen_b2 != 0 {
+                        g_opt_istatistik.ast_olu_kod_silinen = g_opt_istatistik.ast_olu_kod_silinen + 1;
+                        silinen_b2 = silinen_b2.sonraki;
+                    }
+                    bi2.sonraki = 0;
+                    durdur;
+                }
+                bi2 = bi2.sonraki;
+            }
+        }
+        srd2.sol = ast_olu_kod_temizle_sayacli(arena, srd2.sol);
+        srd2.sag = ast_olu_kod_temizle_sayacli(arena, srd2.sag);
+        srd2.govde = ast_olu_kod_temizle_sayacli(arena, srd2.govde);
+        srd2.yoksa_govde = ast_olu_kod_temizle_sayacli(arena, srd2.yoksa_govde);
+        son_d.sonraki = srd2;
+        son_d = srd2;
+        srd2 = srd2_next;
+    }
+    dondu ilk_d;
+}
+
+# ============================================================
+# FAZ 6.5: Kucuk Fonksiyon Inlining Pass (Satir Ici Genisleme)
+# ============================================================
+degisken g_inline_fonk_sayisi: tamsayi = 0;
+degisken g_inline_fonk_isim: [64]*u8;
+degisken g_inline_fonk_uzn: [64]tamsayi;
+degisken g_inline_fonk_params: [64]*AstDugum;
+degisken g_inline_fonk_donus: [64]*AstDugum;
+
+isv opt_is_io_fonksiyonu(isim: *u8, uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya uzn <= 0 ise { dondu 1; }
+    eger uzn >= 4 ve bellek_esit_mi(isim, "ykn_".ptr, 4) == 1 ise { dondu 1; }
+    eger uzn >= 6 ve bellek_esit_mi(isim, "win32_".ptr, 6) == 1 ise { dondu 1; }
+    eger uzn >= 6 ve bellek_esit_mi(isim, "posix_".ptr, 6) == 1 ise { dondu 1; }
+    eger uzn >= 3 ve bellek_esit_mi(isim, "os_".ptr, 3) == 1 ise { dondu 1; }
+    eger uzn == 3 ve bellek_esit_mi(isim, "ana".ptr, 3) == 1 ise { dondu 1; }
+    eger uzn == 4 ve bellek_esit_mi(isim, "main".ptr, 4) == 1 ise { dondu 1; }
+    eger uzn == 10 ve bellek_esit_mi(isim, "ekrana_yaz".ptr, 10) == 1 ise { dondu 1; }
+    eger uzn == 13 ve bellek_esit_mi(isim, "sayiyi_yazdir".ptr, 13) == 1 ise { dondu 1; }
+    eger uzn == 8 ve bellek_esit_mi(isim, "sayi_yaz".ptr, 8) == 1 ise { dondu 1; }
+    eger uzn == 6 ve bellek_esit_mi(isim, "yazdir".ptr, 6) == 1 ise { dondu 1; }
+    eger uzn == 3 ve bellek_esit_mi(isim, "yaz".ptr, 3) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(isim, "print".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn == 7 ve bellek_esit_mi(isim, "println".ptr, 7) == 1 ise { dondu 1; }
+    eger uzn == 16 ve bellek_esit_mi(isim, "bellek_tahsis_et".ptr, 16) == 1 ise { dondu 1; }
+    eger uzn == 17 ve bellek_esit_mi(isim, "os_bellek_serbest".ptr, 17) == 1 ise { dondu 1; }
+    eger uzn == 9 ve bellek_esit_mi(isim, "dosya_oku".ptr, 9) == 1 ise { dondu 1; }
+    eger uzn == 16 ve bellek_esit_mi(isim, "dosya_oku_aralik".ptr, 16) == 1 ise { dondu 1; }
+    eger uzn == 18 ve bellek_esit_mi(isim, "diske_bas_ve_kapat".ptr, 18) == 1 ise { dondu 1; }
+    eger uzn == 17 ve bellek_esit_mi(isim, "komut_satiri_arg1".ptr, 17) == 1 ise { dondu 1; }
+    eger uzn == 26 ve bellek_esit_mi(isim, "yknllm_audit_native_append".ptr, 26) == 1 ise { dondu 1; }
+    eger uzn == 12 ve bellek_esit_mi(isim, "GetStdHandle".ptr, 12) == 1 ise { dondu 1; }
+    eger uzn == 8 ve bellek_esit_mi(isim, "ReadFile".ptr, 8) == 1 ise { dondu 1; }
+    eger uzn == 9 ve bellek_esit_mi(isim, "WriteFile".ptr, 9) == 1 ise { dondu 1; }
+    eger uzn == 11 ve bellek_esit_mi(isim, "CreateFileA".ptr, 11) == 1 ise { dondu 1; }
+    eger uzn == 11 ve bellek_esit_mi(isim, "CloseHandle".ptr, 11) == 1 ise { dondu 1; }
+    eger uzn == 12 ve bellek_esit_mi(isim, "VirtualAlloc".ptr, 12) == 1 ise { dondu 1; }
+    eger uzn == 11 ve bellek_esit_mi(isim, "VirtualFree".ptr, 11) == 1 ise { dondu 1; }
+    eger uzn == 15 ve bellek_esit_mi(isim, "GetCommandLineA".ptr, 15) == 1 ise { dondu 1; }
+    eger uzn == 16 ve bellek_esit_mi(isim, "SetFilePointerEx".ptr, 16) == 1 ise { dondu 1; }
+    eger uzn == 11 ve bellek_esit_mi(isim, "ExitProcess".ptr, 11) == 1 ise { dondu 1; }
+    eger uzn == 12 ve bellek_esit_mi(isim, "LoadLibraryA".ptr, 12) == 1 ise { dondu 1; }
+    eger uzn == 14 ve bellek_esit_mi(isim, "GetProcAddress".ptr, 14) == 1 ise { dondu 1; }
+    eger uzn == 11 ve bellek_esit_mi(isim, "FreeLibrary".ptr, 11) == 1 ise { dondu 1; }
+    eger uzn == 4 ve bellek_esit_mi(isim, "open".ptr, 4) == 1 ise { dondu 1; }
+    eger uzn == 4 ve bellek_esit_mi(isim, "read".ptr, 4) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(isim, "write".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(isim, "close".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(isim, "lseek".ptr, 5) == 1 ise { dondu 1; }
+    eger uzn == 5 ve bellek_esit_mi(isim, "_exit".ptr, 5) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv fonksiyon_kendini_cagiriyor_mu(dugum: *AstDugum, fn_ad: *u8, fn_uzn: tamsayi) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_ISLEV_CAGRISI ve dugum.ilk_jeton != 0 ise {
+        eger dugum.ilk_jeton.uzunluk == fn_uzn ve bellek_esit_mi(dugum.ilk_jeton.baslangic, fn_ad, fn_uzn) == 1 ise {
+            dondu 1;
+        }
+    }
+    eger fonksiyon_kendini_cagiriyor_mu(dugum.sol, fn_ad, fn_uzn) == 1 ise { dondu 1; }
+    eger fonksiyon_kendini_cagiriyor_mu(dugum.sag, fn_ad, fn_uzn) == 1 ise { dondu 1; }
+    eger fonksiyon_kendini_cagiriyor_mu(dugum.govde, fn_ad, fn_uzn) == 1 ise { dondu 1; }
+    eger fonksiyon_kendini_cagiriyor_mu(dugum.yoksa_govde, fn_ad, fn_uzn) == 1 ise { dondu 1; }
+    eger fonksiyon_kendini_cagiriyor_mu(dugum.sonraki, fn_ad, fn_uzn) == 1 ise { dondu 1; }
+    dondu 0;
+}
+
+isv ast_dugum_sayisi(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    degisken toplam: tamsayi = 1;
+    toplam = toplam + ast_dugum_sayisi(dugum.sol);
+    toplam = toplam + ast_dugum_sayisi(dugum.sag);
+    toplam = toplam + ast_dugum_sayisi(dugum.govde);
+    toplam = toplam + ast_dugum_sayisi(dugum.yoksa_govde);
+    toplam = toplam + ast_dugum_sayisi(dugum.sonraki);
+    dondu toplam;
+}
+
+isv ast_dugum_klonla_tam(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    degisken klon: *AstDugum = arena_dugum_yarat(arena, dugum.tip, dugum.ilk_jeton);
+    klon.cozumlenmis_tip = dugum.cozumlenmis_tip;
+    klon.dizi_boyutu = dugum.dizi_boyutu;
+
+    eger dugum.tip == AST_BLOK ise {
+        klon.sol = ast_zincir_klonla_tam(arena, dugum.sol);
+    } yoksa {
+        klon.sol = ast_dugum_klonla_tam(arena, dugum.sol);
+    }
+
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        klon.sag = ast_zincir_klonla_tam(arena, dugum.sag);
+    } yoksa {
+        klon.sag = ast_dugum_klonla_tam(arena, dugum.sag);
+    }
+
+    klon.govde = ast_dugum_klonla_tam(arena, dugum.govde);
+    klon.yoksa_govde = ast_dugum_klonla_tam(arena, dugum.yoksa_govde);
+    klon.parametreler = ast_zincir_klonla_tam(arena, dugum.parametreler);
+    dondu klon;
+}
+
+isv ast_zincir_klonla_tam(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    degisken ilk_k: *AstDugum = 0;
+    degisken son_k: *AstDugum = 0;
+    degisken cur: *AstDugum = dugum;
+    dongu cur != 0 {
+        degisken k: *AstDugum = ast_dugum_klonla_tam(arena, cur);
+        eger ilk_k == 0 ise {
+            ilk_k = k;
+            son_k = k;
+        } yoksa {
+            son_k.sonraki = k;
+            son_k = k;
+        }
+        cur = cur.sonraki;
+    }
+    dondu ilk_k;
+}
+
+isv ast_zincir_klonla_ve_ikame_et(arena: *AstArena, dugum: *AstDugum, params: *AstDugum, args: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+    degisken ilk_k: *AstDugum = 0;
+    degisken son_k: *AstDugum = 0;
+    degisken cur: *AstDugum = dugum;
+    dongu cur != 0 {
+        degisken k: *AstDugum = ast_dugum_klonla_ve_ikame_et(arena, cur, params, args);
+        eger ilk_k == 0 ise {
+            ilk_k = k;
+            son_k = k;
+        } yoksa {
+            son_k.sonraki = k;
+            son_k = k;
+        }
+        cur = cur.sonraki;
+    }
+    dondu ilk_k;
+}
+
+isv ast_dugum_klonla_ve_ikame_et(arena: *AstArena, dugum: *AstDugum, params: *AstDugum, args: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+
+    # Parametre eslesmesi kontrolu (AST_KIMLIK)
+    eger dugum.tip == AST_KIMLIK ve dugum.ilk_jeton != 0 ise {
+        degisken p: *AstDugum = params;
+        degisken a: *AstDugum = args;
+        dongu p != 0 ve a != 0 {
+            eger p.ilk_jeton != 0 ise {
+                eger dugum.ilk_jeton.uzunluk == p.ilk_jeton.uzunluk ve
+                     bellek_esit_mi(dugum.ilk_jeton.baslangic, p.ilk_jeton.baslangic, p.ilk_jeton.uzunluk) == 1 ise {
+                    dondu ast_dugum_klonla_tam(arena, a);
+                }
+            }
+            p = p.sonraki;
+            a = a.sonraki;
+        }
+    }
+
+    degisken klon: *AstDugum = arena_dugum_yarat(arena, dugum.tip, dugum.ilk_jeton);
+    klon.cozumlenmis_tip = dugum.cozumlenmis_tip;
+    klon.dizi_boyutu = dugum.dizi_boyutu;
+
+    eger dugum.tip == AST_BLOK ise {
+        klon.sol = ast_zincir_klonla_ve_ikame_et(arena, dugum.sol, params, args);
+    } yoksa {
+        klon.sol = ast_dugum_klonla_ve_ikame_et(arena, dugum.sol, params, args);
+    }
+
+    eger dugum.tip == AST_ISLEV_CAGRISI ise {
+        klon.sag = ast_zincir_klonla_ve_ikame_et(arena, dugum.sag, params, args);
+    } yoksa {
+        klon.sag = ast_dugum_klonla_ve_ikame_et(arena, dugum.sag, params, args);
+    }
+
+    klon.govde = ast_dugum_klonla_ve_ikame_et(arena, dugum.govde, params, args);
+    klon.yoksa_govde = ast_dugum_klonla_ve_ikame_et(arena, dugum.yoksa_govde, params, args);
+    dondu klon;
+}
+
+isv ast_inlining_tekil(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+
+    dugum.sol = ast_inlining_uygula(arena, dugum.sol);
+    dugum.sag = ast_inlining_uygula(arena, dugum.sag);
+    dugum.govde = ast_inlining_uygula(arena, dugum.govde);
+    dugum.yoksa_govde = ast_inlining_uygula(arena, dugum.yoksa_govde);
+
+    eger dugum.tip == AST_ISLEV_CAGRISI ve dugum.ilk_jeton != 0 ise {
+        degisken fname: *u8 = dugum.ilk_jeton.baslangic;
+        degisken flen: tamsayi = dugum.ilk_jeton.uzunluk;
+        degisken i: tamsayi = 0;
+        dongu i < g_inline_fonk_sayisi {
+            eger g_inline_fonk_uzn[i] == flen ve
+                 bellek_esit_mi(g_inline_fonk_isim[i], fname, flen) == 1 ise {
+
+                degisken args: *AstDugum = dugum.sag;
+                degisken args_yan_etkili: tamsayi = 0;
+                degisken a_chk: *AstDugum = args;
+                dongu a_chk != 0 {
+                    eger ast_yan_etki_var_mi(a_chk) == 1 ise {
+                        args_yan_etkili = 1;
+                    }
+                    a_chk = a_chk.sonraki;
+                }
+                eger args_yan_etkili == 0 ise {
+                    degisken params: *AstDugum = g_inline_fonk_params[i];
+
+                    degisken inlined: *AstDugum = ast_dugum_klonla_ve_ikame_et(arena, g_inline_fonk_donus[i], params, args);
+                    eger inlined != 0 ise {
+                        inlined.sonraki = dugum.sonraki;
+                        g_opt_istatistik.inline_edilen_cagri = g_opt_istatistik.inline_edilen_cagri + 1;
+                        dondu dugum_sabit_indirge(arena, inlined);
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+    dondu dugum;
+}
+
+isv ast_inlining_uygula(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+
+    degisken ilk: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+    degisken cur: *AstDugum = dugum;
+
+    dongu cur != 0 {
+        degisken cur_next: *AstDugum = cur.sonraki;
+        cur.sonraki = 0;
+
+        degisken yeni_cur: *AstDugum = ast_inlining_tekil(arena, cur);
+        degisken yeni_son: *AstDugum = yeni_cur;
+        dongu yeni_son != 0 ve yeni_son.sonraki != 0 {
+            yeni_son = yeni_son.sonraki;
+        }
+
+        eger ilk == 0 ise {
+            ilk = yeni_cur;
+            son = yeni_son;
+        } yoksa {
+            son.sonraki = yeni_cur;
+            son = yeni_son;
+        }
+        cur = cur_next;
+    }
+    dondu ilk;
+}
+
+# ============================================================
+# FAZ 6.6: Dongu Acma Pass (Loop Unrolling)
+# ============================================================
+isv dugumde_durdur_var_mi(dugum: *AstDugum) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    eger dugum.tip == AST_DURDUR veya dugum.tip == AST_DEVAM_ET veya dugum.tip == AST_DONDUR ise {
+        dondu 1;
+    }
+    dondu dugumde_durdur_var_mi(dugum.sol) veya dugumde_durdur_var_mi(dugum.sag) veya
+          dugumde_durdur_var_mi(dugum.govde) veya dugumde_durdur_var_mi(dugum.sonraki);
+}
+
+isv dongu_adim_sayisi_bul(govde: *AstDugum, var_ad: *u8, var_uzn: tamsayi) -> tamsayi {
+    eger govde == 0 ise { dondu 0; }
+    degisken cur: *AstDugum = govde;
+    eger govde.tip == AST_BLOK ve govde.sol != 0 ise {
+        cur = govde.sol;
+    }
+    dongu cur != 0 {
+        eger cur.tip == AST_ATAMA ve cur.sol != 0 ve cur.sag != 0 ise {
+            eger cur.sol.tip == AST_KIMLIK ve cur.sol.ilk_jeton != 0 ise {
+                eger cur.sol.ilk_jeton.uzunluk == var_uzn ve
+                     bellek_esit_mi(cur.sol.ilk_jeton.baslangic, var_ad, var_uzn) == 1 ise {
+                    eger cur.sag.tip == AST_IKILI_OP ve cur.sag.ilk_jeton != 0 ise {
+                        eger cur.sag.ilk_jeton.tip == TIP_ARTI ise {
+                            # i = i + step
+                            eger cur.sag.sol != 0 ve cur.sag.sol.tip == AST_KIMLIK ve cur.sag.sag != 0 ve cur.sag.sag.tip == AST_SAYI ise {
+                                eger cur.sag.sol.ilk_jeton.uzunluk == var_uzn ve
+                                     bellek_esit_mi(cur.sag.sol.ilk_jeton.baslangic, var_ad, var_uzn) == 1 ise {
+                                    dondu string_tamsayiya(cur.sag.sag.ilk_jeton.baslangic, cur.sag.sag.ilk_jeton.uzunluk);
+                                }
+                            }
+                            # i = step + i
+                            yoksa eger cur.sag.sag != 0 ve cur.sag.sag.tip == AST_KIMLIK ve cur.sag.sol != 0 ve cur.sag.sol.tip == AST_SAYI ise {
+                                eger cur.sag.sag.ilk_jeton.uzunluk == var_uzn ve
+                                     bellek_esit_mi(cur.sag.sag.ilk_jeton.baslangic, var_ad, var_uzn) == 1 ise {
+                                    dondu string_tamsayiya(cur.sag.sol.ilk_jeton.baslangic, cur.sag.sol.ilk_jeton.uzunluk);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cur = cur.sonraki;
+    }
+    dondu 0;
+}
+
+isv dongu_baslangic_degeri_bul(onceki: *AstDugum, var_ad: *u8, var_uzn: tamsayi, baslangic_ptr: *tamsayi) -> tamsayi {
+    eger onceki == 0 ise { dondu 0; }
+    # 1. degisken i: tamsayi = 0;
+    eger onceki.tip == AST_DEGISKEN_TANIMI ve onceki.ilk_jeton != 0 ise {
+        eger onceki.ilk_jeton.uzunluk == var_uzn ve
+             bellek_esit_mi(onceki.ilk_jeton.baslangic, var_ad, var_uzn) == 1 ise {
+            eger onceki.sag != 0 ve onceki.sag.tip == AST_SAYI ve onceki.sag.ilk_jeton != 0 ise {
+                baslangic_ptr[0] = string_tamsayiya(onceki.sag.ilk_jeton.baslangic, onceki.sag.ilk_jeton.uzunluk);
+                dondu 1;
+            }
+        }
+    }
+    # 2. i = 0;
+    eger onceki.tip == AST_ATAMA ve onceki.sol != 0 ise {
+        degisken sol_id: *AstDugum = onceki.sol;
+        eger sol_id.ilk_jeton != 0 ise {
+            eger sol_id.ilk_jeton.uzunluk == var_uzn ve
+                 bellek_esit_mi(sol_id.ilk_jeton.baslangic, var_ad, var_uzn) == 1 ise {
+                eger onceki.sag != 0 ve onceki.sag.tip == AST_SAYI ve onceki.sag.ilk_jeton != 0 ise {
+                    baslangic_ptr[0] = string_tamsayiya(onceki.sag.ilk_jeton.baslangic, onceki.sag.ilk_jeton.uzunluk);
+                    dondu 1;
+                }
+            }
+        }
+    }
+    dondu 0;
+}
+
+isv ast_loop_unroll_tekil(arena: *AstArena, dugum: *AstDugum, onceki: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+
+    dugum.sol = ast_loop_unroll_uygula(arena, dugum.sol);
+    dugum.sag = ast_loop_unroll_uygula(arena, dugum.sag);
+    dugum.govde = ast_loop_unroll_uygula(arena, dugum.govde);
+    dugum.yoksa_govde = ast_loop_unroll_uygula(arena, dugum.yoksa_govde);
+
+    # AST_DONGU = 9
+    eger dugum.tip == AST_DONGU ve dugum.govde != 0 ise {
+        eger dugumde_durdur_var_mi(dugum.govde) == 0 ise {
+            degisken unroll_katsayisi: tamsayi = 0;
+            degisken step: tamsayi = 1;
+            degisken kosul: *AstDugum = dugum.sol;
+            eger kosul != 0 ve kosul.tip == AST_IKILI_OP ve kosul.ilk_jeton != 0 ise {
+                degisken op: tamsayi = kosul.ilk_jeton.tip;
+                eger kosul.sol != 0 ve kosul.sol.tip == AST_KIMLIK ve kosul.sag != 0 ve kosul.sag.tip == AST_SAYI ise {
+                    degisken var_ad: *u8 = kosul.sol.ilk_jeton.baslangic;
+                    degisken var_uzn: tamsayi = kosul.sol.ilk_jeton.uzunluk;
+                    degisken limit: tamsayi = string_tamsayiya(kosul.sag.ilk_jeton.baslangic, kosul.sag.ilk_jeton.uzunluk);
+                    step = dongu_adim_sayisi_bul(dugum.govde, var_ad, var_uzn);
+                    eger step == 0 ve dugum.yoksa_govde != 0 ise {
+                        step = dongu_adim_sayisi_bul(dugum.yoksa_govde, var_ad, var_uzn);
+                    }
+                    eger step > 0 ise {
+                        degisken baslangic_dizi: [2]tamsayi;
+                        baslangic_dizi[0] = 0;
+                        degisken bas_var: tamsayi = dongu_baslangic_degeri_bul(onceki, var_ad, var_uzn, baslangic_dizi);
+                        eger bas_var == 1 ise {
+                            degisken start_val: tamsayi = baslangic_dizi[0];
+                            eger op == TIP_KUCUK_MU ise {
+                                unroll_katsayisi = (limit - start_val) / step;
+                            } yoksa eger op == TIP_KUCUK_ESIT ise {
+                                unroll_katsayisi = (limit - start_val + 1) / step;
+                            }
+                        }
+                    }
+                }
+            }
+
+            eger unroll_katsayisi >= 2 ve unroll_katsayisi <= 16 ise {
+                # Donguyu tamamen ac (Complete Loop Unrolling)
+                degisken unrolled_blok: *AstDugum = arena_dugum_yarat(arena, AST_BLOK, dugum.ilk_jeton);
+                degisken unrolled_ilk: *AstDugum = 0;
+                degisken unrolled_son: *AstDugum = 0;
+
+                degisken u: tamsayi = 0;
+                dongu u < unroll_katsayisi {
+                    degisken kopya: *AstDugum = 0;
+                    eger dugum.govde.tip == AST_BLOK ise {
+                        kopya = ast_zincir_klonla_tam(arena, dugum.govde.sol);
+                    } yoksa {
+                        kopya = ast_dugum_klonla_tam(arena, dugum.govde);
+                    }
+
+                    eger kopya != 0 ise {
+                        eger unrolled_ilk == 0 ise {
+                            unrolled_ilk = kopya;
+                        } yoksa {
+                            unrolled_son.sonraki = kopya;
+                        }
+                        degisken tail: *AstDugum = kopya;
+                        dongu tail.sonraki != 0 {
+                            tail = tail.sonraki;
+                        }
+                        eger dugum.yoksa_govde != 0 ise {
+                            degisken adim_kopya: *AstDugum = ast_dugum_klonla_tam(arena, dugum.yoksa_govde);
+                            tail.sonraki = adim_kopya;
+                            dongu tail.sonraki != 0 {
+                                tail = tail.sonraki;
+                            }
+                        }
+                        unrolled_son = tail;
+                    }
+                    u = u + 1;
+                }
+
+                unrolled_blok.sol = unrolled_ilk;
+                unrolled_blok.sonraki = dugum.sonraki;
+                g_opt_istatistik.acilan_dongu_sayisi = g_opt_istatistik.acilan_dongu_sayisi + 1;
+                dondu unrolled_blok;
+            }
+        }
+    }
+
+    dondu dugum;
+}
+
+isv ast_loop_unroll_uygula(arena: *AstArena, dugum: *AstDugum) -> *AstDugum {
+    eger dugum == 0 ise { dondu 0; }
+
+    degisken ilk: *AstDugum = 0;
+    degisken son: *AstDugum = 0;
+    degisken cur: *AstDugum = dugum;
+    degisken onceki_dugum: *AstDugum = 0;
+
+    dongu cur != 0 {
+        degisken cur_next: *AstDugum = cur.sonraki;
+        cur.sonraki = 0;
+
+        degisken yeni_cur: *AstDugum = ast_loop_unroll_tekil(arena, cur, onceki_dugum);
+        degisken yeni_son: *AstDugum = yeni_cur;
+        dongu yeni_son != 0 ve yeni_son.sonraki != 0 {
+            yeni_son = yeni_son.sonraki;
+        }
+
+        eger ilk == 0 ise {
+            ilk = yeni_cur;
+            son = yeni_son;
+        } yoksa {
+            son.sonraki = yeni_cur;
+            son = yeni_son;
+        }
+        onceki_dugum = cur;
+        cur = cur_next;
+    }
+    dondu ilk;
+}
+
+# ============================================================
+# FAZ 3.3: Gercek Kuyruk Cagrisi Optimizasyonu (TCO)
+# ============================================================
+degisken g_tco_temp_id: tamsayi = 0;
+degisken g_tco_yapilan_sayisi: tamsayi = 0;
+degisken g_tco_params_name: [32]*u8;
+degisken g_tco_params_len: [32]tamsayi;
+degisken g_tco_params_count: tamsayi = 0;
+
+isv opt_jeton_yap(arena: *AstArena, tip: tamsayi, str: *u8, len: tamsayi) -> *Jeton {
+    degisken j: *Jeton = arena.bellek + arena.kullanilan;
+    arena.kullanilan = arena.kullanilan + 40;
+    j.tip = tip;
+    j.baslangic = str;
+    j.uzunluk = len;
+    j.satir = 1;
+    j.sutun = 1;
+    dondu j;
+}
+
+isv is_tail_call_node(ret_expr: *AstDugum, fn_name: *u8, fn_len: tamsayi) -> tamsayi {
+    eger ret_expr == 0 ise { dondu 0; }
+    eger ret_expr.tip != AST_ISLEV_CAGRISI ve ret_expr.tip != 11 ise { dondu 0; }
+    degisken target: *AstDugum = ret_expr.sol;
+    eger target == 0 ise { target = ret_expr; }
+    eger target.ilk_jeton != 0 ve target.ilk_jeton.uzunluk == fn_len ise {
+        eger bellek_esit_mi(target.ilk_jeton.baslangic, fn_name, fn_len) == 1 ise {
+            dondu 1;
+        }
+    }
+    eger ret_expr.ilk_jeton != 0 ve ret_expr.ilk_jeton.uzunluk == fn_len ise {
+        eger bellek_esit_mi(ret_expr.ilk_jeton.baslangic, fn_name, fn_len) == 1 ise {
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+isv tco_atamalari_uret(arena: *AstArena, args: *AstDugum) -> *AstDugum {
+    degisken arg_list: [32]*AstDugum;
+    degisken arg_cnt: tamsayi = 0;
+    degisken a: *AstDugum = args;
+    dongu a != 0 ve arg_cnt < 32 {
+        arg_list[arg_cnt] = a;
+        arg_cnt = arg_cnt + 1;
+        a = a.sonraki;
+    }
+
+    degisken first: *AstDugum = 0;
+    degisken last: *AstDugum = 0;
+
+    degisken start_tmp_id: tamsayi = g_tco_temp_id;
+    degisken i: tamsayi = 0;
+    dongu i < arg_cnt {
+        degisken tname: *u8 = arena.bellek + arena.kullanilan;
+        arena.kullanilan = arena.kullanilan + 32;
+        tname[0] = 95; tname[1] = 95; tname[2] = 116; tname[3] = 99; tname[4] = 111; tname[5] = 95;
+        degisken num: tamsayi = g_tco_temp_id;
+        g_tco_temp_id = g_tco_temp_id + 1;
+        degisken n_len: tamsayi = 0;
+        eger num == 0 ise {
+            tname[6] = 48;
+            n_len = 1;
+        } yoksa {
+            degisken tmp_num: tamsayi = num;
+            degisken digits: [16]u8;
+            degisken d_cnt: tamsayi = 0;
+            dongu tmp_num > 0 {
+                digits[d_cnt] = (tmp_num % 10) + 48;
+                tmp_num = tmp_num / 10;
+                d_cnt = d_cnt + 1;
+            }
+            degisken di: tamsayi = d_cnt - 1;
+            dongu di >= 0 {
+                tname[6 + n_len] = digits[di];
+                n_len = n_len + 1;
+                di = di - 1;
+            }
+        }
+        degisken t_uzn: tamsayi = 6 + n_len;
+        tname[t_uzn] = 0;
+
+        degisken j_tmp: *Jeton = opt_jeton_yap(arena, TIP_KIMLIK, tname, t_uzn);
+        degisken decl: *AstDugum = arena_dugum_yarat(arena, AST_DEGISKEN_TANIMI, j_tmp);
+        decl.sag = arg_list[i];
+        decl.sonraki = 0;
+
+        eger first == 0 ise { first = decl; last = decl; }
+        yoksa { last.sonraki = decl; last = decl; }
+
+        i = i + 1;
+    }
+
+    degisken n_upd: tamsayi = g_tco_params_count;
+    eger arg_cnt < n_upd ise { n_upd = arg_cnt; }
+
+    i = 0;
+    dongu i < n_upd {
+        degisken cur_tmp_id: tamsayi = start_tmp_id + i;
+        degisken tname: *u8 = arena.bellek + arena.kullanilan;
+        arena.kullanilan = arena.kullanilan + 32;
+        tname[0] = 95; tname[1] = 95; tname[2] = 116; tname[3] = 99; tname[4] = 111; tname[5] = 95;
+        degisken n_len: tamsayi = 0;
+        eger cur_tmp_id == 0 ise {
+            tname[6] = 48;
+            n_len = 1;
+        } yoksa {
+            degisken tmp_num: tamsayi = cur_tmp_id;
+            degisken digits: [16]u8;
+            degisken d_cnt: tamsayi = 0;
+            dongu tmp_num > 0 {
+                digits[d_cnt] = (tmp_num % 10) + 48;
+                tmp_num = tmp_num / 10;
+                d_cnt = d_cnt + 1;
+            }
+            degisken di: tamsayi = d_cnt - 1;
+            dongu di >= 0 {
+                tname[6 + n_len] = digits[di];
+                n_len = n_len + 1;
+                di = di - 1;
+            }
+        }
+        degisken t_uzn: tamsayi = 6 + n_len;
+        tname[t_uzn] = 0;
+
+        degisken j_atama: *Jeton = opt_jeton_yap(arena, TIP_ATAMA, "=".ptr, 1);
+        degisken atama: *AstDugum = arena_dugum_yarat(arena, AST_ATAMA, j_atama);
+        degisken j_p: *Jeton = opt_jeton_yap(arena, TIP_KIMLIK, g_tco_params_name[i], g_tco_params_len[i]);
+        atama.sol = arena_dugum_yarat(arena, AST_KIMLIK, j_p);
+        degisken j_t: *Jeton = opt_jeton_yap(arena, TIP_KIMLIK, tname, t_uzn);
+        atama.sag = arena_dugum_yarat(arena, AST_KIMLIK, j_t);
+        atama.sonraki = 0;
+
+        eger first == 0 ise { first = atama; last = atama; }
+        yoksa { last.sonraki = atama; last = atama; }
+
+        i = i + 1;
+    }
+
+    degisken j_devam: *Jeton = opt_jeton_yap(arena, TIP_DEVAM_ET, "devam_et".ptr, 8);
+    degisken cont: *AstDugum = arena_dugum_yarat(arena, AST_DEVAM_ET, j_devam);
+    cont.sonraki = 0;
+    eger first == 0 ise { first = cont; last = cont; }
+    yoksa { last.sonraki = cont; last = cont; }
+
+    degisken j_blk: *Jeton = opt_jeton_yap(arena, TIP_SOL_KUSLU, "{".ptr, 1);
+    degisken blk: *AstDugum = arena_dugum_yarat(arena, AST_BLOK, j_blk);
+    blk.sol = first;
+    dondu blk;
+}
+
+isv tco_donustur_alt_agac(arena: *AstArena, dugum: *AstDugum, fn_name: *u8, fn_len: tamsayi) -> tamsayi {
+    eger dugum == 0 ise { dondu 0; }
+    degisken transformed: tamsayi = 0;
+
+    eger dugum.tip == AST_BLOK ve dugum.sol != 0 ise {
+        degisken prev: *AstDugum = 0;
+        degisken cur: *AstDugum = dugum.sol;
+        dongu cur != 0 {
+            eger cur.tip == AST_DONDUR veya cur.tip == 12 ise {
+                degisken ret_expr: *AstDugum = cur.sag;
+                eger ret_expr == 0 ise { ret_expr = cur.sol; }
+                eger is_tail_call_node(ret_expr, fn_name, fn_len) == 1 ise {
+                    degisken args: *AstDugum = ret_expr.sag;
+                    eger args == 0 ise { args = ret_expr.sol; }
+                    degisken repl: *AstDugum = tco_atamalari_uret(arena, args);
+                    repl.sonraki = cur.sonraki;
+                    eger prev != 0 ise {
+                        prev.sonraki = repl;
+                    } yoksa {
+                        dugum.sol = repl;
+                    }
+                    cur = repl;
+                    transformed = 1;
+                }
+            } yoksa eger cur.tip == AST_EGER veya cur.tip == 8 ise {
+                eger tco_donustur_alt_agac(arena, cur.govde, fn_name, fn_len) == 1 ise { transformed = 1; }
+                eger tco_donustur_alt_agac(arena, cur.yoksa_govde, fn_name, fn_len) == 1 ise { transformed = 1; }
+            }
+            prev = cur;
+            cur = cur.sonraki;
+        }
+    } yoksa eger dugum.tip == AST_EGER veya dugum.tip == 8 ise {
+        eger tco_donustur_alt_agac(arena, dugum.govde, fn_name, fn_len) == 1 ise { transformed = 1; }
+        eger tco_donustur_alt_agac(arena, dugum.yoksa_govde, fn_name, fn_len) == 1 ise { transformed = 1; }
+    }
+    dondu transformed;
+}
+
+isv ast_tco_uygula(arena: *AstArena, kok: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+    degisken fn_d: *AstDugum = kok;
+    eger kok.tip == AST_BLOK ve kok.sol != 0 ise { fn_d = kok.sol; }
+
+    dongu fn_d != 0 {
+        eger (fn_d.tip == AST_ISLEV veya fn_d.tip == 10) ve fn_d.ilk_jeton != 0 ve fn_d.govde != 0 ise {
+            degisken fn_name: *u8 = fn_d.ilk_jeton.baslangic;
+            degisken fn_len: tamsayi = fn_d.ilk_jeton.uzunluk;
+
+            g_tco_params_count = 0;
+            degisken p: *AstDugum = fn_d.parametreler;
+            dongu p != 0 ve g_tco_params_count < 32 {
+                eger p.ilk_jeton != 0 ise {
+                    g_tco_params_name[g_tco_params_count] = p.ilk_jeton.baslangic;
+                    g_tco_params_len[g_tco_params_count] = p.ilk_jeton.uzunluk;
+                    g_tco_params_count = g_tco_params_count + 1;
+                }
+                p = p.sonraki;
+            }
+
+            eger tco_donustur_alt_agac(arena, fn_d.govde, fn_name, fn_len) == 1 ise {
+                degisken j_dng: *Jeton = opt_jeton_yap(arena, TIP_DONGU, "dongu".ptr, 5);
+                degisken loop_node: *AstDugum = arena_dugum_yarat(arena, AST_DONGU, j_dng);
+                degisken j_one: *Jeton = tamsayidan_jeton_yap(arena, 1);
+                loop_node.sol = arena_dugum_yarat(arena, AST_SAYI, j_one);
+                loop_node.govde = fn_d.govde;
+                fn_d.govde = loop_node;
+                g_tco_yapilan_sayisi = g_tco_yapilan_sayisi + 1;
+            }
+        }
+        fn_d = fn_d.sonraki;
+    }
+    dondu kok;
+}
+
+# ============================================================
+# Optimizer Pipeline (Inlining + Loop Unroll + Constant Fold + DCE)
+# ============================================================
+isv ast_optimizasyon_pipeline(arena: *AstArena, kok: *AstDugum) -> *AstDugum {
+    eger kok == 0 ise { dondu 0; }
+    g_ast_kok_program = kok;
+
+    # 1. Kucuk fonksiyonlari tara (Inlining adaylari)
+    g_inline_fonk_sayisi = 0;
+    degisken fonk_dugumu: *AstDugum = kok.sol;
+    dongu fonk_dugumu != 0 {
+        eger fonk_dugumu.tip == AST_ISLEV ve fonk_dugumu.ilk_jeton != 0 ve fonk_dugumu.govde != 0 ise {
+            eger opt_is_io_fonksiyonu(fonk_dugumu.ilk_jeton.baslangic, fonk_dugumu.ilk_jeton.uzunluk) == 0 ise {
+                degisken ret_stmt: *AstDugum = 0;
+                eger fonk_dugumu.govde.tip == AST_DONDUR ise {
+                    ret_stmt = fonk_dugumu.govde;
+                } yoksa eger fonk_dugumu.govde.tip == AST_BLOK ve fonk_dugumu.govde.sol != 0 ise {
+                    eger fonk_dugumu.govde.sol.tip == AST_DONDUR ve fonk_dugumu.govde.sol.sonraki == 0 ise {
+                        ret_stmt = fonk_dugumu.govde.sol;
+                    }
+                }
+                eger ret_stmt != 0 ve ret_stmt.sag != 0 ve g_inline_fonk_sayisi < 64 ise {
+                    degisken sz: tamsayi = ast_dugum_sayisi(ret_stmt.sag);
+                    degisken rec: tamsayi = fonksiyon_kendini_cagiriyor_mu(ret_stmt.sag, fonk_dugumu.ilk_jeton.baslangic, fonk_dugumu.ilk_jeton.uzunluk);
+                    eger sz <= 25 ve rec == 0 ise {
+                        degisken idx: tamsayi = g_inline_fonk_sayisi;
+                        g_inline_fonk_isim[idx] = fonk_dugumu.ilk_jeton.baslangic;
+                        g_inline_fonk_uzn[idx] = fonk_dugumu.ilk_jeton.uzunluk;
+                        g_inline_fonk_params[idx] = fonk_dugumu.parametreler;
+                        g_inline_fonk_donus[idx] = ret_stmt.sag;
+                        g_inline_fonk_sayisi = g_inline_fonk_sayisi + 1;
+                    }
+                }
+            }
+        }
+        fonk_dugumu = fonk_dugumu.sonraki;
+    }
+
+    # 2. Inlining pass'i uygula (ic ice inline'lar icin 2 gecis)
+    eger g_inline_fonk_sayisi > 0 ise {
+        kok = ast_inlining_uygula(arena, kok);
+        kok = ast_inlining_uygula(arena, kok);
+    }
+
+    # 3. Dongu acma (Loop unrolling) pass'i uygula
+    kok = ast_loop_unroll_uygula(arena, kok);
+
+    # 4. Sabit indirgeme & kuvvet azaltma & boolean katlama
+    kok = ast_sabit_indirge_sayacli(arena, kok);
+
+    # 5. Olu kod eleme (DCE)
+    kok = ast_olu_kod_temizle_sayacli(arena, kok);
+
+    # 6. Kuyruk Cagrisi Optimizasyonu (TCO)
+    kok = ast_tco_uygula(arena, kok);
+
+    g_ast_kok_program = 0;
+    # Raporu yaz
+    optimizasyon_ozet_raporu_yaz();
+    dondu kok;
+}

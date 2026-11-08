@@ -1,0 +1,31 @@
+# FAZ 2.3 POZITIF TEST
+# Yapi<T>, Coklu Parametre <T, U>, ve Coklu Generic Fonksiyon Monomorfizasyonu
+
+yapi Kutu<T> {
+    deger: T;
+}
+
+yapi Cift<T, U> {
+    birinci: T;
+    ikinci: U;
+}
+
+isv topla_uc<A, B, C>(a: A, b: B, c: C) -> tamsayi {
+    dondu a + b + c;
+}
+
+isv ana() -> tamsayi {
+    degisken k1: Kutu<tamsayi>;
+    k1.deger = 42;
+
+    degisken c1: Cift<tamsayi, tamsayi>;
+    c1.birinci = 100;
+    c1.ikinci = 200;
+
+    degisken toplam: tamsayi = topla_uc<tamsayi, tamsayi, tamsayi>(k1.deger, c1.birinci, c1.ikinci);
+    eger toplam == 342 ise {
+        ekrana_yaz("FAZ 2.3 GOREV DOGRULANDI: Basarili!\n".ptr);
+        dondu 0;
+    }
+    dondu 1;
+}

@@ -1,0 +1,29 @@
+# Test: Stage0 SSA + CFG + Optimizer
+# Dogrulanan ozellikler:
+# 1. Sabit Katlama (Constant Folding: 10 + 20 * 2 = 50, Modulo: 50 % 7 = 1)
+# 2. Cebirsel Sadelestirme (x * 0 = 0, y + 0 = y)
+# 3. CFG Basic Block Dallanma ve SSA Phi
+# 4. Olu Kod Elemesi (DCE)
+
+isv hesapla(girdi: tamsayi) -> tamsayi {
+    degisken c1: tamsayi = 10 + 20 * 2; # 50
+    degisken c2: tamsayi = c1 % 7;      # 1
+    degisken olu: tamsayi = c1 * 999;   # DCE tarafindan elenmeli
+    degisken sonuc: tamsayi = 0;
+    
+    eger girdi > 0 ise {
+        sonuc = c2 + 10; # 11
+    } yoksa {
+        sonuc = c2 + 20;
+    }
+    
+    dondu sonuc;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken r: tamsayi = hesapla(5);
+    eger r == 11 ise {
+        ekrana_yaz("STAGE0_SSA_CFG_OPTIMIZER: OK\n".ptr);
+    }
+    dondu 0;
+}

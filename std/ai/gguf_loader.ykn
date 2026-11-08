@@ -1,0 +1,700 @@
+# ============================================================
+# Yukinary std/ai/gguf_loader.ykn
+# GGUF v3 parser + dosya facade'i.
+#
+# Bu modul kendi importlarini yapmaz. Cagiran kaynak dosya su sirayla
+# import etmelidir:
+#   std/dosya.ykn (opsiyonel: yalniz runtime wrapper'lari icin)
+#   std/ai/gguf_types.ykn
+#   std/ai/gguf_reader.ykn
+#   std/ai/gguf_loader.ykn
+# ============================================================
+
+degisken GGUF_SON_HATA: tamsayi = 0;
+degisken GGUF_DEBUG_SWA_WINDOW: tamsayi = 0;
+
+isv gguf_ggml_bayt_sayisi(tip: tamsayi, ndim: tamsayi,
+                          d0: tamsayi, d1: tamsayi,
+                          d2: tamsayi, d3: tamsayi) -> tamsayi {
+    degisken toplam: tamsayi = 1;
+    eger ndim >= 1 ise { toplam = toplam * d0; }
+    eger ndim >= 2 ise { toplam = toplam * d1; }
+    eger ndim >= 3 ise { toplam = toplam * d2; }
+    eger ndim >= 4 ise { toplam = toplam * d3; }
+    eger tip == GGML_TYPE_F32 ise { dondu toplam * 4; }
+    eger tip == GGML_TYPE_F16 ise { dondu toplam * 2; }
+    eger tip == GGML_TYPE_Q4_0 ise { dondu ((toplam + 31) / 32) * 18; }
+    # GGML block_q4_K: QK_K=256, d/dmin half + scales[12] + qs[128].
+    eger tip == GGML_TYPE_Q4_K ise {
+        eger toplam <= 0 veya toplam % 256 != 0 ise { dondu 0; }
+        dondu (toplam / 256) * 144;
+    }
+    # GGML block_q6_K: ql[128] + qh[64] + scales[16] + d(f16) = 210 bytes.
+    eger tip == GGML_TYPE_Q6_K ise {
+        eger toplam <= 0 veya toplam % 256 != 0 ise { dondu 0; }
+        dondu (toplam / 256) * 210;
+    }
+    # GGML block_iq4_nl: 32 non-linear 4-bit values + FP16 scale.
+    eger tip == GGML_TYPE_IQ4_NL ise {
+        eger toplam <= 0 veya toplam % 32 != 0 ise { dondu 0; }
+        dondu (toplam / 32) * 18;
+    }
+    eger tip == GGML_TYPE_BF16 ise { dondu toplam * 2; }
+    # Microsoft's BitNet I2_S type 36 stores four 2-bit values per byte,
+    # followed by a 32-byte tensor trailer whose first f32 is the scale.
+    eger tip == GGML_TYPE_I2_S ise {
+        eger toplam <= 0 veya toplam % 128 != 0 ise { dondu 0; }
+        dondu toplam / 4 + 32;
+    }
+    # Upstream GGML IQ2_S type 22 is a distinct 82-byte/256-value block.
+    eger tip == GGML_TYPE_IQ2_S_GGML ise {
+        eger toplam <= 0 veya toplam % 256 != 0 ise { dondu 0; }
+        dondu (toplam / 256) * 82;
+    }
+    # GGML Q1_0: 128 elemanlık blok, f16 ölçek + 16 sign byte.
+    eger tip == GGML_TYPE_Q1_0 ise {
+        eger toplam <= 0 veya toplam % 128 != 0 ise { dondu 0; }
+        dondu (toplam / 128) * 18;
+    }
+    # TQ1_0 (GGML type 34): 256 ternary values in 54 bytes.
+    eger tip == GGML_TYPE_TQ1_0 ise {
+        eger toplam <= 0 ise { dondu 0; }
+        eger toplam % 256 != 0 ise {
+            eger toplam < 256 ise { dondu 4; }
+            dondu 0;
+        }
+        dondu (toplam / 256) * 54;
+    }
+    # TQ2_0 (GGML type 35): 256 ternary values in 66 bytes (qs[64] + d(f16)).
+    eger tip == GGML_TYPE_TQ2_0 ise {
+        eger toplam <= 0 ise { dondu 0; }
+        eger toplam % 256 != 0 ise {
+            eger toplam < 256 ise { dondu 4; }
+            dondu 0;
+        }
+        dondu (toplam / 256) * 66;
+    }
+    dondu toplam;
+}
+
+isv gguf_metadata_degeri_atla(buffer: *u8, uzunluk: tamsayi,
+                              ofset: *tamsayi, hata: *tamsayi,
+                              tip: tamsayi) -> tamsayi {
+    eger tip == GGUF_VT_UINT8 veya tip == GGUF_VT_INT8 ise {
+        dondu gguf_atla(buffer, uzunluk, ofset, 1, hata);
+    }
+    eger tip == GGUF_VT_UINT16 veya tip == GGUF_VT_INT16 ise {
+        dondu gguf_atla(buffer, uzunluk, ofset, 2, hata);
+    }
+    eger tip == GGUF_VT_UINT32 veya tip == GGUF_VT_INT32 veya
+       tip == GGUF_VT_FLOAT32 ise {
+        dondu gguf_atla(buffer, uzunluk, ofset, 4, hata);
+    }
+    # GGUF bool degeri uint8 olarak serileştirilir.
+    eger tip == GGUF_VT_BOOL ise {
+        dondu gguf_atla(buffer, uzunluk, ofset, 1, hata);
+    }
+    eger tip == GGUF_VT_UINT64 veya tip == GGUF_VT_INT64 veya
+       tip == GGUF_VT_FLOAT64 ise {
+        dondu gguf_atla(buffer, uzunluk, ofset, 8, hata);
+    }
+    eger tip == GGUF_VT_STRING ise {
+        degisken metin_uzunlugu: tamsayi = gguf_u64_oku(buffer, uzunluk, ofset, hata);
+        eger hata[0] != 0 ise { dondu 0; }
+        dondu gguf_atla(buffer, uzunluk, ofset, metin_uzunlugu, hata);
+    }
+    eger tip == GGUF_VT_ARRAY ise {
+        degisken eleman_tipi: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+        degisken adet: tamsayi = gguf_u64_oku(buffer, uzunluk, ofset, hata);
+        eger hata[0] != 0 ise { dondu 0; }
+        degisken i: tamsayi = 0;
+        dongu i < adet {
+            eger gguf_metadata_degeri_atla(buffer, uzunluk, ofset, hata, eleman_tipi) == 0 ise { dondu 0; }
+            i = i + 1;
+        }
+        dondu 1;
+    }
+    hata[0] = 1;
+    dondu 0;
+}
+
+isv gguf_durum_sifirla(durum: *GGUFDurum) {
+    durum->dosya_adi = 0;
+    durum->buffer = 0;
+    durum->buffer_uzunluk = 0;
+    durum->versiyon = 0;
+    durum->tensor_sayisi = 0;
+    durum->meta_kv_sayisi = 0;
+    durum->tensor_list = 0;
+    durum->ilk_veri_offset = 0;
+    durum->mimari_adi = 0;
+    durum->quant_tipi = GGML_TYPE_F32;
+    durum->vocab_boyutu = 0;
+    durum->gizli_boyut = 0;
+    durum->katman_sayisi = 0;
+    durum->expert_sayisi = 0;
+    durum->top_k = 0;
+    durum->context_boyutu = 0;
+    durum->metadata_model_hazir = 0;
+    durum->kafa_sayisi = 0;
+    durum->kv_kafa_sayisi = 0;
+    durum->kafa_boyutu = 0;
+    durum->ffn_boyutu = 0;
+    durum->rope_boyutu = 0;
+    durum->rope_freq_base_q16 = 0;
+    durum->norm_eps_q16 = 0;
+    durum->bos_token_id = 0 - 1;
+    durum->eos_token_id = 0 - 1;
+    durum->chat_sablon_tipi = 0;
+    durum->tokenizer_add_bos = 0;
+    durum->gemma4 = 0;
+}
+
+# Returns the model-declared attention mode for a layer: 1 means sliding
+# window attention, 0 means global attention. Invalid profiles fail closed.
+isv gguf_gemma4_katman_swa_mi(durum: *GGUFDurum, katman: tamsayi) -> tamsayi {
+    eger durum == 0 veya katman < 0 veya katman >= durum->katman_sayisi ise { dondu 0 - 1; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    eger profile == 0 veya profile->sliding_window_pattern_count != durum->katman_sayisi veya
+       katman >= profile->sliding_window_pattern_count ise { dondu 0 - 1; }
+    degisken bit: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < katman { bit = bit * 2; i = i + 1; }
+    dondu (profile->sliding_window_pattern_bits / bit) % 2;
+}
+
+# Returns whether this Gemma layer owns a KV cache entry. The final
+# shared_kv_layers layers reuse cache state instead of adding cache entries.
+isv gguf_gemma4_kv_yazan_katman_mi(durum: *GGUFDurum, katman: tamsayi) -> tamsayi {
+    eger durum == 0 veya katman < 0 veya katman >= durum->katman_sayisi ise { dondu 0 - 1; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    eger profile == 0 veya profile->shared_kv_layers < 0 veya
+       profile->shared_kv_layers >= durum->katman_sayisi ise { dondu 0 - 1; }
+    dondu katman < durum->katman_sayisi - profile->shared_kv_layers;
+}
+
+# Mirrors llama.cpp Gemma4 KV reuse: shared layers read the most recent
+# earlier cache layer with the same SWA/global attention mode.
+isv gguf_gemma4_kv_kaynak_katman(durum: *GGUFDurum, katman: tamsayi) -> tamsayi {
+    degisken writes: tamsayi = gguf_gemma4_kv_yazan_katman_mi(durum, katman);
+    eger writes < 0 ise { dondu 0 - 1; }
+    eger writes == 1 ise { dondu katman; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    degisken swa: tamsayi = gguf_gemma4_katman_swa_mi(durum, katman);
+    eger profile == 0 veya swa < 0 ise { dondu 0 - 1; }
+    degisken first_shared: tamsayi = durum->katman_sayisi - profile->shared_kv_layers;
+    degisken source: tamsayi = first_shared - 1;
+    eger swa == 1 ise { source = first_shared - 2; }
+    eger source < 0 veya gguf_gemma4_kv_yazan_katman_mi(durum, source) != 1 veya
+       gguf_gemma4_katman_swa_mi(durum, source) != swa ise { dondu 0 - 1; }
+    dondu source;
+}
+
+# Derives actual per-layer Q/K/V projection widths from Gemma metadata.
+# Writes Q, K/V widths and per-head width; rejects inconsistent profiles.
+isv gguf_gemma4_katman_geometrisi(durum: *GGUFDurum, katman: tamsayi,
+                                  q_genislik: *tamsayi,
+                                  kv_genislik: *tamsayi,
+                                  kafa_genislik: *tamsayi) -> tamsayi {
+    eger durum == 0 veya q_genislik == 0 veya kv_genislik == 0 veya kafa_genislik == 0 veya
+       durum->kafa_sayisi <= 0 veya durum->kv_kafa_sayisi <= 0 ise { dondu 0; }
+    degisken swa: tamsayi = gguf_gemma4_katman_swa_mi(durum, katman);
+    eger swa < 0 ise { dondu 0; }
+    degisken profile: *GGUFGemma4Profile = durum->gemma4;
+    degisken head_dim: tamsayi = profile->full_key_length;
+    eger swa == 1 ise { head_dim = profile->swa_key_length; }
+    eger head_dim <= 0 veya durum->kafa_sayisi * head_dim > 65536 veya
+       durum->kv_kafa_sayisi * head_dim > 65536 ise { dondu 0; }
+    eger swa == 1 ve profile->swa_value_length != head_dim ise { dondu 0; }
+    eger swa == 0 ve profile->full_value_length != head_dim ise { dondu 0; }
+    eger profile->per_layer_input_length <= 0 veya profile->swa_rope_dimension <= 0 veya
+       profile->swa_rope_dimension > head_dim veya profile->swa_rope_dimension % 2 != 0 ise {
+        dondu 0;
+    }
+    q_genislik[0] = durum->kafa_sayisi * head_dim;
+    kv_genislik[0] = durum->kv_kafa_sayisi * head_dim;
+    kafa_genislik[0] = head_dim;
+    dondu 1;
+}
+
+# Null-terminated metadata string içinde küçük ASCII parçası arar.
+isv gguf_metadata_metin_iceriyor_mu(metin: *u8, aranan: *u8, aranan_uzn: tamsayi) -> tamsayi {
+    eger metin == 0 veya aranan == 0 veya aranan_uzn <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        degisken j: tamsayi = 0;
+        degisken esit: tamsayi = 1;
+        dongu j < aranan_uzn {
+            eger metin[i + j] == 0 veya metin[i + j] != aranan[j] ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# GGUF bool metadata'sını okur.
+isv gguf_metadata_bool_oku(buffer: *u8, uzunluk: tamsayi,
+                           ofset: *tamsayi, hata: *tamsayi,
+                           tip: tamsayi) -> tamsayi {
+    eger tip != GGUF_VT_BOOL veya buffer == 0 veya ofset == 0 veya hata == 0 veya
+       gguf_okuma_sinirli_mi(buffer, uzunluk, ofset[0], 1) == 0 ise { hata[0] = 1; dondu 0; }
+    degisken sonuc: tamsayi = buffer[ofset[0]];
+    ofset[0] = ofset[0] + 1;
+    dondu sonuc;
+}
+
+# GGUF anahtarını buffer üzerinde, kopyalama yapmadan karşılaştırır.
+isv gguf_metadata_anahtar_mi(buffer: *u8, uzunluk: tamsayi,
+                             ofset: tamsayi, anahtar_uzunlugu: tamsayi,
+                             aranan: *u8, aranan_uzunlugu: tamsayi) -> tamsayi {
+    eger aranan == 0 veya anahtar_uzunlugu != aranan_uzunlugu veya
+       gguf_okuma_sinirli_mi(buffer, uzunluk, ofset, anahtar_uzunlugu) == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < anahtar_uzunlugu {
+        eger buffer[ofset + i] != aranan[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Mimariye özel anahtarları prefix'ten bağımsız tanır: llama.block_count,
+# qwen2.block_count ve bitnet.block_count aynı profile bağlanır.
+isv gguf_metadata_sonek_mi(buffer: *u8, uzunluk: tamsayi,
+                           ofset: tamsayi, anahtar_uzunlugu: tamsayi,
+                           sonek: *u8, sonek_uzunlugu: tamsayi) -> tamsayi {
+    eger anahtar_uzunlugu < sonek_uzunlugu veya sonek == 0 ise { dondu 0; }
+    degisken baslangic: tamsayi = anahtar_uzunlugu - sonek_uzunlugu;
+    dondu gguf_metadata_anahtar_mi(buffer, uzunluk, ofset + baslangic,
+                                   sonek_uzunlugu, sonek, sonek_uzunlugu);
+}
+
+# GGUF float32 metadata'sını Q16.16'ya çevirir. Metadata alanları için
+# host floating-point ABI'sine ihtiyaç bırakmaz.
+isv gguf_metadata_q16_oku(buffer: *u8, uzunluk: tamsayi,
+                          ofset: *tamsayi, hata: *tamsayi,
+                          tip: tamsayi) -> tamsayi {
+    eger tip != GGUF_VT_FLOAT32 veya buffer == 0 veya ofset == 0 ise { hata[0] = 1; dondu 0; }
+    degisken bits: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+    eger hata[0] != 0 ise { dondu 0; }
+    degisken isaret: tamsayi = bits / 2147483648;
+    degisken us: tamsayi = (bits / 8388608) % 256;
+    degisken mantis: tamsayi = bits % 8388608;
+    eger us == 255 veya us == 0 ise { hata[0] = 1; dondu 0; }
+    degisken sonuc: tamsayi = (8388608 + mantis) / 128;
+    degisken fark: tamsayi = us - 127;
+    eger fark > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i < fark { sonuc = sonuc * 2; i = i + 1; }
+    } yoksa eger fark < 0 ise {
+        degisken j: tamsayi = 0;
+        dongu j < 0 - fark { sonuc = sonuc / 2; j = j + 1; }
+    }
+    eger isaret == 1 ise { sonuc = 0 - sonuc; }
+    dondu sonuc;
+}
+
+
+# GGUF integer metadata'sını tamsayıya çevirir. U64 değerler YKN'nin
+# mevcut tamsayi ABI sınırları dışındaysa bilinçli olarak reddedilir.
+isv gguf_metadata_tamsayi_oku(buffer: *u8, uzunluk: tamsayi,
+                              ofset: *tamsayi, hata: *tamsayi,
+                              tip: tamsayi) -> tamsayi {
+    eger tip == GGUF_VT_UINT32 veya tip == GGUF_VT_INT32 ise {
+        dondu gguf_u32_oku(buffer, uzunluk, ofset, hata);
+    }
+    eger tip == GGUF_VT_UINT64 veya tip == GGUF_VT_INT64 ise {
+        degisken dusuk: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+        degisken yuksek: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+        eger hata[0] != 0 veya yuksek != 0 ise { hata[0] = 1; dondu 0; }
+        dondu dusuk;
+    }
+    hata[0] = 1;
+    dondu 0;
+}
+
+# Bir GGUF array değerini atlar ve eleman sayısını döndürür. Vocab/merge
+# listeleri için içerik kopyalanmaz; tokenizer katmanı gerektiğinde buffer'dan
+# lazy olarak okur.
+isv gguf_metadata_dizi_atla(buffer: *u8, uzunluk: tamsayi,
+                            ofset: *tamsayi, hata: *tamsayi,
+                            tip: tamsayi, adet: *tamsayi) -> tamsayi {
+    eger tip != GGUF_VT_ARRAY veya adet == 0 ise { hata[0] = 1; dondu 0; }
+    degisken eleman_tipi: tamsayi = gguf_u32_oku(buffer, uzunluk, ofset, hata);
+    degisken eleman_adedi: tamsayi = gguf_u64_oku(buffer, uzunluk, ofset, hata);
+    eger hata[0] != 0 veya eleman_adedi < 0 ise { hata[0] = 1; dondu 0; }
+    adet[0] = eleman_adedi;
+    degisken i: tamsayi = 0;
+    dongu i < eleman_adedi {
+        eger gguf_metadata_degeri_atla(buffer, uzunluk, ofset, hata, eleman_tipi) == 0 ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Tensor tablosundaki gerçek GGML tiplerinden model quantization seçer.
+# Embedding gibi F16 tensorler BitNet gövdesindeki IQ2_S tensorünü maskelemez.
+isv gguf_model_quant_tipi_bul(durum: *GGUFDurum) -> tamsayi {
+    eger durum == 0 veya durum->tensor_list == 0 ise { dondu GGML_TYPE_F32; }
+    degisken sonuc: tamsayi = GGML_TYPE_F32;
+    degisken i: tamsayi = 0;
+    dongu i < durum->tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum->tensor_list + i * GGUF_TENSOR_STRIDE;
+        eger tensor->ggml_type == GGML_TYPE_I2_S { dondu GGML_TYPE_I2_S; }
+        eger tensor->ggml_type == GGML_TYPE_IQ2_S_GGML { dondu GGML_TYPE_IQ2_S_GGML; }
+        eger tensor->ggml_type == GGML_TYPE_TQ2_0 { dondu GGML_TYPE_TQ2_0; }
+        eger tensor->ggml_type == GGML_TYPE_TQ1_0 { dondu GGML_TYPE_TQ1_0; }
+        eger tensor->ggml_type == GGML_TYPE_BF16 ve sonuc == GGML_TYPE_F32 ise { sonuc = GGML_TYPE_BF16; }
+        eger tensor->ggml_type == GGML_TYPE_IQ4_NL ise { sonuc = GGML_TYPE_IQ4_NL; }
+        eger tensor->ggml_type == GGML_TYPE_Q6_K ise { sonuc = GGML_TYPE_Q6_K; }
+        eger tensor->ggml_type == GGML_TYPE_Q4_K ise { sonuc = GGML_TYPE_Q4_K; }
+        eger tensor->ggml_type == GGML_TYPE_Q1_0 ise { sonuc = GGML_TYPE_Q1_0; }
+        eger tensor->ggml_type == GGML_TYPE_IQ2_S_LEGACY ise { sonuc = GGML_TYPE_IQ2_S_LEGACY; }
+        yoksa eger tensor->ggml_type == GGML_TYPE_Q4_0 ve sonuc == GGML_TYPE_F32 ise { sonuc = GGML_TYPE_Q4_0; }
+        yoksa eger tensor->ggml_type == GGML_TYPE_F16 ve sonuc == GGML_TYPE_F32 ise { sonuc = GGML_TYPE_F16; }
+        i = i + 1;
+    }
+    dondu sonuc;
+}
+
+# Buffer zaten bellekteyken GGUF v3 parse eder.
+isv gguf_buffer_parse(buffer: *u8, uzunluk: tamsayi, durum: *GGUFDurum) -> tamsayi {
+    GGUF_SON_HATA = 0;
+    eger buffer == 0 veya durum == 0 veya uzunluk <= 0 ise { GGUF_SON_HATA = 1; dondu 0; }
+    gguf_durum_sifirla(durum);
+    durum->gemma4 = bellek_tahsis_et(96);
+    degisken gemma4: *GGUFGemma4Profile = durum->gemma4;
+    eger gemma4 == 0 ise { GGUF_SON_HATA = 7; dondu 0; }
+    gemma4->shared_kv_layers = 0;
+    gemma4->swa_window = 0;
+    gemma4->swa_key_length = 0;
+    gemma4->swa_value_length = 0;
+    gemma4->full_key_length = 0;
+    gemma4->full_value_length = 0;
+    gemma4->rope_freq_base_swa_q16 = 0;
+    gemma4->logit_softcap_q16 = 0;
+    gemma4->sliding_window_pattern_bits = 0;
+    gemma4->sliding_window_pattern_count = 0;
+    gemma4->swa_rope_dimension = 0;
+    gemma4->per_layer_input_length = 0;
+    durum->buffer = buffer;
+    durum->buffer_uzunluk = uzunluk;
+
+    degisken ofset: tamsayi = 0;
+    degisken hata: tamsayi = 0;
+    degisken magic: tamsayi = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+    durum->versiyon = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+    durum->tensor_sayisi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+    durum->meta_kv_sayisi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+    eger hata != 0 veya magic != GGUF_MAGIC veya durum->versiyon != GGUF_V3 ise {
+        GGUF_SON_HATA = 3;
+        dondu 0;
+    }
+
+    degisken kv: tamsayi = 0;
+    dongu kv < durum->meta_kv_sayisi {
+        degisken key_uzunlugu: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+        degisken key_ofseti: tamsayi = ofset;
+        eger hata != 0 veya gguf_okuma_sinirli_mi(buffer, uzunluk, key_ofseti, key_uzunlugu) == 0 veya
+           gguf_atla(buffer, uzunluk, &ofset, key_uzunlugu, &hata) == 0 ise {
+            GGUF_SON_HATA = 4;
+            dondu 0;
+        }
+        degisken value_type: tamsayi = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+        eger hata != 0 ise { GGUF_SON_HATA = 5; dondu 0; }
+
+        # Mimari adı string olarak tutulur; runtime daha sonra canonical
+        # architecture enum'una çevirir.
+        eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                      "general.architecture".ptr, 20) == 1 ve
+           value_type == GGUF_VT_STRING ise {
+            durum->mimari_adi = gguf_string_kopyala_at(buffer, uzunluk, &ofset, &hata);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                            "tokenizer.ggml.tokens".ptr, 21) == 1 ve
+                 value_type == GGUF_VT_ARRAY ise {
+            degisken vocab_adedi: tamsayi = 0;
+            eger gguf_metadata_dizi_atla(buffer, uzunluk, &ofset, &hata,
+                                         value_type, &vocab_adedi) == 0 ise { hata = 1; }
+            durum->vocab_boyutu = vocab_adedi;
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".embedding_length".ptr, 17) == 1 ise {
+            durum->gizli_boyut = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".block_count".ptr, 12) == 1 ise {
+            durum->katman_sayisi = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".context_length".ptr, 15) == 1 ise {
+            durum->context_boyutu = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".expert_count".ptr, 13) == 1 ise {
+            durum->expert_sayisi = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".expert_used_count".ptr, 18) == 1 ise {
+            durum->top_k = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.head_count_kv".ptr, 24) == 1 ise {
+            durum->kv_kafa_sayisi = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.head_count".ptr, 21) == 1 ise {
+            durum->kafa_sayisi = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.key_length".ptr, 21) == 1 ise {
+            durum->kafa_boyutu = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+            gemma4->full_key_length = durum->kafa_boyutu;
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".feed_forward_length".ptr, 20) == 1 ise {
+            durum->ffn_boyutu = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".rope.dimension_count".ptr, 21) == 1 ise {
+            durum->rope_boyutu = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".rope.freq_base".ptr, 15) == 1 ise {
+            durum->rope_freq_base_q16 = gguf_metadata_q16_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          "gemma4.attention.shared_kv_layers".ptr, 33) == 1 ise {
+            gemma4->shared_kv_layers = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.sliding_window".ptr, 25) == 1 ise {
+            gemma4->swa_window = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+            GGUF_DEBUG_SWA_WINDOW = gemma4->swa_window;
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          "gemma4.attention.sliding_window_pattern".ptr, 39) == 1 ise {
+            # Preserve pattern arrays only when the metadata uses integer
+            # entries. Unsupported element types fail parsing, never default.
+            eger value_type != GGUF_VT_ARRAY ise { hata = 71; }
+            yoksa {
+                degisken pattern_type: tamsayi = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+                degisken pattern_count: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+                eger hata != 0 ise { hata = 72; }
+                eger pattern_count <= 0 veya pattern_count > 63 ise { hata = 73; }
+                yoksa {
+                    gemma4->sliding_window_pattern_count = pattern_count;
+                    degisken pattern_bit: tamsayi = 1;
+                    degisken pi: tamsayi = 0;
+                    dongu pi < pattern_count {
+                        degisken pattern_value: tamsayi = 0;
+                        eger pattern_type == GGUF_VT_BOOL ise {
+                            pattern_value = gguf_metadata_bool_oku(buffer, uzunluk, &ofset, &hata, pattern_type);
+                        } yoksa {
+                            pattern_value = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, pattern_type);
+                        }
+                        eger hata != 0 ise { hata = 75; }
+                        eger pattern_value != 0 ise {
+                            gemma4->sliding_window_pattern_bits = gemma4->sliding_window_pattern_bits + pattern_bit;
+                        }
+                        pattern_bit = pattern_bit * 2;
+                        pi = pi + 1;
+                    }
+                }
+            }
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.key_length_swa".ptr, 25) == 1 ise {
+            gemma4->swa_key_length = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.value_length_swa".ptr, 27) == 1 ise {
+            gemma4->swa_value_length = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.key_length".ptr, 21) == 1 ise {
+            gemma4->full_key_length = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.value_length".ptr, 23) == 1 ise {
+            gemma4->full_value_length = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          "gemma4.rope.dimension_count_swa".ptr, 31) == 1 ise {
+            gemma4->swa_rope_dimension = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          "gemma4.embedding_length_per_layer_input".ptr, 39) == 1 ise {
+            gemma4->per_layer_input_length = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".rope.freq_base_swa".ptr, 19) == 1 ise {
+            gemma4->rope_freq_base_swa_q16 = gguf_metadata_q16_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".final_logit_softcapping".ptr, 24) == 1 ise {
+            gemma4->logit_softcap_q16 = gguf_metadata_q16_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_sonek_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                          ".attention.layer_norm_rms_epsilon".ptr, 33) == 1 ise {
+            durum->norm_eps_q16 = gguf_metadata_q16_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                            "tokenizer.ggml.bos_token_id".ptr, 27) == 1 ise {                      
+            durum->bos_token_id = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                            "tokenizer.ggml.eos_token_id".ptr, 27) == 1 ise {
+            durum->eos_token_id = gguf_metadata_tamsayi_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                            "tokenizer.ggml.add_bos_token".ptr, 28) == 1 ise {
+            durum->tokenizer_add_bos = gguf_metadata_bool_oku(buffer, uzunluk, &ofset, &hata, value_type);
+        }
+        yoksa eger gguf_metadata_anahtar_mi(buffer, uzunluk, key_ofseti, key_uzunlugu,
+                                            "tokenizer.chat_template".ptr, 23) == 1 ve
+                 value_type == GGUF_VT_STRING ise {
+            degisken sablon: *u8 = gguf_string_kopyala_at(buffer, uzunluk, &ofset, &hata);
+            eger sablon != 0 ve gguf_metadata_metin_iceriyor_mu(sablon, "Human: ".ptr, 7) == 1 ve
+               gguf_metadata_metin_iceriyor_mu(sablon, "BITNETAssistant: ".ptr, 17) == 1 ise {
+                durum->chat_sablon_tipi = 1;
+            } yoksa eger sablon != 0 ve gguf_metadata_metin_iceriyor_mu(sablon, "[INST]".ptr, 6) == 1 ise {
+                durum->chat_sablon_tipi = 2;
+            }
+        }
+        yoksa eger gguf_metadata_degeri_atla(buffer, uzunluk, &ofset, &hata, value_type) == 0 ise {
+            hata = 1;
+        }
+        eger hata != 0 ise {
+            GGUF_SON_HATA = 5;
+            dondu 0;
+        }
+        kv = kv + 1;
+    }
+
+    eger durum->tensor_sayisi < 0 veya durum->tensor_sayisi > 1048576 ise { GGUF_SON_HATA = 6; dondu 0; }
+    durum->tensor_list = bellek_tahsis_et((durum->tensor_sayisi + 1) * GGUF_TENSOR_STRIDE);
+    eger durum->tensor_list == 0 ise { GGUF_SON_HATA = 7; dondu 0; }
+
+    degisken ti: tamsayi = 0;
+    dongu ti < durum->tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum->tensor_list + ti * GGUF_TENSOR_STRIDE;
+        tensor->isim = gguf_string_kopyala_at(buffer, uzunluk, &ofset, &hata);
+        tensor->ndim = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+        tensor->dim_0 = 0;
+        tensor->dim_1 = 0;
+        tensor->dim_2 = 0;
+        tensor->dim_3 = 0;
+        eger tensor->ndim < 0 veya tensor->ndim > 4 ise { hata = 1; }
+
+        degisken di: tamsayi = 0;
+        dongu di < tensor->ndim {
+            degisken dim: tamsayi = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+            eger di == 0 ise { tensor->dim_0 = dim; }
+            eger di == 1 ise { tensor->dim_1 = dim; }
+            eger di == 2 ise { tensor->dim_2 = dim; }
+            eger di == 3 ise { tensor->dim_3 = dim; }
+            di = di + 1;
+        }
+        tensor->ggml_type = gguf_u32_oku(buffer, uzunluk, &ofset, &hata);
+        tensor->veri_offset = gguf_u64_oku(buffer, uzunluk, &ofset, &hata);
+        tensor->bayt_sayisi = gguf_ggml_bayt_sayisi(
+            tensor->ggml_type, tensor->ndim,
+            tensor->dim_0, tensor->dim_1,
+            tensor->dim_2, tensor->dim_3
+        );
+        eger hata != 0 veya tensor->isim == 0 ise { GGUF_SON_HATA = 8; dondu 0; }
+        ti = ti + 1;
+    }
+
+    eger gguf_hizala_atla(buffer, uzunluk, &ofset, GGUF_DEFAULT_ALIGNMENT, &hata) == 0 veya hata != 0 ise {
+        GGUF_SON_HATA = 9;
+        dondu 0;
+    }
+    durum->ilk_veri_offset = ofset;
+
+    ti = 0;
+    dongu ti < durum->tensor_sayisi {
+        degisken tensor2: *GGUFTensorInfo = durum->tensor_list + ti * GGUF_TENSOR_STRIDE;
+        tensor2->veri_offset = durum->ilk_veri_offset + tensor2->veri_offset;
+        ti = ti + 1;
+    }
+
+    eger gemma4->sliding_window_pattern_count > 0 ve
+       gemma4->sliding_window_pattern_count != durum->katman_sayisi ise {
+        GGUF_SON_HATA = 10;
+        dondu 0;
+    }
+    eger durum->mimari_adi != 0 ve
+       gguf_metadata_metin_iceriyor_mu(durum->mimari_adi, "gemma4".ptr, 6) == 1 ise {
+        eger gemma4->shared_kv_layers < 0 veya gemma4->shared_kv_layers >= durum->katman_sayisi veya
+           gemma4->swa_window <= 0 veya gemma4->swa_rope_dimension <= 0 veya
+           gemma4->per_layer_input_length <= 0 veya gemma4->swa_key_length <= 0 veya
+           gemma4->swa_value_length <= 0 veya gemma4->full_key_length <= 0 veya
+           gemma4->full_value_length <= 0 veya gemma4->sliding_window_pattern_count != durum->katman_sayisi ise {
+            GGUF_SON_HATA = 11;
+            dondu 0;
+        }
+    }
+
+    # Bazı eski GGUF üreticileri kafa boyutunu ayrı yazmaz.
+    eger durum->kafa_boyutu <= 0 ve durum->kafa_sayisi > 0 ve
+       durum->gizli_boyut % durum->kafa_sayisi == 0 ise {
+        durum->kafa_boyutu = durum->gizli_boyut / durum->kafa_sayisi;
+    }
+    eger durum->kv_kafa_sayisi <= 0 ise { durum->kv_kafa_sayisi = durum->kafa_sayisi; }
+    eger durum->rope_boyutu <= 0 ise { durum->rope_boyutu = durum->kafa_boyutu; }
+    eger durum->rope_freq_base_q16 <= 0 ise { durum->rope_freq_base_q16 = 655360000; }
+    eger durum->norm_eps_q16 <= 0 ise { durum->norm_eps_q16 = 1; }
+    durum->quant_tipi = gguf_model_quant_tipi_bul(durum);
+    eger durum->mimari_adi != 0 ve durum->vocab_boyutu > 0 ve
+       durum->gizli_boyut > 0 ve durum->katman_sayisi > 0 ve
+       durum->context_boyutu > 0 ise {
+        durum->metadata_model_hazir = 1;
+    }
+    dondu 1;
+}
+
+# Dosyadan okuyup buffer parser'a aktarir. Buyuk dosyalarda ilk 64MB okunur.
+isv gguf_yukle(dosya_adi: *u8, durum: *GGUFDurum) -> tamsayi {
+    eger dosya_adi == 0 veya durum == 0 ise { GGUF_SON_HATA = 1; dondu 0; }
+    durum->dosya_adi = dosya_adi;
+    degisken maks_boyut: tamsayi = 67108864;
+    degisken buffer: *u8 = bellek_tahsis_et(maks_boyut + 1);
+    eger buffer == 0 ise { GGUF_SON_HATA = 11; dondu 0; }
+    degisken uzunluk: tamsayi = dosya_oku(dosya_adi, buffer, maks_boyut);
+    eger uzunluk <= 0 ise { GGUF_SON_HATA = 11; dondu 0; }
+    buffer[uzunluk] = 0;
+    dondu gguf_buffer_parse(buffer, uzunluk, durum);
+}
+
+isv gguf_tensor_bul_adi_ile(durum: *GGUFDurum, aranan_isim: *u8) -> *GGUFTensorInfo {
+    eger durum == 0 veya aranan_isim == 0 veya durum->tensor_list == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < durum->tensor_sayisi {
+        degisken tensor: *GGUFTensorInfo = durum->tensor_list + i * GGUF_TENSOR_STRIDE;
+        degisken isim_ptr: *u8 = tensor->isim;
+        degisken j: tamsayi = 0;
+        degisken esit: tamsayi = 1;
+        dongu isim_ptr[j] != 0 veya aranan_isim[j] != 0 {
+            eger isim_ptr[j] != aranan_isim[j] ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu tensor; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Tensor payload'ini GGUF mutlak offset'inden okur.
+# Header penceresi disindaki buyuk I2_S tensorleri icin lazy/range read.
+isv gguf_tensor_verisini_oku(dosya_adi: *u8,
+                             tensor: *GGUFTensorInfo,
+                             hedef: *u8,
+                             maks_bayt: tamsayi) -> tamsayi {
+    eger dosya_adi == 0 veya tensor == 0 veya hedef == 0 veya maks_bayt <= 0 ise { dondu 0; }
+    degisken okunacak: tamsayi = tensor->bayt_sayisi;
+    eger okunacak > maks_bayt ise { okunacak = maks_bayt; }
+    dondu dosya_oku_aralik(dosya_adi, tensor->veri_offset, hedef, okunacak);
+}

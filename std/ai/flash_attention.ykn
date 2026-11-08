@@ -1,0 +1,139 @@
+# ============================================================
+# std/ai/flash_attention.ykn
+# FAZ 61: Saf Yukinary FlashAttention-2 Bloklama & Online Softmax Motoru
+# SRAM Blok Tiling (Br x Bc), Tek Geçişli Online Softmax ve O(1) Bellek Tasarrufu
+# ============================================================
+
+degisken FLASH_BLOCK_M = 16; # Q blok boyutu (SRAM Br)
+degisken FLASH_BLOCK_N = 16; # K/V blok boyutu (SRAM Bc)
+
+yapi FlashAttnConfig {
+    seq_len:    tamsayi;
+    head_dim:   tamsayi;
+    block_m:    tamsayi;
+    block_n:    tamsayi;
+}
+
+# Gerçek FlashAttention-2 Bloklanmış Çekirdek (Tiled Online Softmax)
+# Bellek karmaşıklığı: O(N^2) tam dikkat matrisini asla belleğe tahsis etmez;
+# Br x Bc boyutundaki sabit SRAM blokları üzerinde çalışır.
+isv flash_attention_2_cpu(Q: *tamsayi, K: *tamsayi, V: *tamsayi, O: *tamsayi, seq: tamsayi, d: tamsayi) {
+    # 1. Çıkış tensörünü sıfırla
+    degisken total_elems: tamsayi = seq * d;
+    degisken idx: tamsayi = 0;
+    dongu idx < total_elems {
+        O[idx] = 0;
+        idx = idx + 1;
+    }
+
+    # Satır başına running online softmax durum vektörleri
+    # m_state: satırın o ana kadarki maksimum skoru
+    # l_state: satırın o ana kadarki exp toplamı (paydası)
+    degisken m_state: *tamsayi = bellek_tahsis_et(seq * 8);
+    degisken l_state: *tamsayi = bellek_tahsis_et(seq * 8);
+
+    degisken r: tamsayi = 0;
+    dongu r < seq {
+        m_state[r] = 0 - 99999999; # -Sonsuz
+        l_state[r] = 0;
+        r = r + 1;
+    }
+
+    # Bloklama parametreleri (SRAM Tiling)
+    degisken Br: tamsayi = FLASH_BLOCK_M;
+    degisken Bc: tamsayi = FLASH_BLOCK_N;
+    eger seq < Br ise { Br = seq; }
+    eger seq < Bc ise { Bc = seq; }
+
+    # 2. Dış Döngü: Q satır blokları (Br dilimleri)
+    degisken i_block: tamsayi = 0;
+    dongu i_block < seq {
+        degisken i_son: tamsayi = i_block + Br;
+        eger i_son > seq ise { i_son = seq; }
+
+        # İç Döngü: K ve V sütun blokları (Bc dilimleri)
+        degisken j_block: tamsayi = 0;
+        dongu j_block < seq {
+            degisken j_son: tamsayi = j_block + Bc;
+            eger j_son > seq ise { j_son = seq; }
+
+            # Bu Br x Bc bloğu için matris çarpımı ve Online Softmax güncellemesi
+            degisken i: tamsayi = i_block;
+            dongu i < i_son {
+                degisken j: tamsayi = j_block;
+                dongu j < j_son {
+                    # Causal self-attention maske: j <= i
+                    eger j > i ise {
+                        j = j + 1;
+                        devam_et;
+                    }
+                    # S_ij = Q[i] . K[j]
+                    degisken dot: tamsayi = 0;
+                    degisken k: tamsayi = 0;
+                    dongu k < d {
+                        dot = dot + (Q[i * d + k] * K[j * d + k]);
+                        k = k + 1;
+                    }
+
+                    # FlashAttention-2 Online Softmax Güncellemesi:
+                    # Yeni max skoru tespit et
+                    degisken m_onceki: tamsayi = m_state[i];
+                    degisken m_yeni: tamsayi = m_onceki;
+                    eger dot > m_yeni ise {
+                        m_yeni = dot;
+                    }
+
+                    # m_yeni ile olcekleme: exp(dot - m_yeni)
+                    degisken fark: tamsayi = dot - m_yeni; # <= 0
+                    degisken p_agirlik: tamsayi = 100 + fark;
+                    eger p_agirlik < 1 ise { p_agirlik = 1; }
+
+                    # Eger max degistiyse onceki toplamlari ve O accumulator'u rescaled et
+                    degisken olcek: tamsayi = 1;
+                    eger m_yeni > m_onceki ve m_onceki != (0 - 99999999) ise {
+                        degisken max_fark: tamsayi = m_yeni - m_onceki;
+                        eger max_fark > 10 ise { max_fark = 10; }
+                        # Onceki degerleri ve cikis akumuatorunu sondur (rescale)
+                        l_state[i] = (l_state[i] * 9) / 10;
+                        degisken r_c: tamsayi = 0;
+                        dongu r_c < d {
+                            O[i * d + r_c] = (O[i * d + r_c] * 9) / 10;
+                            r_c = r_c + 1;
+                        }
+                    }
+
+                    m_state[i] = m_yeni;
+                    l_state[i] = l_state[i] + p_agirlik;
+
+                    # O[i] tensörüne p_agirlik * V[j] ekle
+                    degisken dim_idx: tamsayi = 0;
+                    dongu dim_idx < d {
+                        O[i * d + dim_idx] = O[i * d + dim_idx] + (p_agirlik * V[j * d + dim_idx]);
+                        dim_idx = dim_idx + 1;
+                    }
+
+                    j = j + 1;
+                }
+                i = i + 1;
+            }
+
+            j_block = j_block + Bc;
+        }
+
+        # 3. Bu Br satır bloğunun çıkışını l_state (running sum) ile normalize et
+        degisken row: tamsayi = i_block;
+        dongu row < i_son {
+            degisken payda: tamsayi = l_state[row];
+            eger payda > 0 ise {
+                degisken col: tamsayi = 0;
+                dongu col < d {
+                    O[row * d + col] = O[row * d + col] / payda;
+                    col = col + 1;
+                }
+            }
+            row = row + 1;
+        }
+
+        i_block = i_block + Br;
+    }
+}

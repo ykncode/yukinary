@@ -1,0 +1,51 @@
+# ============================================================
+# tests/optimizer/04_loop_vectorization_unroll.ykn
+# FAZ 20: Döngü Vektörizasyonu ve 4x Kısmi Döngü Açma Doğrulaması
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(s: tamsayi) {}
+
+degisken g_vec_a: [100]tamsayi;
+degisken g_vec_b: [100]tamsayi;
+degisken g_vec_c: [100]tamsayi;
+
+isv ana() -> tamsayi {
+    # 1. Dizileri doldur
+    degisken i: tamsayi = 0;
+    dongu i < 100 {
+        g_vec_a[i] = i * 2;
+        g_vec_b[i] = i * 3;
+        g_vec_c[i] = 0;
+        i = i + 1;
+    }
+
+    # 2. Vektörizasyona ve 4x unroll'a uygun döngü: c[i] = a[i] + b[i]
+    # Optimizer bu döngüyü tespit edip 4x bloklar halinde acar
+    i = 0;
+    dongu i < 100 {
+        g_vec_c[i] = g_vec_a[i] + g_vec_b[i];
+        i = i + 1;
+    }
+
+    # 3. Sonuçları doğrula: c[i] == i * 5 olmalı
+    degisken basarisiz: tamsayi = 0;
+    i = 0;
+    dongu i < 100 {
+        degisken beklenen: tamsayi = i * 5;
+        eger g_vec_c[i] != beklenen {
+            basarisiz = 1;
+            durdur;
+        }
+        i = i + 1;
+    }
+
+    eger basarisiz != 0 {
+        ekrana_yaz("FAIL: Vektorize dongu toplami hatali!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("LOOP-VECTORIZATION-PASS\n".ptr);
+    dondu 0;
+}
+

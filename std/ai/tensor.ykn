@@ -1,0 +1,84 @@
+# ============================================================
+# std/ai/tensor.ykn
+# Q16.16 tensor metadata ve scalar referans işlemleri.
+# ============================================================
+
+ice_aktar "std/ai/ops.ykn";
+
+degisken TENSOR_F32 = 0;
+degisken TENSOR_F16 = 1;
+degisken TENSOR_Q4_0 = 2;
+degisken TENSOR_Q4_1 = 3;
+degisken TENSOR_I2_S = 41;
+
+yapi Tensor {
+    boyutlar: *tamsayi;
+    boyut_sayisi: tamsayi;
+    tip: tamsayi;
+    veri_adresi: *tamsayi;
+    eleman_sayisi: tamsayi;
+    isim: *u8;
+    veri: *tamsayi;
+    grad: *tamsayi;
+    b0: tamsayi;
+    b1: tamsayi;
+    s0: tamsayi;
+    s1: tamsayi;
+    grad_istiyor: tamsayi;
+}
+
+isv tensor_kur(t: *Tensor, isim: *u8, boyutlar: *tamsayi,
+               boyut_sayisi: tamsayi, tip: tamsayi,
+               veri_adresi: *tamsayi) -> tamsayi {
+    eger t == 0 veya boyutlar == 0 veya boyut_sayisi <= 0 veya veri_adresi == 0 ise { dondu 0; }
+    t.boyutlar = boyutlar;
+    t.boyut_sayisi = boyut_sayisi;
+    t.tip = tip;
+    t.veri_adresi = veri_adresi;
+    t.isim = isim;
+    t.eleman_sayisi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < boyut_sayisi {
+        eger boyutlar[i] <= 0 ise { t.eleman_sayisi = 0; dondu 0; }
+        t.eleman_sayisi = t.eleman_sayisi * boyutlar[i];
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv tensor_gecerli_mi(t: *Tensor) -> tamsayi {
+    eger t == 0 veya t.veri_adresi == 0 veya t.eleman_sayisi <= 0 veya
+       t.boyutlar == 0 veya t.boyut_sayisi <= 0 ise { dondu 0; }
+    dondu 1;
+}
+
+# A[M x K] * B[K x N] = C[M x N], Q16.16.
+isv tensor_carp_bitlinear(girdi: *Tensor, agirlik: *Tensor, cikti: *Tensor) -> tamsayi {
+    eger tensor_gecerli_mi(girdi) == 0 veya tensor_gecerli_mi(agirlik) == 0 veya
+       tensor_gecerli_mi(cikti) == 0 veya girdi.boyut_sayisi != 2 veya
+       agirlik.boyut_sayisi != 2 veya cikti.boyut_sayisi != 2 ise { dondu 0; }
+    degisken M: tamsayi = girdi.boyutlar[0];
+    degisken K: tamsayi = girdi.boyutlar[1];
+    eger agirlik.boyutlar[0] != K ise { dondu 0; }
+    degisken N: tamsayi = agirlik.boyutlar[1];
+    eger cikti.boyutlar[0] != M veya cikti.boyutlar[1] != N ise { dondu 0; }
+    dondu ai_matmul(girdi.veri_adresi, agirlik.veri_adresi,
+                    cikti.veri_adresi, M, N, K);
+}
+
+isv tensor_rmsnorm(girdi: *Tensor, agirlik: *Tensor, cikti: *Tensor) -> tamsayi {
+    eger tensor_gecerli_mi(girdi) == 0 veya tensor_gecerli_mi(agirlik) == 0 veya
+       tensor_gecerli_mi(cikti) == 0 veya girdi.eleman_sayisi != agirlik.eleman_sayisi veya
+       girdi.eleman_sayisi != cikti.eleman_sayisi ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < girdi.eleman_sayisi {
+        cikti.veri_adresi[i] = girdi.veri_adresi[i];
+        i = i + 1;
+    }
+    dondu ai_rmsnorm(cikti.veri_adresi, agirlik.veri_adresi, cikti.eleman_sayisi);
+}
+
+isv tensor_softmax(t: *Tensor, satir: tamsayi, sutun: tamsayi) -> tamsayi {
+    eger tensor_gecerli_mi(t) == 0 veya satir * sutun > t.eleman_sayisi ise { dondu 0; }
+    dondu ai_softmax(t.veri_adresi, satir, sutun);
+}

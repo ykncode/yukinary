@@ -1,0 +1,200 @@
+# ============================================================
+# src/fallback_js_ipc.ykn
+# FAZ 9.4 Fallback D: JS_RPC_IPC
+# Win32 CreatePipe/CreateProcessA ve POSIX pipe/fork/execve ile Node.js stdio JSON-RPC
+# ============================================================
+ice_aktar "../std/os/common.ykn";
+ice_aktar "fallback_shell.ykn";
+
+#c-lib "kernel32";
+
+harici isv CreatePipe(
+    hReadPipe: *tamsayi, hWritePipe: *tamsayi,
+    lpPipeAttributes: *u8, nSize: tamsayi
+) -> tamsayi;
+
+harici isv CreateProcessA(
+    lpApplicationName: *u8, lpCommandLine: *u8,
+    lpProcessAttributes: *u8, lpThreadAttributes: *u8,
+    bInheritHandles: tamsayi, dwCreationFlags: tamsayi,
+    lpEnvironment: *u8, lpCurrentDirectory: *u8,
+    lpStartupInfo: *u8, lpProcessInformation: *u8
+) -> tamsayi;
+
+harici isv WriteFile(hFile: tamsayi, buf: *u8, n: tamsayi, written: *tamsayi, ov: *u8) -> tamsayi;
+harici isv ReadFile(hFile: tamsayi, buf: *u8, n: tamsayi, read: *tamsayi, ov: *u8) -> tamsayi;
+harici isv CloseHandle(h: tamsayi) -> tamsayi;
+harici isv WaitForSingleObject(h: tamsayi, ms: tamsayi) -> tamsayi;
+
+yapi JsIpcBaglanti {
+    proc_handle: tamsayi;
+    stdin_yazma: tamsayi;
+    stdout_okuma: tamsayi;
+    baglanti_ok: tamsayi;
+}
+
+# Node.js IPC baglantisi kur (Win32)
+isv js_ipc_baslat_win32(node_yolu: *u8) -> *JsIpcBaglanti {
+    degisken bag: *JsIpcBaglanti = compiler_tahsis_et(32);
+    eger bag == 0 ise { dondu 0; }
+    bag.baglanti_ok = 0;
+
+    degisken stdin_okuma:  [1]tamsayi;
+    degisken stdin_yazma:  [1]tamsayi;
+    degisken stdout_okuma: [1]tamsayi;
+    degisken stdout_yazma: [1]tamsayi;
+
+    degisken sa: [24]u8;
+    degisken sa_i: tamsayi = 0;
+    dongu sa_i < 24 { sa[sa_i] = 0; sa_i = sa_i + 1; }
+    sa[0] = 24; # nLength = 24
+    sa[16] = 1; # bInheritHandle = TRUE (1)
+
+    eger CreatePipe(stdin_okuma, stdin_yazma, sa, 0) == 0 ise { dondu bag; }
+    eger CreatePipe(stdout_okuma, stdout_yazma, sa, 0) == 0 ise { dondu bag; }
+
+    # STARTUPINFOA boyutu: 104 byte (Win64)
+    degisken startup_info: [104]u8;
+    degisken ii: tamsayi = 0;
+    dongu ii < 104 { startup_info[ii] = 0; ii = ii + 1; }
+    # cb = 104
+    startup_info[0] = 104;
+    # dwFlags = STARTF_USESTDHANDLES (0x100) at offset 60
+    startup_info[60] = 0;
+    startup_info[61] = 1;
+    # hStdInput (offset 80), hStdOutput (offset 88), hStdError (offset 96)
+    degisken si_ptr: *tamsayi = startup_info + 80;
+    si_ptr[0] = stdin_okuma[0];
+    si_ptr[1] = stdout_yazma[0];
+    si_ptr[2] = stdout_yazma[0];
+
+    # PROCESS_INFORMATION: 32 byte
+    degisken proc_info: [32]u8;
+    ii = 0;
+    dongu ii < 32 { proc_info[ii] = 0; ii = ii + 1; }
+
+    degisken ok: tamsayi = CreateProcessA(0, node_yolu, 0, 0, 1, 0, 0, 0, startup_info, proc_info);
+    eger ok == 0 ise { dondu bag; }
+
+    bag.stdin_yazma  = stdin_yazma[0];
+    bag.stdout_okuma = stdout_okuma[0];
+    degisken pi_ptr: *tamsayi = proc_info;
+    CloseHandle(pi_ptr[1]); # thread handle
+    bag.proc_handle  = pi_ptr[0];
+    bag.baglanti_ok  = 1;
+
+    CloseHandle(stdout_yazma[0]);
+    CloseHandle(stdin_okuma[0]);
+    dondu bag;
+}
+
+# Node.js IPC baglantisi kur (POSIX anonim pipe + fork/execve)
+isv js_ipc_baslat_posix(node_yolu: *u8) -> *JsIpcBaglanti {
+    degisken bag: *JsIpcBaglanti = compiler_tahsis_et(32);
+    eger bag == 0 ise { dondu 0; }
+    bag.baglanti_ok = 0;
+
+    degisken pipe_in: [2]tamsayi;  # parent -> child stdin
+    degisken pipe_out: [2]tamsayi; # child stdout -> parent
+
+    eger pipe(pipe_in) != 0 ise { dondu bag; }
+    eger pipe(pipe_out) != 0 ise {
+        close(pipe_in[0]);
+        close(pipe_in[1]);
+        dondu bag;
+    }
+
+    degisken pid: tamsayi = fork();
+    eger pid < 0 ise {
+        close(pipe_in[0]);
+        close(pipe_in[1]);
+        close(pipe_out[0]);
+        close(pipe_out[1]);
+        dondu bag;
+    }
+
+    eger pid == 0 ise {
+        # Cocuk surec (child process)
+        close(pipe_in[1]);  # Parent yazma ucunu kapat
+        close(pipe_out[0]); # Parent okuma ucunu kapat
+
+        dup2(pipe_in[0], 0);  # stdin bagla
+        dup2(pipe_out[1], 1); # stdout bagla
+        close(pipe_in[0]);
+        close(pipe_out[1]);
+
+        degisken argv: [2]*u8;
+        argv[0] = node_yolu;
+        argv[1] = 0;
+
+        degisken envp: [1]*u8;
+        envp[0] = 0;
+
+        execve(node_yolu, argv, envp);
+        _exit(127);
+    }
+
+    # Ebeveyn surec (parent process)
+    close(pipe_in[0]);  # Cocuk stdin okuma ucunu kapat
+    close(pipe_out[1]); # Cocuk stdout yazma ucunu kapat
+
+    bag.stdin_yazma  = pipe_in[1];
+    bag.stdout_okuma = pipe_out[0];
+    bag.proc_handle  = pid;
+    bag.baglanti_ok  = 1;
+    dondu bag;
+}
+
+# Platform bagimsiz giris noktasi
+isv js_ipc_baslat(node_yolu: *u8) -> *JsIpcBaglanti {
+    degisken plt: tamsayi = os_hedef_platform_al();
+    eger plt == PLATFORM_WINDOWS ise {
+        dondu js_ipc_baslat_win32(node_yolu);
+    }
+    dondu js_ipc_baslat_posix(node_yolu);
+}
+
+# JSON-RPC mesaji gonder
+isv js_ipc_gonder(bag: *JsIpcBaglanti, mesaj: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger bag == 0 veya bag.baglanti_ok == 0 ise { dondu 0; }
+    degisken plt: tamsayi = os_hedef_platform_al();
+    eger plt == PLATFORM_WINDOWS ise {
+        degisken yazilan: [1]tamsayi;
+        WriteFile(bag.stdin_yazma, mesaj, uzunluk, yazilan, 0);
+        dondu yazilan[0];
+    }
+    dondu write(bag.stdin_yazma, mesaj, uzunluk);
+}
+
+# Yanit oku
+isv js_ipc_yanit_oku(bag: *JsIpcBaglanti, tampon: *u8, maks: tamsayi) -> tamsayi {
+    eger bag == 0 veya bag.baglanti_ok == 0 ise { dondu 0; }
+    degisken plt: tamsayi = os_hedef_platform_al();
+    eger plt == PLATFORM_WINDOWS ise {
+        degisken okunan: [1]tamsayi;
+        ReadFile(bag.stdout_okuma, tampon, maks, okunan, 0);
+        dondu okunan[0];
+    }
+    dondu read(bag.stdout_okuma, tampon, maks);
+}
+
+isv js_ipc_kapat(bag: *JsIpcBaglanti) {
+    eger bag == 0 ise { dondu; }
+    degisken plt: tamsayi = os_hedef_platform_al();
+    eger plt == PLATFORM_WINDOWS ise {
+        CloseHandle(bag.stdin_yazma);
+        CloseHandle(bag.stdout_okuma);
+        eger bag.proc_handle != 0 ise {
+            WaitForSingleObject(bag.proc_handle, 5000);
+            CloseHandle(bag.proc_handle);
+        }
+    } yoksa {
+        close(bag.stdin_yazma);
+        close(bag.stdout_okuma);
+        eger bag.proc_handle != 0 ise {
+            degisken stat: [1]tamsayi;
+            waitpid(bag.proc_handle, stat, 1); # WNOHANG
+        }
+    }
+    bag.baglanti_ok = 0;
+}

@@ -1,0 +1,185 @@
+# ============================================================
+# tests/test_faz_a.ykn
+# Faz A: Altyapı ve Platform Bağımsızlığı Doğrulama Testi
+# 1. Shell ve POSIX Sistem Çağrıları (fallback_shell.ykn)
+# 2. Node.js IPC ve Süreç Köprüsü (fallback_js_ipc.ykn)
+# 3. ELF64 Dinamik Kütüphane (.so) ve Sembol Tabloları (output_elf.ykn)
+# ============================================================
+
+ice_aktar "src/utils.ykn";
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fallback_shell.ykn";
+ice_aktar "src/fallback_js_ipc.ykn";
+
+isv test_shell_ve_posix() -> tamsayi {
+    ekrana_yaz("--- Test 1: Shell ve Sistem Cagrilarinin Dogrulanmasi ---\n".ptr);
+
+    degisken komut: *u8 = "echo YKN_SHELL_OK".ptr;
+    degisken k_uzn: tamsayi = 17;
+
+    degisken res: *ShellSonuc = shell_calistir(komut, k_uzn);
+    eger res == 0 ise {
+        ekrana_yaz("HATA: shell_calistir sonuc dondurmedi!\n".ptr);
+        dondu 1;
+    }
+
+    eger res.basarili != 1 ise {
+        ekrana_yaz("HATA: shell_calistir basarili olmadi!\n".ptr);
+        dondu 2;
+    }
+
+    eger res.cikis_kodu != 0 ise {
+        ekrana_yaz("HATA: shell_calistir sifir harici cikis kodu dondurdu: ".ptr);
+        sayiyi_yazdir(res.cikis_kodu);
+        ekrana_yaz("\n".ptr);
+        dondu 3;
+    }
+
+    # Ciktida "YKN_SHELL_OK" ifadesini ara
+    degisken bulundu: tamsayi = 0;
+    eger res.stdout_tampon != 0 ve res.stdout_uzn > 0 ise {
+        degisken i: tamsayi = 0;
+        dongu i + 12 <= res.stdout_uzn {
+            eger bellek_esit_mi(res.stdout_tampon + i, "YKN_SHELL_OK".ptr, 12) == 1 ise {
+                bulundu = 1;
+                durdur;
+            }
+            i = i + 1;
+        }
+    }
+
+    eger bulundu == 0 ise {
+        ekrana_yaz("HATA: Komut ciktisinda beklenen metin bulunamadi!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("[OK] Madde 1: Shell ve Sistem Cagrilarinin Calismasi Basarili.\n".ptr);
+    dondu 0;
+}
+
+isv test_js_ipc_koprusu() -> tamsayi {
+    ekrana_yaz("--- Test 2: Node.js IPC Surec Koprusunun Dogrulanmasi ---\n".ptr);
+
+    # Gecersiz veya mocksuz bir yol ile baglanti baslatma testi
+    degisken bag: *JsIpcBaglanti = js_ipc_baslat("nonexistent_node_binary_xyz.exe".ptr);
+    eger bag == 0 ise {
+        ekrana_yaz("HATA: js_ipc_baslat bellek ayiramadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Bulunamayan programda baglanti_ok sifir olmali, crash etmemeli
+    eger bag.baglanti_ok != 0 ise {
+        ekrana_yaz("HATA: Var olmayan ikili basarili olarak acildi!\n".ptr);
+        js_ipc_kapat(bag);
+        dondu 2;
+    }
+
+    # Kapatma guvenli olmali
+    js_ipc_kapat(bag);
+
+    ekrana_yaz("[OK] Madde 2: Node.js IPC Surec Koprusu Mimarisi Basarili.\n".ptr);
+    dondu 0;
+}
+
+isv test_elf_dinamik_baglanti() -> tamsayi {
+    ekrana_yaz("--- Test 3: ELF64 Dinamik Kutuphane (.so) Tablolari ---\n".ptr);
+
+    # 1. Test kaynak kodunu olustur
+    degisken kod_str: *u8 = "#c-lib \"libc\"\n\nisv ana() -> tamsayi {\n    dondu 42;\n}\n".ptr;
+    degisken kod_uzn: tamsayi = 0;
+    dongu kod_str[kod_uzn] != 0 { kod_uzn = kod_uzn + 1; }
+
+    diske_bas_ve_kapat("test_elf_temp.ykn".ptr, kod_str, kod_uzn);
+
+    # 2. Derleyiciyi calistirarak dinamik ELF64 uret (hedef linux)
+    degisken derle_komut: *u8 = ".\\ykn_stage3.exe test_elf_temp.ykn test_elf_temp.elf --hedef linux".ptr;
+    degisken derle_uzn: tamsayi = 0;
+    dongu derle_komut[derle_uzn] != 0 { derle_uzn = derle_uzn + 1; }
+
+    degisken res: *ShellSonuc = shell_calistir(derle_komut, derle_uzn);
+    eger res == 0 veya res.basarili != 1 ise {
+        ekrana_yaz("HATA: Dinamik ELF derleme komutu calistirilmadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Uretilen ELF dosyasini oku
+    degisken elf_tampon: *u8 = bellek_tahsis_et(1048576); # 1 MB
+    degisken okunan_boyut: tamsayi = dosya_oku("test_elf_temp.elf".ptr, elf_tampon, 1048576);
+    eger okunan_boyut <= 0 ise {
+        ekrana_yaz("HATA: test_elf_temp.elf dosyasi okunamadi!\n".ptr);
+        dondu 2;
+    }
+
+    # 4. ELF Sihirli Bayt Kontrolü: 0x7F, 'E', 'L', 'F'
+    eger elf_tampon[0] != 0x7F veya elf_tampon[1] != 0x45 veya
+         elf_tampon[2] != 0x4C veya elf_tampon[3] != 0x46 {
+        ekrana_yaz("HATA: ELF sihirli baytlari gecersiz!\n".ptr);
+        dondu 3;
+    }
+
+    # 5. Program Header sayisi kontrolu: e_phnum (offset 56, 2 byte) == 4
+    degisken phnum: tamsayi = elf_tampon[56] + (elf_tampon[57] * 256);
+    eger phnum != 4 ise {
+        ekrana_yaz("HATA: Dinamik ELF program header sayisi 4 degil: ".ptr);
+        sayiyi_yazdir(phnum);
+        ekrana_yaz("\n".ptr);
+        dondu 4;
+    }
+
+    # 6. PT_INTERP varligi: Program header 0 (offset 64): p_type == 3 (PT_INTERP)
+    degisken p_type0: tamsayi = elf_tampon[64];
+    eger p_type0 != 3 ise {
+        ekrana_yaz("HATA: Program Header 0 PT_INTERP degil!\n".ptr);
+        dondu 5;
+    }
+
+    # 7. PT_DYNAMIC varligi: Program header 3 (offset 64 + 3*56 = 232): p_type == 2 (PT_DYNAMIC)
+    degisken p_type3: tamsayi = elf_tampon[232];
+    eger p_type3 != 2 ise {
+        ekrana_yaz("HATA: Program Header 3 PT_DYNAMIC degil!\n".ptr);
+        dondu 6;
+    }
+
+    # 8. .dynstr icinde "libc.so.6" metnini ara
+    degisken libc_bulundu: tamsayi = 0;
+    degisken j: tamsayi = 0;
+    dongu j + 9 < okunan_boyut {
+        eger bellek_esit_mi(elf_tampon + j, "libc.so.6".ptr, 9) == 1 ise {
+            libc_bulundu = 1;
+            durdur;
+        }
+        j = j + 1;
+    }
+
+    eger libc_bulundu == 0 ise {
+        ekrana_yaz("HATA: .dynstr icerisinde 'libc.so.6' kutuphane kaydi bulunamadi!\n".ptr);
+        dondu 7;
+    }
+
+    # Gecici dosyalari temizle
+    degisken sil_komut: *u8 = "cmd /c del test_elf_temp.ykn test_elf_temp.elf".ptr;
+    degisken sil_uzn: tamsayi = 0;
+    dongu sil_komut[sil_uzn] != 0 { sil_uzn = sil_uzn + 1; }
+    shell_calistir(sil_komut, sil_uzn);
+
+    ekrana_yaz("[OK] Madde 3: ELF64 Dinamik Kutuphane (.so) ve Sembol Tablolari Basarili.\n".ptr);
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== YUKINARY FAZ A KUSURSUZ DOGRULAMA TESTI BASLIYOR ===\n".ptr);
+
+    degisken t1: tamsayi = test_shell_ve_posix();
+    eger t1 != 0 ise { dondu t1; }
+
+    degisken t2: tamsayi = test_js_ipc_koprusu();
+    eger t2 != 0 ise { dondu t2; }
+
+    degisken t3: tamsayi = test_elf_dinamik_baglanti();
+    eger t3 != 0 ise { dondu t3; }
+
+    ekrana_yaz("\n>>> TUM FAZ A MADDELERI EKSIKSIZ VE BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

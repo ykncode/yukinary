@@ -1,0 +1,46 @@
+isv ana() -> tamsayi {
+    degisken kaynak: *u8 = komut_satiri_arg1();
+    eger kaynak == 0 ise { dondu 1; }
+    
+    degisken i: tamsayi = 0;
+    dongu i < 30 {
+        degisken c: u8 = kaynak[i];
+        eger c == 0 ise {
+            ekrana_yaz(" (NUL)\n".ptr);
+            kir;
+        }
+        
+        eger c == 115 ise { ekrana_yaz("s".ptr); }
+        eger c == 114 ise { ekrana_yaz("r".ptr); }
+        eger c == 99 ise { ekrana_yaz("c".ptr); }
+        eger c == 92 ise { ekrana_yaz("\\".ptr); }
+        eger c == 116 ise { ekrana_yaz("t".ptr); }
+        eger c == 101 ise { ekrana_yaz("e".ptr); }
+        eger c == 115 ise { ekrana_yaz("s".ptr); }
+        eger c == 116 ise { ekrana_yaz("t".ptr); }
+        eger c == 95 ise { ekrana_yaz("_".ptr); }
+        eger c == 115 ise { ekrana_yaz("s".ptr); }
+        eger c == 116 ise { ekrana_yaz("t".ptr); }
+        eger c == 114 ise { ekrana_yaz("r".ptr); }
+        eger c == 117 ise { ekrana_yaz("u".ptr); }
+        eger c == 99 ise { ekrana_yaz("c".ptr); }
+        eger c == 116 ise { ekrana_yaz("t".ptr); }
+        eger c == 46 ise { ekrana_yaz(".".ptr); }
+        eger c == 121 ise { ekrana_yaz("y".ptr); }
+        eger c == 107 ise { ekrana_yaz("k".ptr); }
+        eger c == 110 ise { ekrana_yaz("n".ptr); }
+        eger c == 34 ise { ekrana_yaz("\"".ptr); } // QUOTE!
+        eger c == 32 ise { ekrana_yaz(" ".ptr); }
+        
+        i = i + 1;
+    }
+    
+    degisken buffer: *u8 = bellek_tahsis_et(200000);
+    degisken bayt: tamsayi = dosya_oku(kaynak, buffer, 200000);
+    eger bayt > 0 ise {
+        ekrana_yaz("BASARILI\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ\n".ptr);
+    }
+    dondu 0;
+}

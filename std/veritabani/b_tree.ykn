@@ -1,0 +1,301 @@
+# ============================================================
+# std/veritabani/b_tree.ykn
+# FAZ 56: Saf Yukinary B+Tree Dinamik Indeksleme Motoru
+# Gerçek Düğüm Bölme (Node Split), Derinlik Büyümesi ve Çift Yönlü Yaprak Taraması
+# ============================================================
+
+degisken BTREE_DERECE = 8; # Düğüm başına azami anahtar sayısı (M=8)
+
+yapi BTreeDugum {
+    anahtarlar:     *tamsayi;       # [BTREE_DERECE] anahtar dizisi
+    degerler:       *tamsayi;       # [BTREE_DERECE] deger dizisi (sadece yapraklarda)
+    cocuklar:       **BTreeDugum;   # [BTREE_DERECE + 1] alt dugum isaretcileri (ic dugumlerde)
+    anahtar_sayisi: tamsayi;        # Dugumde su an bulunan anahtar adedi
+    yaprak_mi:      tamsayi;        # 1 = yaprak dugum, 0 = ic dugum
+    sonraki_yaprak: *BTreeDugum;    # Aralik taramalari icin sagdaki komsu yaprak
+    onceki_yaprak:  *BTreeDugum;    # Soldaki komsu yaprak
+}
+
+yapi BTreeAgac {
+    kok:            *BTreeDugum;
+    yukseklik:      tamsayi;
+    toplam_kayit:   tamsayi;
+    ilk_yaprak:     *BTreeDugum;
+}
+
+isv btree_dugum_yarat(yaprak: tamsayi) -> *BTreeDugum {
+    degisken d: *BTreeDugum = bellek_tahsis_et(56);
+    d.anahtarlar = bellek_tahsis_et(BTREE_DERECE * 8);
+    d.degerler = bellek_tahsis_et(BTREE_DERECE * 8);
+    d.cocuklar = bellek_tahsis_et((BTREE_DERECE + 1) * 8);
+    d.anahtar_sayisi = 0;
+    d.yaprak_mi = yaprak;
+    d.sonraki_yaprak = 0;
+    d.onceki_yaprak = 0;
+
+    degisken i: tamsayi = 0;
+    dongu i <= BTREE_DERECE {
+        d.cocuklar[i] = 0;
+        eger i < BTREE_DERECE ise {
+            d.anahtarlar[i] = 0;
+            d.degerler[i] = 0;
+        }
+        i = i + 1;
+    }
+    dondu d;
+}
+
+isv btree_agac_olustur() -> *BTreeAgac {
+    degisken a: *BTreeAgac = bellek_tahsis_et(32);
+    degisken kok_yaprak: *BTreeDugum = btree_dugum_yarat(1);
+    a.kok = kok_yaprak;
+    a.yukseklik = 1;
+    a.toplam_kayit = 0;
+    a.ilk_yaprak = kok_yaprak;
+    dondu a;
+}
+
+# 1. B+Tree Arama (Key Lookup)
+isv btree_dugumde_ara(d: *BTreeDugum, anahtar: tamsayi) -> tamsayi {
+    degisken guncel: *BTreeDugum = d;
+    dongu guncel != 0 {
+        eger guncel.yaprak_mi == 1 ise {
+            # Yaprakta sirali arama
+            degisken i: tamsayi = 0;
+            dongu i < guncel.anahtar_sayisi {
+                eger guncel.anahtarlar[i] == anahtar ise {
+                    dondu guncel.degerler[i]; # Bulundu
+                }
+                eger guncel.anahtarlar[i] > anahtar ise {
+                    dondu 0 - 1; # Anahtar yok (dizi sirali oldugundan erken cikis)
+                }
+                i = i + 1;
+            }
+            dondu 0 - 1;
+        } yoksa {
+            # Ic dugumde alt dugumu bul
+            degisken i: tamsayi = 0;
+            degisken bulundu: tamsayi = 0;
+            dongu i < guncel.anahtar_sayisi ve bulundu == 0 {
+                eger anahtar < guncel.anahtarlar[i] ise {
+                    bulundu = 1;
+                } yoksa {
+                    i = i + 1;
+                }
+            }
+            degisken cocuk_ptr: **BTreeDugum = guncel.cocuklar;
+            guncel = cocuk_ptr[i];
+        }
+    }
+    dondu 0 - 1;
+}
+
+isv btree_ara(kok: *BTreeDugum, anahtar: tamsayi) -> tamsayi {
+    dondu btree_dugumde_ara(kok, anahtar);
+}
+
+# 2. Dugum Bolme (Node Split)
+# ebeveyn dugumun cocuklar[indeks] alt dugumunu ikiye boler
+isv btree_cocuk_bol(ebeveyn: *BTreeDugum, indeks: tamsayi, cocuk: *BTreeDugum) {
+    degisken medyan: tamsayi = BTREE_DERECE / 2; # 4
+    degisken kardes: *BTreeDugum = btree_dugum_yarat(cocuk.yaprak_mi);
+
+    eger cocuk.yaprak_mi == 1 ise {
+        # Yaprak bolme: Medyandan sonraki elemanlar kardese tasinir
+        degisken tasinan_sayisi: tamsayi = cocuk.anahtar_sayisi - medyan;
+        degisken j: tamsayi = 0;
+        dongu j < tasinan_sayisi {
+            kardes.anahtarlar[j] = cocuk.anahtarlar[medyan + j];
+            kardes.degerler[j] = cocuk.degerler[medyan + j];
+            j = j + 1;
+        }
+        kardes.anahtar_sayisi = tasinan_sayisi;
+        cocuk.anahtar_sayisi = medyan;
+
+        # Cift yonlu yaprak baglantilari guncellemesi
+        kardes.sonraki_yaprak = cocuk.sonraki_yaprak;
+        eger cocuk.sonraki_yaprak != 0 ise {
+            degisken sonr: *BTreeDugum = cocuk.sonraki_yaprak;
+            sonr.onceki_yaprak = kardes;
+        }
+        cocuk.sonraki_yaprak = kardes;
+        kardes.onceki_yaprak = cocuk;
+
+        # Ebeveyne yukselecek anahtar kardesin ilk anahtaridir
+        degisken terfi_anahtar: tamsayi = kardes.anahtarlar[0];
+
+        # Ebeveynin cocuk ve anahtar dizilerinde yer ac
+        degisken k: tamsayi = ebeveyn.anahtar_sayisi;
+        dongu k > indeks {
+            ebeveyn.anahtarlar[k] = ebeveyn.anahtarlar[k - 1];
+            ebeveyn.cocuklar[k + 1] = ebeveyn.cocuklar[k];
+            k = k - 1;
+        }
+        ebeveyn.anahtarlar[indeks] = terfi_anahtar;
+        ebeveyn.cocuklar[indeks + 1] = kardes;
+        ebeveyn.anahtar_sayisi = ebeveyn.anahtar_sayisi + 1;
+    } yoksa {
+        # Ic dugum bolme: Medyan anahtar ebeveyne cikar, elemanlar paylasilir
+        degisken terfi_anahtar: tamsayi = cocuk.anahtarlar[medyan];
+        degisken tasinan_sayisi: tamsayi = cocuk.anahtar_sayisi - medyan - 1;
+
+        degisken j: tamsayi = 0;
+        dongu j < tasinan_sayisi {
+            kardes.anahtarlar[j] = cocuk.anahtarlar[medyan + 1 + j];
+            kardes.cocuklar[j] = cocuk.cocuklar[medyan + 1 + j];
+            j = j + 1;
+        }
+        kardes.cocuklar[tasinan_sayisi] = cocuk.cocuklar[cocuk.anahtar_sayisi];
+        kardes.anahtar_sayisi = tasinan_sayisi;
+        cocuk.anahtar_sayisi = medyan;
+
+        # Ebeveynde yer ac ve terfi_anahtar'i yerlestir
+        degisken k: tamsayi = ebeveyn.anahtar_sayisi;
+        dongu k > indeks {
+            ebeveyn.anahtarlar[k] = ebeveyn.anahtarlar[k - 1];
+            ebeveyn.cocuklar[k + 1] = ebeveyn.cocuklar[k];
+            k = k - 1;
+        }
+        ebeveyn.anahtarlar[indeks] = terfi_anahtar;
+        ebeveyn.cocuklar[indeks + 1] = kardes;
+        ebeveyn.anahtar_sayisi = ebeveyn.anahtar_sayisi + 1;
+    }
+}
+
+# 3. Dolu Olmayan Dugume Ekleme
+isv btree_dolu_olmayana_ekle(d: *BTreeDugum, anahtar: tamsayi, deger: tamsayi) -> tamsayi {
+    degisken i: tamsayi = d.anahtar_sayisi - 1;
+
+    eger d.yaprak_mi == 1 ise {
+        # Yaprak icinde anahtar mevcut mu kontrol et (guncelleme)
+        degisken t: tamsayi = 0;
+        dongu t < d.anahtar_sayisi {
+            eger d.anahtarlar[t] == anahtar ise {
+                d.degerler[t] = deger;
+                dondu 0; # Guncellendi
+            }
+            t = t + 1;
+        }
+
+        # Sirali ekleme icin buyuk olanlari saga kaydir
+        dongu i >= 0 ve d.anahtarlar[i] > anahtar {
+            d.anahtarlar[i + 1] = d.anahtarlar[i];
+            d.degerler[i + 1] = d.degerler[i];
+            i = i - 1;
+        }
+        d.anahtarlar[i + 1] = anahtar;
+        d.degerler[i + 1] = deger;
+        d.anahtar_sayisi = d.anahtar_sayisi + 1;
+        dondu 1; # Yeni eklendi
+    } yoksa {
+        # Ic dugumde dogru cocugu bul
+        dongu i >= 0 ve d.anahtarlar[i] > anahtar {
+            i = i - 1;
+        }
+        i = i + 1;
+
+        degisken cocuk_ptr: **BTreeDugum = d.cocuklar;
+        degisken cocuk: *BTreeDugum = cocuk_ptr[i];
+
+        # Cocuk doluysa bol
+        eger cocuk.anahtar_sayisi == BTREE_DERECE ise {
+            btree_cocuk_bol(d, i, cocuk);
+            eger anahtar >= d.anahtarlar[i] ise {
+                i = i + 1;
+            }
+        }
+        degisken hedef_cocuk: *BTreeDugum = cocuk_ptr[i];
+        dondu btree_dolu_olmayana_ekle(hedef_cocuk, anahtar, deger);
+    }
+}
+
+# 4. Kok Uzerinden Genel Ekleme (Kok Doldugunda Bolup Yuksekligi Artirir)
+isv btree_agaca_ekle(agac: *BTreeAgac, anahtar: tamsayi, deger: tamsayi) -> tamsayi {
+    degisken kok: *BTreeDugum = agac.kok;
+    eger kok.anahtar_sayisi == BTREE_DERECE ise {
+        # Kok dolu, yeni bir ust kok dugumu olustur (yukseklik artar)
+        degisken yeni_kok: *BTreeDugum = btree_dugum_yarat(0); # Ic dugum
+        yeni_kok.cocuklar[0] = kok;
+        btree_cocuk_bol(yeni_kok, 0, kok);
+
+        degisken i: tamsayi = 0;
+        eger anahtar >= yeni_kok.anahtarlar[0] ise {
+            i = 1;
+        }
+        degisken c_ptr: **BTreeDugum = yeni_kok.cocuklar;
+        degisken secilen_cocuk: *BTreeDugum = c_ptr[i];
+        btree_dolu_olmayana_ekle(secilen_cocuk, anahtar, deger);
+
+        agac.kok = yeni_kok;
+        agac.yukseklik = agac.yukseklik + 1;
+        agac.toplam_kayit = agac.toplam_kayit + 1;
+        dondu 1;
+    } yoksa {
+        degisken eklendi: tamsayi = btree_dolu_olmayana_ekle(kok, anahtar, deger);
+        eger eklendi == 1 ise {
+            agac.toplam_kayit = agac.toplam_kayit + 1;
+        }
+        dondu eklendi;
+    }
+}
+
+# Geriye donuk tek dugum arayuzu ile uyumluluk fonksiyonu
+isv btree_ekle(kok: *BTreeDugum, anahtar: tamsayi, deger: tamsayi) -> tamsayi {
+    eger kok.anahtar_sayisi < BTREE_DERECE ise {
+        dondu btree_dolu_olmayana_ekle(kok, anahtar, deger);
+    } yoksa {
+        # Kok doldugunda dugum ici guncelleme var mi kontrol et
+        degisken i: tamsayi = 0;
+        dongu i < kok.anahtar_sayisi {
+            eger kok.anahtarlar[i] == anahtar ise {
+                kok.degerler[i] = deger;
+                dondu 0;
+            }
+            i = i + 1;
+        }
+        dondu 0 - 1; # Dolu (Agac wrapper kullanilmalidir)
+    }
+}
+
+# 5. B+Tree Aralik Taramasi (Range Scan)
+# min_k ile maks_k arasindaki tum kayitlari cift yonlu yaprak zincirini izleyerek toplar
+isv btree_aralik_tara(agac: *BTreeAgac, min_k: tamsayi, maks_k: tamsayi, cikti_degerler: *tamsayi, maks_kapasite: tamsayi) -> tamsayi {
+    # 1. En sol yapraga ya da min_k'yi barindiran yapraga ulas
+    degisken guncel: *BTreeDugum = agac.kok;
+    dongu guncel != 0 ve guncel.yaprak_mi == 0 {
+        degisken i: tamsayi = 0;
+        degisken bulundu: tamsayi = 0;
+        dongu i < guncel.anahtar_sayisi ve bulundu == 0 {
+            eger min_k < guncel.anahtarlar[i] ise {
+                bulundu = 1;
+            } yoksa {
+                i = i + 1;
+            }
+        }
+        degisken cocuklar: **BTreeDugum = guncel.cocuklar;
+        guncel = cocuklar[i];
+    }
+
+    degisken toplanan: tamsayi = 0;
+    degisken tara_bitti: tamsayi = 0;
+
+    dongu guncel != 0 ve tara_bitti == 0 {
+        degisken j: tamsayi = 0;
+        dongu j < guncel.anahtar_sayisi ve tara_bitti == 0 {
+            degisken k: tamsayi = guncel.anahtarlar[j];
+            eger k >= min_k ve k <= maks_k ise {
+                eger toplanan < maks_kapasite ise {
+                    cikti_degerler[toplanan] = guncel.degerler[j];
+                    toplanan = toplanan + 1;
+                }
+            }
+            eger k > maks_k ise {
+                tara_bitti = 1;
+            }
+            j = j + 1;
+        }
+        guncel = guncel.sonraki_yaprak;
+    }
+
+    dondu toplanan;
+}

@@ -1,0 +1,52 @@
+# ============================================================
+# Örnek 82: Win32 Simon Says Hafıza ve Sıra Takip Oyunu GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# 4 Renk: 1=Kirmizi, 2=Yesil, 3=Mavi, 4=Sari
+degisken g_hedef_sira: [5]tamsayi;
+degisken g_oyuncu_adim: tamsayi = 0;
+
+isv oyun_kur() {
+    g_hedef_sira[0] = 1; # Kirmizi
+    g_hedef_sira[1] = 3; # Mavi
+    g_hedef_sira[2] = 2; # Yesil
+    g_hedef_sira[3] = 4; # Sari
+    g_hedef_sira[4] = 1; # Kirmizi
+    g_oyuncu_adim = 0;
+}
+
+isv renk_tikla(renk_id: tamsayi) {
+    eger g_oyuncu_adim >= 5 ise {
+        ekrana_yaz("Tebrikler! Bolumu tamamladiniz!\n".ptr);
+        dondu;
+    }
+
+    eger renk_id == g_hedef_sira[g_oyuncu_adim] ise {
+        ekrana_yaz("Dogru renk! Adim: ");
+        sayiyi_ekrana_yaz(g_oyuncu_adim + 1);
+        ekrana_yaz("/5\n".ptr);
+        g_oyuncu_adim = g_oyuncu_adim + 1;
+    } yoksa {
+        ekrana_yaz("HATA! Yanlis renk sirasi! Oyun sifirlandi.\n".ptr);
+        g_oyuncu_adim = 0;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Simon Says Hafiza".ptr, 340, 360);
+    eger p_h == 0 ise { dondu 1; }
+
+    oyun_kur();
+
+    # 4 Renkli Buton
+    buton_olustur(p_h, "KIRMIZI".ptr, 9201, 40, 40, 110, 110);
+    buton_olustur(p_h, "YESIL".ptr,   9202, 170, 40, 110, 110);
+    buton_olustur(p_h, "MAVI".ptr,    9203, 40, 170, 110, 110);
+    buton_olustur(p_h, "SARI".ptr,    9204, 170, 170, 110, 110);
+
+    ekrana_yaz("Simon Says oyunu acildi. Hedef sira: Kirmizi, Mavi, Yesil, Sari, Kirmizi\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

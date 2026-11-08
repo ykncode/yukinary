@@ -1,0 +1,81 @@
+{
+  "schema": "yukinary.compiler-manifest.v1",
+  "canonical": {
+    "entry": "src/main.ykn",
+    "source_root": "src",
+    "source_extension": ".ykn",
+    "source_of_truth": "src/**/*.ykn",
+    "policy": "src/main.ykn ve src altindaki YKN import kapanisi canonical compiler kaynagidir."
+  },
+  "bootstrap_seed": {
+    "source": "app_full.cpp",
+    "role": "stage-0 bootstrap seed",
+    "policy": "app_full.cpp canonical YKN kaynagi degildir; temiz checkout'ta deterministik C++ derlemesiyle stage-0 compiler uretilir. Degisiklikleri source fingerprint ve semantic parity raporuyla birlikte incelenmelidir."
+  },
+  "launcher": {
+    "source": "app_full.cpp",
+    "role": "native CLI/repl launcher",
+    "ci_included": false
+  },
+  "legacy": {
+    "source_root": "src/stage0",
+    "role": "legacy compiler implementation",
+    "ci_included": false,
+    "policy": "FIX-1 pipeline'ina dahil degildir; legacy olarak tutulur ve canonical compiler yerine kullanilmaz."
+  },
+  "build": {
+    "cxx": "g++",
+    "standard": "c++17",
+    "optimization": "O2",
+    "reproducibility_flags": [
+      "-frandom-seed=yukinary-stage0",
+      "-Wl,--no-insert-timestamp"
+    ],
+    "linker_flags": [
+      "-static",
+      "-lws2_32"
+    ],
+    "artifact_root": "build/bootstrap",
+    "report": "build/reports/bootstrap-report.json",
+    "logs": "build/bootstrap/logs"
+  },
+  "stages": [
+    {
+      "name": "Stage-0",
+      "kind": "cpp-bootstrap",
+      "source": "app_full.cpp",
+      "artifact": "build/bootstrap/stage0.exe"
+    },
+    {
+      "name": "Stage-1",
+      "kind": "ykn-self-host",
+      "compiler": "Stage-0",
+      "source": "src/main.ykn",
+      "artifact": "build/bootstrap/stage1.exe"
+    },
+    {
+      "name": "Stage-2",
+      "kind": "ykn-self-host",
+      "compiler": "Stage-1",
+      "source": "src/main.ykn",
+      "artifact": "build/bootstrap/stage2.exe"
+    },
+    {
+      "name": "Stage-3",
+      "kind": "ykn-self-host",
+      "compiler": "Stage-2",
+      "source": "src/main.ykn",
+      "artifact": "build/bootstrap/stage3.exe"
+    }
+  ],
+  "smoke_tests": {
+    "manifest": "tests/bootstrap/stage_regression.json",
+    "compare": "stdout and exit_code",
+    "run_for_stages": [
+      "Stage-0",
+      "Stage-1",
+      "Stage-2",
+      "Stage-3"
+    ]
+  }
+}

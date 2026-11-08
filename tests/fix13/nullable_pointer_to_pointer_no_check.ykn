@@ -1,0 +1,6 @@
+# FIX-13: nullable pointer-to-pointer guardsiz erisim reddedilmeli.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?**u8 = bos;
+    p[0][0] = 1;
+    dondu 0;
+}

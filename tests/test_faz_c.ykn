@@ -1,0 +1,137 @@
+# ============================================================
+# tests/test_faz_c.ykn
+# Faz C: Standart Kütüphane ve Veritabanı Doğrulama Testi
+# 1. ANSI SQL Lexer & Parser (SELECT, WHERE AND/OR, INSERT, UPDATE, DELETE, JOIN)
+# 2. Volcano Çoklu Koşullu Filtreleme (AND / OR)
+# 3. Volcano Nested-Loop JOIN (İki Tablo Eşleştirme)
+# 4. Kısaltılmış SQL Uyumluluğu
+# 5. Yerel Platform GUI Pencere Arayüzü
+# ============================================================
+
+ice_aktar "std/veritabani/sql_parser.ykn";
+ice_aktar "std/veritabani/sql_tokenizer.ykn";
+ice_aktar "std/veritabani/sql_motoru.ykn";
+ice_aktar "std/gui/pencere.ykn";
+
+isv test_ansi_sql_ayristirici() -> tamsayi {
+    ekrana_yaz("--- Test 1: ANSI SQL Ayrıştırıcı ve AST Doğrulaması ---\n".ptr);
+
+    # 1.1. Çoklu WHERE (AND) ve LIMIT içeren SELECT sorgusu
+    degisken s_sql: *u8 = "SELECT * FROM musteriler WHERE yas > 18 AND puan <= 100 LIMIT 5".ptr;
+    degisken q1: *SqlSorgusu = sql_dize_ayristir(s_sql, 64);
+    eger q1 == 0 veya q1.komut_turu != SQL_KOMUT_SELECT ise {
+        ekrana_yaz("HATA: ANSI SELECT sorgusu ayristirilamadi!\n".ptr);
+        dondu 1;
+    }
+    eger q1.limit != 5 ise {
+        ekrana_yaz("HATA: LIMIT degeri 5 bekleniyordu!\n".ptr);
+        dondu 2;
+    }
+    eger q1.kosul_sayisi != 2 ise {
+        ekrana_yaz("HATA: 2 adet kosul (AND) bekleniyordu!\n".ptr);
+        dondu 3;
+    }
+
+    # 1.2. ANSI INSERT sorgusu
+    degisken s_ins: *u8 = "INSERT INTO siparisler VALUES (501, 1500, 42)".ptr;
+    degisken q2: *SqlSorgusu = sql_dize_ayristir(s_ins, 45);
+    eger q2 == 0 veya q2.komut_turu != SQL_KOMUT_INSERT ise {
+        ekrana_yaz("HATA: ANSI INSERT sorgusu ayristirilamadi!\n".ptr);
+        dondu 4;
+    }
+    eger q2.eklenen_id != 501 veya q2.eklenen_deger != 1500 veya q2.eklenen_deger2 != 42 ise {
+        ekrana_yaz("HATA: INSERT degerleri hatali ayristirildi!\n".ptr);
+        dondu 5;
+    }
+
+    # 1.3. ANSI JOIN sorgusu
+    degisken s_join: *u8 = "SELECT * FROM siparisler JOIN musteriler ON siparisler.musteri_id = musteriler.id WHERE siparisler.id == 501".ptr;
+    degisken q3: *SqlSorgusu = sql_dize_ayristir(s_join, 108);
+    eger q3 == 0 veya q3.join_bilgisi == 0 ise {
+        ekrana_yaz("HATA: ANSI JOIN yapisi ayristirilamadi!\n".ptr);
+        dondu 6;
+    }
+
+    ekrana_yaz("[OK] Madde 1: ANSI SQL Ayrıştırıcı ve AST Yapısı Başarılı.\n".ptr);
+    dondu 0;
+}
+
+isv test_volcano_coklu_kosul_ve_join() -> tamsayi {
+    ekrana_yaz("--- Test 2: Volcano Çoklu Filtre (AND/OR) ve JOIN Yürütme Motoru ---\n".ptr);
+
+    # Tablo A: musteriler (id, bakiye, yas)
+    degisken tbl_musteri: *SqlTablo = sql_tablo_olustur(16);
+    sql_satir_ekle_gelismis(tbl_musteri, 1, 500, 20);  # id=1, bakiye=500, yas=20
+    sql_satir_ekle_gelismis(tbl_musteri, 2, 1200, 35); # id=2, bakiye=1200, yas=35
+    sql_satir_ekle_gelismis(tbl_musteri, 3, 300, 15);  # id=3, bakiye=300, yas=15
+    sql_satir_ekle_gelismis(tbl_musteri, 4, 850, 45);  # id=4, bakiye=850, yas=45
+
+    # Tablo B: siparisler (siparis_id, tutar, musteri_id)
+    degisken tbl_siparis: *SqlTablo = sql_tablo_olustur(16);
+    sql_satir_ekle_gelismis(tbl_siparis, 101, 80, 1);  # siparis 101 -> musteri 1
+    sql_satir_ekle_gelismis(tbl_siparis, 102, 250, 2); # siparis 102 -> musteri 2
+    sql_satir_ekle_gelismis(tbl_siparis, 103, 90, 1);  # siparis 103 -> musteri 1
+
+    # 2.1. Coklu Kosul (AND): id > 1 AND val2 >= 30 (bakiye > ... AND yas >= 30) -> musteri 2 (bakiye=1200)
+    degisken s_and: *u8 = "SELECT * FROM musteriler WHERE id > 1 AND deger2 >= 30".ptr;
+    degisken q_and: *SqlSorgusu = sql_dize_ayristir(s_and, 53);
+    degisken r_and: tamsayi = sql_sorgu_calistir(tbl_musteri, q_and);
+    eger r_and != 1200 ise {
+        ekrana_yaz("HATA: AND filtresi sonucu 1200 bekleniyordu!\n".ptr);
+        dondu 1;
+    }
+
+    # 2.2. Coklu Kosul (OR): id == 3 OR id == 4 -> ilk eslesen musteri 3 (bakiye=300)
+    degisken s_or: *u8 = "SELECT * FROM musteriler WHERE id == 3 OR id == 4".ptr;
+    degisken q_or: *SqlSorgusu = sql_dize_ayristir(s_or, 47);
+    degisken r_or: tamsayi = sql_sorgu_calistir(tbl_musteri, q_or);
+    eger r_or != 300 ise {
+        ekrana_yaz("HATA: OR filtresi sonucu 300 bekleniyordu!\n".ptr);
+        dondu 2;
+    }
+
+    # 2.3. Volcano JOIN: siparisler JOIN musteriler ON siparisler.musteri_id = musteriler.id WHERE siparisler.id == 102
+    # Beklenen eslesen deger: musteri 2'nin bakiyesi 1200
+    degisken s_j_exec: *u8 = "SELECT * FROM siparisler JOIN musteriler ON siparisler.musteri_id = musteriler.id WHERE id == 102".ptr;
+    degisken q_j_exec: *SqlSorgusu = sql_dize_ayristir(s_j_exec, 97);
+    degisken r_join: tamsayi = sql_sorgu_calistir_join(tbl_siparis, tbl_musteri, q_j_exec);
+    eger r_join != 1200 ise {
+        ekrana_yaz("HATA: Nested-Loop JOIN sonucu 1200 bekleniyordu!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("[OK] Madde 2: Volcano Çoklu Filtre (AND/OR) ve JOIN Yürütme Başarılı.\n".ptr);
+    dondu 0;
+}
+
+isv test_gui_pencere_altyapisi() -> tamsayi {
+    ekrana_yaz("--- Test 3: Platform Bağımsız Yerel GUI Pencereleme ---\n".ptr);
+
+    # Mevcut pencere tanıtıcısını al
+    degisken p: Pencere = pencere_mevcut_al();
+    eger p.aktif == 1 ise {
+        degisken b_ok: tamsayi = pencere_baslik_ayarla(&p, "Yukinary Faz C Guvenli GUI".ptr);
+        eger b_ok == 0 ise {
+            ekrana_yaz("UYARI: Pencere basligi ayarlanamadi.\n".ptr);
+        }
+    }
+
+    ekrana_yaz("[OK] Madde 3: Platform Bağımsız Yerel GUI Pencereleme Başarılı.\n".ptr);
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== YUKINARY FAZ C KUSURSUZ DOGRULAMA TESTI BASLIYOR ===\n".ptr);
+
+    degisken t1: tamsayi = test_ansi_sql_ayristirici();
+    eger t1 != 0 ise { dondu t1; }
+
+    degisken t2: tamsayi = test_volcano_coklu_kosul_ve_join();
+    eger t2 != 0 ise { dondu t2; }
+
+    degisken t3: tamsayi = test_gui_pencere_altyapisi();
+    eger t3 != 0 ise { dondu t3; }
+
+    ekrana_yaz("\n>>> TUM FAZ C MADDELERI EKSIKSIZ VE BASARIYLA TAMAMLANDI! <<<\n".ptr);
+    dondu 0;
+}

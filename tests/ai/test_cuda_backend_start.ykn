@@ -1,0 +1,15 @@
+ice_aktar "std/ai/cuda_backend.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi; degisken d: [32]u8; degisken c: tamsayi = 0;
+    dongu n > 0 { d[c] = 48 + n % 10; c = c + 1; n = n / 10; }
+    dongu c > 0 { c = c - 1; degisken ch: [2]u8; ch[0] = d[c]; ch[1] = 0; ekrana_yaz(ch); }
+}
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("START\n".ptr);
+    degisken ok: tamsayi = ykn_cuda_backend_start();
+    ekrana_yaz("DONE=".ptr); sayi_yaz(ok); ekrana_yaz(" ERROR=".ptr);
+    sayi_yaz(YKN_CUDA_LAST_ERROR); ekrana_yaz("\n".ptr);
+    dondu 0;
+}

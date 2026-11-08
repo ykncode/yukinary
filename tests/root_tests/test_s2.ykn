@@ -1,0 +1,13 @@
+yapi Iki {
+    a: tamsayi;
+    b: tamsayi;
+}
+isv topla(s: *Iki) -> tamsayi {
+    dondu s.a + s.b;
+}
+isv ana() -> tamsayi {
+    degisken st: Iki;
+    st.a = 10;
+    st.b = 20;
+    dondu topla(&st);
+}

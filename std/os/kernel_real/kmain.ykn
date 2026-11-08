@@ -1,0 +1,55 @@
+# ============================================================
+# std/os/kernel_real/kmain.ykn
+# FAZ 63: Saf Yukinary x86_64 Bare-Metal Çekirdek Giriş Noktası (kmain)
+# Multiboot2, 64-bit Long Mode GDT/IDT, 4-Seviyeli Sayfalama (PML4) ve VGA/COM1
+# ============================================================
+
+ice_aktar "../drivers/vga_text.ykn";
+ice_aktar "gdt.ykn";
+ice_aktar "idt.ykn";
+ice_aktar "paging.ykn";
+ice_aktar "serial.ykn";
+
+degisken MULTIBOOT1_LOADER_MAGIC: tamsayi = 732849154;  # 0x2BADB002
+degisken MULTIBOOT2_HEADER_MAGIC: tamsayi = 3897774294; # 0xE85250D6
+
+yapi CekirdekDurumu {
+    baslatildi:        tamsayi;
+    multiboot_gecerli: tamsayi;
+    vram_adresi:       *u8;
+    gdt:               *GdtTablosu;
+    idt:               *IdtTablosu;
+    sayfalama:         *SayfalamaMotoru;
+    seri:              *SeriPortDurumu;
+}
+
+isv yukinary_cekirdek_baslat(magic: tamsayi, vram_tamponu: *u8) -> *CekirdekDurumu {
+    degisken cd: *CekirdekDurumu = bellek_tahsis_et(56);
+    cd.vram_adresi = vram_tamponu;
+    cd.baslatildi = 0;
+
+    # 1. Multiboot1 veya Multiboot2 sihirli sayisini dogrula
+    eger magic == MULTIBOOT1_LOADER_MAGIC veya magic == MULTIBOOT2_HEADER_MAGIC ise {
+        cd.multiboot_gecerli = 1;
+    } yoksa {
+        cd.multiboot_gecerli = 0;
+    }
+
+    # 2. 64-bit Long Mode GDT ve IDT tablolarını inşa et
+    cd.gdt = gdt_olustur();
+    cd.idt = idt_olustur();
+
+    # 3. 4-Seviyeli Sayfalama (PML4) ve 1GB Identity Mapping kur
+    cd.sayfalama = sayfalama_olustur();
+
+    # 4. COM1 Seri Port (0x3F8) donanım sürücüsünü başlat
+    cd.seri = seri_port_olustur(COM1_PORT_BASE);
+    seri_port_yaz_metin(cd.seri, "[BOOT] Yukinary Ring-0 Kernel Starting...\n".ptr);
+
+    # 5. VGA Metin Modunu temizle ve çekirdek başlığını bas
+    vga_ekran_temizle(cd.vram_adresi, 7);
+    vga_metin_bas(cd.vram_adresi, 2, 10, "Yukinary Bare-Metal OS Kernel - Status: ONLINE".ptr, 10);
+
+    cd.baslatildi = 1;
+    dondu cd;
+}

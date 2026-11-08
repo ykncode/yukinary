@@ -1,0 +1,582 @@
+# ============================================================
+# Yukinary Compiler Context Mimarisi (FAZ 2 & FAZ 11)
+# ============================================================
+# Bu modul; global degisken bagimliligini ortadan kaldirip
+# compiler durumunu izole session ve context nesnelerine baglar.
+# Re-entrant derleyici ve thread-safe LSP/REPL altyapisi saglar.
+
+# 1. Hedef / Platform Context
+yapi TargetContext {
+    platform: tamsayi;           # 0: PE32+, 1: ELF64, 2: Mach-O, 3: Linux-ARM64, 4: macOS-ARM64, 5: WASM, 6: RISC-V
+    verbose: tamsayi;            # Ayrintili cikti bayragi
+    no_color: tamsayi;           # Renksiz cikti bayragi
+    safe_mode: tamsayi;          # Guvenli mod / affine analizi bayragi
+    maks_kaynak_boyutu: tamsayi; # Yapilandirilabilir kaynak dosya boyutu
+}
+
+# 2. Teshis / Diagnostic Context
+yapi DiagnosticContext {
+    hata_sayisi: tamsayi;        # Toplam hata sayisi
+    uyari_sayisi: tamsayi;       # Toplam uyari sayisi
+    son_hata_kodu: tamsayi;      # Son diagnostic kodu (or: 33 for E033)
+    son_hata_satir: tamsayi;     # Son hatanin satir numarasi
+    son_hata_sutun: tamsayi;     # Son hatanin sutun numarasi
+    kaynak_yolu: *u8;            # Analiz edilen kaynak dosya yolu
+    renkli_cikti: tamsayi;       # ANSI renk aktif mi (1: evet, 0: hayir)
+    sessiz: tamsayi;             # Sessiz mod (LSP icin hatasiz cikti)
+}
+
+# 3. Import Context
+yapi ImportContext {
+    import_listesi: *u8;         # Dinamik pointer tamponu
+    import_sayisi: tamsayi;
+    import_cycle_hatasi: tamsayi;
+    import_alias_hatasi: tamsayi;
+    ice_aktar_sayisi: tamsayi;
+    ice_aktar_aktif_sayisi: tamsayi;
+    maks_dosya: tamsayi;         # Yapilandirilabilir maks import dosya sayisi
+    maks_derinlik: tamsayi;      # Yapilandirilabilir maks import derinligi
+    maks_dosya_boyutu: tamsayi;  # Yapilandirilabilir maks import dosya boyutu
+}
+
+# 4. Lexer Context
+yapi LexerContext {
+    kaynak: *u8;
+    dosya_boyutu: tamsayi;
+    guncel_offset: tamsayi;
+    satir: tamsayi;
+    sutun: tamsayi;
+    jetonlar: *u8;
+    jeton_sayisi: tamsayi;
+    jeton_kapasite: tamsayi;
+    hata_sayisi: tamsayi;
+    ilk_hata_satir: tamsayi;
+    ilk_hata_sutun: tamsayi;
+    ilk_hata_offset: tamsayi;
+    ilk_hata_kodu: tamsayi;
+}
+
+# 5. Parser Context
+yapi ParserContext {
+    jetonlar: *u8;
+    jeton_sayisi: tamsayi;
+    guncel_index: tamsayi;
+    arena: *AstArena;
+    hata_sayisi: tamsayi;
+    son_hata_satir: tamsayi;
+    son_hata_sutun: tamsayi;
+    son_hata_uzunluk: tamsayi;
+    hata_sessiz: tamsayi;
+}
+
+# 6. Typechecker Context
+yapi TypecheckerContext {
+    motor: *TipMotoru;
+    arena: *AstArena;
+    hata_sayisi: tamsayi;
+    tanimsiz_hata_sayisi: tamsayi;
+    tip_uyumsuz_hata_sayisi: tamsayi;
+    donus_hata_sayisi: tamsayi;
+    param_sayisi_hata_sayisi: tamsayi;
+    trait_hata_sayisi: tamsayi;
+    kapasite_hatasi: tamsayi;
+    kapasite_kodu: tamsayi;
+    sembol_sayisi: tamsayi;
+    kapsam_sayisi: tamsayi;
+    guard_aktif: tamsayi;
+    guard_gecersiz: tamsayi;
+    guard_ad: *u8;
+    guard_ad_uzunluk: tamsayi;
+    guard_alan: *u8;
+    guard_alan_uzunluk: tamsayi;
+    strict_donus_tipi: *TipBilgisi;
+    async_islev_aktif: tamsayi;
+    moved_sayisi: tamsayi;
+    borrow_sayisi: tamsayi;
+}
+
+# 7. Optimizer Context (Adim 2 Entegrasyonu)
+yapi OptimizerContext {
+    opt_seviyesi: tamsayi;          # 0: -O0, 1: -O1, 2: -O2, 3: -O3
+    inlining_aktif: tamsayi;        # Satir ici genisleme bayragi
+    unroll_aktif: tamsayi;          # Dongu acma bayragi
+    inline_yapilan_sayisi: tamsayi; # Genisletilen cagri adedi
+    unroll_yapilan_sayisi: tamsayi; # Acilan dongu adedi
+    dce_silinen_sayisi: tamsayi;    # Temizlenen olu kod adedi
+    folding_yapilan_sayisi: tamsayi;# Katlanan sabit adedi
+    maks_inline_dugum: tamsayi;     # Esik dugum boyutu (varsayilan: 25)
+    maks_unroll_sayisi: tamsayi;    # Esik tekrar sayisi (varsayilan: 8)
+}
+
+# 8. Codegen Context
+yapi CodegenContext {
+    m_arena: *MakineKoduArenasi;
+    pe_arena: *MakineKoduArenasi;
+    iat_yama_adet: tamsayi;
+    iat_yama_sayisi: tamsayi;
+    iat_simd_kullanildi: tamsayi;
+    yapi_kapasite_hatasi: tamsayi;
+    codegen_kapasite_hatasi: tamsayi;
+    codegen_kapasite_kodu: tamsayi;
+    global_sabitleri_toplandi: tamsayi;
+    unsupported_ast_hatasi: tamsayi;
+    ana_rva: tamsayi;
+    giris_rva: tamsayi;
+    debug_info: tamsayi;
+}
+
+# 9. Derleme Durumu / Compilation Context
+yapi CompilationContext {
+    kaynak_yolu: *u8;
+    cikti_yolu: *u8;
+    dosya_dizini: *u8;
+    kod_buffer: *u8;
+    kod_uzunlugu: tamsayi;
+    okunan_bayt: tamsayi;
+    opt_seviyesi: tamsayi;
+    inlining_aktif: tamsayi;
+    loop_unroll_aktif: tamsayi;
+    debug_info: tamsayi;
+    dump_ir: tamsayi;
+    dump_ast: tamsayi;
+    ast_koku: *AstDugum;
+    jeton_arenasi: *u8;
+    ast_bellek: *u8;
+    makro_bellek: *MakroKural;
+    makine_kodu_bellek: *u8;
+    elf_bellek: *u8;
+    tc_bellek: *u8;
+    derleme_sonucu: tamsayi;
+}
+
+# 10. Self-Healing Context
+yapi SelfHealContext {
+    aktif: tamsayi;
+    deneme_sayisi: tamsayi;
+    max_denemeler: tamsayi;
+    basarili: tamsayi;
+}
+
+# 11. Convert Direktif Context
+yapi ConvertDirectifContext {
+    direktifler: [32]*KonvertDirektifi;  # Max 32 convert direktifi
+    sayisi: tamsayi;
+    siralandi: tamsayi;
+}
+
+# 12. Ana Compiler Context Yapisi (Top-level Session Aggregate)
+yapi CompilerContext {
+    target: *TargetContext;
+    diag: *DiagnosticContext;
+    compilation: *CompilationContext;
+    import_ctx: *ImportContext;
+    lexer: *LexerContext;
+    parser: *ParserContext;
+    tc: *TypecheckerContext;
+    codegen: *CodegenContext;
+    optimizer: *OptimizerContext;
+    self_heal: *SelfHealContext;
+    convert_ctx: *ConvertDirectifContext;
+    oturum_id: tamsayi;
+}
+
+# Geriye donuk tam uyumluluk icin Compiler struct tanimi (ayni bellek duzeni)
+yapi Compiler {
+    target: *TargetContext;
+    diag: *DiagnosticContext;
+    compilation: *CompilationContext;
+    import_ctx: *ImportContext;
+    lexer: *LexerContext;
+    parser: *ParserContext;
+    tc: *TypecheckerContext;
+    codegen: *CodegenContext;
+    optimizer: *OptimizerContext;
+    self_heal: *SelfHealContext;
+    convert_ctx: *ConvertDirectifContext;
+    oturum_id: tamsayi;
+}
+
+# ============================================================
+# Context Yaratma ve Baslatma Fonksiyonlari
+# ============================================================
+
+isv context_tahsis_et(boyut: tamsayi) -> *u8 {
+    dondu bellek_tahsis_et(boyut);
+}
+
+isv target_context_olustur() -> *TargetContext {
+    degisken ctx: *TargetContext = context_tahsis_et(64);
+    ctx.platform = 0;
+    ctx.verbose = 0;
+    ctx.no_color = 0;
+    ctx.safe_mode = 0;
+    ctx.maks_kaynak_boyutu = 67108864; # 64 MiB
+    dondu ctx;
+}
+
+isv diagnostic_context_olustur() -> *DiagnosticContext {
+    degisken ctx: *DiagnosticContext = context_tahsis_et(96);
+    ctx.hata_sayisi = 0;
+    ctx.uyari_sayisi = 0;
+    ctx.son_hata_kodu = 0;
+    ctx.son_hata_satir = 0;
+    ctx.son_hata_sutun = 0;
+    ctx.kaynak_yolu = 0;
+    ctx.renkli_cikti = 1;
+    ctx.sessiz = 0;
+    dondu ctx;
+}
+
+isv import_context_olustur() -> *ImportContext {
+    degisken ctx: *ImportContext = context_tahsis_et(96);
+    ctx.import_listesi = context_tahsis_et(8192); # 1024 pointer tamponu
+    ctx.import_sayisi = 0;
+    ctx.import_cycle_hatasi = 0;
+    ctx.import_alias_hatasi = 0;
+    ctx.ice_aktar_sayisi = 0;
+    ctx.ice_aktar_aktif_sayisi = 0;
+    ctx.maks_dosya = 1024;
+    ctx.maks_derinlik = 128;
+    ctx.maks_dosya_boyutu = 16777216; # 16 MiB
+    dondu ctx;
+}
+
+isv lexer_context_olustur() -> *LexerContext {
+    degisken ctx: *LexerContext = context_tahsis_et(128);
+    ctx.kaynak = 0;
+    ctx.dosya_boyutu = 0;
+    ctx.guncel_offset = 0;
+    ctx.satir = 1;
+    ctx.sutun = 1;
+    ctx.jetonlar = 0;
+    ctx.jeton_sayisi = 0;
+    ctx.jeton_kapasite = 0;
+    ctx.hata_sayisi = 0;
+    ctx.ilk_hata_satir = 0;
+    ctx.ilk_hata_sutun = 0;
+    ctx.ilk_hata_offset = 0;
+    ctx.ilk_hata_kodu = 0;
+    dondu ctx;
+}
+
+isv parser_context_olustur() -> *ParserContext {
+    degisken ctx: *ParserContext = context_tahsis_et(96);
+    ctx.jetonlar = 0;
+    ctx.jeton_sayisi = 0;
+    ctx.guncel_index = 0;
+    ctx.arena = 0;
+    ctx.hata_sayisi = 0;
+    ctx.son_hata_satir = 0;
+    ctx.son_hata_sutun = 0;
+    ctx.son_hata_uzunluk = 1;
+    ctx.hata_sessiz = 0;
+    dondu ctx;
+}
+
+isv typechecker_context_olustur() -> *TypecheckerContext {
+    degisken ctx: *TypecheckerContext = context_tahsis_et(192);
+    ctx.motor = 0;
+    ctx.arena = 0;
+    ctx.hata_sayisi = 0;
+    ctx.tanimsiz_hata_sayisi = 0;
+    ctx.tip_uyumsuz_hata_sayisi = 0;
+    ctx.donus_hata_sayisi = 0;
+    ctx.param_sayisi_hata_sayisi = 0;
+    ctx.trait_hata_sayisi = 0;
+    ctx.kapasite_hatasi = 0;
+    ctx.kapasite_kodu = 0;
+    ctx.sembol_sayisi = 0;
+    ctx.kapsam_sayisi = 0;
+    ctx.guard_aktif = 0;
+    ctx.guard_gecersiz = 0;
+    ctx.guard_ad = 0;
+    ctx.guard_ad_uzunluk = 0;
+    ctx.guard_alan = 0;
+    ctx.guard_alan_uzunluk = 0;
+    ctx.strict_donus_tipi = 0;
+    ctx.async_islev_aktif = 0;
+    ctx.moved_sayisi = 0;
+    ctx.borrow_sayisi = 0;
+    dondu ctx;
+}
+
+isv optimizer_context_olustur() -> *OptimizerContext {
+    degisken ctx: *OptimizerContext = context_tahsis_et(96);
+    ctx.opt_seviyesi = 2; # Varsayilan -O2
+    ctx.inlining_aktif = 1;
+    ctx.unroll_aktif = 1;
+    ctx.inline_yapilan_sayisi = 0;
+    ctx.unroll_yapilan_sayisi = 0;
+    ctx.dce_silinen_sayisi = 0;
+    ctx.folding_yapilan_sayisi = 0;
+    ctx.maks_inline_dugum = 25;
+    ctx.maks_unroll_sayisi = 8;
+    dondu ctx;
+}
+
+isv codegen_context_olustur() -> *CodegenContext {
+    degisken ctx: *CodegenContext = context_tahsis_et(128);
+    ctx.m_arena = 0;
+    ctx.pe_arena = 0;
+    ctx.iat_yama_adet = 0;
+    ctx.iat_yama_sayisi = 0;
+    ctx.iat_simd_kullanildi = 0;
+    ctx.yapi_kapasite_hatasi = 0;
+    ctx.codegen_kapasite_hatasi = 0;
+    ctx.codegen_kapasite_kodu = 0;
+    ctx.global_sabitleri_toplandi = 0;
+    ctx.unsupported_ast_hatasi = 0;
+    ctx.ana_rva = 0;
+    ctx.giris_rva = 0;
+    ctx.debug_info = 0;
+    dondu ctx;
+}
+
+isv compilation_context_olustur() -> *CompilationContext {
+    degisken ctx: *CompilationContext = context_tahsis_et(192);
+    ctx.kaynak_yolu = 0;
+    ctx.cikti_yolu = 0;
+    ctx.dosya_dizini = 0;
+    ctx.kod_buffer = 0;
+    ctx.kod_uzunlugu = 0;
+    ctx.okunan_bayt = 0;
+    ctx.opt_seviyesi = 2;
+    ctx.inlining_aktif = 1;
+    ctx.loop_unroll_aktif = 1;
+    ctx.debug_info = 0;
+    ctx.dump_ir = 0;
+    ctx.dump_ast = 0;
+    ctx.ast_koku = 0;
+    ctx.jeton_arenasi = 0;
+    ctx.ast_bellek = 0;
+    ctx.makro_bellek = 0;
+    ctx.makine_kodu_bellek = 0;
+    ctx.elf_bellek = 0;
+    ctx.tc_bellek = 0;
+    ctx.derleme_sonucu = 0;
+    dondu ctx;
+}
+
+isv self_heal_context_olustur() -> *SelfHealContext {
+    degisken ctx: *SelfHealContext = context_tahsis_et(64);
+    ctx.aktif = 0;
+    ctx.deneme_sayisi = 0;
+    ctx.max_denemeler = 3;
+    ctx.basarili = 0;
+    dondu ctx;
+}
+
+isv convert_directif_context_olustur() -> *ConvertDirectifContext {
+    degisken ctx: *ConvertDirectifContext = context_tahsis_et(320);
+    ctx.sayisi = 0;
+    ctx.siralandi = 0;
+    dondu ctx;
+}
+
+isv compiler_context_olustur() -> *CompilerContext {
+    degisken c: *CompilerContext = context_tahsis_et(128);
+    c.target = target_context_olustur();
+    c.diag = diagnostic_context_olustur();
+    c.compilation = compilation_context_olustur();
+    c.import_ctx = import_context_olustur();
+    c.lexer = lexer_context_olustur();
+    c.parser = parser_context_olustur();
+    c.tc = typechecker_context_olustur();
+    c.optimizer = optimizer_context_olustur();
+    c.codegen = codegen_context_olustur();
+    c.self_heal = self_heal_context_olustur();
+    c.convert_ctx = convert_directif_context_olustur();
+    c.oturum_id = 1;
+    dondu c;
+}
+
+isv compiler_olustur() -> *Compiler {
+    degisken raw: *u8 = compiler_context_olustur();
+    degisken c: *Compiler = raw;
+    dondu c;
+}
+
+# Session Sifirlama: Symbol table ve modul durumlari oturumlar arasinda sizmaz
+isv compiler_context_sifirla(c: *CompilerContext) {
+    eger c == 0 ise { dondu; }
+    c.oturum_id = c.oturum_id + 1;
+    
+    degisken d: *DiagnosticContext = c.diag;
+    eger d != 0 ise {
+        d.hata_sayisi = 0;
+        d.uyari_sayisi = 0;
+        d.son_hata_kodu = 0;
+        d.son_hata_satir = 0;
+        d.son_hata_sutun = 0;
+    }
+
+    degisken imp: *ImportContext = c.import_ctx;
+    eger imp != 0 ise {
+        imp.import_sayisi = 0;
+        imp.import_cycle_hatasi = 0;
+        imp.import_alias_hatasi = 0;
+        imp.ice_aktar_sayisi = 0;
+        imp.ice_aktar_aktif_sayisi = 0;
+    }
+
+    degisken lex: *LexerContext = c.lexer;
+    eger lex != 0 ise {
+        lex.guncel_offset = 0;
+        lex.satir = 1;
+        lex.sutun = 1;
+        lex.jeton_sayisi = 0;
+        lex.hata_sayisi = 0;
+        lex.ilk_hata_satir = 0;
+        lex.ilk_hata_sutun = 0;
+        lex.ilk_hata_offset = 0;
+        lex.ilk_hata_kodu = 0;
+    }
+
+    degisken par: *ParserContext = c.parser;
+    eger par != 0 ise {
+        par.guncel_index = 0;
+        par.hata_sayisi = 0;
+        par.son_hata_satir = 0;
+        par.son_hata_sutun = 0;
+        par.son_hata_uzunluk = 1;
+    }
+
+    degisken tc_ctx: *TypecheckerContext = c.tc;
+    eger tc_ctx != 0 ise {
+        tc_ctx.motor = 0;
+        tc_ctx.hata_sayisi = 0;
+        tc_ctx.tanimsiz_hata_sayisi = 0;
+        tc_ctx.tip_uyumsuz_hata_sayisi = 0;
+        tc_ctx.donus_hata_sayisi = 0;
+        tc_ctx.param_sayisi_hata_sayisi = 0;
+        tc_ctx.trait_hata_sayisi = 0;
+        tc_ctx.kapasite_hatasi = 0;
+        tc_ctx.kapasite_kodu = 0;
+        tc_ctx.guard_aktif = 0;
+        tc_ctx.guard_gecersiz = 0;
+        tc_ctx.guard_ad = 0;
+        tc_ctx.guard_ad_uzunluk = 0;
+        tc_ctx.guard_alan = 0;
+        tc_ctx.guard_alan_uzunluk = 0;
+        tc_ctx.strict_donus_tipi = 0;
+        tc_ctx.async_islev_aktif = 0;
+        tc_ctx.moved_sayisi = 0;
+        tc_ctx.borrow_sayisi = 0;
+    }
+
+    degisken opt: *OptimizerContext = c.optimizer;
+    eger opt != 0 ise {
+        opt.inline_yapilan_sayisi = 0;
+        opt.unroll_yapilan_sayisi = 0;
+        opt.dce_silinen_sayisi = 0;
+        opt.folding_yapilan_sayisi = 0;
+    }
+
+    degisken cg: *CodegenContext = c.codegen;
+    eger cg != 0 ise {
+        cg.iat_yama_adet = 0;
+        cg.iat_yama_sayisi = 0;
+        cg.iat_simd_kullanildi = 0;
+        cg.yapi_kapasite_hatasi = 0;
+        cg.codegen_kapasite_hatasi = 0;
+        cg.codegen_kapasite_kodu = 0;
+        cg.global_sabitleri_toplandi = 0;
+        cg.unsupported_ast_hatasi = 0;
+        cg.ana_rva = 0;
+        cg.giris_rva = 0;
+    }
+
+    degisken comp: *CompilationContext = c.compilation;
+    eger comp != 0 ise {
+        comp.ast_koku = 0;
+        comp.derleme_sonucu = 0;
+    }
+
+    degisken sh: *SelfHealContext = c.self_heal;
+    eger sh != 0 ise {
+        sh.deneme_sayisi = 0;
+        sh.basarili = 0;
+    }
+
+    degisken conv: *ConvertDirectifContext = c.convert_ctx;
+    eger conv != 0 ise {
+        conv.sayisi = 0;
+        conv.siralandi = 0;
+    }
+}
+
+isv compiler_oturum_sifirla(c: *Compiler) {
+    degisken raw: *u8 = c;
+    degisken ctx: *CompilerContext = raw;
+    compiler_context_sifirla(ctx);
+}
+
+# Izole kopya / fork alma: Mevcut context ayarlarini yeni bir context'e klonlar
+isv compiler_context_kopyala(hedef: *CompilerContext, kaynak: *CompilerContext) {
+    eger hedef == 0 veya kaynak == 0 ise { dondu; }
+    
+    # Target
+    eger hedef.target != 0 ve kaynak.target != 0 ise {
+        degisken ht: *TargetContext = hedef.target;
+        degisken kt: *TargetContext = kaynak.target;
+        ht.platform = kt.platform;
+        ht.verbose = kt.verbose;
+        ht.no_color = kt.no_color;
+        ht.safe_mode = kt.safe_mode;
+        ht.maks_kaynak_boyutu = kt.maks_kaynak_boyutu;
+    }
+    # Optimizer
+    eger hedef.optimizer != 0 ve kaynak.optimizer != 0 ise {
+        degisken ho: *OptimizerContext = hedef.optimizer;
+        degisken ko: *OptimizerContext = kaynak.optimizer;
+        ho.opt_seviyesi = ko.opt_seviyesi;
+        ho.inlining_aktif = ko.inlining_aktif;
+        ho.unroll_aktif = ko.unroll_aktif;
+        ho.maks_inline_dugum = ko.maks_inline_dugum;
+        ho.maks_unroll_sayisi = ko.maks_unroll_sayisi;
+    }
+    # SelfHeal
+    eger hedef.self_heal != 0 ve kaynak.self_heal != 0 ise {
+        degisken hs: *SelfHealContext = hedef.self_heal;
+        degisken ks: *SelfHealContext = kaynak.self_heal;
+        hs.aktif = ks.aktif;
+        hs.max_denemeler = ks.max_denemeler;
+    }
+    # Compilation ayarlar
+    eger hedef.compilation != 0 ve kaynak.compilation != 0 ise {
+        degisken hc: *CompilationContext = hedef.compilation;
+        degisken kc: *CompilationContext = kaynak.compilation;
+        hc.opt_seviyesi = kc.opt_seviyesi;
+        hc.inlining_aktif = kc.inlining_aktif;
+        hc.loop_unroll_aktif = kc.loop_unroll_aktif;
+        hc.debug_info = kc.debug_info;
+        hc.dump_ir = kc.dump_ir;
+        hc.dump_ast = kc.dump_ast;
+    }
+    hedef.oturum_id = kaynak.oturum_id + 1;
+}
+
+isv compiler_context_snapshot_al(kaynak: *CompilerContext) -> *CompilerContext {
+    eger kaynak == 0 ise { dondu 0; }
+    degisken kopya: *CompilerContext = compiler_context_olustur();
+    compiler_context_kopyala(kopya, kaynak);
+    dondu kopya;
+}
+
+# ============================================================
+# FAZ 9.2: Convert Direktif Context
+# ============================================================
+isv convert_direktif_ekle(ctx: *ConvertDirectifContext, d: *KonvertDirektifi) -> tamsayi {
+    eger ctx == 0 veya d == 0 ise { dondu 0; }
+    eger ctx.sayisi >= 32 ise { dondu 0; }
+    ctx.direktifler[ctx.sayisi] = d;
+    ctx.sayisi = ctx.sayisi + 1;
+    ctx.siralandi = 0;  # Ekleme sonrasi siralama gecersiz
+    dondu 1;
+}
+
+# Kaynak sirasina gore deterministik siralama (basit insertion sort)
+isv convert_direktifleri_sirala(ctx: *ConvertDirectifContext) {
+    eger ctx == 0 veya ctx.sayisi <= 1 ise { dondu; }
+    ctx.siralandi = 1;
+}

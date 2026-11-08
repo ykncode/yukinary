@@ -1,0 +1,107 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Yukinary",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#constants" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#functions" }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ykn",
+          "match": "\\b(eger|yoksa|degil_eger|dongu|her|durdur|dondu|don|devam_et|isv|islem|islev|degisken|sabit|sinif|yapi|ice_aktar|iceaktar|deneme|yakala|nihayet|ise|ve|veya|if|else|elif|then|loop|each|for|while|break|return|ret|fn|func|function|var|let|mut|const|struct|type|class|use|import|and|or|not|xor|si|sinon|alors|pour|boucle|retour|soit|fonction|variable|structure|importer|ou|non|xou|то|цикл|для|стоп|вернуть|вернуть|верни|создать|структура|импорт|тип|функция|переменная|класс|если|иначе|пока|чтобы|もし|なら|他|間|関数|変数|返す|戻る|停止|次へ|続行|もしも|場合|クラス|構造体|関数定義|定数|変数宣言|导入|模块|如果|否则|循环|返回|函数|变量|结构|类型|类|常量|导入|并且|或者|那么|的话|继续|结束|停止|만약|라면|함수|변수|반환|반복|루프|계속|멈춤|종료|그만|구조체|타입|클래스|상수|가져오기|불러오기|그리고|또는|만약에|아니면)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.ykn",
+          "match": "\\b(dogru|yanlis|true|false|vrai|faux|да|нет|真|假|참|거짓)\\b"
+        },
+        {
+          "name": "constant.numeric.ykn",
+          "match": "\\b(0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|[0-9]+(\\.[0-9]+)?)\\b"
+        },
+        {
+          "name": "constant.language.null.ykn",
+          "match": "\\b(null|bos|NULL|yok|없음|空|ヌル)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.ykn",
+          "match": "\\b(tamsayi|metin|gercek|tamsayi64|tamsayi32|tamsayi16|tamsayi8|u8|u16|u32|u64|f32|f64|isaretci|Liste|Harita|Dizi|Jeton|Dugum|ParserDurumu|LocaleKelime|AstDugum|AstArena|MirTalimati|MirBlok|integer|string|real|float|double|bool|boolean|byte|char|long|short|void|sizet|int|uint|uint8|uint16|uint32|uint64|int8|int16|int32|int64|entier|texte|reel|nombre|caractere|booleen|octet|vide|число|текст|целое|вещественное|символ|булево|бит|байт|void_t|整数|実数|文字列|文字|真偽値|浮動小数点数|倍精度|単精度|符号無し|符号付き|整数型|浮動小数点型|字符串|整数|实数|字符|布尔|结构体|类|接口|列表|字典|数组|无符号|有符号|8位|16位|32位|64位|정수|문자열|실수|문자|불리언|부호없는|바이트|리스트|맵|배열|구조체|타입|8비트|16비트|32비트|64비트|단정도|배정도)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.ykn",
+          "match": "\\b([a-zA-Z_\\x{0080}-\\x{FFFF}][a-zA-Z0-9_\\x{0080}-\\x{FFFF}]*)\\s*\\("
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.ykn",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.ykn",
+              "match": "\\\\([0nrt\"'\\\\\\\\]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.ykn",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.ykn",
+              "match": "\\\\([0nrt\"'\\\\\\\\]|x[0-9a-fA-F]{2})"
+            }
+          ]
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.ykn",
+          "begin": "#",
+          "end": "$",
+          "patterns": [
+            {
+              "name": "keyword.other.todo.ykn",
+              "match": "(TODO|FIXME|BUG|HACK|NOTE|XXX|OPTIMIZE|YAP|DUZELT|HATA|NOT|DURDUR)\\b"
+            }
+          ]
+        },
+        {
+          "name": "comment.block.ykn",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "name": "keyword.other.todo.ykn",
+              "match": "(TODO|FIXME|BUG|HACK|NOTE|XXX|OPTIMIZE|YAP|DUZELT|HATA|NOT)\\b"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "scopeName": "source.ykn"
+}

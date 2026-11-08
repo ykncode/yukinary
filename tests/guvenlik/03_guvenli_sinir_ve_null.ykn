@@ -1,0 +1,55 @@
+# ============================================================
+# tests/guvenlik/03_guvenli_sinir_ve_null.ykn
+# Faz 14.3 - Sinir Denetimi ve Null Pointer Guvenlik Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Null pointer kontrolu
+    degisken null_ptr: *u8 = 0;
+    degisken gecerli_ptr: *u8 = bellek_tahsis_et(16);
+
+    eger guvenli_null_kontrol(null_ptr) != 0 ise {
+        ekrana_yaz("FAIL: null pointer tespit edilmeli\n".ptr);
+        dondu 1;
+    }
+    eger guvenli_null_kontrol(gecerli_ptr) != 1 ise {
+        ekrana_yaz("FAIL: gecerli pointer onaylanmali\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Sinir denetimi (Bounds checking)
+    degisken dizi: [4]tamsayi;
+    dizi[0] = 100;
+    dizi[1] = 200;
+    dizi[2] = 300;
+    dizi[3] = 400;
+
+    degisken okunan: [1]tamsayi;
+
+    # Gecerli indeksler (0..3)
+    eger guvenli_dizi_erisim(dizi, 4, 0, okunan) != 1 veya okunan[0] != 100 ise {
+        ekrana_yaz("FAIL: index 0 okunabilmeli\n".ptr);
+        dondu 1;
+    }
+    eger guvenli_dizi_erisim(dizi, 4, 3, okunan) != 1 veya okunan[0] != 400 ise {
+        ekrana_yaz("FAIL: index 3 okunabilmeli\n".ptr);
+        dondu 1;
+    }
+
+    # Sinir disi indeksler (-1 ve 4) -> REDDEDILMELI
+    eger guvenli_dizi_erisim(dizi, 4, -1, okunan) != 0 ise {
+        ekrana_yaz("FAIL: index -1 engellenmeli\n".ptr);
+        dondu 1;
+    }
+    eger guvenli_dizi_erisim(dizi, 4, 4, okunan) != 0 ise {
+        ekrana_yaz("FAIL: index 4 (out-of-bounds) engellenmeli\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-BOUNDS-NULL-PASS\n".ptr);
+    dondu 0;
+}

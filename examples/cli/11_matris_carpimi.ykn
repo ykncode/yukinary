@@ -1,0 +1,89 @@
+# ============================================================
+# Örnek 11: Konsol Tabanlı 3x3 Doğrusal Matris Çarpımı Motoru
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_ekrana_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+degisken g_mat_a: [9]tamsayi;
+degisken g_mat_b: [9]tamsayi;
+degisken g_mat_c: [9]tamsayi;
+
+isv matris_carp_3x3() {
+    degisken i: tamsayi = 0;
+    degisken j: tamsayi = 0;
+    degisken k: tamsayi = 0;
+
+    dongu (i < 3) {
+        j = 0;
+        dongu (j < 3) {
+            degisken toplam: tamsayi = 0;
+            k = 0;
+            dongu (k < 3) {
+                toplam = toplam + (g_mat_a[i * 3 + k] * g_mat_b[k * 3 + j]);
+                k = k + 1;
+            }
+            g_mat_c[i * 3 + j] = toplam;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+isv matris_yazdir_3x3(m: *tamsayi) {
+    degisken r: tamsayi = 0;
+    degisken c: tamsayi = 0;
+    dongu (r < 3) {
+        ekrana_yaz("[ ".ptr);
+        c = 0;
+        dongu (c < 3) {
+            sayiyi_ekrana_yaz(m[r * 3 + c]);
+            ekrana_yaz(" \t".ptr);
+            c = c + 1;
+        }
+        ekrana_yaz("]\n".ptr);
+        r = r + 1;
+    }
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    # Matris A = Birim Matris
+    g_mat_a[0] = 1; g_mat_a[1] = 2; g_mat_a[2] = 3;
+    g_mat_a[3] = 4; g_mat_a[4] = 5; g_mat_a[5] = 6;
+    g_mat_a[6] = 7; g_mat_a[7] = 8; g_mat_a[8] = 9;
+
+    # Matris B
+    g_mat_b[0] = 2; g_mat_b[1] = 0; g_mat_b[2] = 0;
+    g_mat_b[3] = 0; g_mat_b[4] = 2; g_mat_b[5] = 0;
+    g_mat_b[6] = 0; g_mat_b[7] = 0; g_mat_b[8] = 2;
+
+    ekrana_yaz("--- Matris A ---\n".ptr);
+    matris_yazdir_3x3(g_mat_a);
+
+    ekrana_yaz("--- Matris B (Skaler 2x) ---\n".ptr);
+    matris_yazdir_3x3(g_mat_b);
+
+    matris_carp_3x3();
+
+    ekrana_yaz("--- Sonuc Matrisi C (A x B) ---\n".ptr);
+    matris_yazdir_3x3(g_mat_c);
+    dondu 0;
+}

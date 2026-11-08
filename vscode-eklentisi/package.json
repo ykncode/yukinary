@@ -1,0 +1,86 @@
+{
+  "name": "yukinary-lang",
+  "displayName": "Yukinary",
+  "description": "Syntax highlighting and IDE features for Yukinary Language (.ykn)",
+  "version": "0.3.0",
+  "publisher": "yuki",
+  "icon": "logo.png",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:yukinary"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "yukinary",
+        "aliases": [
+          "Yukinary",
+          "ykn"
+        ],
+        "extensions": [
+          ".ykn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "yukinary",
+        "scopeName": "source.ykn",
+        "path": "./syntaxes/ykn.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "yukinary",
+        "path": "./snippets.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "yukinary.run",
+        "title": "Run YKN File",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "yukinary.run",
+          "when": "resourceLangId == yukinary",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Yukinary",
+      "properties": {
+        "yukinary.lspExecutable": {
+          "type": "string",
+          "default": "",
+          "description": "Yukinary LSP sunucusu calistirilabilir dosyasinin tam yolu (bos ise workspace icinden app.exe / out.exe denenir)"
+        },
+        "yukinary.lspArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "--lsp"
+          ],
+          "description": "LSP sunucusuna gonderilecek argumanlar"
+        }
+      }
+    }
+  }
+}

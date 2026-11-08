@@ -1,0 +1,37 @@
+# ============================================================
+# Örnek 91: Konsol Tabanlı Olasılıksal Bloom Filtresi
+# ============================================================
+
+degisken g_bit_dizisi: tamsayi = 0; # 32-bit filtre
+
+isv hash1(val: tamsayi) -> tamsayi { dondu (val * 13 + 7) % 32; }
+isv hash2(val: tamsayi) -> tamsayi { dondu (val * 37 + 19) % 32; }
+
+isv bloom_ekle(val: tamsayi) {
+    degisken h1: tamsayi = hash1(val);
+    degisken h2: tamsayi = hash2(val);
+    g_bit_dizisi = g_bit_dizisi | (1 << h1);
+    g_bit_dizisi = g_bit_dizisi | (1 << h2);
+}
+
+isv bloom_var_mi(val: tamsayi) -> tamsayi {
+    degisken h1: tamsayi = hash1(val);
+    degisken h2: tamsayi = hash2(val);
+    degisken m1: tamsayi = (g_bit_dizisi & (1 << h1));
+    degisken m2: tamsayi = (g_bit_dizisi & (1 << h2));
+    eger m1 != 0 ve m2 != 0 ise { dondu 1; }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Olasiliksal Bloom Filtresi ===\n".ptr);
+    bloom_ekle(42);
+    bloom_ekle(108);
+
+    ekrana_yaz("Eleman 42 kontrol: ".ptr);
+    eger bloom_var_mi(42) == 1 ise { ekrana_yaz("MEVCUT OLABILIR\n".ptr); } yoksa { ekrana_yaz("KESINLIKLE YOK\n".ptr); }
+
+    ekrana_yaz("Eleman 99 kontrol: ".ptr);
+    eger bloom_var_mi(99) == 1 ise { ekrana_yaz("MEVCUT OLABILIR\n".ptr); } yoksa { ekrana_yaz("KESINLIKLE YOK\n".ptr); }
+    dondu 0;
+}

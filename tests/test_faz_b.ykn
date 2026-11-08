@@ -1,0 +1,113 @@
+# ============================================================
+# Faz B Dogrulama Testi: REPL Dinamik Tablo, NLL Dongu, Pattern Destructuring
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/repl.ykn";
+
+enum IcVeri {
+    Deger(tamsayi),
+    Bos
+}
+
+enum DisVeri {
+    Kutu(IcVeri),
+    Bos
+}
+
+isv test_nll_dongu() -> tamsayi {
+    degisken sayac: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i < 5 {
+        # Dongu ici re-borrowing: sayac degiskeni dongu icinde mut borrow edilir
+        degisken p: *tamsayi = &sayac;
+        sayac = sayac + 1;
+        i = i + 1;
+    }
+    # Dongu bitti: sayac erisilebilir ve borrow false-positive vermez
+    dondu sayac;
+}
+
+isv test_destructuring() -> tamsayi {
+    degisken d: DisVeri = DisVeri.Kutu(IcVeri.Deger(42));
+    degisken sonuc: tamsayi = 0;
+    esles d {
+        DisVeri.Kutu(IcVeri.Deger(x)) ise {
+            sonuc = x;
+        }
+        varsayilan ise {
+            sonuc = 0 - 1;
+        }
+    }
+    dondu sonuc;
+}
+
+isv test_repl_dinamik_tablo() -> tamsayi {
+    degisken ot: *ReplOturumu = repl_oturum_olustur();
+    eger ot == 0 ise { dondu 0; }
+    
+    # 70 farkli degisken ekle (eski 64 sinirini asar!)
+    degisken i: tamsayi = 0;
+    dongu i < 70 {
+        degisken ad_buf: [16]u8;
+        ad_buf[0] = 118; # 'v'
+        ad_buf[1] = 97;  # 'a'
+        ad_buf[2] = 114; # 'r'
+        ad_buf[3] = 48 + (i / 10);
+        ad_buf[4] = 48 + (i % 10);
+        ad_buf[5] = 0;
+        
+        repl_degisken_ata(ot, ad_buf, 5, i * 2);
+        i = i + 1;
+    }
+    
+    # 70 degiskenin basariyla eklendigini ve kapasitenin 128'e katlandigini dogrula
+    degisken basarili: tamsayi = 0;
+    eger ot.degisken_sayisi == 70 ve ot.degisken_kapasitesi >= 128 ise {
+        basarili = 1;
+    }
+    
+    # 69. degiskenin degerini oku
+    degisken son_ad: [16]u8;
+    son_ad[0] = 118; son_ad[1] = 97; son_ad[2] = 114; son_ad[3] = 54; son_ad[4] = 57; son_ad[5] = 0; # var69
+    degisken idx69: tamsayi = repl_degisken_bul(ot, son_ad, 5);
+    eger idx69 >= 0 ve ot.degisken_degerler[idx69] == 138 ise {
+        basarili = basarili + 1;
+    }
+    
+    dondu basarili;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz B Testleri Basliyor...\n".ptr);
+
+    # 1. NLL Dongu Testi
+    degisken sayac_sonuc: tamsayi = test_nll_dongu();
+    eger sayac_sonuc == 5 ise {
+        ekrana_yaz("[OK] Madde 2: NLL Dongu Borrowing basarili! (sayac=5)\n".ptr);
+    } yoksa {
+        ekrana_yaz("[FAIL] Madde 2: NLL Dongu Borrowing hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Pattern Destructuring Testi
+    degisken dest_sonuc: tamsayi = test_destructuring();
+    eger dest_sonuc == 42 ise {
+        ekrana_yaz("[OK] Madde 3: Pattern Destructuring basarili! (sonuc=42)\n".ptr);
+    } yoksa {
+        ekrana_yaz("[FAIL] Madde 3: Pattern Destructuring hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # 3. REPL Dinamik Kapasite Testi (>64 Degisken)
+    degisken repl_sonuc: tamsayi = test_repl_dinamik_tablo();
+    eger repl_sonuc == 2 ise {
+        ekrana_yaz("[OK] Madde 1: REPL Dinamik Tablo >64 degisken ve 128 kapasite basarili!\n".ptr);
+    } yoksa {
+        ekrana_yaz("[FAIL] Madde 1: REPL Dinamik Tablo hatali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("FAZ B TUM MADDELERI %100 BASARIYLA TAMAMLANDI!\n".ptr);
+    dondu 0;
+}

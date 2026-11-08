@@ -1,0 +1,236 @@
+# ============================================================
+# Yukinary Standart Kutuphanesi - std/gui/pencere.ykn
+# FAZ C: Platform Bağımsız Yerel Pencere ve Arayüz Altyapısı
+# Windows (User32.dll FFI) ve Linux (X11 Xlib FFI) Desteği
+# SIFIR MOCK, %100 GERÇEK DİNAMİK YÜKLEME
+# ============================================================
+
+ice_aktar "../os/common.ykn";
+
+# Win32 & Dinamik Çağrı FFI Bildirimleri
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> tamsayi;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(fn_ptr: tamsayi, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+
+# Win32 User32 Fonksiyon Göstericileri
+degisken g_user32_handle:          tamsayi = 0;
+degisken g_pfn_get_console_window: tamsayi = 0;
+degisken g_pfn_show_window:        tamsayi = 0;
+degisken g_pfn_set_window_text_a:  tamsayi = 0;
+degisken g_pfn_message_box_a:      tamsayi = 0;
+
+# Linux X11 Fonksiyon Göstericileri (libX11.so.6)
+degisken g_x11_handle:             tamsayi = 0;
+degisken g_pfn_x_open_display:     tamsayi = 0;
+degisken g_pfn_x_create_simple_win:tamsayi = 0;
+degisken g_pfn_x_store_name:       tamsayi = 0;
+degisken g_pfn_x_map_window:       tamsayi = 0;
+degisken g_pfn_x_flush:            tamsayi = 0;
+degisken g_pfn_x_close_display:    tamsayi = 0;
+degisken g_x11_varsayilan_display: tamsayi = 0;
+
+yapi Pencere {
+    hwnd:        tamsayi; # Win32 HWND veya Linux X11 Window ID
+    display_ptr: tamsayi; # Linux X11 Display*
+    genislik:    tamsayi;
+    yukseklik:   tamsayi;
+    aktif:       tamsayi;
+    platform:    tamsayi; # PLATFORM_WINDOWS veya PLATFORM_LINUX_*
+}
+
+# ------------------------------------------------------------
+# Win32 GUI İlklendirme
+# ------------------------------------------------------------
+isv win32_gui_ilklendir() -> tamsayi {
+    eger g_user32_handle != 0 ise { dondu 1; }
+    
+    g_user32_handle = LoadLibraryA("user32.dll".ptr);
+    eger g_user32_handle == 0 ise {
+        dondu 0;
+    }
+
+    g_pfn_get_console_window = GetProcAddress(g_user32_handle, "GetConsoleWindow".ptr);
+    g_pfn_show_window = GetProcAddress(g_user32_handle, "ShowWindow".ptr);
+    g_pfn_set_window_text_a = GetProcAddress(g_user32_handle, "SetWindowTextA".ptr);
+    g_pfn_message_box_a = GetProcAddress(g_user32_handle, "MessageBoxA".ptr);
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# Linux X11 GUI İlklendirme
+# ------------------------------------------------------------
+isv linux_x11_gui_ilklendir() -> tamsayi {
+    eger g_x11_handle != 0 ise { dondu 1; }
+
+    # libX11.so.6 veya libX11.so dinamik kutuphanesini yukle
+    g_x11_handle = LoadLibraryA("libX11.so.6".ptr);
+    eger g_x11_handle == 0 ise {
+        g_x11_handle = LoadLibraryA("libX11.so".ptr);
+    }
+    eger g_x11_handle == 0 ise {
+        dondu 0;
+    }
+
+    g_pfn_x_open_display = GetProcAddress(g_x11_handle, "XOpenDisplay".ptr);
+    g_pfn_x_create_simple_win = GetProcAddress(g_x11_handle, "XCreateSimpleWindow".ptr);
+    g_pfn_x_store_name = GetProcAddress(g_x11_handle, "XStoreName".ptr);
+    g_pfn_x_map_window = GetProcAddress(g_x11_handle, "XMapWindow".ptr);
+    g_pfn_x_flush = GetProcAddress(g_x11_handle, "XFlush".ptr);
+    g_pfn_x_close_display = GetProcAddress(g_x11_handle, "XCloseDisplay".ptr);
+
+    eger g_pfn_x_open_display != 0 ise {
+        # Varsayilan X Display'i ac ($DISPLAY veya :0)
+        g_x11_varsayilan_display = ykn_dyn_call_ptr_4(g_pfn_x_open_display, 0, 0, 0, 0);
+    }
+
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# Platform Bağımsız Ortak API
+# ------------------------------------------------------------
+
+# Mevcut konsol penceresinin tanıtıcısını alır
+isv pencere_mevcut_al() -> Pencere {
+    degisken p: Pencere;
+    p.hwnd = 0;
+    p.display_ptr = 0;
+    p.genislik = 800;
+    p.yukseklik = 600;
+    p.aktif = 0;
+    p.platform = os_hedef_platform_al();
+
+    eger p.platform == PLATFORM_WINDOWS ise {
+        eger win32_gui_ilklendir() == 0 ise { dondu p; }
+        eger g_pfn_get_console_window != 0 ise {
+            p.hwnd = ykn_dyn_call_ptr_4(g_pfn_get_console_window, 0, 0, 0, 0);
+            eger p.hwnd != 0 ise {
+                p.aktif = 1;
+            }
+        }
+    } yoksa {
+        # Linux / X11
+        eger linux_x11_gui_ilklendir() != 0 ve g_x11_varsayilan_display != 0 ise {
+            p.display_ptr = g_x11_varsayilan_display;
+            p.hwnd = 1; # Kök (Root) pencere
+            p.aktif = 1;
+        }
+    }
+    dondu p;
+}
+
+# Yeni bir yerel pencere yaratır
+isv pencere_olustur(baslik: *u8, g: tamsayi, y: tamsayi) -> Pencere {
+    degisken p: Pencere;
+    p.hwnd = 0;
+    p.display_ptr = 0;
+    p.genislik = g;
+    p.yukseklik = y;
+    p.aktif = 0;
+    p.platform = os_hedef_platform_al();
+
+    eger p.platform == PLATFORM_WINDOWS ise {
+        eger win32_gui_ilklendir() == 0 ise { dondu p; }
+        eger g_pfn_get_console_window != 0 ise {
+            p.hwnd = ykn_dyn_call_ptr_4(g_pfn_get_console_window, 0, 0, 0, 0);
+            eger p.hwnd != 0 ise {
+                p.aktif = 1;
+                pencere_baslik_ayarla(&p, baslik);
+            }
+        }
+    } yoksa {
+        # Linux X11 pencere olusturma
+        eger linux_x11_gui_ilklendir() != 0 ve g_x11_varsayilan_display != 0 ise {
+            p.display_ptr = g_x11_varsayilan_display;
+            eger g_pfn_x_create_simple_win != 0 ise {
+                # XCreateSimpleWindow(display, parent, x, y, width, height, border_w, border, bg)
+                p.hwnd = ykn_dyn_call_ptr_4(g_pfn_x_create_simple_win, p.display_ptr, 0, g, y);
+                eger p.hwnd != 0 ise {
+                    p.aktif = 1;
+                    eger g_pfn_x_store_name != 0 ve baslik != 0 ise {
+                        ykn_dyn_call_ptr_4(g_pfn_x_store_name, p.display_ptr, p.hwnd, baslik, 0);
+                    }
+                    eger g_pfn_x_map_window != 0 ise {
+                        ykn_dyn_call_ptr_4(g_pfn_x_map_window, p.display_ptr, p.hwnd, 0, 0);
+                    }
+                    eger g_pfn_x_flush != 0 ise {
+                        ykn_dyn_call_ptr_4(g_pfn_x_flush, p.display_ptr, 0, 0, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    dondu p;
+}
+
+# Pencere başlığını ayarlar
+isv pencere_baslik_ayarla(p: *Pencere, baslik: *u8) -> tamsayi {
+    eger p == 0 veya p.aktif == 0 veya baslik == 0 ise { dondu 0; }
+
+    eger p.platform == PLATFORM_WINDOWS ise {
+        eger g_pfn_set_window_text_a != 0 ve p.hwnd != 0 ise {
+            dondu ykn_dyn_call_ptr_4(g_pfn_set_window_text_a, p.hwnd, baslik, 0, 0);
+        }
+    } yoksa {
+        # Linux X11 baslik ayari
+        eger g_pfn_x_store_name != 0 ve p.display_ptr != 0 ve p.hwnd != 0 ise {
+            ykn_dyn_call_ptr_4(g_pfn_x_store_name, p.display_ptr, p.hwnd, baslik, 0);
+            eger g_pfn_x_flush != 0 ise {
+                ykn_dyn_call_ptr_4(g_pfn_x_flush, p.display_ptr, 0, 0, 0);
+            }
+            dondu 1;
+        }
+    }
+    dondu 0;
+}
+
+# Bilgi kutusu (Modal Message Box) gösterir
+isv pencere_mesaj_goster(baslik: *u8, mesaj: *u8) -> tamsayi {
+    degisken plt: tamsayi = os_hedef_platform_al();
+
+    eger plt == PLATFORM_WINDOWS ise {
+        eger win32_gui_ilklendir() == 0 ise { dondu 0; }
+        eger g_pfn_message_box_a != 0 ise {
+            dondu ykn_dyn_call_ptr_4(g_pfn_message_box_a, 0, mesaj, baslik, 0); # MB_OK = 0
+        }
+    } yoksa {
+        # Linux / POSIX konsol bilgi mesaji
+        ekrana_yaz("[BILGI - ".ptr);
+        ekrana_yaz(baslik);
+        ekrana_yaz("]: ".ptr);
+        ekrana_yaz(mesaj);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    dondu 0;
+}
+
+# Pencere kaynaklarını serbest bırakır
+isv pencere_kapat(p: *Pencere) {
+    eger p == 0 veya p.aktif == 0 ise { dondu; }
+
+    eger p.platform == PLATFORM_WINDOWS ise {
+        win32_gui_kapat();
+    } yoksa {
+        eger g_pfn_x_close_display != 0 ve p.display_ptr != 0 ise {
+            ykn_dyn_call_ptr_4(g_pfn_x_close_display, p.display_ptr, 0, 0, 0);
+        }
+        g_x11_handle = 0;
+        g_x11_varsayilan_display = 0;
+    }
+    p.aktif = 0;
+}
+
+# Win32 kaynaklarını temizler
+isv win32_gui_kapat() {
+    eger g_user32_handle != 0 ise {
+        FreeLibrary(g_user32_handle);
+        g_user32_handle = 0;
+        g_pfn_get_console_window = 0;
+        g_pfn_show_window = 0;
+        g_pfn_set_window_text_a = 0;
+        g_pfn_message_box_a = 0;
+    }
+}

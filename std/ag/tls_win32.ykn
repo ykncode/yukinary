@@ -1,0 +1,70 @@
+# ============================================================
+# std/ag/tls_win32.ykn - Windows Schannel Native TLS 1.2/1.3 Engine
+# FAZ 21: Harici OpenSSL/curl DLL gerektirmeyen saf Windows Schannel SSPI.
+# ykn_ag_tls.dll köprüsü üzerinden sıfır bağımlılıklı saf yerel TLS.
+# ============================================================
+ice_aktar "std/ag/soket.ykn";
+
+harici isv LoadLibraryA(isim: *u8) -> tamsayi;
+harici isv GetProcAddress(hModul: tamsayi, isim: *u8) -> *u8;
+harici isv FreeLibrary(hModul: tamsayi) -> tamsayi;
+
+harici isv ykn_dyn_call_ptr_i64(fn_ptr: *u8, a1: tamsayi, a2: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(fn_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(fn_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+
+degisken g_tls_dll: tamsayi = 0;
+degisken g_fn_tls_init: *u8 = 0;
+degisken g_fn_tls_acquire_cred: *u8 = 0;
+degisken g_fn_tls_connect_client: *u8 = 0;
+degisken g_fn_tls_send: *u8 = 0;
+degisken g_fn_tls_recv: *u8 = 0;
+degisken g_fn_tls_close: *u8 = 0;
+
+isv ykn_tls_modul_yukle() -> tamsayi {
+    eger g_tls_dll != 0 { dondu 0; }
+    g_tls_dll = LoadLibraryA("ykn_ag_tls.dll".ptr);
+    eger g_tls_dll == 0 { dondu -1; }
+
+    g_fn_tls_init = GetProcAddress(g_tls_dll, "ykn_tls_init".ptr);
+    g_fn_tls_acquire_cred = GetProcAddress(g_tls_dll, "ykn_tls_acquire_cred".ptr);
+    g_fn_tls_connect_client = GetProcAddress(g_tls_dll, "ykn_tls_connect_client".ptr);
+    g_fn_tls_send = GetProcAddress(g_tls_dll, "ykn_tls_send".ptr);
+    g_fn_tls_recv = GetProcAddress(g_tls_dll, "ykn_tls_recv".ptr);
+    g_fn_tls_close = GetProcAddress(g_tls_dll, "ykn_tls_close".ptr);
+
+    eger g_fn_tls_init == 0 veya g_fn_tls_acquire_cred == 0 { dondu -2; }
+    ykn_dyn_call_ptr_i64(g_fn_tls_init, 0, 0);
+    dondu 0;
+}
+
+# Schannel Kimlik Bilgisi Testi
+isv ykn_tls_cred_test() -> tamsayi {
+    eger ykn_tls_modul_yukle() != 0 { dondu -1; }
+    dondu ykn_dyn_call_ptr_i64(g_fn_tls_acquire_cred, 0, 0);
+}
+
+# TLS Oturumu Başlatma ve Handshake
+isv ykn_tls_istemci_baglan(soket_id: tamsayi, sunucu_adi: *u8) -> tamsayi {
+    eger ykn_tls_modul_yukle() != 0 { dondu -1; }
+    dondu ykn_dyn_call_ptr_i64(g_fn_tls_connect_client, soket_id, sunucu_adi);
+}
+
+# TLS Şifreli Veri Gönderme
+isv ykn_tls_gonder(oturum_id: tamsayi, veri: *u8, uzunluk: tamsayi) -> tamsayi {
+    eger g_fn_tls_send == 0 { dondu -1; }
+    dondu ykn_dyn_call_ptr_3(g_fn_tls_send, oturum_id, veri, uzunluk);
+}
+
+# TLS Şifreli Veri Alma
+isv ykn_tls_al(oturum_id: tamsayi, tampon: *u8, maks_uzunluk: tamsayi) -> tamsayi {
+    eger g_fn_tls_recv == 0 { dondu -1; }
+    dondu ykn_dyn_call_ptr_3(g_fn_tls_recv, oturum_id, tampon, maks_uzunluk);
+}
+
+# TLS Oturumunu Kapatma
+isv ykn_tls_kapat(oturum_id: tamsayi) {
+    eger g_fn_tls_close != 0 {
+        ykn_dyn_call_ptr_i64(g_fn_tls_close, oturum_id, 0);
+    }
+}

@@ -1,0 +1,79 @@
+ice_aktar "std/ai/gguf_mmap.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 {
+        buf[i] = 48 + (v % 10);
+        v = v / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8;
+        ch[0] = buf[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("[TEST FAZ 18] GGUF header-window reader baslatiliyor...\n".ptr);
+
+    # 1. Test: GGUF header-window read and parse
+    ekrana_yaz("1. GGUF header-window parse: ".ptr);
+    degisken model_mem: *GGUFMmapModel = bellek_tahsis_et(256);
+    eger model_mem == 0 ise {
+        ekrana_yaz("BASARISIZ: Model yapisi icin bellek tahsis edilemedi!\n".ptr);
+        ExitProcess(1);
+    }
+
+    degisken gguf_yol: *u8 = "tests/llm/mini_test.gguf".ptr;
+    degisken yuklendi: tamsayi = gguf_mmap_yukle(model_mem, gguf_yol);
+
+    eger yuklendi == 1 ise {
+        ekrana_yaz("BASARILI (header-window buffer parsed)\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: GGUF haritalama basarisiz! Hata Kodu: ".ptr);
+        sayi_yaz(yuklendi);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(2);
+    }
+
+    # 2. Test: Header ve Metadata Bilgilerini Dogrulama
+    ekrana_yaz("2. GGUF Versiyon ve Tensor Tablosu Dogrulamasi: ".ptr);
+    degisken d: *GGUFDurum = model_mem.durum;
+    degisken versiyon: tamsayi = d.versiyon;
+    degisken tensor_sayisi: tamsayi = d.tensor_sayisi;
+
+    eger versiyon == 3 ve tensor_sayisi >= 1 ise {
+        ekrana_yaz("BASARILI (GGUF v3, Tensor Sayisi: ".ptr);
+        sayi_yaz(tensor_sayisi);
+        ekrana_yaz(")\n".ptr);
+    } yoksa {
+        ekrana_yaz("BASARISIZ: GGUF versiyon veya tensor sayisi gecersiz! Versiyon: ".ptr);
+        sayi_yaz(versiyon);
+        ekrana_yaz(", Tensor Sayisi: ".ptr);
+        sayi_yaz(tensor_sayisi);
+        ekrana_yaz("\n".ptr);
+        ExitProcess(3);
+    }
+
+    # The fixture declares a TQ1_0 tensor with dimensions (2,3), which is
+    # not a valid 256-value block. Do not expose a pointer to its payload.
+    ekrana_yaz("3. Invalid tensor payload is not exposed: ".ptr);
+    degisken tensor_ptr: *u8 = gguf_mmap_tensor_ptr(model_mem, "blk.0.weight".ptr);
+    eger tensor_ptr != 0 ise {
+        ekrana_yaz("BASARISIZ: malformed tensor got a pointer\n".ptr);
+        ExitProcess(4);
+    }
+    ekrana_yaz("BASARILI (invalid block rejected)\n".ptr);
+
+    ekrana_yaz(">>> [SONUC] HEADER-WINDOW GGUF TESTI TAMAMLANDI <<<\n".ptr);
+    dondu 0;
+}

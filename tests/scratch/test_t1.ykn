@@ -1,0 +1,5 @@
+ice_aktar "std/dosya.ykn";
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

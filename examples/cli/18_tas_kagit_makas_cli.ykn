@@ -1,0 +1,36 @@
+# ============================================================
+# Örnek 18: Konsol Tabanlı Taş-Kağıt-Makas Oyunu Simülatörü
+# ============================================================
+
+# 1: Tas, 2: Kagit, 3: Makas
+isv secim_adi(s: tamsayi) -> *u8 {
+    eger s == 1 ise { dondu "Tas".ptr; }
+    eger s == 2 ise { dondu "Kagit".ptr; }
+    eger s == 3 ise { dondu "Makas".ptr; }
+    dondu "Bilinmiyor".ptr;
+}
+
+isv tur_oyna(oyuncu: tamsayi, bilgisayar: tamsayi) {
+    ekrana_yaz("Oyuncu: ".ptr); ekrana_yaz(secim_adi(oyuncu));
+    ekrana_yaz(" vs Bilgisayar: ".ptr); ekrana_yaz(secim_adi(bilgisayar));
+    ekrana_yaz(" -> Sonuc: ".ptr);
+
+    eger oyuncu == bilgisayar ise {
+        ekrana_yaz("BERABERE!\n".ptr);
+    } yoksa eger (oyuncu == 1 ve bilgisayar == 3) veya
+                 (oyuncu == 2 ve bilgisayar == 1) veya
+                 (oyuncu == 3 ve bilgisayar == 2) ise {
+        ekrana_yaz("OYUNCU KAZANDI!\n".ptr);
+    } yoksa {
+        ekrana_yaz("BILGISAYAR KAZANDI!\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== Tas - Kagit - Makas Konsol Turnuvasi ===\n".ptr);
+    tur_oyna(1, 3); # Tas vs Makas
+    tur_oyna(2, 2); # Kagit vs Kagit
+    tur_oyna(3, 1); # Makas vs Tas
+    tur_oyna(2, 1); # Kagit vs Tas
+    dondu 0;
+}

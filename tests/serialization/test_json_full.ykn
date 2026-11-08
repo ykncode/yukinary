@@ -1,0 +1,56 @@
+# tests/serialization/test_json_full.ykn
+# 100% Yerel Yukinary JSON Kutuphanesi Testi
+
+ice_aktar "std/serialization/json.ykn";
+
+harici isv VirtualAlloc(addr: *u8, size: tamsayi, alloc_type: tamsayi, protect: tamsayi) -> *u8;
+harici isv WriteFile(h: tamsayi, buf: *u8, len: tamsayi, written: *tamsayi, ov: *u8) -> tamsayi;
+harici isv GetStdHandle(n: tamsayi) -> tamsayi;
+
+isv konsol_yaz(s: *u8, len: tamsayi) {
+    degisken h: tamsayi = GetStdHandle(-11);
+    degisken w: tamsayi = 0;
+    WriteFile(h, s, len, &w, 0);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken json_metni: *u8 = "{\"proje\": \"Yukinary\", \"surum\": 2, \"harici_bagimlilik\": 0, \"diller\": [\"tr\", \"en\", \"ru\", \"ja\", \"zh\", \"ko\", \"fr\"]}".ptr;
+    
+    degisken i: tamsayi = 0;
+    dongu json_metni[i] != 0 {
+        i = i + 1;
+    }
+
+    degisken havuz: *u8 = VirtualAlloc(0, 65536, 12288, 4);
+
+    degisken p: JsonAyristirici;
+    p.kaynak = json_metni;
+    p.uzunluk = i;
+    p.indeks = 0;
+    p.bellek_havuzu = havuz;
+    p.bellek_kullanilan = 0;
+
+    degisken kok: *JsonDugum = json_ayristir(&p);
+    eger kok == 0 ise {
+        ekrana_yaz("HATA: JSON kok ayristirilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken proje: *JsonDugum = json_alan_bul(kok, "proje".ptr, 5);
+    degisken surum: *JsonDugum = json_alan_bul(kok, "surum".ptr, 5);
+    degisken bag: *JsonDugum = json_alan_bul(kok, "harici_bagimlilik".ptr, 17);
+    degisken diller: *JsonDugum = json_alan_bul(kok, "diller".ptr, 6);
+
+    eger proje != 0 ve surum != 0 ve bag != 0 ve diller != 0 ise {
+        eger surum.sayi_deger == 2 ve bag.sayi_deger == 0 ve diller.tip == 4 ise {
+            degisken ilk_dil: *JsonDugum = json_dizi_eleman(diller, 0);
+            eger ilk_dil != 0 ve ilk_dil.metin_uzn == 2 ise {
+                ekrana_yaz("PASS: Yukinary 100% Bagimsiz Yerel JSON (Dizi + Nesne) Basariyla Calisti!\n".ptr);
+                dondu 0;
+            }
+        }
+    }
+
+    ekrana_yaz("HATA: JSON dogrulama basarisiz!\n".ptr);
+    dondu 2;
+}

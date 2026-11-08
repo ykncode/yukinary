@@ -1,0 +1,60 @@
+# ============================================================
+# tests/paket/test_cli_tooling.ykn
+# FAZ 44: Dahili Test Motoru ve Dokumantasyon Uretici Testi
+# ============================================================
+
+ice_aktar "src/test_runner.ykn";
+ice_aktar "src/doc_gen.ykn";
+
+isv birim_test_toplama(girdi: tamsayi) -> tamsayi {
+    degisken a: tamsayi = 40;
+    degisken b: tamsayi = 2;
+    eger (a + b) == 42 ise {
+        dondu 0; # Basarili
+    }
+    dondu 1; # Hatali
+}
+
+isv birim_test_carpma(girdi: tamsayi) -> tamsayi {
+    degisken x: tamsayi = 6;
+    degisken y: tamsayi = 7;
+    eger (x * y) == 42 ise {
+        dondu 0; # Basarili
+    }
+    dondu 1; # Hatali
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 44: Test Motoru & Dokumantasyon Uretici Testi Basliyor...\n".ptr);
+
+    # 1. Test Motoru Dogrulamasi
+    degisken tm: *TestKosuMotoru = test_motoru_olustur(8);
+    test_kaydet(tm, "test_toplama".ptr, birim_test_toplama);
+    test_kaydet(tm, "test_carpma".ptr, birim_test_carpma);
+
+    degisken hata_sayisi: tamsayi = test_motoru_calistir(tm);
+
+    eger hata_sayisi != 0 ise {
+        ekrana_yaz("HATA: Test motorunda basarisiz testler var!\n".ptr);
+        dondu 1;
+    }
+    eger tm.basarili != 2 ise {
+        ekrana_yaz("HATA: Test motoru basarili sayisi 2 olmali!\n".ptr);
+        dondu 2;
+    }
+
+    # 2. Dokumantasyon Uretici Dogrulamasi
+    degisken dm: *DocModul = doc_modul_olustur("matematik".ptr, 4);
+    doc_islev_ekle(dm, "topla".ptr, "isv topla(a: tamsayi, b: tamsayi) -> tamsayi".ptr, "Iki tamsayiyi toplar".ptr);
+    doc_islev_ekle(dm, "carp".ptr, "isv carp(a: tamsayi, b: tamsayi) -> tamsayi".ptr, "Iki tamsayiyi carpar".ptr);
+
+    degisken cikti_tampon: *u8 = bellek_tahsis_et(256);
+    degisken uretilen: tamsayi = doc_markdown_uret(dm, cikti_tampon);
+    eger uretilen != 2 ise {
+        ekrana_yaz("HATA: Dokumantasyon kayit sayisi 2 olmali!\n".ptr);
+        dondu 3;
+    }
+
+    ekrana_yaz("CLI_TOOLING_PASS\n".ptr);
+    dondu 0;
+}

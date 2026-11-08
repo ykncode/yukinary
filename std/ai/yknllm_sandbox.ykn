@@ -1,0 +1,187 @@
+# ============================================================
+# Cagiran modul std/os/common.ykn'i once ice aktarmalidir; bu modul
+# compiler'in platform bagimli bellek primitive'lerini kullanir.
+#
+# YKNLLM saf YKN sandbox policy ve bounded output arena.
+#
+# Bu modul OS process sandbox'i taklit etmez. Model cikisini compiler'a
+# vermeden once bounded, NUL-terminated ve capability-deny politikasina
+# uygun hale getirir. Gercek OS-level process isolation ayri runner
+# tarafinda uygulanmalidir; burada basari varsayimi yoktur.
+# ============================================================
+
+degisken YKNLLM_SANDBOX_MAX_CODE: tamsayi = 4194304;
+degisken YKNLLM_SANDBOX_MAX_ARENA: tamsayi = 4194304;
+degisken YKNLLM_SANDBOX_MAX_IMPORT_DOSYA: tamsayi = 64;
+degisken YKNLLM_SANDBOX_MAX_IMPORT_DERINLIK: tamsayi = 16;
+degisken YKNLLM_SANDBOX_MAX_RUNTIME_MS: tamsayi = 30000;
+
+yapi YKNLLMSandboxPolicy {
+    dosya_yazma: tamsayi;
+    kabuk: tamsayi;
+    ag: tamsayi;
+    ffi: tamsayi;
+    asm_yetkisi: tamsayi;
+    cocuk_surec: tamsayi;
+    azami_kod_bayti: tamsayi;
+    azami_import_dosyasi: tamsayi;
+    azami_import_derinligi: tamsayi;
+    azami_calisma_ms: tamsayi;
+}
+
+yapi YKNLLMSandboxArena {
+    tampon: *u8;
+    kapasite: tamsayi;
+    kullanilan: tamsayi;
+    acik: tamsayi;
+}
+
+isv yknllm_sandbox_uzunluk(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv yknllm_sandbox_icerir(metin: *u8, aranan: *u8) -> tamsayi {
+    eger metin == 0 veya aranan == 0 ise { dondu 0; }
+    degisken metin_uzunlugu: tamsayi = yknllm_sandbox_uzunluk(metin);
+    degisken aranan_uzunlugu: tamsayi = yknllm_sandbox_uzunluk(aranan);
+    eger aranan_uzunlugu <= 0 veya metin_uzunlugu < aranan_uzunlugu ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i <= metin_uzunlugu - aranan_uzunlugu {
+        degisken esit: tamsayi = 1;
+        degisken j: tamsayi = 0;
+        dongu j < aranan_uzunlugu {
+            degisken a: tamsayi = metin[i + j];
+            degisken b: tamsayi = aranan[j];
+            eger a >= 65 ve a <= 90 ise { a = a + 32; }
+            eger b >= 65 ve b <= 90 ise { b = b + 32; }
+            eger a != b ise { esit = 0; durdur; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# Model cikisi icin fail-closed varsayilan politika.
+isv yknllm_sandbox_politika_kur(politika: *YKNLLMSandboxPolicy) -> tamsayi {
+    eger politika == 0 ise { dondu 0; }
+    politika->dosya_yazma = 0;
+    politika->kabuk = 0;
+    politika->ag = 0;
+    politika->ffi = 0;
+    politika->asm_yetkisi = 0;
+    politika->cocuk_surec = 0;
+    politika->azami_kod_bayti = YKNLLM_SANDBOX_MAX_CODE;
+    politika->azami_import_dosyasi = YKNLLM_SANDBOX_MAX_IMPORT_DOSYA;
+    politika->azami_import_derinligi = YKNLLM_SANDBOX_MAX_IMPORT_DERINLIK;
+    politika->azami_calisma_ms = YKNLLM_SANDBOX_MAX_RUNTIME_MS;
+    dondu 1;
+}
+
+isv yknllm_sandbox_politika_gecerli_mi(politika: *YKNLLMSandboxPolicy) -> tamsayi {
+    eger politika == 0 veya politika->dosya_yazma != 0 veya
+       politika->kabuk != 0 veya politika->ag != 0 veya
+       politika->ffi != 0 veya politika->asm_yetkisi != 0 veya
+       politika->cocuk_surec != 0 ise { dondu 0; }
+    eger politika->azami_kod_bayti <= 0 veya
+       politika->azami_kod_bayti > YKNLLM_SANDBOX_MAX_CODE veya
+       politika->azami_import_dosyasi <= 0 veya
+       politika->azami_import_dosyasi > YKNLLM_SANDBOX_MAX_IMPORT_DOSYA veya
+       politika->azami_import_derinligi <= 0 veya
+       politika->azami_import_derinligi > YKNLLM_SANDBOX_MAX_IMPORT_DERINLIK veya
+       politika->azami_calisma_ms <= 0 veya
+       politika->azami_calisma_ms > YKNLLM_SANDBOX_MAX_RUNTIME_MS ise { dondu 0; }
+    dondu 1;
+}
+
+# Bu tarama AST/codegen gate'in yerine gecmez. Buna ragmen model cevabi
+# compiler'a ulasmadan once acik capability ifadelerini reddeder.
+isv yknllm_sandbox_kod_izinli_mi(kod: *u8, politika: *YKNLLMSandboxPolicy) -> tamsayi {
+    eger kod == 0 veya yknllm_sandbox_politika_gecerli_mi(politika) == 0 ise { dondu 0; }
+    degisken uzunluk: tamsayi = yknllm_sandbox_uzunluk(kod);
+    eger uzunluk <= 0 veya uzunluk > politika->azami_kod_bayti veya
+       uzunluk > YKNLLM_SANDBOX_MAX_CODE ise { dondu 0; }
+    eger yknllm_sandbox_icerir(kod, "asm".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "harici isv".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "direktif_c_lib".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "direktif_cpp_lib".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "direktif_py_lib".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "direktif_rs_lib".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "diske_bas_ve_kapat".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "dosya_oku".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "createfile".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "writefile".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "createprocess".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "loadlibrary".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "getprocaddress".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "dlopen".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "socket".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "connect".ptr) == 1 veya
+       yknllm_sandbox_icerir(kod, "yknllm_audit".ptr) == 1 ise { dondu 0; }
+    dondu 1;
+}
+
+# Workspace bir dosya yolu degil, gateway tarafindan atanmis logical ID'dir.
+isv yknllm_sandbox_workspace_id_mi(workspace: *u8) -> tamsayi {
+    eger workspace == 0 veya yknllm_sandbox_uzunluk(workspace) <= 0 veya
+       yknllm_sandbox_uzunluk(workspace) > 128 ise { dondu 0; }
+    eger yknllm_sandbox_icerir(workspace, "..".ptr) == 1 veya
+       yknllm_sandbox_icerir(workspace, "/".ptr) == 1 veya
+       yknllm_sandbox_icerir(workspace, "\\".ptr) == 1 veya
+       yknllm_sandbox_icerir(workspace, ":".ptr) == 1 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknllm_sandbox_arena_kur(arena: *YKNLLMSandboxArena, kapasite: tamsayi) -> tamsayi {
+    eger arena == 0 veya kapasite <= 0 veya
+       kapasite > YKNLLM_SANDBOX_MAX_ARENA ise { dondu 0; }
+    arena->tampon = bellek_tahsis_et(kapasite + 1);
+    eger arena->tampon == 0 ise { dondu 0; }
+    arena->kapasite = kapasite;
+    arena->kullanilan = 0;
+    arena->acik = 1;
+    arena->tampon[0] = 0;
+    dondu 1;
+}
+
+# Kaynagi arena icine kopyalar ve arena icindeki NUL-terminated pointer'i
+# dondurur. Kaynak arena disinda kalabilir; caller kabulden sonra yalniz
+# dondurulen pointer'i kullanmalidir.
+isv yknllm_sandbox_kod_kopyala(arena: *YKNLLMSandboxArena,
+                               kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    eger arena == 0 veya arena->acik != 1 veya arena->tampon == 0 veya
+       kaynak == 0 veya uzunluk <= 0 veya uzunluk > YKNLLM_SANDBOX_MAX_CODE veya
+       uzunluk + 1 > arena->kapasite - arena->kullanilan ise { dondu 0; }
+    degisken hedef: *u8 = arena->tampon;
+    degisken baslangic: tamsayi = arena->kullanilan;
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        hedef[baslangic + i] = kaynak[i];
+        i = i + 1;
+    }
+    hedef[baslangic + uzunluk] = 0;
+    arena->kullanilan = arena->kullanilan + uzunluk + 1;
+    dondu hedef + baslangic;
+}
+
+isv yknllm_sandbox_arena_sifirla(arena: *YKNLLMSandboxArena) -> tamsayi {
+    eger arena == 0 veya arena->acik != 1 veya arena->tampon == 0 ise { dondu 0; }
+    arena->kullanilan = 0;
+    degisken tampon_local: *u8 = arena->tampon;
+    tampon_local[0] = 0;
+    dondu 1;
+}
+
+isv yknllm_sandbox_arena_kapat(arena: *YKNLLMSandboxArena) -> tamsayi {
+    eger arena == 0 veya arena->acik != 1 ise { dondu 0; }
+    eger arena->tampon != 0 ise { os_bellek_serbest(arena->tampon); }
+    arena->tampon = 0;
+    arena->kapasite = 0;
+    arena->kullanilan = 0;
+    arena->acik = 0;
+    dondu 1;
+}

@@ -1,0 +1,43 @@
+# ============================================================
+# Örnek 13: Konsol Tabanlı Dinamik Bağlı Liste (Linked List)
+# ============================================================
+
+yapi ListeDugumu {
+    deger: tamsayi;
+    sonraki_indis: tamsayi;
+}
+
+degisken g_liste_havuz: [100]ListeDugumu;
+degisken g_liste_adet: tamsayi = 0;
+degisken g_liste_bas: tamsayi = 0 - 1;
+
+isv liste_basa_ekle(val: tamsayi) {
+    eger g_liste_adet >= 100 ise { dondu; }
+    degisken yeni_id: tamsayi = g_liste_adet;
+    g_liste_havuz[yeni_id].deger = val;
+    g_liste_havuz[yeni_id].sonraki_indis = g_liste_bas;
+    g_liste_bas = yeni_id;
+    g_liste_adet = g_liste_adet + 1;
+}
+
+isv liste_yazdir() {
+    degisken simdiki: tamsayi = g_liste_bas;
+    ekrana_yaz("Bagli Liste: [ ".ptr);
+    dongu (simdiki >= 0) {
+        sayiyi_ekrana_yaz(g_liste_havuz[simdiki].deger);
+        ekrana_yaz(" -> ".ptr);
+        simdiki = g_liste_havuz[simdiki].sonraki_indis;
+    }
+    ekrana_yaz("NULL ]\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    liste_basa_ekle(10);
+    liste_basa_ekle(20);
+    liste_basa_ekle(30);
+    liste_basa_ekle(40);
+    liste_basa_ekle(50);
+
+    liste_yazdir();
+    dondu 0;
+}

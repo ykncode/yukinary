@@ -1,0 +1,49 @@
+# ============================================================
+# Örnek 14: Konsol Tabanlı Yığın (Stack) ve Kuyruk (Queue)
+# ============================================================
+
+# Yigin (LIFO)
+degisken g_yigin: [50]tamsayi;
+degisken g_yigin_tepe: tamsayi = 0;
+
+isv yigin_it(val: tamsayi) {
+    eger g_yigin_tepe >= 50 ise { dondu; }
+    g_yigin[g_yigin_tepe] = val;
+    g_yigin_tepe = g_yigin_tepe + 1;
+}
+
+isv yigin_cek() -> tamsayi {
+    eger g_yigin_tepe <= 0 ise { dondu 0 - 1; }
+    g_yigin_tepe = g_yigin_tepe - 1;
+    dondu g_yigin[g_yigin_tepe];
+}
+
+# Kuyruk (FIFO)
+degisken g_kuyruk: [50]tamsayi;
+degisken g_kuyruk_on: tamsayi = 0;
+degisken g_kuyruk_arka: tamsayi = 0;
+
+isv kuyruk_ekle(val: tamsayi) {
+    g_kuyruk[g_kuyruk_arka] = val;
+    g_kuyruk_arka = g_kuyruk_arka + 1;
+}
+
+isv kuyruk_cikar() -> tamsayi {
+    eger g_kuyruk_on >= g_kuyruk_arka ise { dondu 0 - 1; }
+    degisken v: tamsayi = g_kuyruk[g_kuyruk_on];
+    g_kuyruk_on = g_kuyruk_on + 1;
+    dondu v;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("--- Yigin Testi (LIFO) ---\n".ptr);
+    yigin_it(100); yigin_it(200); yigin_it(300);
+    sayiyi_ekrana_yaz(yigin_cek()); ekrana_yaz("\n".ptr);
+    sayiyi_ekrana_yaz(yigin_cek()); ekrana_yaz("\n".ptr);
+
+    ekrana_yaz("--- Kuyruk Testi (FIFO) ---\n".ptr);
+    kuyruk_ekle(1); kuyruk_ekle(2); kuyruk_ekle(3);
+    sayiyi_ekrana_yaz(kuyruk_cikar()); ekrana_yaz("\n".ptr);
+    sayiyi_ekrana_yaz(kuyruk_cikar()); ekrana_yaz("\n".ptr);
+    dondu 0;
+}

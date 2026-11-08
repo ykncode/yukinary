@@ -1,0 +1,58 @@
+isv ekrana_yaz(m: *u8) {}
+isv sayiyi_yazdir(sayi: tamsayi) {
+    degisken buf: [32]u8; degisken i: tamsayi = 0;
+    eger sayi == 0 ise { buf[0] = 48; buf[1] = 0; ekrana_yaz(buf); dondu; }
+    degisken n: tamsayi = sayi; eger n < 0 ise { n = 0 - n; }
+    dongu n > 0 { buf[i] = (n % 10) + 48; n = n / 10; i = i + 1; }
+    eger sayi < 0 ise { buf[i] = 45; i = i + 1; }
+    buf[i] = 0; degisken j: tamsayi = 0; degisken k: tamsayi = i - 1;
+    dongu j < k { degisken tmp: u8 = buf[j]; buf[j] = buf[k]; buf[k] = tmp; j = j + 1; k = k - 1; }
+    ekrana_yaz(buf);
+}
+
+# ============================================================
+# GOREV 5.1 - Macro Tanimi ve Cagri Testi
+# YKN macro: sablon genisletme, parametre ikamesi
+# ============================================================
+
+makro ikikat(x) { x + x }
+makro topla3(a, b, c) { a + b + c }
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    # Test 1: ikikat makrosu — degisken atamasinda
+    degisken r1: tamsayi = ikikat(21);
+    eger r1 == 42 ise {
+        ekrana_yaz("TEST MACRO: ikikat OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST MACRO: ikikat FAILED r1=".ptr);
+        sayiyi_yazdir(r1);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Test 2: topla3 makrosu
+    degisken r2: tamsayi = topla3(10, 20, 12);
+    eger r2 == 42 ise {
+        ekrana_yaz("TEST MACRO: topla3 OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST MACRO: topla3 FAILED r2=".ptr);
+        sayiyi_yazdir(r2);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # Test 3: ifade icinde kullanim
+    degisken taban: tamsayi = 5;
+    degisken r3: tamsayi = ikikat(taban) + 2;
+    eger r3 == 12 ise {
+        ekrana_yaz("TEST MACRO: ifade icinde OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("TEST MACRO: ifade icinde FAILED r3=".ptr);
+        sayiyi_yazdir(r3);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("MACRO-CODEGEN-PASS\n".ptr);
+    dondu 0;
+}

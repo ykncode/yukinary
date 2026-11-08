@@ -1,0 +1,20 @@
+isv test_hir_mir(a: tamsayi, b: tamsayi) -> tamsayi {
+    degisken deger = a + b;
+    
+    eger deger > 10 ise {
+        dondu deger * 2;
+    }
+    
+    degisken iter = 0;
+    dongu iter < 5 {
+        deger = deger + 1;
+        iter = iter + 1;
+    }
+    
+    dondu deger;
+}
+
+isv ana() {
+    degisken x = test_hir_mir(4, 5);
+    # x olmali: 9 + 5 = 14
+}

@@ -1,0 +1,21 @@
+yapi Nokta {
+    x: tamsayi;
+    y: tamsayi;
+}
+
+isv ana() -> tamsayi {
+    degisken noktalar: [3]Nokta;
+    noktalar[1].x = 17;
+    noktalar[1].y = 29;
+    eger noktalar[1].x != 17 ise {
+        ekrana_yaz("STRUCT_ARRAY_X_FAIL\n".ptr);
+        dondu 1;
+    }
+    eger noktalar[1].y != 29 ise {
+        ekrana_yaz("STRUCT_ARRAY_Y_FAIL\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("STRUCT_ARRAY_PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,55 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv tamsayi_yazdir(n: tamsayi) {
+    degisken buf: [20]u8;
+    degisken gecici: [20]u8;
+    degisken i: tamsayi = 0;
+    degisken eksi: tamsayi = 0;
+    eger n == 0 ise {
+        buf[0] = 48; buf[1] = 0;
+        ekrana_yaz(buf);
+        dondu;
+    }
+    eger n < 0 ise {
+        eksi = 1;
+        n = 0 - n;
+    }
+    dongu n > 0 {
+        gecici[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    degisken j: tamsayi = 0;
+    eger eksi == 1 ise { buf[0] = 45; j = 1; }
+    dongu i > 0 {
+        i = i - 1;
+        buf[j] = gecici[i];
+        j = j + 1;
+    }
+    buf[j] = 0;
+    ekrana_yaz(buf);
+}
+
+isv test_generic_artir<T>(d: *Dizi<T>, eleman: T) {
+    ekrana_yaz("test_generic_artir cagirildi! d: ");
+    tamsayi_yazdir(d);
+    ekrana_yaz(" eleman: ");
+    tamsayi_yazdir(eleman);
+    ekrana_yaz("\n");
+    d.boyut = 99;
+}
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    ekrana_yaz("Baslangic d.boyut: ");
+    tamsayi_yazdir(d.boyut);
+    ekrana_yaz("\n");
+
+    test_generic_artir<tamsayi>(d, 555);
+
+    ekrana_yaz("test_generic_artir sonrasi d.boyut: ");
+    tamsayi_yazdir(d.boyut);
+    ekrana_yaz("\n");
+
+    dondu 0;
+}

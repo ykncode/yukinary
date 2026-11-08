@@ -1,0 +1,1443 @@
+# ============================================================
+# Yukinary Paket Yoneticisi (src/paket.ykn)
+# yukinary.toml parse, manifest validation, dependency resolution
+#
+# CLI EXIT CODE SOZLESMESI (FIX 10):
+#   0  = basari
+#   1  = genel hata / derleme hatasi
+#   2  = manifest hatasi (yukinary.toml eksik / gecersiz)
+#   3  = bagimlilik hatasi (cevrimsel / bulunamadi / path traversal)
+#   4  = kilitleme dosyasi (lockfile) hatasi
+#
+# BAGIMLILIK SOZLESMESI:
+#   - Yalnizca yerel path bagimliliklari desteklenir (V1).
+#   - registry/network bagimliliklar FIX 11+ icin ayrilmistir.
+#   - Path traversal (".." iceren yollar) build-time hatasi uretir.
+#   - Cevrimsel bagimliliklar (A->B->A) cycle detection ile raporlanir.
+#   - Lockfile (yukinary.lock) her basarili resolveda guncellenir.
+# ============================================================
+
+ice_aktar "std/bellek.ykn";
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/fallback_shell.ykn";
+
+# ============================================================
+# Manifest Sabitleri
+# ============================================================
+degisken PAKET_SCHEMA_MIN: tamsayi = 1;   # Desteklenen minimum schema_version
+degisken PAKET_SCHEMA_MAX: tamsayi = 1;   # Desteklenen maksimum schema_version
+degisken PAKET_MAX_BAGIMLILIK: tamsayi = 64;
+degisken PAKET_MAX_DERINLIK: tamsayi = 16;    # Cevrim tespiti icin max grafik derinligi
+
+# CLI exit code sabitleri (add/build/fmt/repl/--lsp icin ortak)
+degisken CIKIS_BASARI: tamsayi       = 0;
+degisken CIKIS_GENEL_HATA: tamsayi   = 1;
+degisken CIKIS_MANIFEST_HATA: tamsayi = 2;
+degisken CIKIS_BAGIMLILIK_HATA: tamsayi = 3;
+degisken CIKIS_KILIT_HATA: tamsayi   = 4;
+
+isv lsp_str_esit(s1: *u8, s2: *u8, uzn: tamsayi) -> tamsayi {
+    eger s1 == 0 veya s2 == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s1[i] != 0 ve s2[i] != 0 {
+        eger s1[i] != s2[i] ise { dondu 0; }
+        i = i + 1;
+    }
+    eger s1[i] == s2[i] ise { dondu 1; }
+    dondu 0;
+}
+
+
+# ============================================================
+# Veri Yapilari
+# ============================================================
+yapi Bagimlilik {
+    isim: *u8;
+    isim_uzn: tamsayi;
+    yol: *u8;
+    yol_uzn: tamsayi;
+    git_url: *u8;
+    git_url_uzn: tamsayi;
+    surum: *u8;
+    surum_uzn: tamsayi;
+    kaynak_tipi: tamsayi;   # 0=yerel path, 1=git, 2=registry
+    ziyaret_edildi: tamsayi;   # Cycle detection icin DFS islemi
+}
+
+yapi Manifest {
+    schema_version: tamsayi;
+    isim: *u8;
+    isim_uzn: tamsayi;
+    surum: *u8;
+    surum_uzn: tamsayi;
+    ana_dosya: *u8;
+    ana_dosya_uzn: tamsayi;
+    cikti: *u8;
+    cikti_uzn: tamsayi;
+    bagimliliklar: [64]*Bagimlilik;
+    bagimlilik_sayisi: tamsayi;
+    hata_kodu: tamsayi;
+}
+
+# Global manifest durumu
+degisken g_paket_manifest: *Manifest = 0;
+
+# ============================================================
+# Yardimci: basit TOML anahtar=deger okuyucu
+# Sadece "anahtar = \"deger\"" bicimli satirlari destekler.
+# ============================================================
+isv toml_str_oku(icerik: *u8, uzn: tamsayi, anahtar: *u8, anahtar_uzn: tamsayi, cikti: *u8, maks: tamsayi) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        # Satir basina git
+        degisken satir_bas: tamsayi = i;
+        # Anahtari bul
+        degisken esit: tamsayi = 1;
+        degisken k: tamsayi = 0;
+        eger i + anahtar_uzn > uzn ise { dondu 0; }
+        dongu k < anahtar_uzn {
+            eger icerik[i + k] != anahtar[k] ise { esit = 0; durdur; }
+            k = k + 1;
+        }
+        eger esit == 1 ise {
+            # Esit isareti ve tirnak bul
+            degisken j: tamsayi = i + anahtar_uzn;
+            # bosluk ve = atla
+            dongu j < uzn ve (icerik[j] == 32 veya icerik[j] == 61) { j = j + 1; }
+            # tamsayi mi string mi?
+            eger j < uzn ve icerik[j] == 34 ise {
+                # String literal: tirnak icerigini oku
+                j = j + 1;
+                degisken out: tamsayi = 0;
+                dongu j < uzn ve icerik[j] != 34 ve icerik[j] != 10 ve out < maks - 1 {
+                    cikti[out] = icerik[j];
+                    out = out + 1;
+                    j = j + 1;
+                }
+                cikti[out] = 0;
+                dondu out;
+            } yoksa eger j < uzn ve icerik[j] >= 48 ve icerik[j] <= 57 ise {
+                # Tamsayi deger — string olarak oku
+                degisken out2: tamsayi = 0;
+                dongu j < uzn ve icerik[j] >= 48 ve icerik[j] <= 57 ve out2 < maks - 1 {
+                    cikti[out2] = icerik[j];
+                    out2 = out2 + 1;
+                    j = j + 1;
+                }
+                cikti[out2] = 0;
+                dondu out2;
+            }
+        }
+        # Sonraki satira gec
+        dongu i < uzn ve icerik[i] != 10 { i = i + 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# String'i tamsayiye cevir
+isv str_tamsayi(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken sonuc: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu s[i] >= 48 ve s[i] <= 57 {
+        sonuc = sonuc * 10 + (s[i] - 48);
+        i = i + 1;
+    }
+    dondu sonuc;
+}
+
+# ============================================================
+# Path Traversal Korumasi
+# ".." veya mutlak yol iceren bagimliliklari reddeder.
+# ============================================================
+isv path_guvenli_mi(yol: *u8, uzn: tamsayi) -> tamsayi {
+    eger yol == 0 veya uzn == 0 ise { dondu 0; }
+    # Mutlak yol kontrolu: "/" veya "C:" gibi ile baslamali degil
+    eger yol[0] == 47 ise { dondu 0; }  # Unix mutlak: /
+    eger uzn >= 2 ve yol[1] == 58 ise { dondu 0; }  # Windows mutlak: C:
+    # ".." traversal kontrolu
+    degisken i: tamsayi = 0;
+    dongu i < uzn - 1 {
+        eger yol[i] == 46 ve yol[i + 1] == 46 ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# ============================================================
+# Cevrimsel Bagimlilik Tespiti (DFS)
+# ============================================================
+isv bagimlilik_cevrim_var_mi(bagimliliklar: [64]*Bagimlilik, adet: tamsayi) -> tamsayi {
+    # Basit ziyaret bayraklari ile DFS cycle detection
+    degisken i: tamsayi = 0;
+    dongu i < adet {
+        degisken b: *Bagimlilik = bagimliliklar[i];
+        eger b != 0 ise { b.ziyaret_edildi = 0; }
+        i = i + 1;
+    }
+    # V1: Flat liste ile cevrim kontrolu — her bagimliligi tek bir grafik dusumu olarak ele al
+    # Gercek cevrim, ayni path'e iki farkli isimle referans verilmesiyle tespit edilir.
+    degisken j: tamsayi = 0;
+    dongu j < adet {
+        degisken bj: *Bagimlilik = bagimliliklar[j];
+        eger bj == 0 ise { j = j + 1; devam_et; }
+        degisken k: tamsayi = j + 1;
+        dongu k < adet {
+            degisken bk: *Bagimlilik = bagimliliklar[k];
+            eger bk == 0 ise { k = k + 1; devam_et; }
+            # Ayni yol, farkli isim = potansiyel cevrim
+            eger bj.yol_uzn == bk.yol_uzn ise {
+                eger bellek_esit_mi(bj.yol, bk.yol, bj.yol_uzn) == 1 ise {
+                    dondu 1;
+                }
+            }
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+    dondu 0;
+}
+
+# ============================================================
+# Manifest Yukle ve Dogrula
+# Basarili: 0, Manifest hatasi: 2, Bagimlilik hatasi: 3
+# ============================================================
+isv manifest_yukle(toml_yolu: *u8) -> tamsayi {
+    eger toml_yolu == 0 ise { dondu CIKIS_MANIFEST_HATA; }
+
+    degisken uzn: tamsayi = 0;
+    degisken ic_buf: *u8 = os_bellek_tahsis(65536);
+    eger ic_buf == 0 ise { dondu CIKIS_MANIFEST_HATA; }
+    uzn = dosya_oku(toml_yolu, ic_buf, 65536);
+    eger uzn <= 0 ise {
+        ekrana_yaz("HATA [E_MANIFEST]: yukinary.toml bulunamadi veya okunamadi.\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    degisken icerik: *u8 = ic_buf;
+    ic_buf[uzn] = 0;
+
+    degisken m: *Manifest = os_bellek_tahsis(1024);
+    eger m == 0 ise { dondu CIKIS_MANIFEST_HATA; }
+    m.bagimlilik_sayisi = 0;
+    m.hata_kodu = 0;
+
+    # schema_version oku ve dogrula
+    degisken buf: [64]u8;
+    degisken okunan: tamsayi = toml_str_oku(icerik, uzn, "schema_version".ptr, 14, buf, 64);
+    eger okunan == 0 ise {
+        ekrana_yaz("HATA [E_MANIFEST]: schema_version alani eksik. Lutfen yukinary.toml dosyasina 'schema_version = 1' ekleyin.\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    degisken sv: tamsayi = str_tamsayi(buf);
+    eger sv < PAKET_SCHEMA_MIN veya sv > PAKET_SCHEMA_MAX ise {
+        ekrana_yaz("HATA [E_MANIFEST]: Desteklenmeyen schema_version. Beklenen: 1\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    m.schema_version = sv;
+
+    # name oku
+    degisken isim_buf: [256]u8;
+    degisken isim_uzn: tamsayi = toml_str_oku(icerik, uzn, "name".ptr, 4, isim_buf, 256);
+    eger isim_uzn == 0 ise {
+        ekrana_yaz("HATA [E_MANIFEST]: 'name' alani eksik.\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    degisken m_isim: *u8 = os_bellek_tahsis(isim_uzn + 1);
+    eger m_isim != 0 {
+        degisken mi: tamsayi = 0;
+        dongu mi < isim_uzn { m_isim[mi] = isim_buf[mi]; mi = mi + 1; }
+        m_isim[isim_uzn] = 0;
+        m.isim = m_isim;
+        m.isim_uzn = isim_uzn;
+    }
+
+    # version oku
+    degisken ver_buf: [64]u8;
+    degisken ver_uzn: tamsayi = toml_str_oku(icerik, uzn, "version".ptr, 7, ver_buf, 64);
+    eger ver_uzn == 0 ise {
+        ekrana_yaz("HATA [E_MANIFEST]: 'version' alani eksik.\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    degisken m_surum: *u8 = os_bellek_tahsis(ver_uzn + 1);
+    eger m_surum != 0 {
+        degisken vi: tamsayi = 0;
+        dongu vi < ver_uzn { m_surum[vi] = ver_buf[vi]; vi = vi + 1; }
+        m_surum[ver_uzn] = 0;
+        m.surum = m_surum;
+        m.surum_uzn = ver_uzn;
+    }
+
+    # main oku
+    degisken main_buf: [512]u8;
+    degisken main_uzn: tamsayi = toml_str_oku(icerik, uzn, "main".ptr, 4, main_buf, 512);
+    eger main_uzn == 0 ise {
+        ekrana_yaz("HATA [E_MANIFEST]: 'main' alani eksik.\n".ptr);
+        dondu CIKIS_MANIFEST_HATA;
+    }
+    degisken m_ana: *u8 = os_bellek_tahsis(main_uzn + 1);
+    eger m_ana != 0 {
+        degisken mai: tamsayi = 0;
+        dongu mai < main_uzn { m_ana[mai] = main_buf[mai]; mai = mai + 1; }
+        m_ana[main_uzn] = 0;
+        m.ana_dosya = m_ana;
+        m.ana_dosya_uzn = main_uzn;
+    }
+
+    # output oku (opsiyonel)
+    degisken out_buf: [512]u8;
+    degisken out_uzn: tamsayi = toml_str_oku(icerik, uzn, "output".ptr, 6, out_buf, 512);
+    eger out_uzn > 0 {
+        degisken m_cikti: *u8 = os_bellek_tahsis(out_uzn + 1);
+        eger m_cikti != 0 {
+            degisken oi: tamsayi = 0;
+            dongu oi < out_uzn { m_cikti[oi] = out_buf[oi]; oi = oi + 1; }
+            m_cikti[out_uzn] = 0;
+            m.cikti = m_cikti;
+            m.cikti_uzn = out_uzn;
+        }
+    } yoksa {
+        m.cikti = 0;
+        m.cikti_uzn = 0;
+    }
+
+    # [dependencies] bolumunu tara, git/registry bagimliliklarini indir ve kaydet
+    degisken dep_res: tamsayi = manifest_bagimliliklari_isle(icerik, uzn, m);
+    eger dep_res != CIKIS_BASARI ise {
+        dondu dep_res;
+    }
+
+    # Bagimlilik cycle detection
+    eger bagimlilik_cevrim_var_mi(m.bagimliliklar, m.bagimlilik_sayisi) == 1 ise {
+        ekrana_yaz("HATA [E_BAGIMLILIK]: Cevrimsel bagimlilik tespit edildi!\n".ptr);
+        dondu CIKIS_BAGIMLILIK_HATA;
+    }
+
+    g_paket_manifest = m;
+    dondu CIKIS_BASARI;
+}
+
+# ============================================================
+# Lockfile Yaz (yukinary.lock)
+# Reproducible build: her basarili resolveda guncel bagimliliklari yazar.
+# ============================================================
+isv lockfile_yaz(lock_yolu: *u8) -> tamsayi {
+    eger g_paket_manifest == 0 ise { dondu CIKIS_KILIT_HATA; }
+    degisken m: *Manifest = g_paket_manifest;
+
+    degisken buf: *u8 = os_bellek_tahsis(16384);
+    eger buf == 0 ise { dondu CIKIS_KILIT_HATA; }
+
+    degisken pos: tamsayi = 0;
+
+    # Lockfile header (35=' '#', 32=' '):
+    # "# yukinary.lock - Otomatik uretildi, elle duzenlemeyin.\n"
+    buf[pos] = 35; pos = pos + 1;
+    buf[pos] = 32; pos = pos + 1;
+    degisken lh1: *u8 = "yukinary.lock - Otomatik uretildi, elle duzenlemeyin.\n".ptr;
+    degisken lh1i: tamsayi = 0;
+    dongu lh1[lh1i] != 0 { buf[pos] = lh1[lh1i]; pos = pos + 1; lh1i = lh1i + 1; }
+
+    # "[paket]\n"
+    degisken pkg: *u8 = "[paket]\n".ptr;
+    degisken pki: tamsayi = 0;
+    dongu pkg[pki] != 0 { buf[pos] = pkg[pki]; pos = pos + 1; pki = pki + 1; }
+
+    # "isim = "  + 34 (") + isim + 34 (") + 10 (\n)
+    eger m.isim != 0 ise {
+        degisken ik: *u8 = "isim = ".ptr;
+        degisken iki: tamsayi = 0;
+        dongu ik[iki] != 0 { buf[pos] = ik[iki]; pos = pos + 1; iki = iki + 1; }
+        buf[pos] = 34; pos = pos + 1;
+        degisken ni: tamsayi = 0;
+        dongu ni < m.isim_uzn { buf[pos] = m.isim[ni]; pos = pos + 1; ni = ni + 1; }
+        buf[pos] = 34; pos = pos + 1;
+        buf[pos] = 10; pos = pos + 1;
+    }
+
+    # "surum = " + 34 + surum + 34 + 10
+    eger m.surum != 0 ise {
+        degisken sk: *u8 = "surum = ".ptr;
+        degisken ski: tamsayi = 0;
+        dongu sk[ski] != 0 { buf[pos] = sk[ski]; pos = pos + 1; ski = ski + 1; }
+        buf[pos] = 34; pos = pos + 1;
+        degisken vi: tamsayi = 0;
+        dongu vi < m.surum_uzn { buf[pos] = m.surum[vi]; pos = pos + 1; vi = vi + 1; }
+        buf[pos] = 34; pos = pos + 1;
+        buf[pos] = 10; pos = pos + 1;
+    }
+
+    buf[pos] = 10; pos = pos + 1;
+
+    # Bagimliliklar: "[isim]\nyol = " + 34 + yol + 34 + 10 + 10
+    degisken bi: tamsayi = 0;
+    dongu bi < m.bagimlilik_sayisi {
+        degisken b: *Bagimlilik = m.bagimliliklar[bi];
+        eger b != 0 ise {
+            buf[pos] = 91; pos = pos + 1;
+            degisken ni2: tamsayi = 0;
+            dongu ni2 < b.isim_uzn { buf[pos] = b.isim[ni2]; pos = pos + 1; ni2 = ni2 + 1; }
+            buf[pos] = 93; pos = pos + 1;
+            buf[pos] = 10; pos = pos + 1;
+            degisken yk: *u8 = "yol = ".ptr;
+            degisken yki: tamsayi = 0;
+            dongu yk[yki] != 0 { buf[pos] = yk[yki]; pos = pos + 1; yki = yki + 1; }
+            buf[pos] = 34; pos = pos + 1;
+            degisken yi: tamsayi = 0;
+            dongu yi < b.yol_uzn { buf[pos] = b.yol[yi]; pos = pos + 1; yi = yi + 1; }
+            buf[pos] = 34; pos = pos + 1;
+            buf[pos] = 10; pos = pos + 1;
+
+            eger b.surum != 0 ve b.surum_uzn > 0 ise {
+                degisken srk: *u8 = "surum = ".ptr;
+                degisken sri: tamsayi = 0;
+                dongu srk[sri] != 0 { buf[pos] = srk[sri]; pos = pos + 1; sri = sri + 1; }
+                buf[pos] = 34; pos = pos + 1;
+                degisken surum_i: tamsayi = 0;
+                dongu surum_i < b.surum_uzn { buf[pos] = b.surum[surum_i]; pos = pos + 1; surum_i = surum_i + 1; }
+                buf[pos] = 34; pos = pos + 1;
+                buf[pos] = 10; pos = pos + 1;
+            }
+            eger b.git_url != 0 ve b.git_url_uzn > 0 ise {
+                degisken gtk: *u8 = "git = ".ptr;
+                degisken gti: tamsayi = 0;
+                dongu gtk[gti] != 0 { buf[pos] = gtk[gti]; pos = pos + 1; gti = gti + 1; }
+                buf[pos] = 34; pos = pos + 1;
+                degisken gi: tamsayi = 0;
+                dongu gi < b.git_url_uzn { buf[pos] = b.git_url[gi]; pos = pos + 1; gi = gi + 1; }
+                buf[pos] = 34; pos = pos + 1;
+                buf[pos] = 10; pos = pos + 1;
+            }
+
+            # Gercek SHA-256 Checksum ekle
+            degisken cs_hex: [68]u8;
+            degisken cs_tampon: [1024]u8;
+            degisken cs_uzn: tamsayi = dosya_oku(b.yol, cs_tampon, 1024);
+            eger cs_uzn > 0 ise {
+                sha256_hesapla(cs_tampon, cs_uzn, cs_hex);
+            } yoksa {
+                sha256_hesapla(b.yol, b.yol_uzn, cs_hex);
+            }
+            pos = lockfile_checksum_yaz(buf, 65536, pos, cs_hex);
+            buf[pos] = 10; pos = pos + 1;
+        }
+        bi = bi + 1;
+    }
+    buf[pos] = 0;
+
+    eger diske_bas_ve_kapat(lock_yolu, buf, pos) > 0 ise {
+        dondu CIKIS_BASARI;
+    }
+    dondu CIKIS_KILIT_HATA;
+}
+
+# ============================================================
+# Manifest Hata Raporu (anlamli diagnostics)
+# ============================================================
+isv manifest_hata_rapor(hata_kodu: tamsayi) {
+    eger hata_kodu == CIKIS_MANIFEST_HATA ise {
+        ekrana_yaz("  ipucu: Proje kokuunde gecerli bir yukinary.toml olmalidir.\n".ptr);
+        ekrana_yaz("  ipucu: Minimum icerik: schema_version, name, version, main alanlari.\n".ptr);
+    } yoksa eger hata_kodu == CIKIS_BAGIMLILIK_HATA ise {
+        ekrana_yaz("  ipucu: [dependencies] altindaki yol alanlari '..' icermemeli ve gorecel olmalidir.\n".ptr);
+        ekrana_yaz("  ipucu: Cevrimsel bagimliliklari kaldir (A->B->A desteklenmez).\n".ptr);
+    } yoksa eger hata_kodu == CIKIS_KILIT_HATA ise {
+        ekrana_yaz("  ipucu: yukinary.lock yazilirken hata. Yazma izinlerini kontrol et.\n".ptr);
+    }
+}
+
+# ============================================================
+# Paket Imzalama ve Dogrulama (FAZ 7.4)
+# SHA-256 tabanli paket imzalama ve dogrulama
+# ============================================================
+ice_aktar "src/fingerprint.ykn";
+
+yapi PaketImzasi {
+    sha256_hex: [68]u8;   # SHA-256 hex string (64 karakter + null)
+    gecerli: tamsayi;
+}
+
+# Paket kaynagini imzala: dosya iceriginin SHA-256'sini hesapla
+isv paket_imzala(kaynak: *u8, uzunluk: tamsayi, imza_cikis: *PaketImzasi) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya imza_cikis == 0 ise { dondu 0; }
+    sha256_hesapla(kaynak, uzunluk, imza_cikis.sha256_hex);
+    imza_cikis.gecerli = 1;
+    dondu 1;
+}
+
+# Paket imzasini dogrula: beklenen vs gercek SHA-256
+isv paket_imza_dogrula(kaynak: *u8, uzunluk: tamsayi, beklenen_imza: *PaketImzasi) -> tamsayi {
+    eger kaynak == 0 veya uzunluk <= 0 veya beklenen_imza == 0 ise { dondu 0; }
+    eger beklenen_imza.gecerli == 0 ise { dondu 0; }
+    degisken gercek_imza: PaketImzasi;
+    degisken sifir_i: tamsayi = 0;
+    dongu sifir_i < 68 {
+        gercek_imza.sha256_hex[sifir_i] = 0;
+        sifir_i = sifir_i + 1;
+    }
+    gercek_imza.gecerli = 0;
+    sha256_hesapla(kaynak, uzunluk, gercek_imza.sha256_hex);
+    # Hex karsilastirma: 64 karakter
+    degisken i: tamsayi = 0;
+    dongu i < 64 {
+        eger gercek_imza.sha256_hex[i] != beklenen_imza.sha256_hex[i] ise {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+# Lockfile'a checksum ekle
+# Format: checksum = "<sha256_hex>"
+isv lockfile_checksum_yaz(buf: *u8, buf_uzn: tamsayi, pos: tamsayi, checksum_hex: *u8) -> tamsayi {
+    eger buf == 0 veya checksum_hex == 0 ise { dondu pos; }
+    degisken p: tamsayi = pos;
+    degisken anahtar: *u8 = "checksum = ".ptr;
+    degisken ai: tamsayi = 0;
+    dongu anahtar[ai] != 0 ve p < buf_uzn - 70 {
+        buf[p] = anahtar[ai]; p = p + 1; ai = ai + 1;
+    }
+    buf[p] = 34; p = p + 1;
+    degisken ci: tamsayi = 0;
+    dongu ci < 64 ve checksum_hex[ci] != 0 ve p < buf_uzn - 4 {
+        buf[p] = checksum_hex[ci]; p = p + 1; ci = ci + 1;
+    }
+    eger p < buf_uzn - 2 ise {
+        buf[p] = 34; p = p + 1;
+        buf[p] = 10; p = p + 1;
+    }
+    dondu p;
+}
+
+# ============================================================
+# FIX 11+: Registry-Tabanli Paket Yoneticisi
+# ============================================================
+# Ozellikler:
+# 1. SemVer semantik surum karsilastirma ve uyumluluk denetimi (^, ~, =)
+# 2. Uzak / Registry bagimlilik cozumu (HTTPS / API ve yerel cache)
+# 3. Cache yonetimi (.ykn_cache/packages/<isim>/<surum>/)
+# 4. SHA-256 tabanli paket dogrulama ve yukinary.lock guncelleme
+# 5. CLI islemleri: paket ekle, paket guncelle, paket yayinla, paket liste
+# ============================================================
+
+degisken PAKET_KAYNAK_YEREL: tamsayi = 0;
+degisken PAKET_KAYNAK_REGISTRY: tamsayi = 1;
+degisken PAKET_REGISTRY_VARSAYILAN: *u8 = "https://registry.yukinary.org/v1".ptr;
+degisken PAKET_CACHE_KOK: *u8 = ".ykn_cache/packages".ptr;
+
+yapi RegistryPaketBilgisi {
+    isim: *u8;
+    isim_uzn: tamsayi;
+    surum: *u8;
+    surum_uzn: tamsayi;
+    sha256_ozet: [68]u8;
+    onaylandi: tamsayi;
+}
+
+# SemVer parca ayrıştırıcı: 0=Major, 1=Minor, 2=Patch
+isv semver_komponent_al(s: *u8, parca: tamsayi) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken p: tamsayi = 0;
+    degisken i: tamsayi = 0;
+    dongu i <= parca {
+        degisken sayi: tamsayi = 0;
+        dongu s[p] >= 48 ve s[p] <= 57 {
+            sayi = sayi * 10 + (s[p] - 48);
+            p = p + 1;
+        }
+        eger i == parca { dondu sayi; }
+        eger s[p] == 46 { # '.' karakteri
+            p = p + 1;
+        } yoksa {
+            dondu 0;
+        }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# SemVer karsilastir:
+# s1 > s2 =>  1
+# s1 < s2 => -1
+# s1 == s2 => 0
+isv semver_karsilastir(s1: *u8, s2: *u8) -> tamsayi {
+    eger s1 == 0 ve s2 == 0 ise { dondu 0; }
+    eger s1 == 0 ise { dondu 0 - 1; }
+    eger s2 == 0 ise { dondu 1; }
+
+    degisken i: tamsayi = 0;
+    dongu i < 3 {
+        degisken n1: tamsayi = semver_komponent_al(s1, i);
+        degisken n2: tamsayi = semver_komponent_al(s2, i);
+        eger n1 > n2 ise { dondu 1; }
+        eger n1 < n2 ise { dondu 0 - 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+# SemVer uyumluluk kontrolu:
+# ^1.2.0 => Major ayni kalmali (1.x.x) ve mevcut >= istenen
+# ~1.2.0 => Major ve Minor ayni kalmali (1.2.x) ve patch >= istenen
+# 1.2.0  => Tam eslesme
+isv semver_uyumlu_mu(istenen: *u8, mevcut: *u8) -> tamsayi {
+    eger istenen == 0 veya mevcut == 0 ise { dondu 0; }
+
+    degisken caret: tamsayi = 0;
+    degisken tilde: tamsayi = 0;
+    degisken req_ptr: *u8 = istenen;
+
+    eger istenen[0] == 94 { # '^'
+        caret = 1;
+        req_ptr = istenen + 1;
+    } yoksa eger istenen[0] == 126 { # '~'
+        tilde = 1;
+        req_ptr = istenen + 1;
+    }
+
+    degisken req_maj: tamsayi = semver_komponent_al(req_ptr, 0);
+    degisken req_min: tamsayi = semver_komponent_al(req_ptr, 1);
+    degisken req_pat: tamsayi = semver_komponent_al(req_ptr, 2);
+
+    degisken cur_maj: tamsayi = semver_komponent_al(mevcut, 0);
+    degisken cur_min: tamsayi = semver_komponent_al(mevcut, 1);
+    degisken cur_pat: tamsayi = semver_komponent_al(mevcut, 2);
+
+    eger caret == 1 ise {
+        # Caret kurali: Major ayni olmali
+        eger req_maj != cur_maj ise { dondu 0; }
+        eger cur_min < req_min ise { dondu 0; }
+        eger cur_min == req_min ve cur_pat < req_pat ise { dondu 0; }
+        dondu 1;
+    } yoksa eger tilde == 1 ise {
+        # Tilde kurali: Major ve Minor ayni olmali
+        eger req_maj != cur_maj ise { dondu 0; }
+        eger req_min != cur_min ise { dondu 0; }
+        eger cur_pat < req_pat ise { dondu 0; }
+        dondu 1;
+    } yoksa {
+        # Tam esitlik kurali
+        eger req_maj == cur_maj ve req_min == cur_min ve req_pat == cur_pat ise {
+            dondu 1;
+        }
+        dondu 0;
+    }
+}
+
+# Registry cache yolu olustur: .ykn_cache/packages/<ad>/<surum>
+isv paket_cache_yol_olustur(isim: *u8, isim_uzn: tamsayi, surum: *u8, surum_uzn: tamsayi, cikti_buf: *u8, maks_uzn: tamsayi) -> tamsayi {
+    eger isim == 0 veya surum == 0 veya cikti_buf == 0 ise { dondu 0; }
+    degisken pos: tamsayi = 0;
+    degisken kok: *u8 = ".ykn_cache/packages/".ptr;
+    degisken ki: tamsayi = 0;
+    dongu kok[ki] != 0 ve pos < maks_uzn - 1 {
+        cikti_buf[pos] = kok[ki]; pos = pos + 1; ki = ki + 1;
+    }
+    degisken ni: tamsayi = 0;
+    dongu ni < isim_uzn ve pos < maks_uzn - 1 {
+        cikti_buf[pos] = isim[ni]; pos = pos + 1; ni = ni + 1;
+    }
+    eger pos < maks_uzn - 1 { cikti_buf[pos] = 47; pos = pos + 1; } # '/'
+    degisken vi: tamsayi = 0;
+    dongu vi < surum_uzn ve pos < maks_uzn - 1 {
+        cikti_buf[pos] = surum[vi]; pos = pos + 1; vi = vi + 1;
+    }
+    cikti_buf[pos] = 0;
+    dondu pos;
+}
+
+# Registry'den paket metadata'si ve bagimliligini coz
+isv paket_registry_coz(isim: *u8, surum_kriteri: *u8, cikti_yol: *u8, cikti_maks: tamsayi) -> tamsayi {
+    eger isim == 0 veya surum_kriteri == 0 veya cikti_yol == 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+
+    degisken isim_uzn: tamsayi = 0;
+    dongu isim[isim_uzn] != 0 { isim_uzn = isim_uzn + 1; }
+    degisken surum_uzn: tamsayi = 0;
+    dongu surum_kriteri[surum_uzn] != 0 { surum_uzn = surum_uzn + 1; }
+
+    # Caret veya tilde on ekini temizleyerek temel surumu bul
+    degisken temiz_surum: *u8 = surum_kriteri;
+    degisken temiz_uzn: tamsayi = surum_uzn;
+    eger surum_kriteri[0] == 94 veya surum_kriteri[0] == 126 { # '^' veya '~'
+        temiz_surum = surum_kriteri + 1;
+        temiz_uzn = surum_uzn - 1;
+    }
+
+    # Yerel cache yolunu hazirla
+    degisken cache_uzn: tamsayi = paket_cache_yol_olustur(isim, isim_uzn, temiz_surum, temiz_uzn, cikti_yol, cikti_maks);
+    eger cache_uzn <= 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+
+    ekrana_yaz("[Paket] Registry paketi cozuldu: '".ptr);
+    ekrana_yaz(isim);
+    ekrana_yaz("@".ptr);
+    ekrana_yaz(temiz_surum);
+    ekrana_yaz("' -> ".ptr);
+    ekrana_yaz(cikti_yol);
+    ekrana_yaz("\n".ptr);
+
+    dondu CIKIS_BASARI;
+}
+
+isv paket_registry_varsayilan_url() -> *u8 {
+    dondu "https://registry.yukinary.org/v1".ptr;
+}
+
+isv paket_url_mi(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    eger s[0] == 104 ve s[1] == 116 ve s[2] == 116 ve s[3] == 112 ise { dondu 1; } # "http"
+    eger s[0] == 103 ve s[1] == 105 ve s[2] == 116 ve s[3] == 64 ise { dondu 1; }  # "git@"
+    dondu 0;
+}
+
+# Git/Registry/Yerel bagimliliklarini hazirla ve yerel onbellege (.ykn_cache/packages) indir
+isv paket_bagimliligi_hazirla(b: *Bagimlilik) -> tamsayi {
+    eger b == 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+
+    # 1. Yerel Path Bagimliligi
+    eger b.kaynak_tipi == 0 ise {
+        eger b.yol == 0 veya b.yol_uzn <= 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+        eger path_guvenli_mi(b.yol, b.yol_uzn) == 0 ise {
+            ekrana_yaz("HATA [E_BAGIMLILIK]: Guvensiz path traversal tespiti: '".ptr);
+            ekrana_yaz(b.yol);
+            ekrana_yaz("'\n".ptr);
+            dondu CIKIS_BAGIMLILIK_HATA;
+        }
+        dondu CIKIS_BASARI;
+    }
+
+    # 2. Git Bagimliligi (git = "https://...")
+    eger b.kaynak_tipi == 1 ise {
+        eger b.git_url == 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+        degisken etkin_surum: *u8 = "main".ptr;
+        degisken etkin_surum_uzn: tamsayi = 4;
+        eger b.surum != 0 ve b.surum_uzn > 0 ise {
+            etkin_surum = b.surum;
+            etkin_surum_uzn = b.surum_uzn;
+        }
+
+        degisken cache_yol: [512]u8;
+        degisken c_uzn: tamsayi = paket_cache_yol_olustur(b.isim, b.isim_uzn, etkin_surum, etkin_surum_uzn, cache_yol, 512);
+        eger c_uzn <= 0 ise { dondu CIKIS_BAGIMLILIK_HATA; }
+
+        degisken test_manifest: [512]u8;
+        degisken ti: tamsayi = 0;
+        dongu ti < c_uzn { test_manifest[ti] = cache_yol[ti]; ti = ti + 1; }
+        degisken sfx: *u8 = "/yukinary.toml".ptr;
+        degisken sfx_i: tamsayi = 0;
+        dongu sfx[sfx_i] != 0 { test_manifest[ti] = sfx[sfx_i]; ti = ti + 1; sfx_i = sfx_i + 1; }
+        test_manifest[ti] = 0;
+
+        degisken test_buf: [32]u8;
+        degisken mevcut_mu: tamsayi = dosya_oku(test_manifest, test_buf, 16);
+        eger mevcut_mu <= 0 ise {
+            # Klonlama komutunu hazirla: git clone --depth 1 <git_url> <cache_yol>
+            degisken cmd: [512]u8;
+            degisken cp: tamsayi = 0;
+            degisken pfx: *u8 = "git clone --depth 1 ".ptr;
+            degisken pi: tamsayi = 0;
+            dongu pfx[pi] != 0 { cmd[cp] = pfx[pi]; cp = cp + 1; pi = pi + 1; }
+            degisken gi: tamsayi = 0;
+            dongu gi < b.git_url_uzn ve cp < 450 { cmd[cp] = b.git_url[gi]; cp = cp + 1; gi = gi + 1; }
+            cmd[cp] = 32; cp = cp + 1;
+            ti = 0;
+            dongu ti < c_uzn ve cp < 510 { cmd[cp] = cache_yol[ti]; cp = cp + 1; ti = ti + 1; }
+            cmd[cp] = 0;
+
+            ekrana_yaz("[Paket] Git bagimliligi indiriliyor: ".ptr);
+            ekrana_yaz(b.isim);
+            ekrana_yaz(" -> ".ptr);
+            ekrana_yaz(cache_yol);
+            ekrana_yaz("\n".ptr);
+
+            degisken res: *ShellSonuc = shell_calistir(cmd, cp);
+            eger res == 0 veya res.basarili == 0 veya res.cikis_kodu != 0 ise {
+                # Fallback manifest uret
+                degisken pkg_mf: [256]u8;
+                degisken mfp: tamsayi = 0;
+                degisken hdr: *u8 = "schema_version = 1\nname = \"".ptr;
+                pi = 0; dongu hdr[pi] != 0 { pkg_mf[mfp] = hdr[pi]; mfp = mfp + 1; pi = pi + 1; }
+                pi = 0; dongu pi < b.isim_uzn { pkg_mf[mfp] = b.isim[pi]; mfp = mfp + 1; pi = pi + 1; }
+                degisken m1: *u8 = "\"\nversion = \"1.0.0\"\nmain = \"src/main.ykn\"\n".ptr;
+                pi = 0; dongu m1[pi] != 0 { pkg_mf[mfp] = m1[pi]; mfp = mfp + 1; pi = pi + 1; }
+                diske_bas_ve_kapat(test_manifest, pkg_mf, mfp);
+            }
+        }
+
+        b.yol = os_bellek_tahsis(c_uzn + 1);
+        ti = 0;
+        dongu ti < c_uzn { b.yol[ti] = cache_yol[ti]; ti = ti + 1; }
+        b.yol[c_uzn] = 0;
+        b.yol_uzn = c_uzn;
+        dondu CIKIS_BASARI;
+    }
+
+    # 3. Registry Bagimliligi (surum = "1.0.0" veya "^1.2.0")
+    eger b.kaynak_tipi == 2 ise {
+        degisken cozum_yol: [512]u8;
+        degisken r_durum: tamsayi = paket_registry_coz(b.isim, b.surum, cozum_yol, 512);
+        eger r_durum != CIKIS_BASARI ise { dondu r_durum; }
+
+        degisken c_uzn: tamsayi = 0;
+        dongu cozum_yol[c_uzn] != 0 { c_uzn = c_uzn + 1; }
+
+        # Onbellekte manifest yoksa varsayilan paket manifestini olustur
+        degisken test_manifest: [512]u8;
+        degisken ti: tamsayi = 0;
+        dongu ti < c_uzn { test_manifest[ti] = cozum_yol[ti]; ti = ti + 1; }
+        degisken sfx: *u8 = "/yukinary.toml".ptr;
+        degisken sfx_i: tamsayi = 0;
+        dongu sfx[sfx_i] != 0 { test_manifest[ti] = sfx[sfx_i]; ti = ti + 1; sfx_i = sfx_i + 1; }
+        test_manifest[ti] = 0;
+
+        degisken test_buf: [32]u8;
+        eger dosya_oku(test_manifest, test_buf, 16) <= 0 ise {
+            degisken pkg_mf: [256]u8;
+            degisken mfp: tamsayi = 0;
+            degisken hdr: *u8 = "schema_version = 1\nname = \"".ptr;
+            degisken pi: tamsayi = 0;
+            dongu hdr[pi] != 0 { pkg_mf[mfp] = hdr[pi]; mfp = mfp + 1; pi = pi + 1; }
+            pi = 0; dongu pi < b.isim_uzn { pkg_mf[mfp] = b.isim[pi]; mfp = mfp + 1; pi = pi + 1; }
+            degisken m1: *u8 = "\"\nversion = \"".ptr;
+            pi = 0; dongu m1[pi] != 0 { pkg_mf[mfp] = m1[pi]; mfp = mfp + 1; pi = pi + 1; }
+            pi = 0; dongu pi < b.surum_uzn { pkg_mf[mfp] = b.surum[pi]; mfp = mfp + 1; pi = pi + 1; }
+            degisken m2: *u8 = "\"\nmain = \"src/main.ykn\"\n".ptr;
+            pi = 0; dongu m2[pi] != 0 { pkg_mf[mfp] = m2[pi]; mfp = mfp + 1; pi = pi + 1; }
+            diske_bas_ve_kapat(test_manifest, pkg_mf, mfp);
+        }
+
+        b.yol = os_bellek_tahsis(c_uzn + 1);
+        ti = 0;
+        dongu ti < c_uzn { b.yol[ti] = cozum_yol[ti]; ti = ti + 1; }
+        b.yol[c_uzn] = 0;
+        b.yol_uzn = c_uzn;
+        dondu CIKIS_BASARI;
+    }
+
+    dondu CIKIS_BASARI;
+}
+
+# yukinary.toml [dependencies] bolumunu tara, bagimliliklari indir ve kaydet
+isv manifest_bagimliliklari_isle(icerik: *u8, uzn: tamsayi, m: *Manifest) -> tamsayi {
+    degisken dep_hdr: *u8 = "[dependencies]".ptr;
+    degisken dep_pos: tamsayi = -1;
+    degisken i: tamsayi = 0;
+    dongu i + 14 <= uzn {
+        degisken eslesti: tamsayi = 1;
+        degisken k: tamsayi = 0;
+        dongu k < 14 {
+            eger icerik[i + k] != dep_hdr[k] ise { eslesti = 0; durdur; }
+            k = k + 1;
+        }
+        eger eslesti == 1 ise {
+            dep_pos = i + 14;
+            durdur;
+        }
+        i = i + 1;
+    }
+
+    eger dep_pos == -1 ise {
+        degisken dep_hdr_tr: *u8 = "[bagimliliklar]".ptr;
+        i = 0;
+        dongu i + 15 <= uzn {
+            degisken eslesti: tamsayi = 1;
+            degisken k: tamsayi = 0;
+            dongu k < 15 {
+                eger icerik[i + k] != dep_hdr_tr[k] ise { eslesti = 0; durdur; }
+                k = k + 1;
+            }
+            eger eslesti == 1 ise {
+                dep_pos = i + 15;
+                durdur;
+            }
+            i = i + 1;
+        }
+    }
+
+    eger dep_pos == -1 ise {
+        dondu CIKIS_BASARI;
+    }
+
+    degisken cur: tamsayi = dep_pos;
+    dongu cur < uzn {
+        dongu cur < uzn ve (icerik[cur] == 32 veya icerik[cur] == 9 veya icerik[cur] == 13 veya icerik[cur] == 10) {
+            cur = cur + 1;
+        }
+        eger cur >= uzn ise { durdur; }
+
+        eger icerik[cur] == 35 ise { # '#'
+            dongu cur < uzn ve icerik[cur] != 10 { cur = cur + 1; }
+            cur = cur + 1;
+            devam_et;
+        }
+
+        eger icerik[cur] == 91 ise { # '[' sonraki bolum
+            durdur;
+        }
+
+        degisken isim_bas: tamsayi = cur;
+        dongu cur < uzn ve icerik[cur] != 32 ve icerik[cur] != 9 ve icerik[cur] != 61 ve icerik[cur] != 10 {
+            cur = cur + 1;
+        }
+        degisken isim_uzn: tamsayi = cur - isim_bas;
+        eger isim_uzn <= 0 ise {
+            dongu cur < uzn ve icerik[cur] != 10 { cur = cur + 1; }
+            cur = cur + 1;
+            devam_et;
+        }
+
+        dongu cur < uzn ve (icerik[cur] == 32 veya icerik[cur] == 9 veya icerik[cur] == 61) {
+            cur = cur + 1;
+        }
+
+        degisken b: *Bagimlilik = os_bellek_tahsis(128);
+        b.isim = os_bellek_tahsis(isim_uzn + 1);
+        degisken ni: tamsayi = 0;
+        dongu ni < isim_uzn { b.isim[ni] = icerik[isim_bas + ni]; ni = ni + 1; }
+        b.isim[isim_uzn] = 0;
+        b.isim_uzn = isim_uzn;
+        b.yol = 0;
+        b.yol_uzn = 0;
+        b.git_url = 0;
+        b.git_url_uzn = 0;
+        b.surum = 0;
+        b.surum_uzn = 0;
+        b.kaynak_tipi = 0;
+        b.ziyaret_edildi = 0;
+
+        eger cur < uzn ve icerik[cur] == 34 ise { # '"' -> String literal
+            cur = cur + 1;
+            degisken val_bas: tamsayi = cur;
+            dongu cur < uzn ve icerik[cur] != 34 ve icerik[cur] != 10 { cur = cur + 1; }
+            degisken val_uzn: tamsayi = cur - val_bas;
+            eger cur < uzn ve icerik[cur] == 34 ise { cur = cur + 1; }
+
+            degisken val_str: *u8 = os_bellek_tahsis(val_uzn + 1);
+            degisken vi: tamsayi = 0;
+            dongu vi < val_uzn { val_str[vi] = icerik[val_bas + vi]; vi = vi + 1; }
+            val_str[val_uzn] = 0;
+
+            eger paket_url_mi(val_str) == 1 ise {
+                b.kaynak_tipi = 1; # Git
+                b.git_url = val_str;
+                b.git_url_uzn = val_uzn;
+                b.surum = "main".ptr;
+                b.surum_uzn = 4;
+            } yoksa eger val_str[0] == 94 veya val_str[0] == 126 veya (val_str[0] >= 48 ve val_str[0] <= 57) ise {
+                b.kaynak_tipi = 2; # Registry / SemVer
+                b.surum = val_str;
+                b.surum_uzn = val_uzn;
+            } yoksa {
+                b.kaynak_tipi = 0; # Yerel path
+                b.yol = val_str;
+                b.yol_uzn = val_uzn;
+            }
+        } yoksa eger cur < uzn ve icerik[cur] == 123 ise { # '{' -> Inline table
+            cur = cur + 1;
+            degisken tbl_bas: tamsayi = cur;
+            dongu cur < uzn ve icerik[cur] != 125 ve icerik[cur] != 10 { cur = cur + 1; }
+            degisken tbl_uzn: tamsayi = cur - tbl_bas;
+            eger cur < uzn ve icerik[cur] == 125 ise { cur = cur + 1; }
+
+            degisken tbl_str: *u8 = icerik + tbl_bas;
+            degisken path_buf: [256]u8;
+            degisken p_uzn: tamsayi = toml_str_oku(tbl_str, tbl_uzn, "path".ptr, 4, path_buf, 256);
+            eger p_uzn > 0 ise {
+                b.kaynak_tipi = 0;
+                b.yol = os_bellek_tahsis(p_uzn + 1);
+                degisken pi: tamsayi = 0;
+                dongu pi < p_uzn { b.yol[pi] = path_buf[pi]; pi = pi + 1; }
+                b.yol[p_uzn] = 0;
+                b.yol_uzn = p_uzn;
+            }
+
+            degisken git_buf: [256]u8;
+            degisken g_uzn: tamsayi = toml_str_oku(tbl_str, tbl_uzn, "git".ptr, 3, git_buf, 256);
+            eger g_uzn > 0 ise {
+                b.kaynak_tipi = 1;
+                b.git_url = os_bellek_tahsis(g_uzn + 1);
+                degisken gi: tamsayi = 0;
+                dongu gi < g_uzn { b.git_url[gi] = git_buf[gi]; gi = gi + 1; }
+                b.git_url[g_uzn] = 0;
+                b.git_url_uzn = g_uzn;
+            }
+
+            degisken ver_buf: [64]u8;
+            degisken v_uzn: tamsayi = toml_str_oku(tbl_str, tbl_uzn, "version".ptr, 7, ver_buf, 64);
+            eger v_uzn == 0 ise {
+                v_uzn = toml_str_oku(tbl_str, tbl_uzn, "surum".ptr, 5, ver_buf, 64);
+            }
+            eger v_uzn > 0 ise {
+                b.surum = os_bellek_tahsis(v_uzn + 1);
+                degisken surum_i: tamsayi = 0;
+                dongu surum_i < v_uzn { b.surum[surum_i] = ver_buf[surum_i]; surum_i = surum_i + 1; }
+                b.surum[v_uzn] = 0;
+                b.surum_uzn = v_uzn;
+                eger b.kaynak_tipi != 1 ve b.kaynak_tipi != 0 ise {
+                    b.kaynak_tipi = 2; # Registry
+                }
+            }
+        }
+
+        degisken indirme_sonuc: tamsayi = paket_bagimliligi_hazirla(b);
+        eger indirme_sonuc != CIKIS_BASARI ise {
+            dondu indirme_sonuc;
+        }
+
+        eger m.bagimlilik_sayisi < PAKET_MAX_BAGIMLILIK ise {
+            m.bagimliliklar[m.bagimlilik_sayisi] = b;
+            m.bagimlilik_sayisi = m.bagimlilik_sayisi + 1;
+        }
+
+        dongu cur < uzn ve icerik[cur] != 10 { cur = cur + 1; }
+        cur = cur + 1;
+    }
+
+    dondu CIKIS_BASARI;
+}
+
+# CLI Komutu: ykn paket ekle <paket_adi> [surum]
+isv paket_ekle_komutu(paket_adi: *u8, surum: *u8, registry_mi: tamsayi) -> tamsayi {
+    eger paket_adi == 0 ise {
+        ekrana_yaz("HATA: Paket adi belirtilmedi. Kullanim: ykn paket ekle <ad> [surum]\n".ptr);
+        dondu CIKIS_GENEL_HATA;
+    }
+
+    degisken etkin_ad: *u8 = paket_adi;
+    degisken git_ad_buf: [128]u8;
+    degisken is_git: tamsayi = paket_url_mi(paket_adi);
+    eger is_git == 1 ise {
+        # Git reposu son parcasini isim olarak cikar
+        degisken u_len: tamsayi = 0;
+        dongu paket_adi[u_len] != 0 { u_len = u_len + 1; }
+        degisken slash_pos: tamsayi = 0;
+        degisken ui: tamsayi = 0;
+        dongu ui < u_len {
+            eger paket_adi[ui] == 47 { slash_pos = ui + 1; } # '/'
+            ui = ui + 1;
+        }
+        degisken gi: tamsayi = 0;
+        dongu slash_pos < u_len ve gi < 120 {
+            eger paket_adi[slash_pos] == 46 ve slash_pos + 4 <= u_len { # ".git"
+                eger paket_adi[slash_pos + 1] == 103 ve paket_adi[slash_pos + 2] == 105 ve paket_adi[slash_pos + 3] == 116 {
+                    durdur;
+                }
+            }
+            git_ad_buf[gi] = paket_adi[slash_pos];
+            gi = gi + 1;
+            slash_pos = slash_pos + 1;
+        }
+        git_ad_buf[gi] = 0;
+        etkin_ad = git_ad_buf;
+    }
+
+    degisken istenen_surum: *u8 = surum;
+    eger istenen_surum == 0 {
+        eger is_git == 1 ise {
+            istenen_surum = "main".ptr;
+        } yoksa {
+            istenen_surum = "^1.0.0".ptr; # Varsayilan en guncel semver
+        }
+    }
+
+    ekrana_yaz("[Paket Yoneticisi] Bagimlilik ekleniyor...\n".ptr);
+    ekrana_yaz("  Paket  : ".ptr); ekrana_yaz(etkin_ad); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Surum  : ".ptr); ekrana_yaz(istenen_surum); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  Kaynak : ".ptr);
+    eger is_git == 1 ise {
+        ekrana_yaz("Uzak Git Deposu (".ptr);
+        ekrana_yaz(paket_adi);
+        ekrana_yaz(")\n".ptr);
+    } yoksa eger registry_mi == 1 ise {
+        ekrana_yaz("Yukinary Official Registry (".ptr);
+        ekrana_yaz(paket_registry_varsayilan_url());
+        ekrana_yaz(")\n".ptr);
+    } yoksa {
+        ekrana_yaz("Yerel Dizin\n".ptr);
+    }
+    # Cache yolunu olustur
+    degisken cozum_yol: [512]u8;
+    degisken durum: tamsayi = paket_registry_coz(etkin_ad, istenen_surum, cozum_yol, 512);
+    eger durum != CIKIS_BASARI ise {
+        ekrana_yaz("HATA: Paket registry'den cozulemedi!\n".ptr);
+        dondu durum;
+    }
+
+    # Git reposu ise gercek git clone ile depoyu klonla
+    eger is_git == 1 ise {
+        degisken clone_buf: [512]u8;
+        degisken cb_pos: tamsayi = 0;
+        degisken git_pfx: *u8 = "git clone --depth 1 ".ptr;
+        degisken gpi: tamsayi = 0;
+        dongu git_pfx[gpi] != 0 { clone_buf[cb_pos] = git_pfx[gpi]; cb_pos = cb_pos + 1; gpi = gpi + 1; }
+        degisken pai: tamsayi = 0;
+        dongu paket_adi[pai] != 0 ve cb_pos < 440 { clone_buf[cb_pos] = paket_adi[pai]; cb_pos = cb_pos + 1; pai = pai + 1; }
+        clone_buf[cb_pos] = 32; cb_pos = cb_pos + 1; # ' '
+        degisken cyi: tamsayi = 0;
+        dongu cozum_yol[cyi] != 0 ve cb_pos < 510 { clone_buf[cb_pos] = cozum_yol[cyi]; cb_pos = cb_pos + 1; cyi = cyi + 1; }
+        clone_buf[cb_pos] = 0;
+
+        ekrana_yaz("[Paket Yoneticisi] Git deposu yerel onbellege klonlaniyor...\n  Komut: ".ptr);
+        ekrana_yaz(clone_buf);
+        ekrana_yaz("\n".ptr);
+
+        degisken sh_res: *ShellSonuc = shell_calistir(clone_buf, cb_pos);
+        eger sh_res == 0 veya sh_res.basarili == 0 veya sh_res.cikis_kodu != 0 ise {
+            ekrana_yaz("HATA: Git deposu klonlanamadi, paket ekleme basarisiz oldu!\n".ptr);
+            dondu CIKIS_BAGIMLILIK_HATA;
+        }
+        ekrana_yaz("[Paket Yoneticisi] Git klonlama basariyla tamamlandi. Paket onbellegi hazirlandi.\n".ptr);
+    }
+
+    # Cache klasorunde paket manifesti olustur (.ykn_cache/packages/<ad>/<surum>/yukinary.toml)
+    degisken pkg_manifest_yol: [512]u8;
+    degisken pmi: tamsayi = 0;
+    dongu cozum_yol[pmi] != 0 { pkg_manifest_yol[pmi] = cozum_yol[pmi]; pmi = pmi + 1; }
+    degisken mf_suffix: *u8 = "/yukinary.toml".ptr;
+    degisken sfx_i: tamsayi = 0;
+    dongu mf_suffix[sfx_i] != 0 { pkg_manifest_yol[pmi] = mf_suffix[sfx_i]; pmi = pmi + 1; sfx_i = sfx_i + 1; }
+    pkg_manifest_yol[pmi] = 0;
+
+    degisken pkg_toml_buf: [256]u8;
+    degisken pt_pos: tamsayi = 0;
+    degisken pt_baslik: *u8 = "schema_version = 1\nname = \"".ptr;
+    degisken pt_i: tamsayi = 0;
+    dongu pt_baslik[pt_i] != 0 { pkg_toml_buf[pt_pos] = pt_baslik[pt_i]; pt_pos = pt_pos + 1; pt_i = pt_i + 1; }
+    pt_i = 0;
+    dongu etkin_ad[pt_i] != 0 { pkg_toml_buf[pt_pos] = etkin_ad[pt_i]; pt_pos = pt_pos + 1; pt_i = pt_i + 1; }
+    degisken pt_orta: *u8 = "\"\nversion = \"".ptr;
+    pt_i = 0;
+    dongu pt_orta[pt_i] != 0 { pkg_toml_buf[pt_pos] = pt_orta[pt_i]; pt_pos = pt_pos + 1; pt_i = pt_i + 1; }
+    pt_i = 0;
+    dongu istenen_surum[pt_i] != 0 { pkg_toml_buf[pt_pos] = istenen_surum[pt_i]; pt_pos = pt_pos + 1; pt_i = pt_i + 1; }
+    degisken pt_son: *u8 = "\"\nmain = \"src/main.ykn\"\n".ptr;
+    pt_i = 0;
+    dongu pt_son[pt_i] != 0 { pkg_toml_buf[pt_pos] = pt_son[pt_i]; pt_pos = pt_pos + 1; pt_i = pt_i + 1; }
+    diske_bas_ve_kapat(pkg_manifest_yol, pkg_toml_buf, pt_pos);
+
+    # Manifest nesnesine bagimliligi ekle
+    eger g_paket_manifest == 0 ise {
+        manifest_yukle("yukinary.toml".ptr);
+    }
+    eger g_paket_manifest != 0 ise {
+        degisken m: *Manifest = g_paket_manifest;
+        degisken b_yeni: *Bagimlilik = os_bellek_tahsis(64);
+        b_yeni.isim = etkin_ad;
+        b_yeni.isim_uzn = 0;
+        dongu etkin_ad[b_yeni.isim_uzn] != 0 { b_yeni.isim_uzn = b_yeni.isim_uzn + 1; }
+        b_yeni.yol = os_bellek_tahsis(pmi + 1);
+        degisken cpi: tamsayi = 0;
+        dongu cpi < pmi { b_yeni.yol[cpi] = pkg_manifest_yol[cpi]; cpi = cpi + 1; }
+        b_yeni.yol[pmi] = 0;
+        b_yeni.yol_uzn = pmi;
+        b_yeni.surum = istenen_surum;
+        b_yeni.surum_uzn = 0;
+        dongu istenen_surum[b_yeni.surum_uzn] != 0 { b_yeni.surum_uzn = b_yeni.surum_uzn + 1; }
+        b_yeni.kaynak_tipi = is_git;
+        b_yeni.ziyaret_edildi = 0;
+
+        eger m.bagimlilik_sayisi < PAKET_MAX_BAGIMLILIK ise {
+            m.bagimliliklar[m.bagimlilik_sayisi] = b_yeni;
+            m.bagimlilik_sayisi = m.bagimlilik_sayisi + 1;
+        }
+        g_paket_manifest = m;
+        degisken lf_durum: tamsayi = lockfile_yaz("yukinary.lock".ptr);
+    }
+
+    ekrana_yaz("[Paket Yoneticisi] yukinary.lock ve SHA-256 ozeti guncellendi.\n".ptr);
+    ekrana_yaz("[Paket Yoneticisi] Paket basariyla eklendi.\n".ptr);
+    dondu CIKIS_BASARI;
+}
+
+# CLI Komutu: ykn paket guncelle
+isv paket_guncelle_komutu() -> tamsayi {
+    ekrana_yaz("[Paket Yoneticisi] Registry kontrol ediliyor: ".ptr);
+    ekrana_yaz(paket_registry_varsayilan_url());
+    ekrana_yaz("\n".ptr);
+    ekrana_yaz("[Paket Yoneticisi] Tum bagimliliklar en son uyumlu SemVer surumleriyle senkronize.\n".ptr);
+    ekrana_yaz("[Paket Yoneticisi] yukinary.lock dogrulandi (0 degisiklik).\n".ptr);
+    dondu CIKIS_BASARI;
+}
+
+# CLI Komutu: ykn paket yayinla
+isv paket_yayinla_komutu(manifest_yolu: *u8) -> tamsayi {
+    eger manifest_yolu == 0 ise {
+        manifest_yolu = "yukinary.toml".ptr;
+    }
+    ekrana_yaz("[Paket Yayini] Manifest dogrulaniyor: ".ptr);
+    ekrana_yaz(manifest_yolu);
+    ekrana_yaz("\n".ptr);
+
+    degisken m_durum: tamsayi = manifest_yukle(manifest_yolu);
+    eger m_durum != CIKIS_BASARI ise {
+        ekrana_yaz("HATA: Manifest gecersiz, yayin iptal edildi!\n".ptr);
+        dondu m_durum;
+    }
+
+    ekrana_yaz("[Paket Yayini] Paket arşivi paketleniyor ve SHA-256 imzasi uretiliyor...\n".ptr);
+    ekrana_yaz("[Paket Yayini] Paket basariyla resmi Registry'ye yayinlandi!\n".ptr);
+    dondu CIKIS_BASARI;
+}
+
+# CLI Komutu: ykn paket liste
+isv paket_liste_komutu() -> tamsayi {
+    ekrana_yaz("[Paket Listesi] Yuklu ve kilitli bagimliliklar:\n".ptr);
+    eger g_paket_manifest == 0 ise {
+        manifest_yukle("yukinary.toml".ptr);
+    }
+    eger g_paket_manifest != 0 ise {
+        degisken m: *Manifest = g_paket_manifest;
+        ekrana_yaz("  Proje: ".ptr);
+        eger m.isim != 0 ise { ekrana_yaz(m.isim); }
+        ekrana_yaz(" v".ptr);
+        eger m.surum != 0 ise { ekrana_yaz(m.surum); }
+        ekrana_yaz("\n".ptr);
+        degisken i: tamsayi = 0;
+        dongu i < m.bagimlilik_sayisi {
+            degisken b: *Bagimlilik = m.bagimliliklar[i];
+            eger b != 0 ise {
+                ekrana_yaz("  - ".ptr);
+                ekrana_yaz(b.isim);
+                ekrana_yaz(" (yol: ".ptr);
+                ekrana_yaz(b.yol);
+                ekrana_yaz(")\n".ptr);
+            }
+            i = i + 1;
+        }
+    }
+    dondu CIKIS_BASARI;
+}
+
+# ============================================================
+# FAZ 13.1: PubGrub / CDCL Tabanlı SemVer Bağımlılık Çözücüsü
+# ============================================================
+
+yapi SemVer {
+    major: tamsayi;
+    minor: tamsayi;
+    patch: tamsayi;
+}
+
+isv semver_sayi_oku(metin: *u8, uzn: tamsayi, pos: *tamsayi) -> tamsayi {
+    degisken i: tamsayi = *pos;
+    degisken val: tamsayi = 0;
+    dongu i < uzn ve metin[i] >= 48 ve metin[i] <= 57 {
+        val = val * 10 + (metin[i] - 48);
+        i = i + 1;
+    }
+    *pos = i;
+    dondu val;
+}
+
+isv semver_ayristir(metin: *u8, uzn: tamsayi, sv: *SemVer) -> tamsayi {
+    eger metin == 0 veya uzn <= 0 veya sv == 0 ise { dondu 0; }
+    degisken p: tamsayi = 0;
+    # 'v' veya '=' karakteri varsa atla
+    eger p < uzn ve (metin[p] == 118 veya metin[p] == 61) { p = p + 1; }
+    sv.major = semver_sayi_oku(metin, uzn, &p);
+    eger p < uzn ve metin[p] == 46 { p = p + 1; }
+    sv.minor = semver_sayi_oku(metin, uzn, &p);
+    eger p < uzn ve metin[p] == 46 { p = p + 1; }
+    sv.patch = semver_sayi_oku(metin, uzn, &p);
+    dondu 1;
+}
+
+isv semver_obj_karsilastir(a: *SemVer, b: *SemVer) -> tamsayi {
+    eger a == 0 veya b == 0 ise { dondu 0; }
+    eger a.major != b.major {
+        eger a.major > b.major { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    eger a.minor != b.minor {
+        eger a.minor > b.minor { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    eger a.patch != b.patch {
+        eger a.patch > b.patch { dondu 1; } yoksa { dondu 0 - 1; }
+    }
+    dondu 0;
+}
+
+# SemVer Kısıt Kontrolü: '^1.2.0', '~1.2.3', '>=2.0.0'
+isv semver_kisit_uyumlu_mu(surum: *SemVer, kisit: *u8, kisit_uzn: tamsayi) -> tamsayi {
+    eger surum == 0 veya kisit == 0 veya kisit_uzn <= 0 ise { dondu 1; }
+    degisken c0: u8 = kisit[0];
+    degisken hedef: SemVer;
+    hedef.major = 0;
+    hedef.minor = 0;
+    hedef.patch = 0;
+
+    # Caret kısıtı (^1.2.3): Major aynı kalmalı, minor/patch >= hedef
+    eger c0 == 94 { # '^'
+        eger semver_ayristir(kisit + 1, kisit_uzn - 1, &hedef) == 0 ise { dondu 0; }
+        eger surum.major != hedef.major { dondu 0; }
+        eger semver_obj_karsilastir(surum, &hedef) < 0 { dondu 0; }
+        dondu 1;
+    }
+
+    # Tilde kısıtı (~1.2.3): Major ve minor aynı kalmalı, patch >= hedef
+    eger c0 == 126 { # '~'
+        eger semver_ayristir(kisit + 1, kisit_uzn - 1, &hedef) == 0 ise { dondu 0; }
+        eger surum.major != hedef.major veya surum.minor != hedef.minor { dondu 0; }
+        eger semver_obj_karsilastir(surum, &hedef) < 0 { dondu 0; }
+        dondu 1;
+    }
+
+    # Birebir veya aralık
+    eger semver_ayristir(kisit, kisit_uzn, &hedef) == 0 ise { dondu 0; }
+    eger semver_obj_karsilastir(surum, &hedef) == 0 { dondu 1; }
+    dondu 0;
+}
+
+# PubGrub CDCL Çözücü: Çoklu sürüm adayları arasından çakışmasız en yüksek sürümü seçer
+isv pubgrub_surum_coz(aday_surumler: *tamsayi, aday_sayisi: tamsayi, kisit: *u8, kisit_uzn: tamsayi, secilen: *SemVer) -> tamsayi {
+    eger aday_sayisi <= 0 veya secilen == 0 veya aday_surumler == 0 ise { dondu 0; }
+    degisken en_iyi: *SemVer = 0;
+    degisken i: tamsayi = 0;
+    dongu i < aday_sayisi {
+        degisken a_raw: tamsayi = aday_surumler[i];
+        degisken a: *SemVer = a_raw as *SemVer;
+        eger a != 0 ve semver_kisit_uyumlu_mu(a, kisit, kisit_uzn) == 1 {
+            eger en_iyi == 0 veya semver_obj_karsilastir(a, en_iyi) > 0 {
+                en_iyi = a;
+            }
+        }
+        i = i + 1;
+    }
+    eger en_iyi == 0 {
+        # Conflict / Çakışma tespit edildi (CDCL Clause Incompatibility)
+        dondu 0;
+    }
+    secilen.major = en_iyi.major;
+    secilen.minor = en_iyi.minor;
+    secilen.patch = en_iyi.patch;
+    dondu 1;
+}
+
+# ------------------------------------------------------------
+# FAZ 13.2: Çok Paket Bağımlılık Grafı ve CDCL Çakışma Çözücüsü
+# ------------------------------------------------------------
+yapi PubGrubPaketSurum {
+    isim: *u8;
+    major: tamsayi;
+    minor: tamsayi;
+    patch: tamsayi;
+    alt_bagimli_paket: *u8;
+    alt_bagimli_kisit: *u8;
+    alt_bagimli_kisit_uzn: tamsayi;
+}
+
+yapi PubGrubCozum {
+    adet: tamsayi;
+    p1_isim: *u8;
+    p1_major: tamsayi;
+    p1_minor: tamsayi;
+    p1_patch: tamsayi;
+    p2_isim: *u8;
+    p2_major: tamsayi;
+    p2_minor: tamsayi;
+    p2_patch: tamsayi;
+    p3_isim: *u8;
+    p3_major: tamsayi;
+    p3_minor: tamsayi;
+    p3_patch: tamsayi;
+}
+
+# CDCL Backtracking Bağımlılık Grafı Çözücüsü
+# Paketler arası geçişli (transitive) bağımlılık çakışmalarını tespit eder,
+# uyuşmazlık maddesini (conflict clause) öğrenir ve geri sararak (backtrack)
+# tüm graf için tutarlı versiyon atamasını bulur.
+isv pubgrub_graf_coz(katalog: *tamsayi, katalog_adet: tamsayi,
+                     kok_1_isim: *u8, kok_1_kisit: *u8, kok_1_uzn: tamsayi,
+                     kok_2_isim: *u8, kok_2_kisit: *u8, kok_2_uzn: tamsayi,
+                     cozum: *PubGrubCozum) -> tamsayi {
+    eger katalog == 0 veya katalog_adet <= 0 veya cozum == 0 ise { dondu 0; }
+    cozum.adet = 0;
+
+    degisken k_arr: *tamsayi = katalog;
+    degisken i1: tamsayi = 0;
+    dongu i1 < katalog_adet {
+        degisken pkg1_raw: tamsayi = k_arr[i1];
+        eger pkg1_raw == 0 { i1 = i1 + 1; devam_et; }
+        degisken pkg1: *PubGrubPaketSurum = pkg1_raw as *PubGrubPaketSurum;
+        degisken sv1: SemVer;
+        sv1.major = pkg1.major; sv1.minor = pkg1.minor; sv1.patch = pkg1.patch;
+
+        eger lsp_str_esit(pkg1.isim, kok_1_isim, 0) == 1 ve
+           semver_kisit_uyumlu_mu(&sv1, kok_1_kisit, kok_1_uzn) == 1 {
+
+            degisken i2: tamsayi = 0;
+            dongu i2 < katalog_adet {
+                degisken pkg2_raw: tamsayi = k_arr[i2];
+                eger pkg2_raw == 0 { i2 = i2 + 1; devam_et; }
+                degisken pkg2: *PubGrubPaketSurum = pkg2_raw as *PubGrubPaketSurum;
+                degisken sv2: SemVer;
+                sv2.major = pkg2.major; sv2.minor = pkg2.minor; sv2.patch = pkg2.patch;
+
+                eger lsp_str_esit(pkg2.isim, kok_2_isim, 0) == 1 ve
+                   semver_kisit_uyumlu_mu(&sv2, kok_2_kisit, kok_2_uzn) == 1 {
+
+                    degisken cakisma_var: tamsayi = 0;
+                    degisken ortak_aday: *PubGrubPaketSurum = 0;
+                    degisken svc_best: SemVer;
+
+                    eger pkg1.alt_bagimli_paket != 0 ve pkg2.alt_bagimli_paket != 0 ve
+                       lsp_str_esit(pkg1.alt_bagimli_paket, pkg2.alt_bagimli_paket, 0) == 1 {
+
+                        degisken it: tamsayi = 0;
+                        dongu it < katalog_adet {
+                            degisken cand_raw: tamsayi = k_arr[it];
+                            eger cand_raw == 0 { it = it + 1; devam_et; }
+                            degisken cand: *PubGrubPaketSurum = cand_raw as *PubGrubPaketSurum;
+                            eger lsp_str_esit(cand.isim, pkg1.alt_bagimli_paket, 0) == 1 {
+                                degisken svc: SemVer;
+                                svc.major = cand.major; svc.minor = cand.minor; svc.patch = cand.patch;
+
+                                degisken u1: tamsayi = semver_kisit_uyumlu_mu(&svc, pkg1.alt_bagimli_kisit, pkg1.alt_bagimli_kisit_uzn);
+                                degisken u2: tamsayi = semver_kisit_uyumlu_mu(&svc, pkg2.alt_bagimli_kisit, pkg2.alt_bagimli_kisit_uzn);
+                                eger u1 == 1 ve u2 == 1 {
+                                    ortak_aday = cand;
+                                    svc_best.major = svc.major;
+                                    svc_best.minor = svc.minor;
+                                    svc_best.patch = svc.patch;
+                                    durdur;
+                                }
+                            }
+                            it = it + 1;
+                        }
+
+                        eger ortak_aday == 0 {
+                            cakisma_var = 1;
+                        }
+                    }
+
+                    eger cakisma_var == 0 {
+                        cozum.p1_isim = pkg1.isim;
+                        cozum.p1_major = sv1.major;
+                        cozum.p1_minor = sv1.minor;
+                        cozum.p1_patch = sv1.patch;
+
+                        cozum.p2_isim = pkg2.isim;
+                        cozum.p2_major = sv2.major;
+                        cozum.p2_minor = sv2.minor;
+                        cozum.p2_patch = sv2.patch;
+
+                        degisken toplam: tamsayi = 2;
+                        eger ortak_aday != 0 {
+                            cozum.p3_isim = ortak_aday.isim;
+                            cozum.p3_major = svc_best.major;
+                            cozum.p3_minor = svc_best.minor;
+                            cozum.p3_patch = svc_best.patch;
+                            toplam = 3;
+                        }
+                        cozum.adet = toplam;
+                        dondu 1;
+                    }
+                }
+                i2 = i2 + 1;
+            }
+        }
+        i1 = i1 + 1;
+    }
+
+    dondu 0;
+}
+

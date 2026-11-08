@@ -1,0 +1,12 @@
+# Gerçek timeout acceptance sunucusu: bağlantıyı kabul eder, veri göndermez.
+ice_aktar "../../std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken sunucu: tamsayi = sunucu_olustur(18084);
+    eger sunucu < 0 ise { dondu 80; }
+    degisken istemci: tamsayi = sunucu_kabul(sunucu);
+    eger istemci < 0 ise { soket_kapat(sunucu); dondu 81; }
+    # İstemcinin gerçek SO_RCVTIMEO davranışını gözlemlemesi için açık kalır.
+    dongu 1 { }
+    dondu 0;
+}

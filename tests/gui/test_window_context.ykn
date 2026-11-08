@@ -1,0 +1,40 @@
+# ============================================================
+# tests/gui/test_window_context.ykn
+# FAZ 48: Pencereleme & GPU Ekran Context Dogrulama Testi
+# ============================================================
+
+ice_aktar "std/window/glfw_binding.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 48: Pencereleme & GPU Ekran Context Testi Basliyor...\n".ptr);
+
+    degisken py: *PencereYonetici = pencere_yoneticisi_olustur(800, 600);
+    eger py == 0 ise {
+        ekrana_yaz("HATA: Pencere yoneticisi baslatilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    eger py.genislik != 800 veya py.yukseklik != 600 ise {
+        ekrana_yaz("HATA: Pencere boyutlari hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # Olaylari tara ve buffer takas et (render frame dongusu)
+    degisken olay_ok: tamsayi = pencere_olaylari_tara(py);
+    degisken takas_ok: tamsayi = pencere_tampon_takas(py);
+
+    eger olay_ok != 1 veya takas_ok != 1 ise {
+        ekrana_yaz("HATA: Olay tarama veya tampon takas basarisiz!\n".ptr);
+        dondu 3;
+    }
+
+    pencere_kapat(py);
+    eger py.kapanmali_mi != 1 ise {
+        ekrana_yaz("HATA: Pencere kapatma bayragi set edilmedi!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("WINDOW_CONTEXT_PASS\n".ptr);
+    dondu 0;
+}
+

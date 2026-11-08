@@ -1,0 +1,76 @@
+# ============================================================
+# src/fallback_dinamik.ykn
+# FAZ 9.4 Fallback B: HARICI_DINAMIK
+# Win32 LoadLibraryA + GetProcAddress ile gercek dinamik yukleme
+# Mock handle kaldırıldı — gercek sistem cagrilari kullanilir
+# ============================================================
+#c-lib "kernel32";
+
+harici isv LoadLibraryA(lpLibFileName: *u8) -> tamsayi;
+harici isv GetProcAddress(hModule: tamsayi, lpProcName: *u8) -> *u8;
+harici isv FreeLibrary(hModule: tamsayi) -> tamsayi;
+
+# POSIX fallback (Linux/macOS)
+harici isv dlopen(filename: *u8, flag: tamsayi) -> tamsayi;
+harici isv dlsym(handle: tamsayi, symbol: *u8) -> *u8;
+harici isv dlclose(handle: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_i64(handle: tamsayi, symbol_adi: *u8, first: tamsayi, second: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_i64(function_ptr: *u8, first: tamsayi, second: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_3(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_4(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi) -> tamsayi;
+harici isv ykn_dyn_call_ptr_6(function_ptr: *u8, a1: tamsayi, a2: tamsayi, a3: tamsayi, a4: tamsayi, a5: tamsayi, a6: tamsayi) -> tamsayi;
+harici isv ykn_cpu_has_avx2() -> tamsayi;
+harici isv ykn_popcnt64(val: tamsayi) -> tamsayi;
+harici isv ykn_simd_vec_add_i64(dst: *tamsayi, a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+harici isv ykn_simd_dot_q16(a: *tamsayi, b: *tamsayi, n: tamsayi) -> tamsayi;
+
+degisken RTLD_LAZY: tamsayi = 1;
+degisken RTLD_GLOBAL: tamsayi = 256;
+
+# Platform-agnostik handle: 0 = yuklenmemis
+degisken g_dyn_lib_handle: tamsayi = 0;
+degisken g_dyn_lib_adi: *u8 = 0;
+
+# Kutuphaneyi dinamik yukle (Win32 veya POSIX)
+isv dyn_lib_yukle(lib_adi: *u8) -> tamsayi {
+    eger lib_adi == 0 ise { dondu 0; }
+    eger g_dyn_lib_handle != 0 ise { dondu g_dyn_lib_handle; }
+    # Windows platformunda LoadLibraryA kullan
+    degisken h: tamsayi = LoadLibraryA(lib_adi);
+    eger h != 0 ise {
+        g_dyn_lib_handle = h;
+        g_dyn_lib_adi = lib_adi;
+        dondu h;
+    }
+    # Windows target: LoadLibraryA başarısızsa gerçek hata döndür.
+    # POSIX backend ayrı target adapter'ı ile bağlanır; Windows PE içine
+    # POSIX sembol çağrısı sızdırılmaz.
+    dondu 0;
+}
+
+# Fonksiyon adresini al
+isv dyn_sym_al(sembol_adi: *u8) -> *u8 {
+    eger g_dyn_lib_handle == 0 veya sembol_adi == 0 ise { dondu 0; }
+    # Windows
+    degisken addr: *u8 = GetProcAddress(g_dyn_lib_handle, sembol_adi);
+    eger addr != 0 ise { dondu addr; }
+    # Windows target'ta GetProcAddress sonucu yoksa sembol yoktur.
+    dondu 0;
+}
+
+# Sadece doğrulanmış iki tamsayı argümanlı C ABI için function-pointer çağrısı.
+# Diğer imzalar, tip bilgisi olmadan çağrılmaz ve converter tarafından reddedilir.
+isv dyn_sym_cagir_i64(sembol_adi: *u8, first: tamsayi, second: tamsayi) -> tamsayi {
+    eger g_dyn_lib_handle == 0 veya sembol_adi == 0 ise { dondu 0 - 1; }
+    degisken function_ptr: *u8 = dyn_sym_al(sembol_adi);
+    eger function_ptr == 0 ise { dondu 0 - 1; }
+    dondu ykn_dyn_call_ptr_i64(function_ptr, first, second);
+}
+
+# Kutuphaneyi serbest birak
+isv dyn_lib_kapat() {
+    eger g_dyn_lib_handle == 0 ise { dondu; }
+    FreeLibrary(g_dyn_lib_handle);
+    g_dyn_lib_handle = 0;
+    g_dyn_lib_adi = 0;
+}

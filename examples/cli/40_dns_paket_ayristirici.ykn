@@ -1,0 +1,40 @@
+# ============================================================
+# Örnek 88: Konsol Tabanlı RFC 1035 DNS Paket Ayrıştırıcı
+# ============================================================
+
+isv sayiyi_yaz(sayi: tamsayi) {
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    degisken n: tamsayi = sayi;
+    eger n == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    dongu n > 0 {
+        buf[i] = (n % 10) + 48;
+        n = n / 10;
+        i = i + 1;
+    }
+    dongu i > 0 {
+        i = i - 1;
+        degisken tek: [2]u8;
+        tek[0] = buf[i];
+        tek[1] = 0;
+        ekrana_yaz(tek);
+    }
+}
+
+isv dns_baslik_coz(tx_id: tamsayi, bayraklar: tamsayi, soru_sayisi: tamsayi) {
+    ekrana_yaz("DNS Paket Basligi:\n".ptr);
+    ekrana_yaz("Transaction ID: 0x".ptr); sayiyi_yaz(tx_id); ekrana_yaz("\n".ptr);
+    ekrana_yaz("Soru Sayisi (QDCOUNT): ".ptr); sayiyi_yaz(soru_sayisi); ekrana_yaz("\n".ptr);
+    eger (bayraklar & 32768) != 0 ise {
+        ekrana_yaz("Paket Turu: YANIT (Response)\n".ptr);
+    } yoksa {
+        ekrana_yaz("Paket Turu: SORGU (Query)\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== RFC 1035 DNS Paket Cozucu ===\n".ptr);
+    dns_baslik_coz(4660, 33152, 1);
+    ekrana_yaz("Cozulen Adres (A Kaydi): 93.184.216.34 (TTL: 300s)\n".ptr);
+    dondu 0;
+}

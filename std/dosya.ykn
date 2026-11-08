@@ -1,0 +1,146 @@
+# ============================================================
+# Yukinary Standart Kutuphane: std/dosya.ykn
+# Dosya islemleri sarmalayicilar: tam dosya oku, tam dosya yaz,
+# satir sayma, bayt sayisi ogrenme
+#
+# DOSYA SOZLESMESI (File Contract):
+#   - Tum fonksiyonlar null/gecersiz yollara karsi guvencelidir.
+#   - dosya_oku_tamami: basarili => NUL-sonlu *u8; basarisiz => 0.
+#   - dosya_yaz_tamami: yazilan bayt sayisi doner; hata => 0.
+#   - dosya_var_mi: 1 (var/okunabilir) veya 0 (yok/okunamaz).
+#   - Bellek tahsisi basarisizsa out_uzunluk = 0, dondu deger = 0.
+#
+# Platform notu: Tum dosya islemleri std/os/common.ykn uzerinden
+# os_* sarmalayicilarina delege edilir (Win32/Linux/macOS uyumlu).
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+# Bir dosyanin TUM ICERIGINI okur. Bellek tahsisi yapar.
+# Basarili ise -> *u8 (NUL sonlu string, boyut icin dosya_boyutunu kullan)
+# Basarisiz ise -> 0
+# out_uzunluk: NULL degilse okunan byte sayisi buraya yazilir
+isv dosya_oku_tamami(yol: *u8, out_uzunluk: *tamsayi) -> *u8 {
+    eger yol == 0 ise {
+        eger out_uzunluk != 0 ise { out_uzunluk[0] = 0; }
+        dondu 0;
+    }
+    degisken maks: tamsayi = OS_MAKS_DOSYA_TAMPON;
+    degisken buf: *u8 = bellek_tahsis_et(maks + 1);
+    eger buf == 0 ise {
+        eger out_uzunluk != 0 ise { out_uzunluk[0] = 0; }
+        dondu 0;
+    }
+    degisken okunan: tamsayi = dosya_oku(yol, buf, maks);
+    eger okunan <= 0 ise {
+        eger out_uzunluk != 0 ise { out_uzunluk[0] = 0; }
+        dondu 0;
+    }
+    buf[okunan] = 0;
+    eger out_uzunluk != 0 ise { out_uzunluk[0] = okunan; }
+    dondu buf;
+}
+# i18n alias
+isv read_file_full(path: *u8, out_len: *tamsayi) -> *u8 { dondu dosya_oku_tamami(path, out_len); }
+
+# Bir bellekteki tamponu DOGRUDAN dosyaya yazar (ustune yazar).
+# Yazilan bayt sayisini doner. Hata ise 0 doner.
+isv dosya_yaz_tamami(yol: *u8, veri: *u8, boyut: tamsayi) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    eger boyut <= 0 ise {
+        dondu diske_bas_ve_kapat(yol, veri, 0);
+    }
+    eger veri == 0 ise { dondu 0; }
+    dondu diske_bas_ve_kapat(yol, veri, boyut);
+}
+# i18n alias
+isv write_file(path: *u8, data: *u8, size: tamsayi) -> tamsayi { dondu dosya_yaz_tamami(path, data, size); }
+
+# Bir dosyanin kac satir oldugunu sayar (\n karakteri sayilir).
+# Dosyayi okuyamazsa 0 doner.
+isv dosya_satir_sayisi(yol: *u8) -> tamsayi {
+    degisken uzunluk: tamsayi = 0;
+    degisken icerik: *u8 = dosya_oku_tamami(yol, &uzunluk);
+    eger icerik == 0 ise { dondu 0; }
+    eger uzunluk == 0 ise { dondu 0; }
+    degisken satir: tamsayi = 1;
+    degisken i: tamsayi = 0;
+    dongu i < uzunluk {
+        eger icerik[i] == 10 ise {
+            satir = satir + 1;
+        }
+        i = i + 1;
+    }
+    eger icerik[uzunluk - 1] == 10 ise { satir = satir - 1; }
+    dondu satir;
+}
+isv count_lines(path: *u8) -> tamsayi { dondu dosya_satir_sayisi(path); }
+
+# Dosya var mi? (Acilabiliyorsa var demektir, 0 bayt dosyalar dahil)
+# 1: var, 0: yok/okunamaz
+isv dosya_var_mi(yol: *u8) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    # GENERIC_READ (0x80000000), FILE_SHARE_READ (1), OPEN_EXISTING (3), FILE_ATTRIBUTE_NORMAL (0x80)
+    degisken handle: tamsayi = os_dosya_yarat(yol, 0x80000000, 1, 3, 0x80);
+    eger handle != 0 ve handle != (0 - 1) ve handle != 0xFFFFFFFFFFFFFFFF ise {
+        os_dosya_kapat(handle);
+        dondu 1;
+    }
+    dondu 0;
+}
+isv file_exists(path: *u8) -> tamsayi { dondu dosya_var_mi(path); }
+
+# Dosyayi oku, bir ayraca gore ilk parcasini dondur.
+# Ornek: dosya_ilk_parcasi("a.ykn", 10, 1024) -> ilk satir (\n=10)
+isv dosya_ilk_parcasi(yol: *u8, ayrac: u8, maks_boyut: tamsayi) -> *u8 {
+    eger maks_boyut <= 0 ise { dondu 0; }
+    degisken buf: *u8 = bellek_tahsis_et(maks_boyut + 1);
+    eger buf == 0 ise { dondu 0; }
+    degisken okunan: tamsayi = dosya_oku(yol, buf, maks_boyut);
+    eger okunan <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < okunan {
+        eger buf[i] == ayrac ise {
+            buf[i] = 0;
+            dondu buf;
+        }
+        i = i + 1;
+    }
+    eger okunan < maks_boyut ise {
+        buf[okunan] = 0;
+        dondu buf;
+    }
+    buf[maks_boyut] = 0;
+    dondu buf;
+}
+
+# Metin dosyasina ek yaz (dosya sonuna EKLE).
+# Mevcut icerigi oku + yeni metni birlestir + tekrar yaz.
+# Basarili ise 1, degilse 0.
+isv dosya_sonuna_ekle(yol: *u8, ek: *u8) -> tamsayi {
+    eger yol == 0 veya ek == 0 ise { dondu 0; }
+    degisken eski_uz: tamsayi = 0;
+    degisken eski: *u8 = dosya_oku_tamami(yol, &eski_uz);
+    eger eski == 0 ise { eski_uz = 0; }
+    degisken ek_uz: tamsayi = 0;
+    degisken j: tamsayi = 0;
+    dongu ek[j] != 0 { j = j + 1; }
+    ek_uz = j;
+    degisken toplam_uz: tamsayi = eski_uz + ek_uz;
+    degisken yeni: *u8 = bellek_tahsis_et(toplam_uz + 16);
+    eger yeni == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < eski_uz {
+        yeni[i] = eski[i];
+        i = i + 1;
+    }
+    degisken j2: tamsayi = 0;
+    dongu j2 < ek_uz {
+        yeni[i + j2] = ek[j2];
+        j2 = j2 + 1;
+    }
+    degisken yazilan: tamsayi = dosya_yaz_tamami(yol, yeni, toplam_uz);
+    eger yazilan == toplam_uz ise { dondu 1; }
+    dondu 0;
+}
+isv append_file(path: *u8, add: *u8) -> tamsayi { dondu dosya_sonuna_ekle(path, add); }

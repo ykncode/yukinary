@@ -1,0 +1,141 @@
+# ============================================================
+# Yukinary std/es/kanal.ykn
+# Eşzamanlı Mesaj Kanalı (Concurrent Channel / MPSC Queue)
+# Atomik Sayaçlar ve Thread-Safe Referans Yönetimi (ykn_atomic_*)
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+
+yapi KanalDugum {
+    veri: tamsayi;
+    sonraki: *KanalDugum;
+}
+
+yapi KanalPaylasilan {
+    bas_ptr: *KanalDugum;
+    son_ptr: *KanalDugum;
+    eleman_sayisi: tamsayi;
+    uretici_sayisi: tamsayi;
+    kapali_mi: tamsayi;
+}
+
+yapi Gonderici {
+    paylasilan: *KanalPaylasilan;
+}
+
+yapi Alici {
+    paylasilan: *KanalPaylasilan;
+}
+
+isv kanal_olustur(g: *Gonderici, a: *Alici) -> tamsayi {
+    eger g == 0 veya a == 0 ise { dondu -1; }
+    
+    degisken p: *KanalPaylasilan = bellek_tahsis_et(40);
+    eger p == 0 ise { dondu -4; }
+    
+    # Dummy baslangic dugumu (Michael-Scott queue mimarisi)
+    degisken dummy: *KanalDugum = bellek_tahsis_et(16);
+    eger dummy == 0 ise {
+        os_bellek_serbest(p);
+        dondu -4;
+    }
+    dummy.veri = 0;
+    dummy.sonraki = 0;
+    
+    p.bas_ptr = dummy;
+    p.son_ptr = dummy;
+    p.eleman_sayisi = 0;
+    p.uretici_sayisi = 1;
+    p.kapali_mi = 0;
+    
+    g.paylasilan = p;
+    a.paylasilan = p;
+    dondu 0;
+}
+
+isv kanal_gonder(g: *Gonderici, deger: tamsayi) -> tamsayi {
+    eger g == 0 veya g.paylasilan == 0 ise { dondu -1; }
+    degisken p: *KanalPaylasilan = g.paylasilan;
+    eger ykn_atomic_load_i64(&p.kapali_mi) == 1 ise { dondu -2; } # Kanal kapali
+    
+    degisken yeni_dugum: *KanalDugum = bellek_tahsis_et(16);
+    eger yeni_dugum == 0 ise { dondu -4; }
+    yeni_dugum.veri = deger;
+    yeni_dugum.sonraki = 0;
+    
+    # Kuyrugun sonuna kilit-ozgur (lock-free CAS) ekle
+    dongu 1 {
+        degisken son: *KanalDugum = p.son_ptr;
+        degisken son_sonraki: *KanalDugum = son.sonraki;
+        eger son == p.son_ptr ise {
+            eger son_sonraki == 0 ise {
+                eger ykn_atomic_cas_i64(&son.sonraki, 0, yeni_dugum) == 1 ise {
+                    ykn_atomic_cas_i64(&p.son_ptr, son, yeni_dugum);
+                    durdur;
+                }
+            } yoksa {
+                ykn_atomic_cas_i64(&p.son_ptr, son, son_sonraki);
+            }
+        }
+    }
+    ykn_atomic_inc_i64(&p.eleman_sayisi);
+    dondu 0;
+}
+
+isv kanal_al(a: *Alici, sonuc_ptr: *tamsayi) -> tamsayi {
+    eger a == 0 veya a.paylasilan == 0 veya sonuc_ptr == 0 ise { dondu -1; }
+    degisken p: *KanalPaylasilan = a.paylasilan;
+    
+    degisken bas: *KanalDugum = p.bas_ptr;
+    degisken siradaki: *KanalDugum = bas.sonraki;
+    
+    # Kuyruk bos mu?
+    eger siradaki == 0 ise {
+        dondu 0; # Veri yok
+    }
+    
+    # Veriyi cek
+    sonuc_ptr[0] = siradaki.veri;
+    
+    # Dummy dugumu serbest birak ve siradakini yeni bas yap
+    p.bas_ptr = siradaki;
+    ykn_atomic_dec_i64(&p.eleman_sayisi);
+    os_bellek_serbest(bas);
+    
+    dondu 1; # Basariyla 1 eleman okundu
+}
+
+isv gonderici_klonla(kaynak: *Gonderici, hedef: *Gonderici) -> tamsayi {
+    eger kaynak == 0 veya kaynak.paylasilan == 0 veya hedef == 0 ise { dondu -1; }
+    degisken p: *KanalPaylasilan = kaynak.paylasilan;
+    ykn_atomic_inc_i64(&p.uretici_sayisi);
+    hedef.paylasilan = p;
+    dondu 0;
+}
+
+isv gonderici_kapat(g: *Gonderici) -> tamsayi {
+    eger g == 0 veya g.paylasilan == 0 ise { dondu -1; }
+    degisken p: *KanalPaylasilan = g.paylasilan;
+    degisken kalan: tamsayi = ykn_atomic_dec_i64(&p.uretici_sayisi);
+    eger kalan <= 0 ise {
+        ykn_atomic_store_i64(&p.kapali_mi, 1);
+    }
+    g.paylasilan = 0;
+    dondu 0;
+}
+
+isv alici_kapat(a: *Alici) -> tamsayi {
+    eger a == 0 veya a.paylasilan == 0 ise { dondu -1; }
+    degisken p: *KanalPaylasilan = a.paylasilan;
+    
+    # Kalan dugumleri temizle
+    degisken iter: *KanalDugum = p.bas_ptr;
+    dongu iter != 0 {
+        degisken sil: *KanalDugum = iter;
+        iter = iter.sonraki;
+        os_bellek_serbest(sil);
+    }
+    os_bellek_serbest(p);
+    a.paylasilan = 0;
+    dondu 0;
+}

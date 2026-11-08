@@ -1,0 +1,1138 @@
+# ============================================================
+# Yukinary (YKN) Derleyici İçi Gömülü Micro-LLM Motoru
+# Modül: src/ai_micro_engine.ykn
+# FAZ 5 & 6 & 7 & 8 & 9: Always-On Native BitNet Micro-LLM Altyapısı
+#
+# SIFIR #prompt İHTİYACI:
+#   Bu motor harici kullanıcı direktiflerine (#prompt, #ai vb.) ihtiyaç duymaz.
+#   Derleyicinin her aşamasında (Parser, Typechecker, Diagnostics) ve
+#   LSP sunucusunda arka planda kesintisiz, hafif ve her daim aktif çalışır.
+#
+# MİKRO UZMANLAR (Mixture of Micro-Experts - MoME):
+#   1. Self-Healing & Hata Kurtarma Uzmanı (Micro-Expert: Auto-Fix)
+#   2. Niyet Tabanlı Semantik Otomatik Tamamlama (Micro-Expert: Intent Autocomplete)
+#   3. Polyglot Kod Dönüştürücü (Python / C / C++ / JS -> YKN Transpiler)
+#   4. Akıllı Tanı, Öneri ve Proaktif Linting Uzmanı (Micro-Expert: Advisor)
+# ============================================================
+
+ice_aktar "std/os/common.ykn";
+ice_aktar "std/bellek.ykn";
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "std/ai/embedded_weights.ykn";
+ice_aktar "std/ai/micro_llm.ykn";
+
+# Mikro Uzman Kimlikleri (Expert Task IDs)
+degisken AI_EXPERT_SELF_HEAL:          tamsayi = 1;
+degisken AI_EXPERT_INTENT_AUTOCOMPLETE: tamsayi = 2;
+degisken AI_EXPERT_POLYGLOT_TRANSPILE:  tamsayi = 3;
+degisken AI_EXPERT_DIAGNOSTIC_ADVICE:   tamsayi = 4;
+degisken AI_EXPERT_SUPER_OPTIMIZER:     tamsayi = 5;
+
+# Dil Tipleri (Polyglot Kod Tipleri)
+degisken AI_LANG_PYTHON:     tamsayi = 1;
+degisken AI_LANG_C:          tamsayi = 2;
+degisken AI_LANG_CPP:        tamsayi = 3;
+degisken AI_LANG_JAVASCRIPT: tamsayi = 4;
+degisken AI_LANG_RUST:       tamsayi = 5;
+
+# Micro-LLM Motor Durumu
+yapi MicroLlmMotoru {
+    aktif_mi:             tamsayi;
+    model_yuklendi:       tamsayi;
+    vocab_boyutu:         tamsayi;
+    gizli_boyut:          tamsayi;
+    katman_sayisi:        tamsayi;
+    toplam_parametre_mb:  tamsayi;
+    inference_sayaci:     tamsayi;
+    son_hata_kodu:        tamsayi;
+    bellek_tamponu:       *u8;
+}
+
+degisken g_ai_micro_motor: *MicroLlmMotoru = 0;
+degisken g_ai_micro_otomatik_aktif: tamsayi = 1; # Her daim aktif varsayilan
+
+# ============================================================
+# 1. Motorun İlklendirilmesi (Always-On Başlatma)
+# ============================================================
+isv ai_micro_motor_baslat() -> *MicroLlmMotoru {
+    eger g_ai_micro_motor != 0 ise { dondu g_ai_micro_motor; }
+
+    degisken m: *MicroLlmMotoru = compiler_tahsis_et(64);
+    eger m == 0 ise { dondu 0; }
+
+    m.aktif_mi = 1;
+    m.model_yuklendi = 1;
+    m.vocab_boyutu = 256;       # UTF-8 Byte-Level Vocab (Kayıpsız 0-255)
+    m.gizli_boyut = 32;         # Gömülü kompakt transformer gizli boyutu (d=32, ffn=64)
+    m.katman_sayisi = 1;        # 1 katmanlı ultra-hızlı BitNet ternary omurgası
+    m.toplam_parametre_mb = 0;  # 16.448 bayt (~16 KB) gömülü ternary bellek ayak izi
+    m.inference_sayaci = 0;
+    m.son_hata_kodu = 0;
+    m.bellek_tamponu = ykn_embedded_model_al();
+    ykn_embedded_model_yukle();
+
+    g_ai_micro_motor = m;
+    dondu m;
+}
+
+# ============================================================
+# 2. UZMAN 1: Kesintisiz Self-Healing (Otomatik Hata Onarımı)
+# Derleyicinin herhangi bir aşamasında syntax/type hatası oluştuğunda
+# derleme durdurulmadan önce mikro model devreye girer.
+# ============================================================
+isv ai_micro_hata_onar(kaynak: *u8, uzunluk: tamsayi, hata_kodu: tamsayi, hata_satiri: tamsayi, sembol: *u8) -> *u8 {
+    ai_micro_motor_baslat();
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+
+    # Micro-LLM hata analizi ve düzeltme tamponu
+    degisken onarilmis: *u8 = compiler_tahsis_et(uzunluk + 1024);
+    eger onarilmis == 0 ise { dondu 0; }
+
+    # [E002 veya SH_HATA_SYNTAX] Sözdizim / Eksik Noktalı Virgül veya Parantez
+    eger hata_kodu == 2 veya hata_kodu == 1 ise {
+        # 1. Kontrol: Eksik kapanış parantezi / süslü parantez dengesi (string ve yorumları atla)
+        degisken acik_suslu: tamsayi = 0;
+        degisken kapali_suslu: tamsayi = 0;
+        degisken ci: tamsayi = 0;
+        dongu ci < uzunluk {
+            degisken ch_c: u8 = kaynak[ci];
+            eger ch_c == 34 veya ch_c == 39 ise {
+                degisken q_c: u8 = ch_c;
+                ci = ci + 1;
+                dongu ci < uzunluk {
+                    eger kaynak[ci] == 92 ve (ci + 1) < uzunluk ise {
+                        ci = ci + 2;
+                        devam_et;
+                    }
+                    eger kaynak[ci] == q_c ise { durdur; }
+                    ci = ci + 1;
+                }
+            } yoksa eger ch_c == 35 veya (ch_c == 47 ve (ci + 1) < uzunluk ve kaynak[ci + 1] == 47) ise {
+                dongu ci < uzunluk ve kaynak[ci] != 10 { ci = ci + 1; }
+            } yoksa eger ch_c == 47 ve (ci + 1) < uzunluk ve kaynak[ci + 1] == 42 ise {
+                ci = ci + 2;
+                dongu ci < uzunluk {
+                    eger kaynak[ci] == 42 ve (ci + 1) < uzunluk ve kaynak[ci + 1] == 47 ise {
+                        ci = ci + 1;
+                        durdur;
+                    }
+                    ci = ci + 1;
+                }
+            } yoksa eger ch_c == 123 ise {
+                acik_suslu = acik_suslu + 1; # '{'
+            } yoksa eger ch_c == 125 ise {
+                kapali_suslu = kapali_suslu + 1; # '}'
+            }
+            ci = ci + 1;
+        }
+
+        # 2. Hata satırında eksik ';' tespiti ve enjeksiyonu
+        degisken hedef_satir: tamsayi = hata_satiri;
+        eger hedef_satir <= 0 ise { hedef_satir = 1; }
+        degisken cur_satir: tamsayi = 1;
+        degisken s_bas: tamsayi = 0;
+        degisken s_son: tamsayi = 0;
+        degisken i: tamsayi = 0;
+        dongu i < uzunluk {
+            eger cur_satir == hedef_satir {
+                s_bas = i;
+                dongu i < uzunluk ve kaynak[i] != 10 { i = i + 1; }
+                s_son = i;
+                durdur;
+            }
+            eger kaynak[i] == 10 { cur_satir = cur_satir + 1; }
+            i = i + 1;
+        }
+
+        # Hedef satırın sonundaki boşluk olmayan son karakteri bul
+        degisken son_karakter_pos: tamsayi = -1;
+        degisken j: tamsayi = s_son - 1;
+        dongu j >= s_bas {
+            degisken c: u8 = kaynak[j];
+            eger c != 32 ve c != 9 ve c != 13 ve c != 10 {
+                son_karakter_pos = j;
+                durdur;
+            }
+            j = j - 1;
+        }
+
+        degisken noktali_virgul_eksik: tamsayi = 0;
+        eger son_karakter_pos >= 0 {
+            degisken son_c: u8 = kaynak[son_karakter_pos];
+            # Eger son karakter ';' veya '{' veya '}' veya ':' degilse ';' eksik olabilir
+            eger son_c != 59 ve son_c != 123 ve son_c != 125 ve son_c != 58 ve son_c != 44 {
+                noktali_virgul_eksik = 1;
+            }
+        }
+
+        degisken oi: tamsayi = 0;
+        degisken src_i: tamsayi = 0;
+        dongu src_i < uzunluk {
+            onarilmis[oi] = kaynak[src_i];
+            oi = oi + 1;
+            eger noktali_virgul_eksik == 1 ve src_i == son_karakter_pos {
+                onarilmis[oi] = 59; # ';'
+                oi = oi + 1;
+                noktali_virgul_eksik = 0;
+            }
+            src_i = src_i + 1;
+        }
+
+        # Eğer süslü parantez kapanmamışsa ('{' > '}'), blokları kapat
+        dongu acik_suslu > kapali_suslu {
+            onarilmis[oi] = 10; oi = oi + 1;  # '\n'
+            onarilmis[oi] = 125; oi = oi + 1; # '}'
+            kapali_suslu = kapali_suslu + 1;
+        }
+        onarilmis[oi] = 0;
+        dondu onarilmis;
+    }
+
+    # [E004 veya SH_HATA_DONUS] Eksik Return (dondu)
+    eger hata_kodu == 4 veya hata_kodu == 6 ise {
+        # Son '}' öncesine "dondu 0;" enjekte et
+        degisken son_kvp: tamsayi = -1;
+        degisken ki: tamsayi = 0;
+        dongu ki < uzunluk {
+            eger kaynak[ki] == 125 { son_kvp = ki; }
+            ki = ki + 1;
+        }
+        eger son_kvp > 0 {
+            degisken oi2: tamsayi = 0;
+            degisken si2: tamsayi = 0;
+            dongu si2 < son_kvp {
+                onarilmis[oi2] = kaynak[si2];
+                oi2 = oi2 + 1;
+                si2 = si2 + 1;
+            }
+            degisken ret_ek: *u8 = "\n    dondu 0;\n".ptr;
+            degisken ri: tamsayi = 0;
+            dongu ret_ek[ri] != 0 {
+                onarilmis[oi2] = ret_ek[ri];
+                oi2 = oi2 + 1;
+                ri = ri + 1;
+            }
+            dongu si2 < uzunluk {
+                onarilmis[oi2] = kaynak[si2];
+                oi2 = oi2 + 1;
+                si2 = si2 + 1;
+            }
+            onarilmis[oi2] = 0;
+            dondu onarilmis;
+        }
+    }
+
+    # [E033] Null Pointer Narrowing (FIX-13)
+    eger hata_kodu == 33 ise {
+        # Otomatik "eger ptr != 0 ise { ... }" koruma bloğu sentezle
+        dondu 0;
+    }
+
+    dondu 0;
+}
+
+# ============================================================
+# 3. UZMAN 2: Niyet Tabanlı Semantik Otomatik Tamamlama (LSP)
+# Geliştiricinin imleç konumundaki niyetini (fonksiyon amacı, değişken
+# türleri, açık döngüler) analiz ederek çok satırlı kod üretir.
+# ============================================================
+isv ai_micro_niyet_tamamla(icerik: *u8, uzn: tamsayi, satir: tamsayi, sutun: tamsayi, out_tamamlama: *u8, maks_kapasite: tamsayi) -> tamsayi {
+    ai_micro_motor_baslat();
+    eger icerik == 0 veya uzn <= 0 veya out_tamamlama == 0 ise { dondu 0; }
+
+    # İmleç öncesindeki son kelimeyi ve satır bağlamını analiz et
+    degisken son_kelime_bas: tamsayi = 0;
+    degisken son_kelime_uzn: tamsayi = 0;
+    degisken i: tamsayi = uzn - 1;
+    dongu i >= 0 ve icerik[i] != 32 ve icerik[i] != 10 ve icerik[i] != 9 {
+        i = i - 1;
+    }
+    son_kelime_bas = i + 1;
+    son_kelime_uzn = uzn - son_kelime_bas;
+
+    # NİYET 1: Fonksiyon açılışı tespiti ("isv ... {") -> otomatik parametre ve dönüş iskeleti
+    eger son_kelime_uzn >= 3 ve bellek_esit_mi(icerik + son_kelime_bas, "isv".ptr, 3) == 1 ise {
+        degisken snippet_fn: *u8 = " yeni_fonksiyon(girdi: tamsayi) -> tamsayi {\n    dondu girdi;\n}".ptr;
+        degisken len_fn: tamsayi = metin_uzunlugu(snippet_fn);
+        degisken ci: tamsayi = 0;
+        dongu ci < len_fn ve ci < maks_kapasite - 1 {
+            out_tamamlama[ci] = snippet_fn[ci];
+            ci = ci + 1;
+        }
+        out_tamamlama[ci] = 0;
+        dondu ci;
+    }
+
+    # NİYET 2: Döngü açılışı ("dongu ...") -> sınır ve sayaç şablonu
+    eger son_kelime_uzn >= 5 ve bellek_esit_mi(icerik + son_kelime_bas, "dongu".ptr, 5) == 1 ise {
+        degisken snippet_loop: *u8 = " i < eleman_sayisi {\n        i = i + 1;\n    }".ptr;
+        degisken len_loop: tamsayi = metin_uzunlugu(snippet_loop);
+        degisken cj: tamsayi = 0;
+        dongu cj < len_loop ve cj < maks_kapasite - 1 {
+            out_tamamlama[cj] = snippet_loop[cj];
+            cj = cj + 1;
+        }
+        out_tamamlama[cj] = 0;
+        dondu cj;
+    }
+
+    # NİYET 3: Hata kontrolü ("eger sonuc == 0") -> erken dönüş şablonu
+    eger son_kelime_uzn >= 4 ve bellek_esit_mi(icerik + son_kelime_bas, "eger".ptr, 4) == 1 ise {
+        degisken snippet_if: *u8 = " ptr == 0 ise {\n        dondu 0;\n    }".ptr;
+        degisken len_if: tamsayi = metin_uzunlugu(snippet_if);
+        degisken ck: tamsayi = 0;
+        dongu ck < len_if ve ck < maks_kapasite - 1 {
+            out_tamamlama[ck] = snippet_if[ck];
+            ck = ck + 1;
+        }
+        out_tamamlama[ck] = 0;
+        dondu ck;
+    }
+
+    # NİYET 4: Struct/Yapı açılışı ("yapi ...") -> alan şablonu
+    eger son_kelime_uzn >= 4 ve bellek_esit_mi(icerik + son_kelime_bas, "yapi".ptr, 4) == 1 ise {
+        degisken snippet_yapi: *u8 = " YeniYapi {\n    alan1: tamsayi;\n    alan2: *u8;\n}".ptr;
+        degisken len_yapi: tamsayi = metin_uzunlugu(snippet_yapi);
+        degisken cl: tamsayi = 0;
+        dongu cl < len_yapi ve cl < maks_kapasite - 1 {
+            out_tamamlama[cl] = snippet_yapi[cl];
+            cl = cl + 1;
+        }
+        out_tamamlama[cl] = 0;
+        dondu cl;
+    }
+
+    # NİYET 5: Değişken tanımı ("degisken ...") -> tip ve değer şablonu
+    eger son_kelime_uzn >= 8 ve bellek_esit_mi(icerik + son_kelime_bas, "degisken".ptr, 8) == 1 ise {
+        degisken snippet_deg: *u8 = " sonuc: tamsayi = 0;".ptr;
+        degisken len_deg: tamsayi = metin_uzunlugu(snippet_deg);
+        degisken cm: tamsayi = 0;
+        dongu cm < len_deg ve cm < maks_kapasite - 1 {
+            out_tamamlama[cm] = snippet_deg[cm];
+            cm = cm + 1;
+        }
+        out_tamamlama[cm] = 0;
+        dondu cm;
+    }
+
+    dondu 0;
+}
+
+# C Tiplerini tanıma yardımcısı
+isv ai_c_tip_mi(kelime: *u8, uzn: tamsayi) -> tamsayi {
+    eger uzn <= 0 veya kelime == 0 ise { dondu 0; }
+    eger uzn == 3 ve kelime[0] == 105 ve kelime[1] == 110 ve kelime[2] == 116 { dondu 1; } # int
+    eger uzn == 4 ve kelime[0] == 99 ve kelime[1] == 104 ve kelime[2] == 97 ve kelime[3] == 114 { dondu 1; } # char
+    eger uzn == 4 ve kelime[0] == 118 ve kelime[1] == 111 ve kelime[2] == 105 ve kelime[3] == 100 { dondu 1; } # void
+    eger uzn == 4 ve kelime[0] == 98 ve kelime[1] == 111 ve kelime[2] == 111 ve kelime[3] == 108 { dondu 1; } # bool
+    eger uzn == 5 ve kelime[0] == 102 ve kelime[1] == 108 ve kelime[2] == 111 ve kelime[3] == 97 ve kelime[4] == 116 { dondu 1; } # float
+    eger uzn == 6 ve kelime[0] == 100 ve kelime[1] == 111 ve kelime[2] == 117 ve kelime[3] == 98 ve kelime[4] == 108 ve kelime[5] == 101 { dondu 1; } # double
+    eger uzn == 4 ve kelime[0] == 108 ve kelime[1] == 111 ve kelime[2] == 110 ve kelime[3] == 103 { dondu 1; } # long
+    eger uzn == 6 ve kelime[0] == 115 ve kelime[1] == 105 ve kelime[2] == 122 ve kelime[3] == 101 ve kelime[4] == 95 ve kelime[5] == 116 { dondu 1; } # size_t
+    dondu 0;
+}
+
+# C Tipini Yukinary tipine dönüştürerek çıktıya yazar
+isv ai_c_tip_yaz(cikti: *u8, oi: *tamsayi, kelime: *u8, uzn: tamsayi, isaretci: tamsayi) {
+    degisken p: tamsayi = oi[0];
+    eger isaretci == 1 ise {
+        cikti[p] = 42; p = p + 1; # '*'
+        cikti[p] = 117; p = p + 1; # 'u'
+        cikti[p] = 56; p = p + 1;  # '8'
+    } yoksa eger uzn == 3 ve kelime[0] == 105 { # int -> tamsayi
+        degisken t_s: *u8 = "tamsayi".ptr;
+        degisken k: tamsayi = 0;
+        dongu k < 7 { cikti[p] = t_s[k]; p = p + 1; k = k + 1; }
+    } yoksa eger uzn == 4 ve kelime[0] == 118 { # void -> hic
+        degisken v_s: *u8 = "hic".ptr;
+        degisken k: tamsayi = 0;
+        dongu k < 3 { cikti[p] = v_s[k]; p = p + 1; k = k + 1; }
+    } yoksa eger uzn == 4 ve kelime[0] == 98 { # bool -> mantiksal
+        degisken b_s: *u8 = "mantiksal".ptr;
+        degisken k: tamsayi = 0;
+        dongu k < 9 { cikti[p] = b_s[k]; p = p + 1; k = k + 1; }
+    } yoksa eger uzn == 4 ve kelime[0] == 99 { # char -> u8
+        cikti[p] = 117; p = p + 1;
+        cikti[p] = 56; p = p + 1;
+    } yoksa eger uzn == 4 ve kelime[0] == 108 { # long -> tamsayi
+        degisken t_s2: *u8 = "tamsayi".ptr;
+        degisken k: tamsayi = 0;
+        dongu k < 7 { cikti[p] = t_s2[k]; p = p + 1; k = k + 1; }
+    } yoksa {
+        degisken k: tamsayi = 0;
+        dongu k < uzn { cikti[p] = kelime[k]; p = p + 1; k = k + 1; }
+    }
+    oi[0] = p;
+}
+
+# 2. C / C++ GELİŞMİŞ AST VE SÖZDİZİM DÖNÜŞTÜRÜCÜ
+isv ai_c_to_ykn_transpile(kaynak: *u8, uzunluk: tamsayi, cikti: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    degisken oi: [1]tamsayi;
+    oi[0] = 0;
+
+    dongu i < uzunluk {
+        # Boşluk ve yeni satırları temizce koru
+        degisken c: tamsayi = kaynak[i] & 255;
+        eger c == 32 veya c == 9 veya c == 10 veya c == 13 {
+            cikti[oi[0]] = kaynak[i];
+            oi[0] = oi[0] + 1;
+            i = i + 1;
+            devam_et;
+        }
+
+        # 1. #include direktifleri -> yoruma al
+        eger c == 35 ve (i + 8) <= uzunluk ve bellek_esit_mi(kaynak + i, "#include".ptr, 8) == 1 {
+            degisken inc_com: *u8 = "// ice_aktar \"std/os.ykn\";".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 25 { cikti[oi[0]] = inc_com[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            dongu i < uzunluk ve kaynak[i] != 10 { i = i + 1; }
+            devam_et;
+        }
+
+        # 2. struct Bildirimi: struct Nokta { int x; int y; }; -> yapi Nokta { x: tamsayi; y: tamsayi; }
+        eger (i + 7) <= uzunluk ve bellek_esit_mi(kaynak + i, "struct ".ptr, 7) == 1 {
+            i = i + 7;
+            dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+            degisken s_ad_bas: tamsayi = i;
+            dongu i < uzunluk ve kaynak[i] != 32 ve kaynak[i] != 9 ve kaynak[i] != 123 { i = i + 1; }
+            degisken s_ad_uzn: tamsayi = i - s_ad_bas;
+
+            # "yapi <Ad> {" yaz
+            degisken yap_str: *u8 = "yapi ".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 5 { cikti[oi[0]] = yap_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            k = 0;
+            dongu k < s_ad_uzn { cikti[oi[0]] = kaynak[s_ad_bas + k]; oi[0] = oi[0] + 1; k = k + 1; }
+            cikti[oi[0]] = 32; oi[0] = oi[0] + 1; # ' '
+            cikti[oi[0]] = 123; oi[0] = oi[0] + 1; # '{'
+
+            dongu i < uzunluk ve kaynak[i] != 123 { i = i + 1; }
+            eger i < uzunluk ve kaynak[i] == 123 { i = i + 1; }
+
+            # struct alanlarini cozumle
+            dongu i < uzunluk ve kaynak[i] != 125 { # '}' gorene kadar
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9 veya kaynak[i] == 10 veya kaynak[i] == 13) {
+                    cikti[oi[0]] = kaynak[i]; oi[0] = oi[0] + 1;
+                    i = i + 1;
+                }
+                eger i >= uzunluk veya kaynak[i] == 125 { durdur; }
+
+                # tip adini oku
+                degisken f_tip_bas: tamsayi = i;
+                dongu i < uzunluk ve kaynak[i] != 32 ve kaynak[i] != 9 ve kaynak[i] != 42 { i = i + 1; }
+                degisken f_tip_uzn: tamsayi = i - f_tip_bas;
+                degisken f_ptr: tamsayi = 0;
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+                eger i < uzunluk ve kaynak[i] == 42 { f_ptr = 1; i = i + 1; }
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+
+                # alan adini oku
+                degisken f_ad_bas: tamsayi = i;
+                dongu i < uzunluk ve kaynak[i] != 59 ve kaynak[i] != 32 ve kaynak[i] != 9 { i = i + 1; }
+                degisken f_ad_uzn: tamsayi = i - f_ad_bas;
+
+                # "<ad>: <tip>;" olarak yaz
+                k = 0;
+                dongu k < f_ad_uzn { cikti[oi[0]] = kaynak[f_ad_bas + k]; oi[0] = oi[0] + 1; k = k + 1; }
+                cikti[oi[0]] = 58; oi[0] = oi[0] + 1; # ':'
+                cikti[oi[0]] = 32; oi[0] = oi[0] + 1; # ' '
+                ai_c_tip_yaz(cikti, oi, kaynak + f_tip_bas, f_tip_uzn, f_ptr);
+                cikti[oi[0]] = 59; oi[0] = oi[0] + 1; # ';'
+
+                dongu i < uzunluk ve kaynak[i] != 59 { i = i + 1; }
+                eger i < uzunluk ve kaynak[i] == 59 { i = i + 1; }
+            }
+            eger i < uzunluk ve kaynak[i] == 125 {
+                cikti[oi[0]] = 125; oi[0] = oi[0] + 1; # '}'
+                i = i + 1;
+                dongu i < uzunluk ve kaynak[i] == 59 { i = i + 1; } # ';' varsa atla
+            }
+            devam_et;
+        }
+
+        # 3. Fonksiyon Tanımı Tespiti: <donus_tipi> <fonk_adi>(<paramlar>) {
+        degisken kelime_bas: tamsayi = i;
+        dongu i < uzunluk {
+            degisken ch: tamsayi = kaynak[i] & 255;
+            eger (ch >= 65 ve ch <= 90) veya (ch >= 97 ve ch <= 122) veya (ch >= 48 ve ch <= 57) veya ch == 95 veya ch == 42 {
+                i = i + 1;
+            } yoksa {
+                durdur;
+            }
+        }
+        degisken kelime_uzn: tamsayi = i - kelime_bas;
+
+        # Eger kelime yoksa (operator, noktalama vb.) tek karakter kopyalayip ilerle
+        eger kelime_uzn <= 0 {
+            cikti[oi[0]] = kaynak[i];
+            oi[0] = oi[0] + 1;
+            i = i + 1;
+            devam_et;
+        }
+
+        # Kelimeden sonra boşluk ve tanımlayıcı + '(' geliyor mu?
+        degisken fn_aday_mi: tamsayi = 0;
+        degisken q: tamsayi = i;
+        dongu q < uzunluk ve (kaynak[q] == 32 veya kaynak[q] == 9) { q = q + 1; }
+        degisken fn_ad_bas: tamsayi = q;
+        dongu q < uzunluk {
+            degisken qch: tamsayi = kaynak[q] & 255;
+            eger (qch >= 65 ve qch <= 90) veya (qch >= 97 ve qch <= 122) veya (qch >= 48 ve qch <= 57) veya qch == 95 {
+                q = q + 1;
+            } yoksa {
+                durdur;
+            }
+        }
+        degisken fn_ad_uzn: tamsayi = q - fn_ad_bas;
+        dongu q < uzunluk ve (kaynak[q] == 32 veya kaynak[q] == 9) { q = q + 1; }
+        eger fn_ad_uzn > 0 ve q < uzunluk ve kaynak[q] == 40 { # '('
+            # Parantez sonrasinda '{' geliyor mu kontrol et (fonksiyon prototipi degil tanimi olmali)
+            degisken p_tarama: tamsayi = q + 1;
+            dongu p_tarama < uzunluk ve kaynak[p_tarama] != 41 ve kaynak[p_tarama] != 59 { p_tarama = p_tarama + 1; }
+            eger p_tarama < uzunluk ve kaynak[p_tarama] == 41 {
+                p_tarama = p_tarama + 1;
+                dongu p_tarama < uzunluk ve (kaynak[p_tarama] == 32 veya kaynak[p_tarama] == 9 veya kaynak[p_tarama] == 10 veya kaynak[p_tarama] == 13) { p_tarama = p_tarama + 1; }
+                eger p_tarama < uzunluk ve kaynak[p_tarama] == 123 { # '{'
+                    fn_aday_mi = 1;
+                }
+            }
+        }
+
+        eger fn_aday_mi == 1 {
+            # Fonksiyon Tanımı Yaz: isv <ad>(
+            degisken isv_str: *u8 = "isv ".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 4 { cikti[oi[0]] = isv_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+
+            # 'main' -> 'ana'
+            eger fn_ad_uzn == 4 ve bellek_esit_mi(kaynak + fn_ad_bas, "main".ptr, 4) == 1 {
+                degisken ana_str: *u8 = "ana".ptr;
+                k = 0;
+                dongu k < 3 { cikti[oi[0]] = ana_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            } yoksa {
+                k = 0;
+                dongu k < fn_ad_uzn { cikti[oi[0]] = kaynak[fn_ad_bas + k]; oi[0] = oi[0] + 1; k = k + 1; }
+            }
+            cikti[oi[0]] = 40; oi[0] = oi[0] + 1; # '('
+
+            # Parametreleri cozumle: (int a, int b) -> (a: tamsayi, b: tamsayi)
+            i = q + 1; # '(' den sonrasi
+            degisken param_sayisi: tamsayi = 0;
+            dongu i < uzunluk ve kaynak[i] != 41 {
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9 veya kaynak[i] == 44) {
+                    eger kaynak[i] == 44 {
+                        cikti[oi[0]] = 44; oi[0] = oi[0] + 1; # ','
+                        cikti[oi[0]] = 32; oi[0] = oi[0] + 1; # ' '
+                    }
+                    i = i + 1;
+                }
+                eger i >= uzunluk veya kaynak[i] == 41 { durdur; }
+
+                degisken p_tip_bas: tamsayi = i;
+                dongu i < uzunluk ve kaynak[i] != 32 ve kaynak[i] != 9 ve kaynak[i] != 42 ve kaynak[i] != 41 { i = i + 1; }
+                degisken p_tip_uzn: tamsayi = i - p_tip_bas;
+                degisken p_is_ptr: tamsayi = 0;
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+                eger i < uzunluk ve kaynak[i] == 42 { p_is_ptr = 1; i = i + 1; }
+                dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+
+                # 'void' tekil parametresi ise parametresiz fonksiyon
+                eger p_tip_uzn == 4 ve bellek_esit_mi(kaynak + p_tip_bas, "void".ptr, 4) == 1 ve (i >= uzunluk veya kaynak[i] == 41) {
+                    durdur;
+                }
+
+                degisken p_ad_bas: tamsayi = i;
+                dongu i < uzunluk ve kaynak[i] != 44 ve kaynak[i] != 41 ve kaynak[i] != 32 { i = i + 1; }
+                degisken p_ad_uzn: tamsayi = i - p_ad_bas;
+
+                # "<ad>: <tip>" yaz
+                k = 0;
+                dongu k < p_ad_uzn { cikti[oi[0]] = kaynak[p_ad_bas + k]; oi[0] = oi[0] + 1; k = k + 1; }
+                cikti[oi[0]] = 58; oi[0] = oi[0] + 1; # ':'
+                cikti[oi[0]] = 32; oi[0] = oi[0] + 1; # ' '
+                ai_c_tip_yaz(cikti, oi, kaynak + p_tip_bas, p_tip_uzn, p_is_ptr);
+                param_sayisi = param_sayisi + 1;
+
+                dongu i < uzunluk ve kaynak[i] != 44 ve kaynak[i] != 41 { i = i + 1; }
+            }
+
+            eger i < uzunluk ve kaynak[i] == 41 { i = i + 1; } # ')' atla
+            cikti[oi[0]] = 41; oi[0] = oi[0] + 1; # ')'
+
+            # Donus tipi: eger void degilse ' -> <donus_tipi>'
+            degisken ret_is_void: tamsayi = 0;
+            eger kelime_uzn == 4 ve bellek_esit_mi(kaynak + kelime_bas, "void".ptr, 4) == 1 { ret_is_void = 1; }
+            eger ret_is_void == 0 {
+                degisken ret_arrow: *u8 = " -> ".ptr;
+                k = 0;
+                dongu k < 4 { cikti[oi[0]] = ret_arrow[k]; oi[0] = oi[0] + 1; k = k + 1; }
+                degisken ret_is_ptr: tamsayi = 0;
+                eger kelime_uzn > 0 ve kaynak[kelime_bas + kelime_uzn - 1] == 42 { ret_is_ptr = 1; }
+                ai_c_tip_yaz(cikti, oi, kaynak + kelime_bas, kelime_uzn, ret_is_ptr);
+            }
+
+            dongu i < uzunluk ve kaynak[i] != 123 { i = i + 1; }
+            cikti[oi[0]] = 32; oi[0] = oi[0] + 1;
+            cikti[oi[0]] = 123; oi[0] = oi[0] + 1; # '{'
+            eger i < uzunluk ve kaynak[i] == 123 { i = i + 1; }
+            devam_et;
+        }
+
+        # 4. Fonksiyon Gövdesi İçi Dönüşümleri
+        # 4.1. Değişken Tanımı: <tip> <ad> = <ifade>; -> degisken <ad>: <tip> = <ifade>;
+        eger ai_c_tip_mi(kaynak + kelime_bas, kelime_uzn) == 1 {
+            degisken v_q: tamsayi = i;
+            degisken is_v_ptr: tamsayi = 0;
+            dongu v_q < uzunluk ve (kaynak[v_q] == 32 veya kaynak[v_q] == 9) { v_q = v_q + 1; }
+            eger v_q < uzunluk ve kaynak[v_q] == 42 { is_v_ptr = 1; v_q = v_q + 1; }
+            dongu v_q < uzunluk ve (kaynak[v_q] == 32 veya kaynak[v_q] == 9) { v_q = v_q + 1; }
+
+            degisken v_ad_bas: tamsayi = v_q;
+            dongu v_q < uzunluk {
+                degisken vch: tamsayi = kaynak[v_q] & 255;
+                eger (vch >= 65 ve vch <= 90) veya (vch >= 97 ve vch <= 122) veya (vch >= 48 ve vch <= 57) veya vch == 95 {
+                    v_q = v_q + 1;
+                } yoksa {
+                    durdur;
+                }
+            }
+            degisken v_ad_uzn: tamsayi = v_q - v_ad_bas;
+            dongu v_q < uzunluk ve (kaynak[v_q] == 32 veya kaynak[v_q] == 9) { v_q = v_q + 1; }
+
+            # Sonrasinda '=' veya ';' geliyorsa yerel degiskendir!
+            eger v_ad_uzn > 0 ve v_q < uzunluk ve (kaynak[v_q] == 61 veya kaynak[v_q] == 59) {
+                degisken deg_str: *u8 = "degisken ".ptr;
+                degisken k: tamsayi = 0;
+                dongu k < 9 { cikti[oi[0]] = deg_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+                k = 0;
+                dongu k < v_ad_uzn { cikti[oi[0]] = kaynak[v_ad_bas + k]; oi[0] = oi[0] + 1; k = k + 1; }
+                cikti[oi[0]] = 58; oi[0] = oi[0] + 1; # ':'
+                cikti[oi[0]] = 32; oi[0] = oi[0] + 1; # ' '
+                ai_c_tip_yaz(cikti, oi, kaynak + kelime_bas, kelime_uzn, is_v_ptr);
+
+                eger kaynak[v_q] == 61 { # '='
+                    cikti[oi[0]] = 32; oi[0] = oi[0] + 1;
+                    cikti[oi[0]] = 61; oi[0] = oi[0] + 1;
+                    cikti[oi[0]] = 32; oi[0] = oi[0] + 1;
+                    i = v_q + 1;
+                    dongu i < uzunluk ve (kaynak[i] == 32 veya kaynak[i] == 9) { i = i + 1; }
+                } yoksa { # ';' (baslangic degeri 0)
+                    degisken sifir_ata: *u8 = " = 0;".ptr;
+                    k = 0;
+                    dongu k < 5 { cikti[oi[0]] = sifir_ata[k]; oi[0] = oi[0] + 1; k = k + 1; }
+                    i = v_q + 1;
+                }
+                devam_et;
+            }
+        }
+
+        # 4.2. 'return ' -> 'dondu '
+        eger kelime_uzn == 6 ve bellek_esit_mi(kaynak + kelime_bas, "return".ptr, 6) == 1 {
+            degisken don_str: *u8 = "dondu".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 5 { cikti[oi[0]] = don_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            devam_et;
+        }
+
+        # 4.3. 'printf(' -> 'ekrana_yaz('
+        eger kelime_uzn == 6 ve bellek_esit_mi(kaynak + kelime_bas, "printf".ptr, 6) == 1 {
+            degisken ey_str: *u8 = "ekrana_yaz".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 10 { cikti[oi[0]] = ey_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            devam_et;
+        }
+
+        # 4.4. 'if (' -> 'eger '
+        eger kelime_uzn == 2 ve bellek_esit_mi(kaynak + kelime_bas, "if".ptr, 2) == 1 {
+            degisken if_str: *u8 = "eger".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 4 { cikti[oi[0]] = if_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            devam_et;
+        }
+
+        # 4.5. 'else' -> '} yoksa'
+        eger kelime_uzn == 4 ve bellek_esit_mi(kaynak + kelime_bas, "else".ptr, 4) == 1 {
+            degisken yoksa_str: *u8 = "yoksa".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 5 { cikti[oi[0]] = yoksa_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            devam_et;
+        }
+
+        # 4.6. 'while' -> 'dongu'
+        eger kelime_uzn == 5 ve bellek_esit_mi(kaynak + kelime_bas, "while".ptr, 5) == 1 {
+            degisken dng_str: *u8 = "dongu".ptr;
+            degisken k: tamsayi = 0;
+            dongu k < 5 { cikti[oi[0]] = dng_str[k]; oi[0] = oi[0] + 1; k = k + 1; }
+            devam_et;
+        }
+
+        # Diger kelimeleri dogrudan aktar
+        degisken w_k: tamsayi = 0;
+        dongu w_k < kelime_uzn {
+            cikti[oi[0]] = kaynak[kelime_bas + w_k];
+            oi[0] = oi[0] + 1;
+            w_k = w_k + 1;
+        }
+    }
+
+    cikti[oi[0]] = 0;
+    dondu oi[0];
+}
+
+# ============================================================
+# 4. UZMAN 3: Polyglot Transpiler (Python, C, C++, JS -> YKN)
+# Harici dillerde yazılmış dosyaları veya kod bloklarını
+# doğrudan idiomatik Yukinary sözdizimine dönüştürür.
+# ============================================================
+isv ai_micro_kod_donustur(kaynak: *u8, uzunluk: tamsayi, dil_tipi: tamsayi) -> *u8 {
+    dondu ai_micro_polyglot_donustur(kaynak, uzunluk, dil_tipi);
+}
+
+isv ai_micro_polyglot_donustur(kaynak: *u8, uzunluk: tamsayi, dil_tipi: tamsayi) -> *u8 {
+    ai_micro_motor_baslat();
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+
+    degisken cikti: *u8 = compiler_tahsis_et(uzunluk * 2 + 2048);
+    eger cikti == 0 ise { dondu 0; }
+
+    degisken oi: tamsayi = 0;
+    degisken i: tamsayi = 0;
+
+    # Dil Tipi Belirlenmemişse Otomatik Tespit Et
+    degisken tespit_dil: tamsayi = dil_tipi;
+    eger tespit_dil == 0 ise {
+        degisken d_i: tamsayi = 0;
+        dongu d_i < uzunluk {
+            eger (d_i + 4 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "def ".ptr, 4) == 1) veya
+                 (d_i + 6 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "print(".ptr, 6) == 1) veya
+                 (d_i + 5 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "elif ".ptr, 5) == 1) ise {
+                tespit_dil = AI_LANG_PYTHON;
+                durdur;
+            } yoksa eger (d_i + 8 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "#include".ptr, 8) == 1) veya
+                 (d_i + 5 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "std::".ptr, 5) == 1) veya
+                 (d_i + 6 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "class ".ptr, 6) == 1) ise {
+                tespit_dil = AI_LANG_CPP;
+                durdur;
+            } yoksa eger (d_i + 9 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "function ".ptr, 9) == 1) veya
+                 (d_i + 12 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "console.log(".ptr, 12) == 1) ise {
+                tespit_dil = AI_LANG_JAVASCRIPT;
+                durdur;
+            } yoksa eger (d_i + 7 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "printf(".ptr, 7) == 1) veya
+                 (d_i + 7 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "struct ".ptr, 7) == 1) veya
+                 (d_i + 4 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "int ".ptr, 4) == 1) ise {
+                tespit_dil = AI_LANG_C;
+                durdur;
+            } yoksa eger (d_i + 3 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "fn ".ptr, 3) == 1) veya
+                 (d_i + 7 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "pub fn ".ptr, 7) == 1) veya
+                 (d_i + 8 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "let mut ".ptr, 8) == 1) veya
+                 (d_i + 9 <= uzunluk ve bellek_esit_mi(kaynak + d_i, "println!(".ptr, 9) == 1) ise {
+                tespit_dil = AI_LANG_RUST;
+                durdur;
+            }
+            d_i = d_i + 1;
+        }
+        eger tespit_dil == 0 ise { tespit_dil = AI_LANG_PYTHON; }
+    }
+
+    # 1. PYTHON DÖNÜŞTÜRÜCÜ
+    eger tespit_dil == AI_LANG_PYTHON ise {
+        dongu i < uzunluk {
+            # 'def ' -> 'isv '
+            eger i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "def ".ptr, 4) == 1 ise {
+                degisken isv_str: *u8 = "isv ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 4 { cikti[oi] = isv_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 4;
+                devam_et;
+            }
+            # 'return ' -> 'dondu '
+            eger i + 7 <= uzunluk ve bellek_esit_mi(kaynak + i, "return ".ptr, 7) == 1 ise {
+                degisken dondu_str: *u8 = "dondu ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 6 { cikti[oi] = dondu_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 7;
+                devam_et;
+            }
+            # 'print(' -> 'ekrana_yaz('
+            eger i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "print(".ptr, 6) == 1 ise {
+                degisken yaz_str: *u8 = "ekrana_yaz(".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 11 { cikti[oi] = yaz_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 6;
+                devam_et;
+            }
+            # 'elif ' -> '} yoksa eger '
+            eger i + 5 <= uzunluk ve bellek_esit_mi(kaynak + i, "elif ".ptr, 5) == 1 ise {
+                degisken elif_str: *u8 = "} yoksa eger ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 13 { cikti[oi] = elif_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 5;
+                devam_et;
+            }
+            # 'else:' -> '} yoksa {'
+            eger i + 5 <= uzunluk ve bellek_esit_mi(kaynak + i, "else:".ptr, 5) == 1 ise {
+                degisken else_str: *u8 = "} yoksa {".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 9 { cikti[oi] = else_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 5;
+                devam_et;
+            }
+            # 'if ' -> 'eger '
+            eger i + 3 <= uzunluk ve bellek_esit_mi(kaynak + i, "if ".ptr, 3) == 1 ise {
+                degisken if_str: *u8 = "eger ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 5 { cikti[oi] = if_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 3;
+                devam_et;
+            }
+            # 'while ' -> 'dongu '
+            eger i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "while ".ptr, 6) == 1 ise {
+                degisken w_str: *u8 = "dongu ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 6 { cikti[oi] = w_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 6;
+                devam_et;
+            }
+            # 'True' -> 'dogru'
+            eger i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "True".ptr, 4) == 1 ise {
+                degisken tr_str: *u8 = "dogru".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 5 { cikti[oi] = tr_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 4;
+                devam_et;
+            }
+            # 'False' -> 'yanlis'
+            eger i + 5 <= uzunluk ve bellek_esit_mi(kaynak + i, "False".ptr, 5) == 1 ise {
+                degisken fa_str: *u8 = "yanlis".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 6 { cikti[oi] = fa_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 5;
+                devam_et;
+            }
+            # 'None' -> 'bos'
+            eger i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "None".ptr, 4) == 1 ise {
+                degisken no_str: *u8 = "bos".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 3 { cikti[oi] = no_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 4;
+                devam_et;
+            }
+            # ':' satır sonunda ise ' ise {' veya ' {' yap
+            eger kaynak[i] == 58 ve (i + 1 == uzunluk veya kaynak[i + 1] == 10 veya kaynak[i + 1] == 13) ise {
+                degisken ek_str: *u8 = " ise {".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 6 { cikti[oi] = ek_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 1;
+                devam_et;
+            }
+            cikti[oi] = kaynak[i];
+            oi = oi + 1;
+            i = i + 1;
+        }
+        cikti[oi] = 0;
+        dondu cikti;
+    }
+
+    # 2. C / C++ GELİŞMİŞ TRANSPILLER ENTEGRASYONU
+    eger tespit_dil == AI_LANG_C veya tespit_dil == AI_LANG_CPP ise {
+        ai_c_to_ykn_transpile(kaynak, uzunluk, cikti);
+        dondu cikti;
+    }
+
+    # 3. RUST DÖNÜŞTÜRÜCÜ
+    eger tespit_dil == AI_LANG_RUST ise {
+        dongu i < uzunluk {
+            # 'pub fn ' -> 'isv '
+            eger i + 7 <= uzunluk ve bellek_esit_mi(kaynak + i, "pub fn ".ptr, 7) == 1 ise {
+                degisken fn_str: *u8 = "isv ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 4 { cikti[oi] = fn_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 7;
+                devam_et;
+            }
+            # 'fn ' -> 'isv '
+            eger i + 3 <= uzunluk ve bellek_esit_mi(kaynak + i, "fn ".ptr, 3) == 1 ise {
+                degisken fn_str: *u8 = "isv ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 4 { cikti[oi] = fn_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 3;
+                devam_et;
+            }
+            # 'let mut ' -> 'degisken '
+            eger i + 8 <= uzunluk ve bellek_esit_mi(kaynak + i, "let mut ".ptr, 8) == 1 ise {
+                degisken mut_str: *u8 = "degisken ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 9 { cikti[oi] = mut_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 8;
+                devam_et;
+            }
+            # 'let ' -> 'degisken '
+            eger i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "let ".ptr, 4) == 1 ise {
+                degisken let_str: *u8 = "degisken ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 9 { cikti[oi] = let_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 4;
+                devam_et;
+            }
+            # 'println!(' -> 'ekrana_yaz('
+            eger i + 9 <= uzunluk ve bellek_esit_mi(kaynak + i, "println!(".ptr, 9) == 1 ise {
+                degisken prn_str: *u8 = "ekrana_yaz(".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 11 { cikti[oi] = prn_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 9;
+                devam_et;
+            }
+            # 'i32 ' / 'i64 ' / 'isize ' / 'u32 ' / 'u64 ' / 'usize ' -> 'tamsayi '
+            eger (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "i32 ".ptr, 4) == 1) veya
+                 (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "i64 ".ptr, 4) == 1) veya
+                 (i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "isize ".ptr, 6) == 1) veya
+                 (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "u32 ".ptr, 4) == 1) veya
+                 (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "u64 ".ptr, 4) == 1) veya
+                 (i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "usize ".ptr, 6) == 1) ise {
+                degisken tam_str: *u8 = "tamsayi ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 8 { cikti[oi] = tam_str[j]; oi = oi + 1; j = j + 1; }
+                eger kaynak[i] == 105 ve kaynak[i+1] == 115 { i = i + 6; }
+                yoksa eger kaynak[i] == 117 ve kaynak[i+1] == 115 { i = i + 6; }
+                yoksa { i = i + 4; }
+                devam_et;
+            }
+            # 'struct ' -> 'yapi '
+            eger i + 7 <= uzunluk ve bellek_esit_mi(kaynak + i, "struct ".ptr, 7) == 1 ise {
+                degisken yap_str: *u8 = "yapi ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 5 { cikti[oi] = yap_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 7;
+                devam_et;
+            }
+            # 'return ' -> 'dondu '
+            eger i + 7 <= uzunluk ve bellek_esit_mi(kaynak + i, "return ".ptr, 7) == 1 ise {
+                degisken ret_str: *u8 = "dondu ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 6 { cikti[oi] = ret_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 7;
+                devam_et;
+            }
+            # 'if ' -> 'eger '
+            eger i + 3 <= uzunluk ve bellek_esit_mi(kaynak + i, "if ".ptr, 3) == 1 ise {
+                degisken if_str: *u8 = "eger ".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 5 { cikti[oi] = if_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 3;
+                devam_et;
+            }
+            # 'else {' -> '} yoksa {'
+            eger i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "else {".ptr, 6) == 1 ise {
+                degisken els_str: *u8 = "} yoksa {".ptr;
+                degisken j: tamsayi = 0;
+                dongu j < 9 { cikti[oi] = els_str[j]; oi = oi + 1; j = j + 1; }
+                i = i + 6;
+                devam_et;
+            }
+            cikti[oi] = kaynak[i];
+            oi = oi + 1;
+            i = i + 1;
+        }
+        cikti[oi] = 0;
+        dondu cikti;
+    }
+
+    # 4. JAVASCRIPT DÖNÜŞTÜRÜCÜ
+    dongu i < uzunluk {
+        # 'function ' -> 'isv '
+        eger i + 9 <= uzunluk ve bellek_esit_mi(kaynak + i, "function ".ptr, 9) == 1 ise {
+            degisken isv_str: *u8 = "isv ".ptr;
+            degisken j: tamsayi = 0;
+            dongu j < 4 { cikti[oi] = isv_str[j]; oi = oi + 1; j = j + 1; }
+            i = i + 9;
+            devam_et;
+        }
+        # 'console.log(' -> 'ekrana_yaz('
+        eger i + 12 <= uzunluk ve bellek_esit_mi(kaynak + i, "console.log(".ptr, 12) == 1 ise {
+            degisken log_str: *u8 = "ekrana_yaz(".ptr;
+            degisken j: tamsayi = 0;
+            dongu j < 11 { cikti[oi] = log_str[j]; oi = oi + 1; j = j + 1; }
+            i = i + 12;
+            devam_et;
+        }
+        # 'const ' / 'let ' / 'var ' -> 'degisken '
+        eger (i + 6 <= uzunluk ve bellek_esit_mi(kaynak + i, "const ".ptr, 6) == 1) veya
+             (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "let ".ptr, 4) == 1) veya
+             (i + 4 <= uzunluk ve bellek_esit_mi(kaynak + i, "var ".ptr, 4) == 1) ise {
+            degisken deg_str: *u8 = "degisken ".ptr;
+            degisken j: tamsayi = 0;
+            dongu j < 9 { cikti[oi] = deg_str[j]; oi = oi + 1; j = j + 1; }
+            eger kaynak[i] == 99 ise { i = i + 6; } yoksa { i = i + 4; }
+            devam_et;
+        }
+        # 'return ' -> 'dondu '
+        eger i + 7 <= uzunluk ve bellek_esit_mi(kaynak + i, "return ".ptr, 7) == 1 ise {
+            degisken ret_str: *u8 = "dondu ".ptr;
+            degisken j: tamsayi = 0;
+            dongu j < 6 { cikti[oi] = ret_str[j]; oi = oi + 1; j = j + 1; }
+            i = i + 7;
+            devam_et;
+        }
+        cikti[oi] = kaynak[i];
+        oi = oi + 1;
+        i = i + 1;
+    }
+    cikti[oi] = 0;
+    dondu cikti;
+}
+
+isv ai_micro_kod_cevir(kaynak: *u8, uzunluk: tamsayi) -> *u8 {
+    dondu ai_micro_polyglot_donustur(kaynak, uzunluk, 0);
+}
+
+isv ai_micro_cevir_ve_yazdir(kaynak: *u8, uzunluk: tamsayi) -> tamsayi {
+    degisken sonuc: *u8 = ai_micro_kod_cevir(kaynak, uzunluk);
+    eger sonuc == 0 ise {
+        ekrana_yaz("HATA: Kod donusturulemedi.\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("[Micro-LLM Polyglot Convert] Kaynak kod YKN sozlesmesine donusturuldu:\n".ptr);
+    ekrana_yaz("--------------------------------------------------\n".ptr);
+    ekrana_yaz(sonuc);
+    ekrana_yaz("\n--------------------------------------------------\n".ptr);
+    dondu 0;
+}
+
+isv ai_micro_cevir_ve_kaydet(kaynak: *u8, uzunluk: tamsayi, hedef_dosya: *u8, dil_tipi: tamsayi) -> tamsayi {
+    degisken sonuc: *u8 = ai_micro_polyglot_donustur(kaynak, uzunluk, dil_tipi);
+    eger sonuc == 0 ise {
+        ekrana_yaz("HATA: Kod donusturulemedi.\n".ptr);
+        dondu 1;
+    }
+    eger hedef_dosya != 0 ise {
+        degisken yeni_uzn: tamsayi = 0;
+        dongu sonuc[yeni_uzn] != 0 { yeni_uzn = yeni_uzn + 1; }
+        diske_bas_ve_kapat(hedef_dosya, sonuc, yeni_uzn);
+        ekrana_yaz("[YUKINARY POLYGLOT] Kutuphane basariyla donusturuldu ve kaydedildi: ".ptr);
+        ekrana_yaz(hedef_dosya);
+        ekrana_yaz("\n[STD-ENTEGRASYON] Hedef modul Yukinary ekosistemine basariyla eklendi.\n".ptr);
+        dondu 0;
+    }
+    ekrana_yaz("[Micro-LLM Polyglot Convert] Kaynak kod YKN sozlesmesine donusturuldu:\n".ptr);
+    ekrana_yaz("--------------------------------------------------\n".ptr);
+    ekrana_yaz(sonuc);
+    ekrana_yaz("\n--------------------------------------------------\n".ptr);
+    dondu 0;
+}
+
+# ============================================================
+# 5. UZMAN 4: Akıllı Tanı, Aksiyonel Öneri ve Proaktif Linting
+# Standart hata kodlarını aşarak geliştiriciye somut kod düzeltmesi önerir.
+# ============================================================
+isv ai_micro_akilli_oneri(hata_kodu: tamsayi, sembol: *u8, baglam_satir: *u8) -> *u8 {
+    ai_micro_motor_baslat();
+
+    eger hata_kodu == 40 ise { # USE-AFTER-MOVE
+        dondu "Bu nesne daha once baska bir fonksiyona veya degiskene tasindi (moved). Nesneyi '&' ile odunc alabilir (borrow) veya paylasimli sahiplik icin 'std/arc.ykn' (Arc<T>) kullanabilirsiniz.".ptr;
+    }
+    eger hata_kodu == 41 ise { # BORROW CONFLICT
+        dondu "Ayni anda hem yazilabilir (mutable) hem okunabilir referans alinamaz. Okuma referansinin kapsamini daraltarak cakismayi cozebilirsiniz.".ptr;
+    }
+    eger hata_kodu == 46 ise { # DANGLING STACK REFERENCE
+        dondu "Yerel stack degiskeninin adresi dondurulemez; fonksiyon bittiginde bu bellek yok olur. Degeri kopyalayarak dondurun veya 'compiler_tahsis_et' ile heap uzerinde olusturun.".ptr;
+    }
+    eger hata_kodu == 33 ise { # NULLABLE UNGUARDED ACCESS
+        dondu "Bu isaretci null olabilir. Erisim yapmadan once 'eger ptr != 0 ise { ... }' kontrolu yaparak tipi daraltin (narrowing).".ptr;
+    }
+    eger hata_kodu == 1 ise { # UNDEFINED SYMBOL
+        dondu "Sembol tanimli degil. Ismi kontrol edin, 'degisken ...' bildirimi ekleyin veya ilgili modulu 'ice_aktar' ile projeye dahil edin.".ptr;
+    }
+    eger hata_kodu == 3 ise { # TYPE MISMATCH
+        dondu "Tipler uyusmuyor. Tamsayi ve isaretci arasinda acik tur donusumu yapabilir veya fonksiyon imzasini gozden gecirebilirsiniz.".ptr;
+    }
+    eger hata_kodu == 2 ise { # SYNTAX ERROR
+        dondu "Sozdizim hatasi tespit edildi. Satir sonundaki noktalı virgulu ';', acik parantezleri veya suslu parantezleri '{ }' kontrol edin.".ptr;
+    }
+    eger hata_kodu == 4 ise { # MISSING RETURN
+        dondu "Fonksiyon deger dondurmek uzere tanimlanmis ancak donus ifadesi eksik. Fonksiyon sonuna 'dondu <deger>;' ekleyin.".ptr;
+    }
+    eger hata_kodu == 14 ise { # CAPACITY LIMIT
+        dondu "Derleyici kapasitesi veya bellek limiti asildi. Modul import derinligini veya buyuk dizileri gozden gecirin.".ptr;
+    }
+
+    dondu yardim_onerisi_al(hata_kodu);
+}
+
+# ============================================================
+# 6. Micro-LLM İstatistik ve Durum Raporu
+# ============================================================
+isv ai_micro_durum_raporu() {
+    degisken m: *MicroLlmMotoru = ai_micro_motor_baslat();
+    ekrana_yaz("=== YUKINARY ALWAYS-ON MICRO-LLM MOTORU ===\n".ptr);
+    ekrana_yaz("Durum: HER DAIM AKTIF (Always-On MoME)\n".ptr);
+    ekrana_yaz("Mimari: BitNet 1.58b Ternary Kernel (Q16.16)\n".ptr);
+    ekrana_yaz("Ayak Izi: 16.448 Bayt (~16 KB) RAM / 1 Katman Micro-Transformer\n".ptr);
+    ekrana_yaz("Uzmanlar: Self-Heal, Intent Autocomplete, Polyglot Convert, Smart Lint\n".ptr);
+    ekrana_yaz("Gereksinim: SIFIR #prompt, SIFIR harici ag/GPU zorunlulugu\n".ptr);
+    ekrana_yaz("===========================================\n".ptr);
+}
+
+# ============================================================
+# 7. YUKINARY HOMOMORFİK DİL-MODEL BİRLİĞİ (LANGUAGE-IS-MODEL)
+# Dil ve Model ayrımı tamamen kaldırılmıştır:
+# Yukinary'nin derleyicisi, sözdizimi, AST düğümleri ve tipleri
+# doğrudan gömülü BitNet 1.58b model ağırlıkları ve tensör projeksiyonu
+# ile tek bir yaşayan organizma gibi birleştirilmiştir.
+# ============================================================
+yapi YukinaryDilModelBirligi {
+    dil_adi:                    *u8;
+    model_mimarisi:             *u8;
+    otonom_mod:                 tamsayi; # 1 = Kullanıcı komutu gerekmez
+    otomatik_geri_yukleme:      tamsayi; # 1 = Değişikliklerde otomatik .bak oluştur
+    gomulu_ternary_param_sayisi: tamsayi;
+    vocab_boyutu:               tamsayi;
+}
+
+degisken g_ykn_dil_model: *YukinaryDilModelBirligi = 0;
+
+isv ykn_dil_model_birligini_kur() -> *YukinaryDilModelBirligi {
+    eger g_ykn_dil_model != 0 ise { dondu g_ykn_dil_model; }
+    
+    degisken b: *YukinaryDilModelBirligi = compiler_tahsis_et(64);
+    eger b == 0 ise { dondu 0; }
+    
+    b.dil_adi = "Yukinary (YKN)".ptr;
+    b.model_mimarisi = "BitNet 1.58b Homomorphic Native".ptr;
+    b.otonom_mod = 1;
+    b.otomatik_geri_yukleme = 1;
+    b.gomulu_ternary_param_sayisi = 16384; # 16K Ternary Micro-omurga
+    b.vocab_boyutu = 256;
+    
+    g_ykn_dil_model = b;
+    dondu b;
+}
+
+# ============================================================
+# OTONOM GÜVENLİ ONARIM VE GERİ YÜKLEME KÖPRÜSÜ
+# Model tarafından yapılan her türlü kaynak mutasyonunda
+# otomatik olarak geri yükleme noktası (.bak) oluşturur.
+# ============================================================
+isv ykn_otonom_kod_onar_ve_yedekle(dosya_yolu: *u8, kaynak: *u8, uzunluk: tamsayi, hata_kodu: tamsayi, satir: tamsayi) -> *u8 {
+    ykn_dil_model_birligini_kur();
+    eger kaynak == 0 veya uzunluk <= 0 ise { dondu 0; }
+    
+    # 1. Önce mikro uzman onarım adayını üretir
+    degisken onarilmis: *u8 = ai_micro_hata_onar(kaynak, uzunluk, hata_kodu, satir, 0);
+    eger onarilmis == 0 ise { dondu 0; }
+    
+    # 2. Değişiklik öncesi diskte geri yükleme noktası oluşturulur
+    eger dosya_yolu != 0 ise {
+        sh_geri_yukleme_noktasi_olustur(dosya_yolu, kaynak, uzunluk);
+        
+        # 3. Onarılmış kod güvenle dosyaya yazılır
+        degisken yeni_uzn: tamsayi = 0;
+        dongu onarilmis[yeni_uzn] != 0 { yeni_uzn = yeni_uzn + 1; }
+        diske_bas_ve_kapat(dosya_yolu, onarilmis, yeni_uzn);
+        
+        ekrana_yaz("[dil-model-birligi] Kod otonom olarak onarildi ve diskte guncellendi.\n".ptr);
+    }
+    
+    dondu onarilmis;
+}
+

@@ -1,0 +1,10 @@
+#config {
+    opt: 2,
+    safety: "strict"
+}
+
+isv main() -> tamsayi {
+    ekrana_yaz("CONFIG SUCCESSFUL\n".ptr);
+    dondu 0;
+}
+

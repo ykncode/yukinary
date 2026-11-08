@@ -1,0 +1,9 @@
+# Malformed/truncated DNS response must fail closed.
+ice_aktar "std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken adres: [4]u8;
+    degisken sonuc: tamsayi = dns_coz_sunucu("example.test".ptr, ipv4_adres(127, 0, 0, 1), 53536, adres);
+    eger sonuc == 0 ise { dondu 10; }
+    dondu 0;
+}

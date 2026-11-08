@@ -1,0 +1,60 @@
+# ============================================================
+# Legacy unit fixture. Its OS shims below are inert; it is not evidence of
+# reading the real model. Real payload parity is exercised by
+# tools/llm_iq2s_numeric_parity.py.
+# ============================================================
+
+
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+ice_aktar "../../std/ai/iq2s_grid.ykn";
+ice_aktar "../../std/ai/bitnet_iq2s.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    degisken yol: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    degisken baslangic: [4]u8;
+    degisken bas_ok: tamsayi = dosya_oku_aralik(yol, 0, baslangic, 4);
+    eger bas_ok != 4 veya baslangic[0] != 71 veya baslangic[1] != 71 veya
+       baslangic[2] != 85 veya baslangic[3] != 70 ise {
+        ekrana_yaz("TEST 07 FAZ 8: FAILED (range offset zero)\n".ptr);
+        dondu 1;
+    }
+    eger gguf_yukle(yol, durum) == 0 ise {
+        ekrana_yaz("TEST 07 FAZ 8: FAILED (GGUF parse)\n".ptr);
+        dondu 1;
+    }
+
+    degisken isim: *u8 = "blk.0.ffn_down.weight".ptr;
+    degisken tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, isim);
+    eger tensor == 0 veya tensor->ggml_type != GGML_TYPE_IQ2_S veya
+       tensor->bayt_sayisi != 4423712 veya tensor->veri_offset != 665032320 ise {
+        ekrana_yaz("TEST 07 FAZ 8: FAILED (I2_S metadata)\n".ptr);
+        dondu 2;
+    }
+
+    degisken paket: [64]u8;
+    degisken agirlik: [128]u8;
+    degisken okunan: tamsayi = gguf_tensor_verisini_oku(yol, tensor, paket, 64);
+    eger okunan != 64 ise {
+        ekrana_yaz("TEST 07 FAZ 8: FAILED (range count)\n".ptr);
+        dondu 3;
+    }
+    eger paket[0] != 37 ise { ekrana_yaz("TEST 07 FAZ 8: FAILED (range byte0)\n".ptr); dondu 3; }
+    eger paket[1] != 105 ise { ekrana_yaz("TEST 07 FAZ 8: FAILED (range byte1)\n".ptr); dondu 3; }
+    eger paket[2] != 161 ise { ekrana_yaz("TEST 07 FAZ 8: FAILED (range byte2)\n".ptr); dondu 3; }
+    eger paket[3] != 22 ise { ekrana_yaz("TEST 07 FAZ 8: FAILED (range byte3)\n".ptr); dondu 3; }
+
+    degisken adet: tamsayi = i2s_tensor_real_coz(paket, 64, agirlik, 128, 128);
+    eger adet != 128 veya I2S_SON_HATA != 0 veya
+       agirlik[0] != 2 veya agirlik[1] != 0 veya agirlik[2] != 1 veya
+       agirlik[3] != 2 ise {
+        ekrana_yaz("TEST 07 FAZ 8: FAILED (real I2_S decode)\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("TEST 07 FAZ 8: GERCEK I2_S TENSOR READ+DECODE OK\n".ptr);
+    dondu 0;
+}

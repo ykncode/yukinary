@@ -1,0 +1,3 @@
+ice_aktar "circular_import.ykn";
+
+isv bar() {}

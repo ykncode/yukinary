@@ -1,0 +1,9 @@
+modul kutu {
+    isv ozdeslik<T>(x: T) -> T {
+        dondu x;
+    }
+}
+
+isv ana() -> tamsayi {
+    dondu kutu::ozdeslik<tamsayi>(42);
+}

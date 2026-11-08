@@ -1,0 +1,72 @@
+# ============================================================
+# std/os/kernel_real/idt.ykn
+# FAZ 63: Saf x86_64 Long Mode Interrupt Descriptor Table (IDT)
+# 256 Kesme Kapısı (16-Bayt 64-Bit Gate Descriptor) ve IDTR Yapısı
+# ============================================================
+
+degisken IDT_KAPI_INTERRUPT = 142; # 0x8E (Present, Ring-0, 64-bit Interrupt Gate)
+degisken IDT_KAPI_TRAP      = 143; # 0x8F (Present, Ring-0, 64-bit Trap Gate)
+
+yapi IdtTablosu {
+    tablo_tamponu:  *u8; # 256 * 16 = 4096 bayt (1 sayfa)
+    idtr:           *u8; # 10-baytlık IDTR yapısı (2-bayt limit + 8-bayt taban)
+    kapi_sayisi:    tamsayi;
+}
+
+isv idt_olustur() -> *IdtTablosu {
+    degisken t: *IdtTablosu = bellek_tahsis_et(24);
+    degisken buf: *u8 = bellek_tahsis_et(4096);
+    degisken idtr_buf: *u8 = bellek_tahsis_et(16);
+
+    t.tablo_tamponu = buf;
+    t.idtr = idtr_buf;
+    t.kapi_sayisi = 256;
+
+    degisken i: tamsayi = 0;
+    dongu i < 4096 {
+        buf[i] = 0;
+        i = i + 1;
+    }
+
+    # IDTR Limit: 4096 - 1 = 4095 (0x0FFF)
+    idtr_buf[0] = 255;
+    idtr_buf[1] = 15;
+    dondu t;
+}
+
+# 16-Baytlık 64-bit IDT Kapısı Tanımlama
+isv idt_kapi_ata(t: *IdtTablosu, vektor: tamsayi, handler: tamsayi, selector: tamsayi, kapi_turu: tamsayi) {
+    eger vektor < 0 veya vektor >= 256 ise { dondu; }
+    degisken ofset: tamsayi = vektor * 16;
+    degisken buf: *u8 = t.tablo_tamponu;
+
+    # Offset low [0..15]
+    buf[ofset]     = handler & 255;
+    buf[ofset + 1] = (handler >> 8) & 255;
+
+    # Selector [16..31] (GDT_KERNEL_CODE_SEL = 0x08)
+    buf[ofset + 2] = selector & 255;
+    buf[ofset + 3] = (selector >> 8) & 255;
+
+    # IST [32..34] (0 = normal yığın)
+    buf[ofset + 4] = 0;
+
+    # Type / Attributes [40..47] (0x8E = Interrupt Gate)
+    buf[ofset + 5] = kapi_turu & 255;
+
+    # Offset mid [48..63]
+    buf[ofset + 6] = (handler >> 16) & 255;
+    buf[ofset + 7] = (handler >> 24) & 255;
+
+    # Offset high [64..95]
+    buf[ofset + 8] = (handler >> 32) & 255;
+    buf[ofset + 9] = (handler >> 40) & 255;
+    buf[ofset + 10] = (handler >> 48) & 255;
+    buf[ofset + 11] = (handler >> 56) & 255;
+
+    # Reserved [96..127]
+    buf[ofset + 12] = 0;
+    buf[ofset + 13] = 0;
+    buf[ofset + 14] = 0;
+    buf[ofset + 15] = 0;
+}

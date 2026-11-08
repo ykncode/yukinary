@@ -1,0 +1,22 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Dizi olusturuluyor...\n".ptr);
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    dizi_ekle<tamsayi>(d, 10);
+    dizi_ekle<tamsayi>(d, 20);
+    dizi_ekle<tamsayi>(d, 30);
+    
+    ekrana_yaz("Elemanlar eklendi, boyut: ");
+    sayiyi_yazdir(d.boyut);
+    ekrana_yaz("\n".ptr);
+    
+    ekrana_yaz("dizi_sil cagiriliyor...\n".ptr);
+    dizi_sil<tamsayi>(d, 1);
+    
+    ekrana_yaz("dizi_sil bitti, yeni boyut: ");
+    sayiyi_yazdir(d.boyut);
+    ekrana_yaz("\n".ptr);
+    
+    dondu d.boyut;
+}

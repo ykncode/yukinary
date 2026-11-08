@@ -1,0 +1,62 @@
+# Faz 2 Görev 2.2 Pozitif Testi: Sahiplik ve Ödünç Alma Doğrulaması
+
+isv yardimci_oku(val: *tamsayi) -> tamsayi {
+    eger val == 0 ise { dondu 0; }
+    dondu *val;
+}
+
+isv yardimci_yaz(val: *tamsayi, yeni_deger: tamsayi) {
+    eger val == 0 ise { dondu; }
+    *val = yeni_deger;
+}
+
+isv main() -> tamsayi {
+    degisken x: tamsayi = 42;
+
+    # 1. Kapsam içinde eşzamanlı paylaşımlı ödünç alma (Multiple shared borrows)
+    eger 1 == 1 ise {
+        degisken r1: *tamsayi = &x;
+        degisken r2: *tamsayi = &x;
+        eger *r1 != 42 veya *r2 != 42 ise {
+            dondu 1;
+        }
+    }
+    # Blok bitti, r1 ve r2 serbest kaldı.
+
+    # 2. Fonksiyon çağrısında geçici referans kullanımı ve ardından serbest kalması
+    degisken res: tamsayi = yardimci_oku(&x);
+    eger res != 42 ise {
+        dondu 2;
+    }
+
+    # Fonksiyon çağrısı bittiği için x'in geçici borrow'u serbest kaldı.
+    # Şimdi &mut x alabilmeliyiz:
+    yardimci_yaz(&mut x, 100);
+    eger x != 100 ise {
+        dondu 3;
+    }
+
+    # 3. İkinci blok kapsamı sonrasında referansın serbest kalması (Lexical scope borrow release)
+    eger 1 == 1 ise {
+        degisken r_blok: *tamsayi = &x;
+        eger *r_blok != 100 ise {
+            dondu 4;
+        }
+    }
+    # Blok bitti, r_blok serbest kaldı. Doğrudan atama veya &mut serbest olmalı:
+    x = 200;
+    eger x != 200 ise {
+        dondu 5;
+    }
+
+    eger 1 == 1 ise {
+        degisken r_mut: *tamsayi = &mut x;
+        *r_mut = 300;
+        eger *r_mut != 300 ise {
+            dondu 6;
+        }
+    }
+
+    ekrana_yaz("FAZ 2.2 GOREV DOGRULANDI: Basarili!\n".ptr);
+    dondu 0;
+}

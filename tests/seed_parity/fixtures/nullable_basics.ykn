@@ -1,0 +1,20 @@
+# Seed Parity Fixture: nullable_basics.ykn
+# Test: ?*tamsayi (nullable pointer to int), null guard, dereference
+isv deger_oku(p: ?*tamsayi) -> tamsayi {
+    eger p != bos ise {
+        dondu p[0];
+    }
+    dondu -1;
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken x: tamsayi = 42;
+    degisken p: ?*tamsayi = 0;
+    degisken sonuc: tamsayi = deger_oku(p);
+    eger sonuc == -1 ise {
+        ekrana_yaz("NULLABLE_BASICS: null guard OK\n".ptr);
+    } yoksa {
+        ekrana_yaz("NULLABLE_BASICS: FAILED\n".ptr);
+    }
+    dondu 0;
+}

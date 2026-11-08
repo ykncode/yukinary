@@ -1,0 +1,22 @@
+# ============================================================
+# std/apps/yknbrowser.ykn
+# YknBrowser - Saf Yukinary HTML/CSS/Layout Tarayici Arayuzu
+# ============================================================
+
+ice_aktar "std/apps/browser_engine.ykn";
+
+isv yknbrowser_html_isle(html: *u8, genislik: tamsayi, yukseklik: tamsayi) -> tamsayi {
+    eger html == 0 veya genislik <= 0 veya yukseklik <= 0 ise { dondu 0; }
+    degisken uz: tamsayi = 0;
+    dongu html[uz] != 0 { uz = uz + 1; }
+    degisken kok: *DomDugum = html_ayristir(html, uz);
+    eger kok == 0 ise { dondu 0; }
+    degisken kutu: *YerlesimKutusu = yerlesim_hesapla(kok, 0, 0, genislik, yukseklik);
+    eger kutu == 0 ise { dondu 0; }
+    dondu 1;
+}
+
+isv yknbrowser_baslat() -> tamsayi {
+    degisken ornek_html: *u8 = "<html><body><h1>Yukinary Browser</h1><p>Hazir</p></body></html>".ptr;
+    dondu yknbrowser_html_isle(ornek_html, 1280, 720);
+}

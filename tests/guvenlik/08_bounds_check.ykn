@@ -1,0 +1,11 @@
+# GOREV 8.4 - Guvenli mod bounds-check testi
+isv ekrana_yaz(m: *u8) {}
+isv ana() -> tamsayi {
+    degisken arr: [10]tamsayi;
+    arr[0] = 42;
+    # Guvenli modda sinir icindeki erisim calismali
+    eger arr[0] == 42 ise {
+        ekrana_yaz("FAZ14-BOUNDS-CHECK-PASS\n".ptr);
+    }
+    dondu 0;
+}

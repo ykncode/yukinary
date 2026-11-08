@@ -1,0 +1,61 @@
+ice_aktar "std/async/future.ykn";
+
+yapi Baglam {
+    deger: tamsayi;
+}
+
+isv bekleyen_poll(ctx: *Baglam) -> tamsayi {
+    eger ctx == 0 ise { dondu ASYNC_HATA; }
+    dondu ASYNC_BEKLIYOR;
+}
+
+isv ana() -> tamsayi {
+    eger async_frame_baslat(0) != 0 ise { dondu 1; }
+    eger async_frame_baslat(257) != 0 ise { dondu 2; }
+
+    degisken frame: *AsyncFrame = async_frame_baslat(4);
+    eger frame == 0 veya async_frame_dogrula(frame) != 1 ise { dondu 3; }
+    eger async_frame_slot_yaz(frame, 4, 99) == 0 ise { dondu 4; }
+    eger async_frame_slot_yaz(frame, 2, 123) != 0 ise { dondu 5; }
+    degisken slot_deger: tamsayi = 0;
+    eger async_frame_slot_oku(frame, 2, &slot_deger) != 0 veya slot_deger != 123 ise { dondu 6; }
+    eger async_frame_slot_oku(frame, -1, &slot_deger) == 0 ise { dondu 7; }
+    eger async_frame_program_sayaci_ayarla(frame, 7) != 0 ise { dondu 8; }
+    degisken pc: tamsayi = 0;
+    eger async_frame_program_sayaci_al(frame, &pc) != 0 veya pc != 7 ise { dondu 9; }
+
+    degisken baglam: Baglam;
+    baglam.deger = 0;
+    degisken f: *Future = gelecek_olustur(bekleyen_poll, &baglam);
+    eger f == 0 ise { dondu 10; }
+    eger gelecek_frame_ata(f, frame) != 0 ise { dondu 11; }
+    eger async_frame_bekleyen_ata(frame, f) != 0 veya async_frame_bekleyen_al(frame) != f ise { dondu 12; }
+    eger async_frame_sonuc_aktar(frame, f) != 1 ise { dondu 13; }
+    eger async_frame_sonuc_yaz(frame, 123) != 0 ise { dondu 14; }
+    eger async_frame_sonuc_yaz(frame, 456) == 0 ise { dondu 15; }
+    eger async_frame_sonuc_aktar(frame, f) != 0 ise { dondu 16; }
+    eger f.durum != ASYNC_HAZIR veya gelecek_sonuc(f) != 0 ise { dondu 17; }
+
+    degisken sonuc: [8]u8;
+    degisken okunan: tamsayi = 0;
+    degisken tip: tamsayi = 0;
+    eger gelecek_deger_al(f, &sonuc, 8, &okunan, &tip) != 0 ise { dondu 18; }
+    eger okunan != 8 veya tip != ASYNC_TIP_TAMSAYI veya sonuc[0] != 123 ise { dondu 19; }
+    eger gelecek_deger_al(f, &sonuc, 7, &okunan, &tip) == 0 ise { dondu 20; }
+
+    eger gelecek_frame_ayir(f, frame) != 0 ise { dondu 21; }
+    eger async_frame_kapat(frame) != 0 ise { dondu 22; }
+    eger gelecek_serbest_birak(f) != 0 ise { dondu 23; }
+
+    degisken frame_hata: *AsyncFrame = async_frame_baslat(1);
+    degisken f_hata: *Future = gelecek_olustur(bekleyen_poll, &baglam);
+    eger frame_hata == 0 veya f_hata == 0 ise { dondu 24; }
+    eger gelecek_frame_ata(f_hata, frame_hata) != 0 ise { dondu 25; }
+    eger async_frame_hata_yaz(frame_hata, -9) != 0 ise { dondu 26; }
+    eger async_frame_sonuc_aktar(frame_hata, f_hata) != 0 ise { dondu 27; }
+    eger f_hata.durum != ASYNC_HATA veya gelecek_hata_al(f_hata) != -9 ise { dondu 28; }
+    eger gelecek_frame_ayir(f_hata, frame_hata) != 0 ise { dondu 29; }
+    eger async_frame_kapat(frame_hata) != 0 veya gelecek_serbest_birak(f_hata) != 0 ise { dondu 30; }
+
+    dondu 0;
+}

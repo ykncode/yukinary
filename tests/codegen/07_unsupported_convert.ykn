@@ -1,0 +1,6 @@
+# Convert directive codegen'e tuketilmeden ulasirsa fail-closed olmali.
+#c-convert kaynak = "unsupported.c", hedef = "unsupported.ykn";
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

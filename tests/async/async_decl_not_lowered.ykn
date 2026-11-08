@@ -1,0 +1,7 @@
+async isv fetch() -> tamsayi {
+    dondu 1;
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

@@ -1,0 +1,11 @@
+isv empty_future(value: Future<>) -> tamsayi {
+    dondu 0;
+}
+
+isv too_many(value: Future<tamsayi, gercek>) -> tamsayi {
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    dondu 0;
+}

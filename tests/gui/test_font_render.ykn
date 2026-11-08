@@ -1,0 +1,52 @@
+# ============================================================
+# tests/gui/test_font_render.ykn
+# FAZ 42: TrueType Font Parser ve Bezier Rasterizer Testi
+# ============================================================
+
+ice_aktar "std/gui/font_parser.ykn";
+ice_aktar "std/gui/font_raster.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 42: TrueType Font & Bezier Rasterizer Testi Basliyor...\n".ptr);
+
+    # 1. TTF Tablo Ayristirma Testi
+    degisken font: *TtfYaziTipi = ttf_yazitipi_olustur(4);
+    ttf_tablo_ekle(font, 0, TTF_TAG_HEAD, 100, 54);
+    ttf_tablo_ekle(font, 1, TTF_TAG_CMAP, 154, 256);
+    ttf_tablo_ekle(font, 2, TTF_TAG_GLYF, 410, 4096);
+    ttf_tablo_ekle(font, 3, TTF_TAG_MAXP, 4506, 32);
+
+    eger font.tablo_sayisi != 4 ise {
+        ekrana_yaz("HATA: TTF tablo sayisi hatali!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. İkinci Derece Bezier Eğrisi Nokta Doğrulaması
+    # P0 = 0, P1 = 50, P2 = 100  (Doğrusal kontrol: t=50 iken 50 dönmeli)
+    degisken orta_nokta: tamsayi = bezier_nokta_hesapla(0, 50, 100, 50);
+    eger orta_nokta != 50 ise {
+        ekrana_yaz("HATA: Bezier dogrusal orta nokta hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # Kavisli Eğri: P0 = 0, P1 = 100, P2 = 0 (t=50 iken kubbe tepesi ~50 olmali)
+    degisken tepe_nokta: tamsayi = bezier_nokta_hesapla(0, 100, 0, 50);
+    eger tepe_nokta != 50 ise {
+        ekrana_yaz("HATA: Bezier kavis tepe noktasi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # 3. Sanal Framebuffer (16x16) Glif Çizimi
+    degisken fb: *tamsayi = bellek_tahsis_et(256 * 8);
+    raster_glif_ciz(fb, 16, 5, 5, 255); # Tam opak piksel
+    raster_glif_ciz(fb, 16, 5, 6, 128); # Yari saydam antialiased piksel
+
+    eger fb[(5 * 16) + 5] != 255 veya fb[(6 * 16) + 5] != 128 ise {
+        ekrana_yaz("HATA: Framebuffer glif antialiasing pikseli hatali!\n".ptr);
+        dondu 4;
+    }
+
+    ekrana_yaz("FONT_RASTERIZER_PASS\n".ptr);
+    dondu 0;
+}
+

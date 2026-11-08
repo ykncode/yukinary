@@ -1,0 +1,70 @@
+# Global scratch attention ile stateless referans softmax parity testi.
+ice_aktar "../../std/ai/attention.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken anahtar: [16]tamsayi;
+    degisken deger: [16]tamsayi;
+    degisken sorgu: [2]tamsayi;
+    degisken referans: [2]tamsayi;
+    degisken global: [2]tamsayi;
+    degisken paket_cikti: [2]tamsayi;
+    degisken i: tamsayi = 0;
+    dongu i < 16 { anahtar[i] = 0; deger[i] = 0; i = i + 1; }
+    sorgu[0] = 65536;
+    sorgu[1] = 32768;
+    # capacity=4, kafa_sayisi=2, kafa_boyutu=2; kafa=1 için
+    # token0 -> [anahtar 2,3], token1 -> [anahtar 6,7].
+    anahtar[2] = 65536; anahtar[3] = 0;
+    anahtar[6] = 0; anahtar[7] = 65536;
+    deger[2] = 65536; deger[3] = 0;
+    deger[6] = 0; deger[7] = 65536;
+    # Uzun stateless ABI çağrısı yerine aynı Q16 referansı primitive
+    # scratch ile hesaplanır; 9 parametreli eski çağrı sözleşmesi bu testin
+    # konusu değildir ve Win64 Stage-1'de bilinçli olarak kullanılmaz.
+    degisken skorlar: [2]tamsayi;
+    degisken agirliklar: [2]tamsayi;
+    degisken head_scale: tamsayi = bitnet_q16_karekoku(2 * 65536 * 65536);
+    eger head_scale <= 0 ise { dondu 4; }
+    skorlar[0] = ((sorgu[0] * anahtar[2]) / 65536 +
+        (sorgu[1] * anahtar[3]) / 65536) * 65536 / head_scale;
+    skorlar[1] = ((sorgu[0] * anahtar[6]) / 65536 +
+        (sorgu[1] * anahtar[7]) / 65536) * 65536 / head_scale;
+    eger bitnet_q16_softmax(skorlar, agirliklar, 2) == 0 ise {
+        ekrana_yaz("ATTENTION-GLOBAL-PARITY-FAIL-REFERENCE\\n".ptr); dondu 1;
+    }
+    referans[0] = (agirliklar[0] * deger[2]) / 65536 +
+        (agirliklar[1] * deger[6]) / 65536;
+    referans[1] = (agirliklar[0] * deger[3]) / 65536 +
+        (agirliklar[1] * deger[7]) / 65536;
+    g_llm_kv_anahtar_cache = anahtar;
+    g_llm_kv_deger_cache = deger;
+    g_llm_kv_kafa_sayisi = 2;
+    g_llm_kv_kafa_boyutu = 2;
+    g_llm_kv_kapasitesi = 4;
+    g_llm_kv_token = 1;
+    g_llm_kv_kafa = 1;
+    g_llm_kv_sorgu = sorgu;
+    g_llm_kv_cikti = global;
+    eger bitnet_kv_dikkat_q16_global() == 0 ise {
+        ekrana_yaz("ATTENTION-GLOBAL-PARITY-FAIL-GLOBAL\\n".ptr); dondu 2;
+    }
+    degisken paket: BitNetAttentionPaketi;
+    paket.sorgu = sorgu;
+    paket.anahtar_cache = anahtar;
+    paket.deger_cache = deger;
+    paket.kafa_sayisi = 2;
+    paket.kafa_boyutu = 2;
+    paket.kapasite = 4;
+    paket.son_token = 1;
+    paket.kafa = 1;
+    paket.cikti = paket_cikti;
+    eger bitnet_kv_dikkat_q16_paketli(&paket) == 0 ise {
+        ekrana_yaz("ATTENTION-GLOBAL-PARITY-FAIL-PACKAGE\\n".ptr); dondu 3;
+    }
+    eger referans[0] != global[0] veya referans[1] != global[1] veya
+       referans[0] != paket_cikti[0] veya referans[1] != paket_cikti[1] ise {
+        ekrana_yaz("ATTENTION-GLOBAL-PARITY-FAIL-VALUE\n".ptr); dondu 3;
+    }
+    ekrana_yaz("ATTENTION-GLOBAL-PARITY-PASS\n".ptr);
+    dondu 0;
+}

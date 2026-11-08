@@ -1,0 +1,41 @@
+# ============================================================
+# tests/guvenlik/02_affine_move.ykn
+# Faz 14.2 - Affine (Tek Kullanim / Move) Semantigi Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Affine / Tasinabilir kaynak yarat
+    degisken kaynak: *Tasinabilir = tasinabilir_olustur(42);
+
+    eger tasinabilir_gecerli_mi(kaynak) != 1 ise {
+        ekrana_yaz("FAIL: yeni kaynak gecerli olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Ilk kullanim (Tasi / Move) -> BASARILI
+    degisken alinan_deger: tamsayi = tasinabilir_tasi(kaynak);
+    eger alinan_deger != 42 ise {
+        ekrana_yaz("FAIL: tasinan deger 42 olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Tasinma sonrasi gecerlilik kontrolu (Artik gecersiz olmali)
+    eger tasinabilir_gecerli_mi(kaynak) != 0 ise {
+        ekrana_yaz("FAIL: tasinmis kaynak gecersiz olmali\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Ikinci kullanim denemesi (Use-After-Move) -> REDDEDILMELI (-1)
+    degisken ikinci_deneme: tamsayi = tasinabilir_tasi(kaynak);
+    eger ikinci_deneme != -1 ise {
+        ekrana_yaz("FAIL: use-after-move engellenmeli\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("FAZ14-AFFINE-PASS\n".ptr);
+    dondu 0;
+}

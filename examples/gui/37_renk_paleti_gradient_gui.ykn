@@ -1,0 +1,43 @@
+# ============================================================
+# Örnek 37: Win32 Arayüzlü RGB Gradyan ve Renk Paleti Tasarımı
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_renk1_r: tamsayi = 255;
+degisken g_renk1_g: tamsayi = 0;
+degisken g_renk1_b: tamsayi = 128;
+
+degisken g_renk2_r: tamsayi = 0;
+degisken g_renk2_g: tamsayi = 200;
+degisken g_renk2_b: tamsayi = 255;
+
+isv ara_renk_hesapla(adim: tamsayi, toplam_adim: tamsayi) -> tamsayi {
+    degisken r: tamsayi = g_renk1_r + ((g_renk2_r - g_renk1_r) * adim / toplam_adim);
+    degisken g: tamsayi = g_renk1_g + ((g_renk2_g - g_renk1_g) * adim / toplam_adim);
+    degisken b: tamsayi = g_renk1_b + ((g_renk2_b - g_renk1_b) * adim / toplam_adim);
+    dondu (r * 65536) + (g * 256) + b;
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Gradyan Paleti".ptr, 580, 420);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # 10 Adimli Gradyan Renk Cubuklari
+    degisken i: tamsayi = 0;
+    dongu (i < 10) {
+        degisken x: tamsayi = 30 + (i * 52);
+        buton_olustur(p_h, "RGB".ptr, 100 + i, x, 40, 48, 180);
+        i = i + 1;
+    }
+
+    buton_olustur(p_h, "CSS Gradient Kodu Kopyala".ptr, 201, 30, 250, 240, 40);
+    buton_olustur(p_h, "Rastgele Renkler Ata".ptr, 202, 290, 250, 240, 40);
+
+    ekrana_yaz("Gradyan paleti olusturuldu (10 adimli interpolasyon).\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

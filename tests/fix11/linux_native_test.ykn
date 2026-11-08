@@ -1,0 +1,9 @@
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("LINUX_NATIVE_OK\n".ptr);
+    eger argc > 1 ise {
+        ekrana_yaz("arg: ".ptr);
+        ekrana_yaz(argv[1]);
+        ekrana_yaz("\n".ptr);
+    }
+    dondu 42;
+}

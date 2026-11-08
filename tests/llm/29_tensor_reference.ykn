@@ -1,0 +1,32 @@
+# YKN Tensor metadata + scalar operation acceptance.
+ice_aktar "../../std/ai/tensor.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken a_boyut: [2]tamsayi;
+    degisken b_boyut: [2]tamsayi;
+    degisken c_boyut: [2]tamsayi;
+    a_boyut[0] = 1; a_boyut[1] = 2;
+    b_boyut[0] = 2; b_boyut[1] = 1;
+    c_boyut[0] = 1; c_boyut[1] = 1;
+
+    degisken a_veri: [2]tamsayi;
+    degisken b_veri: [2]tamsayi;
+    degisken c_veri: [1]tamsayi;
+    degisken agirlik_veri: [1]tamsayi;
+    a_veri[0] = 65536; a_veri[1] = 131072;
+    b_veri[0] = 196608; b_veri[1] = 262144;
+    agirlik_veri[0] = 65536;
+
+    degisken a: Tensor;
+    degisken b: Tensor;
+    degisken c: Tensor;
+    degisken agirlik: Tensor;
+    eger tensor_kur(&a, "a".ptr, a_boyut.ptr, 2, TENSOR_F32, a_veri.ptr) == 0 veya
+       tensor_kur(&b, "b".ptr, b_boyut.ptr, 2, TENSOR_F32, b_veri.ptr) == 0 veya
+       tensor_kur(&c, "c".ptr, c_boyut.ptr, 2, TENSOR_F32, c_veri.ptr) == 0 veya
+       tensor_kur(&agirlik, "w".ptr, c_boyut.ptr, 2, TENSOR_F32, agirlik_veri.ptr) == 0 ise { dondu 1; }
+
+    eger tensor_carp_bitlinear(&a, &b, &c) == 0 veya c_veri[0] != 720896 ise { dondu 2; }
+    eger tensor_rmsnorm(&c, &agirlik, &c) == 0 ise { dondu 3; }
+    dondu 0;
+}

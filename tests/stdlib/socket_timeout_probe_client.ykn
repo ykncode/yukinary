@@ -1,0 +1,16 @@
+# Gerçek native timeout probe: sunucu veri göndermediğinde recv timeout vermeli.
+ice_aktar "../../std/ag/soket.ykn";
+
+yapi TimeoutTampon {
+    veri: [8]u8;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken soket: tamsayi = istemci_olustur(ipv4_adres(127, 0, 0, 1), 18084, 250);
+    eger soket < 0 ise { dondu 82; }
+    degisken tampon: [8]u8;
+    degisken okunan: tamsayi = soket_al(soket, tampon, 8);
+    soket_kapat(soket);
+    eger okunan < 0 ise { dondu 0; }
+    dondu 83;
+}

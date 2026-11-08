@@ -1,0 +1,29 @@
+# ============================================================
+# RAII / Scope-based Resource Cleanup Dogrulama Testi
+# ============================================================
+
+degisken g_birakildi_sayisi: tamsayi = 0;
+
+yapi Kaynak {
+    kimlik: tamsayi;
+}
+
+isv Kaynak_birak(k: *Kaynak) {
+    ekrana_yaz("KAYNAK BIRAKILDI!\n".ptr);
+    g_birakildi_sayisi = g_birakildi_sayisi + 1;
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    eger 1 == 1 ise {
+        degisken k1: Kaynak;
+        k1.kimlik = 101;
+    }
+
+    eger g_birakildi_sayisi == 1 ise {
+        ekrana_yaz("TEST RAII: BASARILI\n".ptr);
+        dondu 0;
+    } yoksa {
+        ekrana_yaz("TEST RAII: BASARISIZ\n".ptr);
+        dondu 1;
+    }
+}

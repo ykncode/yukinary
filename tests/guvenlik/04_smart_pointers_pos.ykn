@@ -1,0 +1,76 @@
+# Guvenlik Testi POZITIF: Kutu (Box), Rc ve Arc akilli isaretcilerinin deterministik omru
+ice_aktar "std/bellek/akilli_isaretci.ykn";
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    # 1. KUTU (Box) TESTI
+    degisken k: Kutu;
+    degisken k_res: tamsayi = kutu_yeni(&k, 64);
+    eger k_res != 0 veya k.veri_ptr == 0 ise {
+        ekrana_yaz("KUTU_HATA\n".ptr);
+        dondu 1;
+    }
+    # Veri yaz ve oku
+    k.veri_ptr[0] = 77;
+    degisken k_val: u8 = k.veri_ptr[0];
+    kutu_birak(&k);
+    eger k.veri_ptr != 0 ise {
+        ekrana_yaz("KUTU_TEMIZLIK_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 2. RC (Reference Counted) TESTI
+    degisken r1: Rc;
+    degisken r_res: tamsayi = rc_yeni(&r1, 32);
+    eger r_res != 0 veya r1.kontrol_ptr == 0 ise {
+        ekrana_yaz("RC_HATA\n".ptr);
+        dondu 1;
+    }
+    r1.kontrol_ptr.veri_ptr[0] = 88;
+    
+    # Klonla: ref count 2 olmali
+    degisken r2: Rc;
+    rc_kopyala(&r1, &r2);
+    degisken c1: *RcKontrol = r1.kontrol_ptr;
+    eger c1.ref_sayisi != 2 ise {
+        ekrana_yaz("RC_SAYAC_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # Ilk referansi birak: ref count 1 kalmali, nesne olmemeli
+    degisken birak_1: tamsayi = rc_birak(&r1);
+    eger birak_1 != 0 ise {
+        ekrana_yaz("RC_ERKEN_TEMIZLIK_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # Ikinci referansi birak: son referans, nesne serbest kalmali
+    degisken birak_2: tamsayi = rc_birak(&r2);
+    eger birak_2 != 1 ise {
+        ekrana_yaz("RC_SON_TEMIZLIK_HATA\n".ptr);
+        dondu 1;
+    }
+
+    # 3. ARC (Atomic Reference Counted) TESTI
+    degisken a1: Arc;
+    degisken arc_res: tamsayi = arc_yeni(&a1, 64);
+    eger arc_res != 0 ise {
+        ekrana_yaz("ARC_HATA\n".ptr);
+        dondu 1;
+    }
+
+    degisken a2: Arc;
+    arc_kopyala(&a1, &a2);
+
+    # Ilk referansi birak (son degil)
+    arc_birak(&a1);
+
+    # Son referansi birak (ARC_SON_BIRAKILDI = 1)
+    degisken son_arc: tamsayi = arc_birak(&a2);
+    eger son_arc != 1 ise {
+        ekrana_yaz("ARC_SON_TEMIZLIK_HATA\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("SMART_POINTERS_PASS\n".ptr);
+    dondu 0;
+}

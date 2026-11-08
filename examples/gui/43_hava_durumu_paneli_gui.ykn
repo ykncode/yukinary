@@ -1,0 +1,38 @@
+# ============================================================
+# Örnek 43: Win32 Arayüzlü Hava Durumu ve Meteoroloji Paneli
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_sicaklik_c: tamsayi = 22;
+degisken g_nem_orani: tamsayi = 58;
+degisken g_ruzgar_kmh: tamsayi = 14;
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Meteoroloji Paneli".ptr, 620, 420);
+    eger p_h == 0 ise {
+        ekrana_yaz("Pencere acilamadi!\n".ptr);
+        dondu 1;
+    }
+
+    # Sehir Secim Butonlari
+    buton_olustur(p_h, "Istanbul".ptr, 201, 20, 20, 120, 35);
+    buton_olustur(p_h, "Ankara".ptr, 202, 150, 20, 120, 35);
+    buton_olustur(p_h, "Izmir".ptr, 203, 280, 20, 120, 35);
+    buton_olustur(p_h, "Antalya".ptr, 204, 410, 20, 120, 35);
+
+    # Buyuk Sicaklik ve Durum Ekrani
+    metin_kutusu_olustur(p_h, 101, 20, 70, 560, 140);
+
+    # 5 Gunluk Tahmin Kutulari
+    degisken i: tamsayi = 0;
+    dongu (i < 5) {
+        degisken x: tamsayi = 20 + (i * 115);
+        buton_olustur(p_h, "Gunesli 22C".ptr, 300 + i, x, 230, 105, 100);
+        i = i + 1;
+    }
+
+    ekrana_yaz("Hava Durumu paneli aktif. Sehir: Istanbul (22 C, Nem: %58)\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

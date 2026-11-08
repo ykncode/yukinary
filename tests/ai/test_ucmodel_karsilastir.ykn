@@ -1,0 +1,286 @@
+# ============================================================
+# tests/ai/test_ucmodel_karsilastir.ykn
+# models/ dizinindeki uc GGUF modelini parse edip
+# karsilastirmali JSON raporunu "llm_ucmodel_rapor.json" olarak yazar.
+#
+# Modeller:
+#   1. models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf   (1.1 GB)
+#   2. models/bonsai-8b/Bonsai-8B.gguf                   (1.1 GB)
+#   3. models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf (5.3 GB)
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/dosya.ykn";
+
+harici isv ExitProcess(kod: tamsayi);
+
+# ─── strlen ─────────────────────────────────────────────────
+isv strlen_ykn(s: *u8) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+# ─── *u8 pointer'i ekrana yaz ────────────────────────────────
+isv str_yaz(s: *u8) {
+    eger s == 0 ise { ekrana_yaz("<null>".ptr); dondu; }
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 {
+        degisken ch: [2]u8;
+        ch[0] = s[i];
+        ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+        i = i + 1;
+    }
+}
+
+# ─── tampona metin ekle ──────────────────────────────────────
+isv tampon_ekle(buf: *u8, uzn: *tamsayi, maks: tamsayi, metin: *u8) {
+    degisken m: tamsayi = strlen_ykn(metin);
+    eger m <= 0 ise { dondu; }
+    degisken mevcut: tamsayi = uzn[0];
+    eger mevcut + m >= maks ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < m { buf[mevcut + i] = metin[i]; i = i + 1; }
+    uzn[0] = mevcut + m;
+    buf[mevcut + m] = 0;
+}
+
+# ─── sayiyi tampona yaz ─────────────────────────────────────
+isv sayi_str(buf: *u8, uzn: *tamsayi, maks: tamsayi, val: tamsayi) {
+    eger val == 0 ise { tampon_ekle(buf, uzn, maks, "0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { tampon_ekle(buf, uzn, maks, "-".ptr); v = 0 - v; }
+    degisken tmp: [24]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 { tmp[i] = 48 + (v % 10); v = v / 10; i = i + 1; }
+    dongu i > 0 {
+        i = i - 1;
+        degisken c: [2]u8; c[0] = tmp[i]; c[1] = 0;
+        tampon_ekle(buf, uzn, maks, c.ptr);
+    }
+}
+
+# ─── ekrana sayi yaz ────────────────────────────────────────
+isv sayi_yaz(val: tamsayi) {
+    eger val == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken v: tamsayi = val;
+    eger v < 0 ise { ekrana_yaz("-".ptr); v = 0 - v; }
+    degisken buf: [32]u8;
+    degisken i: tamsayi = 0;
+    dongu v > 0 { buf[i] = 48 + (v % 10); v = v / 10; i = i + 1; }
+    dongu i > 0 {
+        i = i - 1;
+        degisken ch: [2]u8; ch[0] = buf[i]; ch[1] = 0;
+        ekrana_yaz(ch.ptr);
+    }
+}
+
+# ─── JSON string alani ───────────────────────────────────────
+isv json_str(buf: *u8, uzn: *tamsayi, maks: tamsayi,
+             girinti: *u8, anahtar: *u8, deger: *u8, virgul: tamsayi) {
+    tampon_ekle(buf, uzn, maks, girinti);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    tampon_ekle(buf, uzn, maks, anahtar);
+    tampon_ekle(buf, uzn, maks, "\": \"".ptr);
+    tampon_ekle(buf, uzn, maks, deger);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    eger virgul != 0 ise { tampon_ekle(buf, uzn, maks, ",".ptr); }
+    tampon_ekle(buf, uzn, maks, "\n".ptr);
+}
+
+# ─── JSON sayi alani ─────────────────────────────────────────
+isv json_sayi(buf: *u8, uzn: *tamsayi, maks: tamsayi,
+              girinti: *u8, anahtar: *u8, deger: tamsayi, virgul: tamsayi) {
+    tampon_ekle(buf, uzn, maks, girinti);
+    tampon_ekle(buf, uzn, maks, "\"".ptr);
+    tampon_ekle(buf, uzn, maks, anahtar);
+    tampon_ekle(buf, uzn, maks, "\": ".ptr);
+    sayi_str(buf, uzn, maks, deger);
+    eger virgul != 0 ise { tampon_ekle(buf, uzn, maks, ",".ptr); }
+    tampon_ekle(buf, uzn, maks, "\n".ptr);
+}
+
+# ─── Bir modeli parse et ve JSON blogu yaz ──────────────────
+isv model_parse_ve_yaz(
+    buf: *u8, uzn: *tamsayi, maks: tamsayi,
+    model_yolu: *u8, model_adi: *u8, model_tanim: *u8,
+    boyut_mb: tamsayi, son_virgul: tamsayi
+) -> tamsayi {
+
+    ekrana_yaz("  Yukleniyor: ".ptr);
+    str_yaz(model_adi);
+    ekrana_yaz("\n".ptr);
+
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum == 0 ise {
+        ekrana_yaz("    HATA: Bellek yok!\n".ptr);
+        dondu 0;
+    }
+    gguf_durum_sifirla(durum);
+
+    degisken parse_ok: tamsayi = gguf_yukle(model_yolu, durum);
+
+    tampon_ekle(buf, uzn, maks, "    {\n".ptr);
+    json_str(buf,  uzn, maks, "      ".ptr, "model_adi".ptr,  model_adi,  1);
+    json_str(buf,  uzn, maks, "      ".ptr, "tanim".ptr,      model_tanim, 1);
+    json_str(buf,  uzn, maks, "      ".ptr, "dosya_yolu".ptr, model_yolu, 1);
+    json_sayi(buf, uzn, maks, "      ".ptr, "boyut_mb".ptr,   boyut_mb,   1);
+
+    eger parse_ok != 0 ise {
+        ekrana_yaz("    OK: tensor=".ptr); sayi_yaz(durum->tensor_sayisi);
+        ekrana_yaz("  vocab=".ptr);        sayi_yaz(durum->vocab_boyutu);
+        ekrana_yaz("  katman=".ptr);       sayi_yaz(durum->katman_sayisi);
+        ekrana_yaz("  gizli=".ptr);        sayi_yaz(durum->gizli_boyut);
+        ekrana_yaz("\n".ptr);
+
+        json_str(buf,  uzn, maks, "      ".ptr, "parse_durumu".ptr,     "BASARILI".ptr,       1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "tensor_sayisi".ptr,    durum->tensor_sayisi,  1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "vocab_boyutu".ptr,     durum->vocab_boyutu,   1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "gizli_boyut".ptr,      durum->gizli_boyut,    1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "katman_sayisi".ptr,    durum->katman_sayisi,  1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "ffn_boyutu".ptr,       durum->ffn_boyutu,     1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "attn_kafa_sayisi".ptr, durum->kafa_sayisi,    1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "kv_kafa_sayisi".ptr,   durum->kv_kafa_sayisi, 1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "context_penceresi".ptr, durum->context_boyutu, 1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "versiyon".ptr,         durum->versiyon,       1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "quant_tipi_id".ptr,    durum->quant_tipi,     1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "bos_token_id".ptr,     durum->bos_token_id,   1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "eos_token_id".ptr,     durum->eos_token_id,   0);
+    } yoksa {
+        ekrana_yaz("    UYARI: Parse hatasi veya okuma siniri\n".ptr);
+        json_str(buf,  uzn, maks, "      ".ptr, "parse_durumu".ptr,
+                 "KISMI (65KB okuma siniri)".ptr, 1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "tensor_sayisi".ptr, 0, 1);
+        json_sayi(buf, uzn, maks, "      ".ptr, "vocab_boyutu".ptr,  0, 0);
+    }
+
+    eger son_virgul != 0 ise {
+        tampon_ekle(buf, uzn, maks, "    },\n".ptr);
+    } yoksa {
+        tampon_ekle(buf, uzn, maks, "    }\n".ptr);
+    }
+
+    dondu parse_ok;
+}
+
+# ═══════════════════════════════════════════════════════════
+# ANA PROGRAM
+# ═══════════════════════════════════════════════════════════
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("============================================================\n".ptr);
+    ekrana_yaz("  YKN - Uclu Model Karsilastirma Testi\n".ptr);
+    ekrana_yaz("  models/ dizinindeki 3 GGUF modeli parse ediliyor\n".ptr);
+    ekrana_yaz("  Cikti: llm_ucmodel_rapor.json\n".ptr);
+    ekrana_yaz("============================================================\n\n".ptr);
+
+    degisken MAKS: tamsayi = 262144;
+    degisken buf: *u8 = bellek_tahsis_et(262144);
+    eger buf == 0 ise {
+        ekrana_yaz("HATA: Tampon icin bellek yok!\n".ptr);
+        ExitProcess(1);
+    }
+    degisken uzn: tamsayi = 0;
+
+    # JSON kok
+    tampon_ekle(buf, &uzn, MAKS, "{\n".ptr);
+
+    # test_bilgisi blogu
+    tampon_ekle(buf, &uzn, MAKS, "  \"test_bilgisi\": {\n".ptr);
+    json_str(buf,  &uzn, MAKS, "    ".ptr, "tarih".ptr,
+             "2026-10-24".ptr, 1);
+    json_str(buf,  &uzn, MAKS, "    ".ptr, "proje".ptr,
+             "Yukinary Yazilim Dili & Derleyicisi".ptr, 1);
+    json_str(buf,  &uzn, MAKS, "    ".ptr, "test_adi".ptr,
+             "Uclu Model GGUF Parse Karsilastirmasi".ptr, 1);
+    json_str(buf,  &uzn, MAKS, "    ".ptr, "aciklama".ptr,
+             "3 farkli GGUF modeli saf YKN kodu ile parse edildi. Metadata gercek, tarif metni statik.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "  },\n".ptr);
+
+    # Modeller dizisi baslangici
+    tampon_ekle(buf, &uzn, MAKS, "  \"modeller\": [\n".ptr);
+
+    # ── MODEL 1: BitNet-b1.58-2B-4T ─────────────────────────
+    ekrana_yaz("[1/3] BitNet-b1.58-2B-4T...\n".ptr);
+    degisken r1: tamsayi = model_parse_ve_yaz(
+        buf, &uzn, MAKS,
+        "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr,
+        "BitNet-b1.58-2B-4T".ptr,
+        "Microsoft 1-bit LLM, I2_S kuantlama, 2.4B parametre".ptr,
+        1133,
+        1
+    );
+
+    # ── MODEL 2: Bonsai-8B ───────────────────────────────────
+    ekrana_yaz("\n[2/3] Bonsai-8B...\n".ptr);
+    degisken r2: tamsayi = model_parse_ve_yaz(
+        buf, &uzn, MAKS,
+        "models/bonsai-8b/Bonsai-8B.gguf".ptr,
+        "Bonsai-8B".ptr,
+        "Bonsai 8B parametreli dil modeli, GGUF formatinda".ptr,
+        1105,
+        1
+    );
+
+    # ── MODEL 3: Gemma-4-E4B-it ─────────────────────────────
+    ekrana_yaz("\n[3/3] Gemma-4-E4B-it-Q4_K_M...\n".ptr);
+    degisken r3: tamsayi = model_parse_ve_yaz(
+        buf, &uzn, MAKS,
+        "models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf".ptr,
+        "Gemma-4-E4B-it-Q4_K_M".ptr,
+        "Google DeepMind Gemma-4, Q4_K_M kuantlama, 128K context, 262K vocab".ptr,
+        5087,
+        0
+    );
+
+    # Modeller dizisi bitis
+    tampon_ekle(buf, &uzn, MAKS, "  ],\n".ptr);
+
+    # Ozet blogu
+    tampon_ekle(buf, &uzn, MAKS, "  \"ozet\": {\n".ptr);
+    json_sayi(buf, &uzn, MAKS, "    ".ptr, "toplam_model".ptr,    3,    1);
+
+    degisken basarili: tamsayi = 0;
+    eger r1 != 0 ise { basarili = basarili + 1; }
+    eger r2 != 0 ise { basarili = basarili + 1; }
+    eger r3 != 0 ise { basarili = basarili + 1; }
+
+    json_sayi(buf, &uzn, MAKS, "    ".ptr, "basarili_parse".ptr,  basarili, 1);
+    json_sayi(buf, &uzn, MAKS, "    ".ptr, "toplam_boyut_mb".ptr, 7325,     1);
+
+    eger basarili == 3 ise {
+        json_str(buf, &uzn, MAKS, "    ".ptr, "genel_durum".ptr,
+                 "TUM MODELLER PARSE EDILDI".ptr, 1);
+    } yoksa {
+        json_str(buf, &uzn, MAKS, "    ".ptr, "genel_durum".ptr,
+                 "KISMI BASARI".ptr, 1);
+    }
+
+    json_str(buf, &uzn, MAKS, "    ".ptr, "not".ptr,
+             "Parse = GGUF header metadata okuma. Gercek token inference ayri asama.".ptr, 0);
+    tampon_ekle(buf, &uzn, MAKS, "  }\n".ptr);
+
+    # Kok kapat
+    tampon_ekle(buf, &uzn, MAKS, "}\n".ptr);
+
+    # Dosyaya yaz
+    ekrana_yaz("\n[YAZILIYOR] llm_ucmodel_rapor.json...\n".ptr);
+    degisken yazilan: tamsayi = dosya_yaz_tamami("llm_ucmodel_rapor.json".ptr, buf, uzn);
+
+    eger yazilan > 0 ise {
+        ekrana_yaz("OK: ".ptr); sayi_yaz(yazilan); ekrana_yaz(" bayt yazildi.\n".ptr);
+    } yoksa {
+        ekrana_yaz("HATA: Dosya yazma basarisiz!\n".ptr);
+        ExitProcess(5);
+    }
+
+    ekrana_yaz("\n============================================================\n".ptr);
+    ekrana_yaz("  TAMAMLANDI! 'llm_ucmodel_rapor.json' kontrol edin.\n".ptr);
+    ekrana_yaz("  Basarili parse: ".ptr); sayi_yaz(basarili); ekrana_yaz("/3\n".ptr);
+    ekrana_yaz("============================================================\n".ptr);
+    dondu 0;
+}

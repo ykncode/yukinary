@@ -1,0 +1,30 @@
+/* YukiOS Real Kernel Linker Script */
+ENTRY(_start)
+
+SECTIONS
+{
+    /* GRUB loads the kernel at 1MB */
+    . = 1M;
+
+    .text BLOCK(4K) : ALIGN(4K)
+    {
+        *(.multiboot)
+        *(.text)
+    }
+
+    .rodata BLOCK(4K) : ALIGN(4K)
+    {
+        *(.rodata)
+    }
+
+    .data BLOCK(4K) : ALIGN(4K)
+    {
+        *(.data)
+    }
+
+    .bss BLOCK(4K) : ALIGN(4K)
+    {
+        *(COMMON)
+        *(.bss)
+    }
+}

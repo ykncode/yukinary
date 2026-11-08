@@ -1,0 +1,17 @@
+# ABI Test: Dizi eleman offset testi
+# Dizi elemanlarinin beklenen offsetlerde olduğunu doğrular
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken arr: [4]tamsayi;
+    arr[0] = 10; arr[1] = 20; arr[2] = 30; arr[3] = 40;
+    # Her eleman 8 bayt (tamsayi = i64) uzaklikta olmali
+    degisken ptr0: *tamsayi = arr;
+    degisken ptr1: *tamsayi = arr + 8;
+    degisken ptr2: *tamsayi = arr + 16;
+    degisken ptr3: *tamsayi = arr + 24;
+    eger ptr0[0] == 10 ve ptr1[0] == 20 ve ptr2[0] == 30 ve ptr3[0] == 40 ise {
+        ekrana_yaz("ABI_ARRAY_OFFSET_PASS\n".ptr);
+        dondu 0;
+    }
+    ekrana_yaz("ABI_ARRAY_OFFSET_FAIL\n".ptr);
+    dondu 1;
+}

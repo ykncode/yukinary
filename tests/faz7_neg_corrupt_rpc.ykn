@@ -1,0 +1,30 @@
+# ============================================================
+# tests/faz7_neg_corrupt_rpc.ykn
+# FAZ 7: Bozuk RPC Paketi ve Sağlama Toplamı Negatif Testi
+# ============================================================
+
+ice_aktar "std/bulut/rpc.ykn";
+
+isv ana() -> tamsayi {
+    degisken p: *RpcPaket = rpc_paket_olustur(1, 2, 10, 3);
+    degisken v_ptr: *tamsayi = p.veri;
+    v_ptr[0] = 11; v_ptr[1] = 22; v_ptr[2] = 33;
+
+    degisken tampon: [32]tamsayi;
+    rpc_serilestir(p, tampon.ptr);
+
+    # Ağ üzerinden iletilirken 1 baytı boz (tampon[6] = payload'ın ilk elemanı)
+    tampon[6] = 999999;
+
+    degisken p_bozuk: *RpcPaket = rpc_ayristir(tampon.ptr);
+    degisken gecerli: tamsayi = rpc_paket_dogrula(p_bozuk);
+
+    eger gecerli == 0 ise {
+        ekrana_yaz("BEKLENEN HATA: Bozuk RPC paketi reddedildi (fail-closed basarili)!\n".ptr);
+        dondu 1;
+    }
+
+    ekrana_yaz("HATA: Bozuk paket hatali olarak onaylandi!\n".ptr);
+    dondu 0;
+}
+

@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "artifact_required": true,
+  "stdout": "VEC_DOUBLE_FREE_NEG: vec hazir\nVEC_DOUBLE_FREE_NEG: ilk yok_et OK\nVEC_DOUBLE_FREE_NEG: ULASILMAMALI\n",
+  "description": "Vec double-free negatif test - vec_yok_et gercek free yapmayinca ULASILMAMALI'ya ulasir"
+}

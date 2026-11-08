@@ -1,0 +1,90 @@
+# ============================================================
+# tests/ag/test_reactor_scale.ykn
+# FAZ 58: Çapraz Platform Reaktor Ölçek ve Olay Döngüsü Doğrulama Testi
+# Gerçek Tanımlayıcı Kaydı, Olay Tetikleme ve Dinamik Kullanıcı Verisi Doğrulaması
+# ============================================================
+
+ice_aktar "std/es/reaktor.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("FAZ 58: Gercek Capraz Platform Asenkron Reaktor Testi Basliyor...\n".ptr);
+
+    # ============================================================
+    # 1. LINUX io_uring MODELİ VE SQ/CQ KUYRUK TESTİ
+    # ============================================================
+    degisken r_uring: *Reaktor = reaktor_olustur(REAKTOR_MOD_IO_URING);
+    reaktor_olay_kaydet(r_uring, 10, REAKTOR_OLAY_OKUMA, 1001);
+    reaktor_olay_kaydet(r_uring, 11, REAKTOR_OLAY_YAZMA, 1002);
+
+    eger r_uring.kayitli_sayisi != 2 ise {
+        ekrana_yaz("HATA: io_uring kayitli dosya tanimlayici sayisi hatali!\n".ptr);
+        dondu 1;
+    }
+
+    eger r_uring.uring_sq_adet != 2 ise {
+        ekrana_yaz("HATA: io_uring Submission Queue sayaci hatali!\n".ptr);
+        dondu 2;
+    }
+
+    # ============================================================
+    # 2. MACOS kqueue MODELİ TESTİ
+    # ============================================================
+    degisken r_kq: *Reaktor = reaktor_olustur(REAKTOR_MOD_KQUEUE);
+    reaktor_olay_kaydet(r_kq, 20, REAKTOR_OLAY_OKUMA, 2001);
+    eger r_kq.kayitli_sayisi != 1 ise {
+        ekrana_yaz("HATA: kqueue kayit sayisi hatali!\n".ptr);
+        dondu 3;
+    }
+
+    # ============================================================
+    # 3. GERÇEK G/Ç OLAYI TETİKLEME VE TESLİMAT DOĞRULAMASI
+    # ============================================================
+    # fd=10 icin 256 baytlik okuma olayi tetikle (mock 101/777 yerine gercek tescilli veri)
+    reaktor_olay_tetikle(r_uring, 10, REAKTOR_OLAY_OKUMA, 256);
+
+    degisken olay1: ReaktorOlayi;
+    degisken islenen1: tamsayi = reaktor_yurut_tek_adim(r_uring, &olay1, 10);
+    eger islenen1 != 1 ise {
+        ekrana_yaz("HATA: Reaktor olay isleme basarisiz!\n".ptr);
+        dondu 4;
+    }
+
+    # Kaynak FD'nin 10 oldugunu, olayin OKUMA oldugunu ve verinin 1001 oldugunu dogrula
+    eger olay1.kaynak_fd != 10 ise {
+        ekrana_yaz("HATA: Reaktor kaynak FD hatali (10 bekleniyordu)!\n".ptr);
+        dondu 5;
+    }
+
+    eger olay1.olay_turu != REAKTOR_OLAY_OKUMA ise {
+        ekrana_yaz("HATA: Olay turu okuma degil!\n".ptr);
+        dondu 6;
+    }
+
+    eger olay1.kullanici_veri != 1001 ise {
+        ekrana_yaz("HATA: Reaktor kullanici verisi tescil edilenle uyusmuyor (1001 bekleniyordu)!\n".ptr);
+        dondu 7;
+    }
+
+    eger olay1.islenen_bayt != 256 ise {
+        ekrana_yaz("HATA: Islenen bayt sayisi 256 olmali!\n".ptr);
+        dondu 8;
+    }
+
+    # ============================================================
+    # 4. İKİNCİ TANIMLAYICI (fd=11 YAZMA) TETİKLEME TESTİ
+    # ============================================================
+    reaktor_olay_tetikle(r_uring, 11, REAKTOR_OLAY_YAZMA, 512);
+
+    degisken olay2: ReaktorOlayi;
+    degisken islenen2: tamsayi = reaktor_yurut_tek_adim(r_uring, &olay2, 10);
+    eger islenen2 != 1 veya olay2.kaynak_fd != 11 veya olay2.kullanici_veri != 1002 ise {
+        ekrana_yaz("HATA: fd=11 icin yazma olayi teslimati hatali!\n".ptr);
+        dondu 9;
+    }
+
+    reaktor_kapat(r_uring);
+    reaktor_kapat(r_kq);
+
+    ekrana_yaz("CROSS_PLATFORM_REACTOR_PASS\n".ptr);
+    dondu 0;
+}

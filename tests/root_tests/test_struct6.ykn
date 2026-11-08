@@ -1,0 +1,23 @@
+﻿yapi Kucuk {
+    f0: tamsayi;
+    f1: tamsayi;
+    f2: tamsayi;
+    f3: tamsayi;
+    f4: tamsayi;
+    f5: tamsayi;
+}
+
+isv oku(s: *Kucuk) -> tamsayi {
+    dondu s.f5;
+}
+
+isv ana() -> tamsayi {
+    degisken st: Kucuk;
+    st.f0 = 1;
+    st.f1 = 2;
+    st.f2 = 3;
+    st.f3 = 4;
+    st.f4 = 5;
+    st.f5 = 42;
+    dondu oku(&st);
+}

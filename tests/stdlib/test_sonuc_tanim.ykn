@@ -1,0 +1,8 @@
+isv bolum(a: tamsayi, b: tamsayi) -> Sonuc<tamsayi, *u8> {
+    eger b == 0 ise { dondu Hata("sifira bolum".ptr); }
+    dondu Tamam(a / b);
+}
+isv ana() -> tamsayi {
+    degisken s = bolum(10, 2);
+    dondu 0;
+}

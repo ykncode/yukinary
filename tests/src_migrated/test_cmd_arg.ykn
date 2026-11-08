@@ -1,0 +1,32 @@
+isv ana() -> tamsayi {
+    degisken kaynak: *u8 = komut_satiri_arg1();
+    eger kaynak == 0 ise {
+        dondu 1;
+    }
+    
+    degisken i: tamsayi = 0;
+    dongu i < 30 {
+        degisken c: u8 = kaynak[i];
+        eger c == 0 ise { kir; }
+        
+        eger c == 115 ise { ekrana_yaz("s ".ptr); }
+        eger c == 114 ise { ekrana_yaz("r ".ptr); }
+        eger c == 99 ise { ekrana_yaz("c ".ptr); }
+        eger c == 92 ise { ekrana_yaz("\\ ".ptr); }
+        eger c == 116 ise { ekrana_yaz("t ".ptr); }
+        eger c == 101 ise { ekrana_yaz("e ".ptr); }
+        eger c == 117 ise { ekrana_yaz("u ".ptr); }
+        eger c == 95 ise { ekrana_yaz("_ ".ptr); }
+        eger c == 121 ise { ekrana_yaz("y ".ptr); }
+        eger c == 107 ise { ekrana_yaz("k ".ptr); }
+        eger c == 110 ise { ekrana_yaz("n ".ptr); }
+        eger c == 13 ise { ekrana_yaz("CR ".ptr); }
+        eger c == 10 ise { ekrana_yaz("LF ".ptr); }
+        eger c == 32 ise { ekrana_yaz("SPACE ".ptr); }
+        
+        i = i + 1;
+    }
+    ekrana_yaz("\n".ptr);
+    
+    dondu 0;
+}

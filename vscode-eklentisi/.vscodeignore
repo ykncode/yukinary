@@ -1,0 +1,10 @@
+# Development and repository files excluded from the VS Code package
+.vscode/**
+node_modules/**
+*.vsix
+*.log
+*.zip
+../src/**
+../tests/**
+../archive/**
+../trash/**

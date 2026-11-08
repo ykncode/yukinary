@@ -1,0 +1,23 @@
+ice_aktar "std/os/common.ykn";
+
+isv ekrana_yaz(mesaj: *u8) {
+    degisken h: tamsayi = os_standart_handle_al(0xfffffff5);
+    degisken uz: tamsayi = 0;
+    dongu mesaj[uz] != 0 { uz = uz + 1; }
+    degisken dummy: tamsayi = 0;
+    os_dosya_yaz(h, mesaj, uz, &dummy);
+}
+
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    ekrana_yaz("DEBUG: START\n".ptr);
+    degisken h_in: tamsayi = os_standart_handle_al(0xfffffff6);
+    degisken h_out: tamsayi = os_standart_handle_al(0xfffffff5);
+    ekrana_yaz("DEBUG: HANDLES ACQUIRED\n".ptr);
+    degisken buf: [256]u8;
+    degisken okunan: tamsayi = 0;
+    degisken res: tamsayi = os_dosya_oku(h_in, buf, 256, &okunan);
+    ekrana_yaz("DEBUG: READ DONE\n".ptr);
+    degisken dummy: tamsayi = 0;
+    os_dosya_yaz(h_out, buf, okunan, &dummy);
+    dondu 0;
+}

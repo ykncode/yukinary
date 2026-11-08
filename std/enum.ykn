@@ -1,0 +1,59 @@
+# ============================================================
+# Yukinary (YKN) Enum ve Secenek Kutuphanesi (std/enum.ykn)
+# Canonical Option<T> helper API
+# ============================================================
+#
+# Result modeli burada tanimlanmaz. Canonical Result ABI yalnizca
+# std/sonuc.ykn ve builtin `sonuc<T>` tarafinda tutulur. Bu ayrim, ayni
+# projede iki farkli `sonuc_deger_al`/Result layout'unun cakismasini onler.
+#
+# Option layout'u Result'tan bagimsizdir:
+#   +0  durum : 0 = Yok, 1 = Var
+#   +8  deger : T'nin 8-byte scalar/pointer ABI degeri
+#
+# Enum modulu canonical Result constructor/helper'larini da görünür kilar;
+# implementation yalnızca std/sonuc.ykn'dedir.
+ice_aktar "std/sonuc.ykn";
+
+degisken SECENEK_YOK = 0;
+degisken SECENEK_VAR = 1;
+
+yapi Secenek {
+    durum: tamsayi;
+    deger: tamsayi;
+}
+
+isv secenek_var(val: tamsayi) -> *Secenek {
+    degisken s: *Secenek = bellek_tahsis_et(16);
+    eger s == 0 ise { dondu 0; }
+    s.durum = SECENEK_VAR;
+    s.deger = val;
+    dondu s;
+}
+
+isv secenek_yok() -> *Secenek {
+    degisken s: *Secenek = bellek_tahsis_et(16);
+    eger s == 0 ise { dondu 0; }
+    s.durum = SECENEK_YOK;
+    s.deger = 0;
+    dondu s;
+}
+
+isv secenek_var_mi(s: *Secenek) -> tamsayi {
+    eger s == 0 ise { dondu 0; }
+    eger s.durum == SECENEK_VAR ise { dondu 1; }
+    dondu 0;
+}
+
+isv secenek_yok_mu(s: *Secenek) -> tamsayi {
+    eger s == 0 ise { dondu 1; }
+    eger s.durum == SECENEK_YOK ise { dondu 1; }
+    dondu 0;
+}
+
+isv secenek_deger_al(s: *Secenek, varsayilan_deger: tamsayi) -> tamsayi {
+    eger s == 0 veya s.durum == SECENEK_YOK ise {
+        dondu varsayilan_deger;
+    }
+    dondu s.deger;
+}

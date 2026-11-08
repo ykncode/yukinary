@@ -1,0 +1,4 @@
+isv ana() -> tamsayi {
+    eger 10 <= 10 ise { dondu 1; }
+    dondu 0;
+}

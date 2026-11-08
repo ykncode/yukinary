@@ -1,0 +1,384 @@
+# ============================================================
+# tests/ai/test_krep_bitnet_cuda_batch.ykn
+# BitNet-b1.58-2B-4T Coklu Batch (Multi-Batch) CUDA Testi.
+# Ayni anda 2 ayri istegi (Batch Size = 2) GPU uzerinde paralel
+# besler ve 80'er token (toplam 160 token) uretir.
+# ============================================================
+
+ice_aktar "std/ai/gguf_types.ykn";
+ice_aktar "std/ai/gguf_reader.ykn";
+ice_aktar "std/ai/gguf_loader.ykn";
+ice_aktar "std/ai/runtime.ykn";
+ice_aktar "std/ai/model_loader.ykn";
+ice_aktar "std/ai/iq2s_grid.ykn";
+ice_aktar "std/ai/bitnet_iq2s.ykn";
+ice_aktar "std/ai/bitnet_backend.ykn";
+ice_aktar "std/ai/architecture_adapter.ykn";
+ice_aktar "std/ai/attention.ykn";
+ice_aktar "std/ai/sampler.ykn";
+ice_aktar "std/ai/inference.ykn";
+ice_aktar "std/ai/tokenizer.ykn";
+ice_aktar "std/ai/transformer_forward.ykn";
+
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    degisken rakamlar: [32]u8;
+    degisken adet: tamsayi = 0;
+    eger n < 0 { ekrana_yaz("-".ptr); n = 0 - n; }
+    dongu n > 0 {
+        rakamlar[adet] = 48 + (n % 10);
+        adet = adet + 1;
+        n = n / 10;
+    }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakamlar[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    ekrana_yaz("=== BitNet-b1.58-2B-4T Coklu Batch (Multi-Batch B=2) CUDA Paralel Uretim Testi ===\n".ptr);
+
+    degisken model_yolu: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    degisken durum_ptr: *GGUFDurum = bellek_tahsis_et(1024);
+    eger durum_ptr == 0 { ekrana_yaz("HATA: Bellek tahsis edilemedi\n".ptr); dondu 1; }
+    eger gguf_yukle(model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("HATA: GGUF yuklenemedi\n".ptr); dondu 2;
+    }
+
+    degisken token_offsets: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken token_lengths: *tamsayi = bellek_tahsis_et(128256 * 8);
+    degisken merge_offsets: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken merge_lengths: *tamsayi = bellek_tahsis_et(280147 * 8);
+    degisken token_count: tamsayi = 0;
+    degisken merge_count: tamsayi = 0;
+    eger bitnet_tokenizer_metadata_yukle(durum_ptr, token_offsets, token_lengths, 128256,
+           merge_offsets, merge_lengths, 280147, &token_count, &merge_count) == 0 {
+        ekrana_yaz("HATA: Tokenizer metadata okunamadi\n".ptr); dondu 3;
+    }
+
+    degisken spec: LLMModelSpec;
+    llm_runtime_spec_sifirla(&spec);
+    spec.model_adi = durum_ptr->mimari_adi;
+    spec.mimari = LLM_MIMARI_BITNET;
+    spec.quant_tipi = durum_ptr->quant_tipi;
+    spec.vocab_boyutu = durum_ptr->vocab_boyutu;
+    spec.gizli_boyut = durum_ptr->gizli_boyut;
+    spec.katman_sayisi = durum_ptr->katman_sayisi;
+    spec.context_boyutu = durum_ptr->context_boyutu;
+    spec.kafa_sayisi = durum_ptr->kafa_sayisi;
+    spec.kv_kafa_sayisi = durum_ptr->kv_kafa_sayisi;
+    spec.kafa_boyutu = durum_ptr->kafa_boyutu;
+    spec.ffn_boyutu = durum_ptr->ffn_boyutu;
+    spec.rope_boyutu = durum_ptr->rope_boyutu;
+    spec.rope_freq_base_q16 = durum_ptr->rope_freq_base_q16;
+    spec.norm_eps_q16 = durum_ptr->norm_eps_q16;
+    spec.bos_token_id = durum_ptr->bos_token_id;
+    spec.eos_token_id = durum_ptr->eos_token_id;
+
+    degisken loader: LLMModelLoader;
+    eger llm_model_loader_baslat(&loader, model_yolu, durum_ptr) == 0 {
+        ekrana_yaz("HATA: Model loader baslatilamadi\n".ptr); dondu 4;
+    }
+    degisken adapter: LLMArchitectureAdapter;
+    eger llm_architecture_adapter_kur(spec.mimari, &adapter) == 0 {
+        ekrana_yaz("HATA: Architecture adapter baslatilamadi\n".ptr); dondu 5;
+    }
+
+    # CUDA Backend Baslat
+    eger ykn_cuda_backend_start() == 0 {
+        ekrana_yaz("HATA: CUDA backend baslatilamadi\n".ptr); dondu 7;
+    }
+    ekrana_yaz("[CUDA] Backend basariyla aktif edildi.\n".ptr);
+
+    degisken dev_name: [256]u8;
+    degisken dev_mem: tamsayi = 0;
+    cuda_device_query(YKN_CUDA_CONTEXT_PTR, 0, dev_name, &dev_mem);
+    ekrana_yaz("[CUDA CIHAZI] Model: ".ptr); ekrana_yaz(dev_name.ptr);
+    ekrana_yaz(" | Toplam VRAM: ".ptr); sayi_yaz(dev_mem / 1048576); ekrana_yaz(" MB\n".ptr);
+
+    # Bellek boyutlari
+    degisken cache_capacity: tamsayi = 160;
+    degisken hidden_bytes: tamsayi = spec.gizli_boyut * 8;
+    degisken kv_width: tamsayi = spec.kv_kafa_sayisi * spec.kafa_boyutu;
+    degisken kv_bytes: tamsayi = cache_capacity * spec.katman_sayisi * kv_width * 8;
+    degisken max_weight_bytes: tamsayi = 8388608;
+    degisken logits_bytes: tamsayi = spec.vocab_boyutu * 8;
+
+    # Her iki batch slotu icin GPU tamponlarini ve streamlerini baslat
+    ykn_cuda_init_batch_slot(0, kv_bytes);
+    ykn_cuda_init_batch_slot(1, kv_bytes);
+    ykn_cuda_set_batch_slot(0);
+    ekrana_yaz("[MULTI-BATCH] Slot 0 ve Slot 1 GPU tamponlari ve ayri streamleri baslatildi.\n".ptr);
+
+    # ==========================================
+    # BATCH SLOT 0 ALOKASYONU (Istek 1: Krep)
+    # ==========================================
+    degisken hidden0: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual0: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q0: *tamsayi = bellek_tahsis_et(hidden_bytes + kv_width * 16);
+    degisken key0: *tamsayi = q0 + hidden_bytes;
+    degisken value0: *tamsayi = key0 + kv_width * 8;
+    degisken attention0: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn0: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits0: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights0: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache0: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache0: *tamsayi = bellek_tahsis_et(kv_bytes);
+
+    degisken paket0: LLMTransformerExecution;
+    paket0.loader = &loader;
+    paket0.adapter = &adapter;
+    paket0.spec = &spec;
+    paket0.hidden = hidden0;
+    paket0.residual = residual0;
+    paket0.q = q0;
+    paket0.key = key0;
+    paket0.value = value0;
+    paket0.attention = attention0;
+    paket0.ffn = ffn0;
+    paket0.logits = logits0;
+    paket0.logits_kapasitesi = spec.vocab_boyutu;
+    paket0.logits_aktif = 1;
+    paket0.agirlik_buffer = weights0;
+    paket0.agirlik_kapasitesi = max_weight_bytes;
+    paket0.kv_anahtar = key_cache0;
+    paket0.kv_deger = value_cache0;
+    paket0.kafa_sayisi = spec.kafa_sayisi;
+    paket0.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket0.kv_kafa_boyutu = spec.kafa_boyutu;
+    paket0.kv_kapasitesi = cache_capacity;
+    paket0.token_konumu = 0;
+    paket0.ffn_boyutu = spec.ffn_boyutu;
+
+    degisken icra0: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra0, &paket0) == 0 {
+        ekrana_yaz("HATA: Transformer 0 durumu kurulamadi\n".ptr); dondu 6;
+    }
+
+    # ==========================================
+    # BATCH SLOT 1 ALOKASYONU (Istek 2: Pancake)
+    # ==========================================
+    degisken hidden1: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken residual1: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken q1: *tamsayi = bellek_tahsis_et(hidden_bytes + kv_width * 16);
+    degisken key1: *tamsayi = q1 + hidden_bytes;
+    degisken value1: *tamsayi = key1 + kv_width * 8;
+    degisken attention1: *tamsayi = bellek_tahsis_et(hidden_bytes);
+    degisken ffn1: *tamsayi = bellek_tahsis_et(spec.ffn_boyutu * 8);
+    degisken logits1: *tamsayi = bellek_tahsis_et(logits_bytes);
+    degisken weights1: *u8 = bellek_tahsis_et(max_weight_bytes);
+    degisken key_cache1: *tamsayi = bellek_tahsis_et(kv_bytes);
+    degisken value_cache1: *tamsayi = bellek_tahsis_et(kv_bytes);
+
+    degisken paket1: LLMTransformerExecution;
+    paket1.loader = &loader;
+    paket1.adapter = &adapter;
+    paket1.spec = &spec;
+    paket1.hidden = hidden1;
+    paket1.residual = residual1;
+    paket1.q = q1;
+    paket1.key = key1;
+    paket1.value = value1;
+    paket1.attention = attention1;
+    paket1.ffn = ffn1;
+    paket1.logits = logits1;
+    paket1.logits_kapasitesi = spec.vocab_boyutu;
+    paket1.logits_aktif = 1;
+    paket1.agirlik_buffer = weights1;
+    paket1.agirlik_kapasitesi = max_weight_bytes;
+    paket1.kv_anahtar = key_cache1;
+    paket1.kv_deger = value_cache1;
+    paket1.kafa_sayisi = spec.kafa_sayisi;
+    paket1.kv_kafa_sayisi = spec.kv_kafa_sayisi;
+    paket1.kv_kafa_boyutu = spec.kafa_boyutu;
+    paket1.kv_kapasitesi = cache_capacity;
+    paket1.token_konumu = 0;
+    paket1.ffn_boyutu = spec.ffn_boyutu;
+
+    degisken icra1: LLMTransformerExecution;
+    eger llm_transformer_durum_kur_paketli(&icra1, &paket1) == 0 {
+        ekrana_yaz("HATA: Transformer 1 durumu kurulamadi\n".ptr); dondu 6;
+    }
+
+    # ==========================================
+    # PROMPT HAZIRLAMA (2 Farkli Istek)
+    # ==========================================
+    degisken prompt_text0: *u8 = "Human: Tell me a short crepe recipe.\n\nBITNETAssistant: ".ptr;
+    degisken prompt_len0: tamsayi = 0;
+    dongu prompt_text0[prompt_len0] != 0 { prompt_len0 = prompt_len0 + 1; }
+    degisken prompt_ids0: [64]tamsayi;
+    degisken count0: tamsayi = bitnet_bpe_ascii_kodla(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        merge_offsets, merge_lengths, merge_count, prompt_text0, prompt_len0,
+        prompt_ids0, 64);
+
+    degisken full_prompt0: [66]tamsayi;
+    full_prompt0[0] = spec.bos_token_id;
+    degisken p_idx0: tamsayi = 0;
+    dongu p_idx0 < count0 {
+        full_prompt0[p_idx0 + 1] = prompt_ids0[p_idx0];
+        p_idx0 = p_idx0 + 1;
+    }
+    full_prompt0[count0 + 1] = spec.eos_token_id;
+    degisken total_prompt0: tamsayi = count0 + 2;
+
+    degisken prompt_text1: *u8 = "Human: Tell me a short pancake recipe.\n\nBITNETAssistant: ".ptr;
+    degisken prompt_len1: tamsayi = 0;
+    dongu prompt_text1[prompt_len1] != 0 { prompt_len1 = prompt_len1 + 1; }
+    degisken prompt_ids1: [64]tamsayi;
+    degisken count1: tamsayi = bitnet_bpe_ascii_kodla(
+        durum_ptr->buffer, token_offsets, token_lengths, token_count,
+        merge_offsets, merge_lengths, merge_count, prompt_text1, prompt_len1,
+        prompt_ids1, 64);
+
+    degisken full_prompt1: [66]tamsayi;
+    full_prompt1[0] = spec.bos_token_id;
+    degisken p_idx1: tamsayi = 0;
+    dongu p_idx1 < count1 {
+        full_prompt1[p_idx1 + 1] = prompt_ids1[p_idx1];
+        p_idx1 = p_idx1 + 1;
+    }
+    full_prompt1[count1 + 1] = spec.eos_token_id;
+    degisken total_prompt1: tamsayi = count1 + 2;
+
+    ekrana_yaz("[BATCH KURULUMU] Istek 0 Prompt Token: ".ptr); sayi_yaz(total_prompt0);
+    ekrana_yaz(" | Istek 1 Prompt Token: ".ptr); sayi_yaz(total_prompt1); ekrana_yaz("\n".ptr);
+
+    LLM_REPETITION_PENALTY_Q16 = 75366; # 1.15x
+    degisken max_yeni_token: tamsayi = 80;
+    degisken generated_tokens0: [96]tamsayi;
+    degisken generated_tokens1: [96]tamsayi;
+
+    # ==========================================
+    # ADIM 1: PREFILL (Her istek kendi slotuna)
+    # ==========================================
+    ekrana_yaz("[INFERENCE] Prefill adimi basliyor...\n".ptr);
+    degisken t_start: tamsayi = ykn_llm_clock_ns();
+
+    # Slot 0 Prefill
+    ykn_cuda_set_batch_slot(0);
+    LLM_RECENT_COUNT = 0;
+    icra0.logits_aktif = 0;
+    degisken i: tamsayi = 0;
+    dongu i + 1 < total_prompt0 {
+        llm_transformer_token_uret_token(&icra0, durum_ptr, full_prompt0[i], "blk.0".ptr);
+        i = i + 1;
+    }
+    icra0.logits_aktif = 1;
+    degisken last_tok0: tamsayi = llm_transformer_token_uret_token(&icra0, durum_ptr, full_prompt0[total_prompt0 - 1], "blk.0".ptr);
+    generated_tokens0[0] = last_tok0;
+
+    # Slot 1 Prefill
+    ykn_cuda_set_batch_slot(1);
+    LLM_RECENT_COUNT = 0;
+    icra1.logits_aktif = 0;
+    i = 0;
+    dongu i + 1 < total_prompt1 {
+        llm_transformer_token_uret_token(&icra1, durum_ptr, full_prompt1[i], "blk.0".ptr);
+        i = i + 1;
+    }
+    icra1.logits_aktif = 1;
+    degisken last_tok1: tamsayi = llm_transformer_token_uret_token(&icra1, durum_ptr, full_prompt1[total_prompt1 - 1], "blk.0".ptr);
+    generated_tokens1[0] = last_tok1;
+
+    ekrana_yaz("[INFERENCE] Prefill tamamlandi! Coklu batch (B=2) paralel decode basliyor...\n".ptr);
+
+    # ==========================================
+    # ADIM 2: PARALEL MULTI-BATCH DECODE DONGUSU
+    # ==========================================
+    degisken step: tamsayi = 1;
+    dongu step < max_yeni_token {
+        # Slot 0 Decode Step
+        ykn_cuda_set_batch_slot(0);
+        degisken pred0: tamsayi = llm_transformer_token_uret_token(&icra0, durum_ptr, last_tok0, "blk.0".ptr);
+        generated_tokens0[step] = pred0;
+        last_tok0 = pred0;
+
+        # Slot 1 Decode Step
+        ykn_cuda_set_batch_slot(1);
+        degisken pred1: tamsayi = llm_transformer_token_uret_token(&icra1, durum_ptr, last_tok1, "blk.0".ptr);
+        generated_tokens1[step] = pred1;
+        last_tok1 = pred1;
+
+        step = step + 1;
+    }
+    degisken t_end: tamsayi = ykn_llm_clock_ns();
+    degisken total_ms: tamsayi = (t_end - t_start) / 1000000;
+    degisken total_tokens: tamsayi = max_yeni_token * 2;
+    degisken agg_tok_per_sec: tamsayi = (total_tokens * 1000) / total_ms;
+
+    ekrana_yaz("[INFERENCE] Multi-Batch Tamamlandi!\n".ptr);
+    ekrana_yaz("  -> Toplam Uretilen Token (B=2 x 80): ".ptr); sayi_yaz(total_tokens); ekrana_yaz("\n".ptr);
+    ekrana_yaz("  -> Toplam Sure:                      ".ptr); sayi_yaz(total_ms); ekrana_yaz(" ms\n".ptr);
+    ekrana_yaz("  -> Agregat GPU Uretim Hizi:          ".ptr); sayi_yaz(agg_tok_per_sec); ekrana_yaz(" token/saniye (tok/s)\n".ptr);
+
+    # ==========================================
+    # ISTEK 0 CIKTISI (Krep Tarifi)
+    # ==========================================
+    ekrana_yaz("\n======================================================\n".ptr);
+    ekrana_yaz("--- ISTEK 0 CIKTISI (Krep Tarifi / Slot 0) ---\n".ptr);
+    degisken out_text0: [8192]u8;
+    degisken out_len0: tamsayi = 0;
+    degisken tok_i: tamsayi = 0;
+    dongu tok_i < max_yeni_token {
+        degisken p_raw: [256]u8;
+        degisken p_raw_len: tamsayi = bitnet_token_kopyala(
+            durum_ptr->buffer, token_offsets, token_lengths, token_count,
+            generated_tokens0[tok_i], p_raw, 256);
+        degisken p_dec: [256]u8;
+        degisken p_dec_len: tamsayi = bitnet_gpt2_byte_decode(
+            p_raw, p_raw_len, p_dec, 256);
+        eger p_raw_len > 0 ve p_dec_len >= 0 ve out_len0 + p_dec_len < 8192 {
+            degisken pi: tamsayi = 0;
+            dongu pi < p_dec_len {
+                out_text0[out_len0] = p_dec[pi];
+                out_len0 = out_len0 + 1;
+                pi = pi + 1;
+            }
+        }
+        tok_i = tok_i + 1;
+    }
+    out_text0[out_len0] = 0;
+    ekrana_yaz(out_text0.ptr);
+    ekrana_yaz("\n--- ISTEK 0 SONU ---\n".ptr);
+
+    # ==========================================
+    # ISTEK 1 CIKTISI (Pancake Tarifi)
+    # ==========================================
+    ekrana_yaz("\n======================================================\n".ptr);
+    ekrana_yaz("--- ISTEK 1 CIKTISI (Pancake Tarifi / Slot 1) ---\n".ptr);
+    degisken out_text1: [8192]u8;
+    degisken out_len1: tamsayi = 0;
+    tok_i = 0;
+    dongu tok_i < max_yeni_token {
+        degisken p_raw1: [256]u8;
+        degisken p_raw_len1: tamsayi = bitnet_token_kopyala(
+            durum_ptr->buffer, token_offsets, token_lengths, token_count,
+            generated_tokens1[tok_i], p_raw1, 256);
+        degisken p_dec1: [256]u8;
+        degisken p_dec_len1: tamsayi = bitnet_gpt2_byte_decode(
+            p_raw1, p_raw_len1, p_dec1, 256);
+        eger p_raw_len1 > 0 ve p_dec_len1 >= 0 ve out_len1 + p_dec_len1 < 8192 {
+            degisken pi1: tamsayi = 0;
+            dongu pi1 < p_dec_len1 {
+                out_text1[out_len1] = p_dec1[pi1];
+                out_len1 = out_len1 + 1;
+                pi1 = pi1 + 1;
+            }
+        }
+        tok_i = tok_i + 1;
+    }
+    out_text1[out_len1] = 0;
+    ekrana_yaz(out_text1.ptr);
+    ekrana_yaz("\n--- ISTEK 1 SONU ---\n".ptr);
+    ekrana_yaz("======================================================\n".ptr);
+
+    dondu 0;
+}

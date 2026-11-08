@@ -1,0 +1,17 @@
+# ============================================================
+# std/moduller/geometri_modul.ykn
+# Geometri Modulu - İsim Alani (Namespace: geometri)
+# ============================================================
+
+isv geometri__kare_alani(kenar: tamsayi) -> tamsayi {
+    dondu kenar * kenar;
+}
+
+isv geometri__dikdortgen_alani(uzun: tamsayi, kisa: tamsayi) -> tamsayi {
+    dondu uzun * kisa;
+}
+
+isv geometri__daire_alani(r: f64) -> f64 {
+    degisken pi: f64 = 3.14;
+    dondu pi * r * r;
+}

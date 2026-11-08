@@ -1,0 +1,39 @@
+# ============================================================
+# tests/faz5_directives_ffi_test.ykn
+# FAZ 5: C, C++, Rust, Python, JS Ekosistem Köprüsü & FFI Doğrulama Testi
+# ============================================================
+
+# Direktiflerin parser, typechecker ve codegen boyunca hatasiz gectigini dogrula:
+#c-lib "kernel32";
+#cpp-lib "msvcrt";
+#rs-lib "my_rust_crate";
+#py-lib "math";
+#convert hedef="ykn", mod="strict";
+#config { hedef: "windows" };
+
+# Gercek Win32 FFI cagrisi (IAT'taki KERNEL32 API'leri):
+harici isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi;
+harici isv GetTickCount64() -> tamsayi;
+
+isv topla_fn(x: tamsayi, y: tamsayi) -> tamsayi {
+    dondu x + y;
+}
+
+isv ana() -> tamsayi {
+    # 1. FFI cagrisini test et (GetStdHandle(-11) STD_OUTPUT_HANDLE donmeli, 0'dan farkli)
+    degisken h_out: tamsayi = GetStdHandle(0 - 11);
+    eger h_out == 0 ise {
+        ekrana_yaz("HATA: GetStdHandle sifir dondu!\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Fonksiyon ve hesaplama testi
+    degisken sonuc: tamsayi = topla_fn(20, 22);
+    eger sonuc != 42 ise {
+        ekrana_yaz("HATA: Toplama sonucu yanlis!\n".ptr);
+        dondu 2;
+    }
+
+    ekrana_yaz("FAZ 5 DIREKTIF VE FFI TESTI BASARILI!\n".ptr);
+    dondu 0;
+}

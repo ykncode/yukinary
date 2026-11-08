@@ -1,0 +1,49 @@
+# ============================================================
+# tests/stdlib/17_hashmap_rehash.ykn
+# HashMap Dinamik Buyume ve Rehash Testi (>%75 Load Factor)
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/collection/hashmap.ykn";
+ice_aktar "../../std/metin.ykn";
+
+isv ana() -> tamsayi {
+    # 16 kapasiteli kucuk bir hashmap baslat
+    degisken hm: *HashMap = hashmap_olustur(16);
+
+    # 1. 100 farkli anahtar ekle (bu birden fazla kez resize/rehash tetikler)
+    degisken i: tamsayi = 0;
+    dongu i < 50 {
+        degisken anahtar: *u8 = to_string(i);
+        hashmap_ekle(hm, anahtar, i * 10);
+        i = i + 1;
+    }
+
+    # 2. Boyut kontrolu
+    eger hashmap_uzunluk(hm) != 50 ise {
+        ekrana_yaz("FAIL: hm uzunluk != 50\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Kapasite kontrolu (en az 64 olmali)
+    eger hm.kapasite < 64 ise {
+        ekrana_yaz("FAIL: hm kapasite rehash sonrasi buyumedi\n".ptr);
+        dondu 1;
+    }
+
+    # 4. Tum elemanlarin degerlerini dogrula
+    degisken j: tamsayi = 0;
+    dongu j < 50 {
+        degisken k_str: *u8 = to_string(j);
+        degisken val: tamsayi = hashmap_al(hm, k_str);
+        eger val != j * 10 ise {
+            ekrana_yaz("FAIL: eleman degeri eslesmedi\n".ptr);
+            dondu 1;
+        }
+        j = j + 1;
+    }
+
+    ekrana_yaz("HASHMAP-REHASH-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,39 @@
+# ============================================================
+# Örnek 63: Win32 İsim Seçici / Kura Çekme GUI (Lucky Draw)
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+degisken g_adaylar: [5]*u8;
+degisken g_kura_tohum: tamsayi = 554433221;
+
+isv kura_cek() {
+    g_kura_tohum = (g_kura_tohum * 1103515245 + 12345) % 2147483648;
+    degisken p: tamsayi = g_kura_tohum;
+    eger p < 0 ise { p = 0 - p; }
+    degisken kazanan_idx: tamsayi = p % 5;
+
+    ekrana_yaz("Kura Cekildi! Kazanan Talihli: ");
+    ekrana_yaz(g_adaylar[kazanan_idx]);
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    g_adaylar[0] = "Ali".ptr;
+    g_adaylar[1] = "Ayse".ptr;
+    g_adaylar[2] = "Mehmet".ptr;
+    g_adaylar[3] = "Fatma".ptr;
+    g_adaylar[4] = "Can".ptr;
+
+    degisken p_h: tamsayi = pencere_olustur("YKN Sansli Kura Cekimi".ptr, 360, 240);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Buton
+    buton_olustur(p_h, "KURA CEK!".ptr, 9501, 80, 70, 200, 60);
+
+    ekrana_yaz("Kura cekme arayuzu hazir. 5 aday tanimli.\n".ptr);
+    kura_cek();
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

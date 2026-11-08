@@ -1,0 +1,79 @@
+# ============================================================
+# tests/incremental/04_cache_corruption.ykn
+# FAZ 6.2: Cache Corruption Detection & Automatic Recovery Test
+# ============================================================
+
+ice_aktar "src/cache.ykn";
+harici isv ekrana_yaz(mesaj: *u8);
+
+isv str_len_c(s: *u8) -> tamsayi {
+    degisken i: tamsayi = 0;
+    dongu s[i] != 0 { i = i + 1; }
+    dondu i;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== TEST 04: CACHE CORRUPTION RECOVERY ===\n".ptr);
+
+    degisken fp: [68]u8;
+    degisken src: *u8 = "isv test_fn() -> tamsayi { dondu 42; }".ptr;
+    fp_kaynak_hash(src, str_len_c(src), fp);
+
+    degisken cache_yolu: [128]u8;
+    cache_dosya_yolu_olustur(cache_yolu, CACHE_ASAMA_TC, fp);
+    cache_dosya_sil(cache_yolu);
+
+    # 1. Gecerli bir cache yaz
+    degisken payload: *u8 = "VALID_TYPECHECK_CACHE_PAYLOAD_DATA".ptr;
+    cache_yaz(cache_yolu, CACHE_ASAMA_TC, fp, payload, 34);
+
+    # 2. Dogrula: HIT olmali
+    degisken buf: [512]u8;
+    degisken okunan_uzn: tamsayi = 0;
+    degisken res: tamsayi = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_TC, fp, buf, 512, &okunan_uzn);
+    eger res != CACHE_SONUC_HIT ise {
+        ekrana_yaz("FAIL: ilk okuma HIT olmaliydi\n".ptr);
+        dondu 1;
+    }
+
+    # 3. Senaryo A: Magic byte bozulmasi ('XXXX' vs 'YKNC')
+    degisken h_bad: tamsayi = os_dosya_yarat(cache_yolu, 0x40000000, 1, 2, 0x80);
+    degisken bad_magic: *u8 = "XXXX:1:2:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:10:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n1234567890".ptr;
+    degisken yz: tamsayi = 0;
+    os_dosya_yaz(h_bad, bad_magic, 158, &yz);
+    os_dosya_kapat(h_bad);
+
+    res = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_TC, fp, buf, 512, &okunan_uzn);
+    eger res != CACHE_SONUC_BOZUK ise {
+        ekrana_yaz("FAIL: hatali magic BOZUK (-1) dondurmeliydi\n".ptr);
+        dondu 1;
+    }
+    # Bozuk cache tespit edildi -> otomatik temizleme ve uyar
+    cache_bozuk_temizle_ve_uyar(cache_yolu);
+
+    # 4. Senaryo B: Kesik / Truncated dosya (< 140 bayt)
+    h_bad = os_dosya_yarat(cache_yolu, 0x40000000, 1, 2, 0x80);
+    degisken trunc_data: *u8 = "YKNC:1:2:TRUNCATED".ptr;
+    os_dosya_yaz(h_bad, trunc_data, 18, &yz);
+    os_dosya_kapat(h_bad);
+
+    res = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_TC, fp, buf, 512, &okunan_uzn);
+    eger res != CACHE_SONUC_BOZUK ise {
+        ekrana_yaz("FAIL: truncated dosya BOZUK (-1) dondurmeliydi\n".ptr);
+        dondu 1;
+    }
+    cache_bozuk_temizle_ve_uyar(cache_yolu);
+
+    # 5. Senaryo C: Kurtarma (Recovery) -> Tekrar temiz yazim yapilabilmeli ve calismali
+    cache_yaz(cache_yolu, CACHE_ASAMA_TC, fp, payload, 34);
+    res = cache_oku_ve_dogrula(cache_yolu, CACHE_ASAMA_TC, fp, buf, 512, &okunan_uzn);
+    eger res != CACHE_SONUC_HIT ise {
+        ekrana_yaz("FAIL: kurtarma sonrasi okuma HIT olmaliydi\n".ptr);
+        dondu 1;
+    }
+
+    cache_dosya_sil(cache_yolu);
+
+    ekrana_yaz("FAZ6_CACHE_CORRUPTION_RECOVERY_PASS\n".ptr);
+    dondu 0;
+}

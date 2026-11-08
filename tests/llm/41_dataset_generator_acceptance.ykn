@@ -1,0 +1,69 @@
+# Saf YKN dataset generator acceptance.
+# Daha once native generator tarafindan uretilmis YKDS/YKLM/report artifact'larini
+# yine YKN reader/validator ile kontrol eder; JSON/Python kullanmaz.
+
+harici isv ekrana_yaz(mesaj: *u8);
+ice_aktar "../../std/ai/dataset.ykn";
+ice_aktar "../../std/ai/dataset_manifest.ykn";
+
+degisken MAX_REPORT: tamsayi = 4096;
+
+isv metin_uzunluk_yerli(metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu 0; }
+    degisken n: tamsayi = 0;
+    dongu metin[n] != 0 { n = n + 1; }
+    dondu n;
+}
+
+isv metin_icerir(haystack: *u8, haystack_len: tamsayi,
+                 needle: *u8, needle_len: tamsayi) -> tamsayi {
+    eger haystack == 0 veya needle == 0 veya haystack_len < needle_len veya needle_len <= 0 ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i <= haystack_len - needle_len {
+        degisken j: tamsayi = 0;
+        degisken esit: tamsayi = 1;
+        dongu j < needle_len {
+            eger haystack[i + j] != needle[j] ise { esit = 0; }
+            j = j + 1;
+        }
+        eger esit == 1 ise { dondu 1; }
+        i = i + 1;
+    }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    degisken ds: *u8 = bellek_tahsis_et(YKN_DS_MAX_BYTES);
+    degisken lm: *u8 = bellek_tahsis_et(YKN_LM_MAX_BYTES);
+    degisken report: *u8 = bellek_tahsis_et(MAX_REPORT);
+    degisken ds_count: tamsayi = 0;
+    eger ds == 0 veya lm == 0 veya report == 0 veya
+       ykn_dataset_read_file("build/datasets/self_healing.ykds".ptr, ds,
+                             YKN_DS_MAX_BYTES, &ds_count) == 0 veya ds_count != 60 ise {
+        ekrana_yaz("FAIL: YKDS 60 kayit degil\n".ptr);
+        dondu 1;
+    }
+    degisken lm_size: tamsayi = dosya_oku("build/datasets/self_healing.yklm".ptr, lm, YKN_LM_MAX_BYTES);
+    eger lm_size <= 0 veya ykn_dataset_manifest_dogrula(lm, lm_size) == 0 veya
+       ykn_ds_buf_u32_oku(lm, 8) != 60 ise {
+        ekrana_yaz("FAIL: YKLM validator/count\n".ptr);
+        dondu 2;
+    }
+    degisken report_size: tamsayi = dosya_oku("build/datasets/self_healing.report".ptr, report, MAX_REPORT);
+    eger report_size <= 0 veya metin_icerir(report, report_size, "YKDS_GENERATOR_REPORT_V1".ptr, 24) == 0 veya
+       metin_icerir(report, report_size, "batch_records=60".ptr, 16) == 0 veya
+              metin_icerir(report, report_size, "category.syntax=10".ptr, 18) == 0 veya
+       metin_icerir(report, report_size, "category.type=10".ptr, 16) == 0 veya
+       metin_icerir(report, report_size, "category.nullable=10".ptr, 20) == 0 veya
+       metin_icerir(report, report_size, "category.ownership=10".ptr, 21) == 0 veya
+       metin_icerir(report, report_size, "category.generic=10".ptr, 19) == 0 veya
+       metin_icerir(report, report_size, "category.runtime=10".ptr, 19) == 0 veya
+       metin_icerir(report, report_size, "split.train=48".ptr, 14) == 0 veya
+       metin_icerir(report, report_size, "split.validation=7".ptr, 18) == 0 veya
+       metin_icerir(report, report_size, "split.heldout=5".ptr, 15) == 0 ise {
+        ekrana_yaz("FAIL: kategori/split raporu eksik\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("YKN_DATASET_GENERATOR_ACCEPTANCE_PASS\n".ptr);
+    dondu 0;
+}

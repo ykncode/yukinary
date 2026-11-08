@@ -1,0 +1,5 @@
+isv ana() -> sayi {
+    degisken a: tamsayi = 0x01020304;
+    degisken p: *tamsayi = &a;
+    dondu p[0];
+}

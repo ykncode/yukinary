@@ -1,0 +1,12 @@
+ice_aktar "std/koleksiyon.ykn"
+
+isv ana() -> tamsayi {
+    degisken d: *Dizi<tamsayi> = dizi_olustur<tamsayi>();
+    # d bir pointer, bakalim d'nin degeri ne
+    degisken ptr_val: tamsayi = d;
+    degisken b_val: tamsayi = d.boyut;
+    eger ptr_val == b_val ise {
+        dondu 99; # d.boyut, d'nin kendisine esit cikti!
+    }
+    dondu b_val;
+}

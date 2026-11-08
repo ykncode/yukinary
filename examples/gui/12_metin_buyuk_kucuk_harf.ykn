@@ -1,0 +1,41 @@
+# ============================================================
+# Örnek 60: Win32 Metin Büyük/Küçük Harf Dönüştürücü GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+isv to_upper(str: *u8) {
+    degisken i: tamsayi = 0;
+    dongu (str[i] != 0) {
+        eger str[i] >= 97 ve str[i] <= 122 ise {
+            str[i] = str[i] - 32;
+        }
+        i = i + 1;
+    }
+}
+
+isv to_lower(str: *u8) {
+    degisken i: tamsayi = 0;
+    dongu (str[i] != 0) {
+        eger str[i] >= 65 ve str[i] <= 90 ise {
+            str[i] = str[i] + 32;
+        }
+        i = i + 1;
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN Metin Harf Donusturucu".ptr, 380, 260);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Giris Kutusu
+    metin_kutusu_olustur(p_h, 9101, 30, 30, 300, 36);
+
+    # Butonlar
+    buton_olustur(p_h, "HEPSINI BUYUK YAP".ptr, 9110, 30, 90, 300, 40);
+    buton_olustur(p_h, "hepsini kucuk yap".ptr, 9111, 30, 145, 300, 40);
+
+    ekrana_yaz("Harf donusturucu GUI baslatildi.\n".ptr);
+    olay_dongusu_calistir();
+    dondu 0;
+}

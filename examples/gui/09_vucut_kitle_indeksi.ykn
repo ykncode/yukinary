@@ -1,0 +1,49 @@
+# ============================================================
+# Örnek 61: Win32 Vücut Kitle İndeksi (VKİ) Hesaplayıcı GUI
+# ============================================================
+ice_aktar "std/gui/pencere.ykn";
+ice_aktar "std/gui/widget.ykn";
+
+# VKİ = Kilo / (Boy_m * Boy_m)
+# Tamsayı aritmetiği için: (kilo * 10000) / (boy_cm * boy_cm)
+isv vki_hesapla(kilo: tamsayi, boy_cm: tamsayi) -> tamsayi {
+    eger boy_cm <= 0 ise { dondu 0; }
+    dondu (kilo * 10000) / (boy_cm * boy_cm);
+}
+
+isv vki_degerlendir(vki: tamsayi) {
+    ekrana_yaz("Hesaplanan VKI: ".ptr);
+    sayiyi_ekrana_yaz(vki);
+    ekrana_yaz(" -> Durum: ".ptr);
+
+    eger vki < 18 ise {
+        ekrana_yaz("Zayif\n".ptr);
+    } yoksa eger vki < 25 ise {
+        ekrana_yaz("Normal / Ideal Kilo\n".ptr);
+    } yoksa eger vki < 30 ise {
+        ekrana_yaz("Fazla Kilolu\n".ptr);
+    } yoksa {
+        ekrana_yaz("Obezite / Dikkat\n".ptr);
+    }
+}
+
+isv ana() -> tamsayi {
+    degisken p_h: tamsayi = pencere_olustur("YKN VKI Saglik Hesaplayici".ptr, 360, 280);
+    eger p_h == 0 ise { dondu 1; }
+
+    # Kilo Metin Kutusu (cm)
+    metin_kutusu_olustur(p_h, 7001, 50, 40, 240, 32);
+
+    # Boy Metin Kutusu (kg)
+    metin_kutusu_olustur(p_h, 7002, 50, 90, 240, 32);
+
+    # Hesapla Butonu
+    buton_olustur(p_h, "VKI HESAPLA".ptr, 7010, 50, 150, 240, 45);
+
+    ekrana_yaz("VKI Arayuzu Hazir.\n".ptr);
+    # Test hesaplamasi: 75 kg, 175 cm
+    vki_degerlendir(vki_hesapla(75, 175));
+
+    olay_dongusu_calistir();
+    dondu 0;
+}

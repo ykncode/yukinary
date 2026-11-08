@@ -1,0 +1,168 @@
+# Test FAZ 4: Comptime Recursive Evaluator, Comptime Functions, and Trait / Generics Tables
+ice_aktar "std/os/common.ykn";
+ice_aktar "src/diagnostics.ykn";
+ice_aktar "src/comptime.ykn";
+
+# Basit AST Jetoni Yaratma Yardimcisi
+isv test_jeton_yap(tip: tamsayi, metin: *u8, uzn: tamsayi) -> *Jeton {
+    degisken j: *Jeton = compiler_tahsis_et(40);
+    j.tip = tip;
+    j.baslangic = metin;
+    j.uzunluk = uzn;
+    j.satir = 1;
+    j.sutun = 1;
+    dondu j;
+}
+
+isv test_sayi_dugumu_yap(arena: *AstArena, deger: tamsayi) -> *AstDugum {
+    degisken buf: *u8 = compiler_tahsis_et(16);
+    degisken i: tamsayi = 0;
+    degisken v: tamsayi = deger;
+    degisken tmp: [16]u8;
+    degisken ti: tamsayi = 0;
+    dongu v > 0 {
+        tmp[ti] = (v % 10) + 48;
+        v = v / 10;
+        ti = ti + 1;
+    }
+    degisken bi: tamsayi = 0;
+    dongu ti > 0 {
+        ti = ti - 1;
+        buf[bi] = tmp[ti];
+        bi = bi + 1;
+    }
+    buf[bi] = 0;
+    degisken j: *Jeton = test_jeton_yap(TIP_TAMSAYI, buf, bi);
+    dondu arena_dugum_yarat(arena, AST_SAYI, j);
+}
+
+# Trait Dogrulama Tablosu
+yapi TestTraitGirdisi {
+    trait_hash: tamsayi;
+    tip_id: tamsayi;
+    sonraki: *TestTraitGirdisi;
+}
+
+isv test_trait_kaydet(tablo_basi: **TestTraitGirdisi, tr_hash: tamsayi, t_id: tamsayi) {
+    degisken g: *TestTraitGirdisi = compiler_tahsis_et(24);
+    g.trait_hash = tr_hash;
+    g.tip_id = t_id;
+    g.sonraki = *tablo_basi;
+    *tablo_basi = g;
+}
+
+isv test_trait_var_mi(tablo: *TestTraitGirdisi, tr_hash: tamsayi, t_id: tamsayi) -> tamsayi {
+    degisken it: *TestTraitGirdisi = tablo;
+    dongu it != 0 {
+        eger it.trait_hash == tr_hash ve it.tip_id == t_id ise { dondu 1; }
+        it = it.sonraki;
+    }
+    dondu 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("=== FAZ 4 TESTLERI BASLIYOR ===\n".ptr);
+
+    # 1. TEST: Comptime Faktöriyel ve String Hash
+    ekrana_yaz("[1/3] Comptime Fonksiyonlari (Faktöriyel, FNV Hash, Kareler) Testi... ".ptr);
+    degisken f5: tamsayi = comptime_faktoriyel(5);
+    eger f5 != 120 ise {
+        ekrana_yaz("BASARISIZ! comptime_faktoriyel(5) != 120\n".ptr);
+        dondu 1;
+    }
+
+    degisken f7: tamsayi = comptime_faktoriyel(7);
+    eger f7 != 5040 ise {
+        ekrana_yaz("BASARISIZ! comptime_faktoriyel(7) != 5040\n".ptr);
+        dondu 1;
+    }
+
+    degisken h: tamsayi = comptime_string_hash("Yukinary".ptr, 8);
+    eger h <= 0 ise {
+        ekrana_yaz("BASARISIZ! comptime_string_hash pozitif olmali!\n".ptr);
+        dondu 1;
+    }
+
+    degisken tablo: [5]tamsayi;
+    comptime_kareler_tablosu(tablo, 5);
+    eger tablo[0] != 0 veya tablo[1] != 1 veya tablo[2] != 4 veya tablo[3] != 9 veya tablo[4] != 16 ise {
+        ekrana_yaz("BASARISIZ! comptime_kareler_tablosu yanlis degerler uretti!\n".ptr);
+        dondu 1;
+    }
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    # 2. TEST: Comptime Recursive Expression Evaluator
+    ekrana_yaz("[2/3] Comptime AST Recursive Evaluator Testi... ".ptr);
+    degisken mem: *u8 = os_bellek_tahsis(16384);
+    degisken arena: AstArena;
+    arena.bellek = mem;
+    arena.kapasite = 16384;
+    arena.kullanilan = 0;
+
+    # Yaprak dugum 1: 15
+    degisken n1: *AstDugum = test_sayi_dugumu_yap(&arena, 15);
+
+    # Yaprak dugum 2: 27
+    degisken n2: *AstDugum = test_sayi_dugumu_yap(&arena, 27);
+
+    # Ikili Islem Dugumu: 15 + 27
+    degisken j_plus: *Jeton = test_jeton_yap(TIP_ARTI, "+".ptr, 1);
+    degisken n_add: *AstDugum = arena_dugum_yarat(&arena, AST_IKILI_OP, j_plus);
+    n_add.sol = n1;
+    n_add.sag = n2;
+
+    degisken sonuc_add: tamsayi = comptime_ifade_degerlendir(n_add);
+    eger sonuc_add != 42 ise {
+        ekrana_yaz("BASARISIZ! comptime_ifade_degerlendir 15 + 27 != 42\n".ptr);
+        dondu 2;
+    }
+
+    # Yaprak dugum 3: 2
+    degisken n3: *AstDugum = test_sayi_dugumu_yap(&arena, 2);
+
+    # Agac genisletme: (15 + 27) * 2 = 84
+    degisken j_mul: *Jeton = test_jeton_yap(TIP_CARPI, "*".ptr, 1);
+    degisken n_mul: *AstDugum = arena_dugum_yarat(&arena, AST_IKILI_OP, j_mul);
+    n_mul.sol = n_add;
+    n_mul.sag = n3;
+
+    degisken sonuc_mul: tamsayi = comptime_ifade_degerlendir(n_mul);
+    eger sonuc_mul != 84 ise {
+        ekrana_yaz("BASARISIZ! comptime_ifade_degerlendir (15 + 27) * 2 != 84\n".ptr);
+        dondu 2;
+    }
+
+    # Dizi boyutu hesaplama testi
+    degisken arr_sz: tamsayi = comptime_dizi_boyutu(n_mul);
+    eger arr_sz != 84 ise {
+        ekrana_yaz("BASARISIZ! comptime_dizi_boyutu != 84\n".ptr);
+        dondu 2;
+    }
+    os_bellek_serbest(mem);
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    # 3. TEST: Trait Tablosu & Dispatch
+    ekrana_yaz("[3/3] Trait Dispatch ve Tablo Testi... ".ptr);
+    degisken tr_tablo: *TestTraitGirdisi = 0;
+    degisken tr_isim: *u8 = "Kopyalanabilir".ptr;
+    degisken tr_uzn: tamsayi = 14;
+    degisken tr_h: tamsayi = comptime_string_hash(tr_isim, tr_uzn);
+
+    test_trait_kaydet(&tr_tablo, tr_h, 1); # Tip 1 (tamsayi) icin kaydet
+
+    degisken u1: tamsayi = test_trait_var_mi(tr_tablo, tr_h, 1);
+    eger u1 != 1 ise {
+        ekrana_yaz("BASARISIZ! Trait 'Kopyalanabilir' tamsayi icin dogrulanamadi!\n".ptr);
+        dondu 3;
+    }
+
+    degisken u0: tamsayi = test_trait_var_mi(tr_tablo, tr_h, 999);
+    eger u0 != 0 ise {
+        ekrana_yaz("BASARISIZ! Tanimsiz tip icin trait uygulanmis gorunuyor!\n".ptr);
+        dondu 3;
+    }
+    ekrana_yaz("BASARILI!\n".ptr);
+
+    ekrana_yaz(">>> FAZ 4 TUM TESTLERI BASARIYLA GECTI! <<<\n".ptr);
+    dondu 0;
+}

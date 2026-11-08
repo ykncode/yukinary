@@ -1,0 +1,8 @@
+async isv fetch() -> tamsayi {
+    dondu 1;
+}
+
+async isv ana() -> tamsayi {
+    degisken value: tamsayi = await 1;
+    dondu value;
+}

@@ -1,0 +1,12 @@
+# src/test_ice_aktar.ykn — Modul sistemi testi
+# matematik.ykn'den karesi_al ve topla fonksiyonlarini ice_aktar ile yukle
+
+ice_aktar "matematik.ykn";
+
+isv ana() -> tamsayi {
+    # matematik.ykn'deki fonksiyonlari kullan
+    degisken a: tamsayi = karesi_al(5);   # 5 * 5 = 25
+    degisken b: tamsayi = topla(10, 15);  # 10 + 15 = 25
+    # a + b = 50
+    dondu topla(a, b);
+}

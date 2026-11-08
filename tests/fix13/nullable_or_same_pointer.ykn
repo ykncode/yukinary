@@ -1,0 +1,8 @@
+# FIX-13: ayni pointer icin veya kosulu redundant olsa da guvenlidir.
+isv ana(argc: tamsayi, argv: **u8) -> tamsayi {
+    degisken p: ?*u8 = bos;
+    eger p != bos veya p != bos ise {
+        p[0] = 82;
+    }
+    dondu 0;
+}

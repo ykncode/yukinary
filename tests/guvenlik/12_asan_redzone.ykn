@@ -1,0 +1,60 @@
+# ============================================================
+# tests/guvenlik/12_asan_redzone.ykn
+# FAZ 9.2: Dahili AddressSanitizer (ASan) & Redzone Guvenlik Testi
+# ============================================================
+
+isv ekrana_yaz(m: *u8) {}
+
+ice_aktar "../../std/guvenlik.ykn";
+
+isv ana() -> tamsayi {
+    # 1. Normal tahsis testi (128 bayt)
+    degisken t1: *AsanTahsis = asan_tahsis_et(128);
+    eger t1 == 0 ise {
+        ekrana_yaz("FAIL: asan_tahsis_et\n".ptr);
+        dondu 1;
+    }
+    eger asan_kontrol(t1) != 1 ise {
+        ekrana_yaz("FAIL: t1 saglam redzone basarisiz\n".ptr);
+        dondu 1;
+    }
+
+    # 2. Buffer Overflow tespiti (son redzone bozulmasi)
+    degisken t2: *AsanTahsis = asan_tahsis_et(64);
+    degisken kp2: *u8 = t2.kullanici_ptr;
+    # Sinir disina (offset 64) 1 bayt yazarak overflow olustur
+    kp2[64] = 99;
+    eger asan_kontrol(t2) != 0 ise {
+        ekrana_yaz("FAIL: buffer overflow tespit edilemedi\n".ptr);
+        dondu 2;
+    }
+
+    # 3. Buffer Underflow tespiti (on redzone bozulmasi)
+    degisken t3: *AsanTahsis = asan_tahsis_et(64);
+    degisken hp3: *u8 = t3.ham_ptr;
+    # On redzone'un son baytini boz (ham_ptr[15])
+    hp3[15] = 77;
+    eger asan_kontrol(t3) != 0 ise {
+        ekrana_yaz("FAIL: buffer underflow tespit edilemedi\n".ptr);
+        dondu 3;
+    }
+
+    # 4. Use-After-Free ve Double-Free tespiti
+    degisken t4: *AsanTahsis = asan_tahsis_et(32);
+    asan_serbest_birak(t4);
+
+    # Freed nesne kontrolunde UAF uyarisi gelmeli
+    eger asan_kontrol(t4) != 0 ise {
+        ekrana_yaz("FAIL: UAF tespit edilemedi\n".ptr);
+        dondu 4;
+    }
+
+    # Tekrar serbest birakmada Double-Free uyarisi gelmeli
+    eger asan_serbest_birak(t4) != 0 ise {
+        ekrana_yaz("FAIL: Double-free tespit edilemedi\n".ptr);
+        dondu 5;
+    }
+
+    ekrana_yaz("FAZ14-ASAN-REDZONE-PASS\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,43 @@
+# Faz 8.3 — Microsoft BitNet GGUF metadata smoke test
+harici isv bellek_tahsis_et(boyut: tamsayi) -> *u8;
+harici isv dosya_oku(dosya_adi: *u8, buffer: *u8, maks_boyut: tamsayi) -> tamsayi;
+harici isv ekrana_yaz(mesaj: *u8);
+
+ice_aktar "../../std/ai/gguf_types.ykn";
+ice_aktar "../../std/ai/gguf_reader.ykn";
+ice_aktar "../../std/ai/gguf_loader.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken durum: *GGUFDurum = bellek_tahsis_et(1024);
+    degisken yol: *u8 = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    degisken basari: tamsayi = gguf_yukle(yol, durum);
+    eger basari == 0 ise {
+        ekrana_yaz("TEST 04 FAZ 8: FAILED (gercek GGUF parse)\n".ptr);
+        dondu 2;
+    }
+    eger durum->versiyon != 3 veya durum->tensor_sayisi != 332 veya
+       durum->meta_kv_sayisi != 24 ise {
+        ekrana_yaz("TEST 04 FAZ 8: FAILED (header counts)\n".ptr);
+        dondu 3;
+    }
+    degisken isim: *u8 = "blk.0.ffn_down.weight".ptr;
+    degisken tensor: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, isim);
+    eger tensor == 0 ise {
+        ekrana_yaz("TEST 04 FAZ 8: FAILED (tensor yok)\n".ptr);
+        dondu 4;
+    }
+    eger tensor->ndim != 2 veya tensor->dim_0 != 6912 veya
+       tensor->dim_1 != 2560 veya tensor->ggml_type != 36 veya
+       tensor->bayt_sayisi <= 0 veya tensor->veri_offset <= durum->ilk_veri_offset ise {
+        ekrana_yaz("TEST 04 FAZ 8: FAILED (tensor metadata)\n".ptr);
+        dondu 5;
+    }
+    degisken emb_isim: *u8 = "token_embd.weight".ptr;
+    degisken emb: *GGUFTensorInfo = gguf_tensor_bul_adi_ile(durum, emb_isim);
+    eger emb == 0 veya emb->ggml_type != 1 veya emb->bayt_sayisi <= 0 ise {
+        ekrana_yaz("TEST 04 FAZ 8: FAILED (F16 embedding)\n".ptr);
+        dondu 6;
+    }
+    ekrana_yaz("TEST 04 FAZ 8: GERCEK BITNET GGUF METADATA OK\n".ptr);
+    dondu 0;
+}

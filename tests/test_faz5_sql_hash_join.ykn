@@ -1,0 +1,85 @@
+# Test Faz 5: SQL Volcano Hash Join & Indexing Engine
+ice_aktar "std/io.ykn";
+ice_aktar "std/veritabani/sql_motoru.ykn";
+
+isv ana() -> tamsayi {
+    ekrana_yaz("Faz 5 SQL Hash Join & Indeksleme Testi Basliyor...\n".ptr);
+
+    # 1. Tablolari olustur
+    degisken tbl_kullanici: *SqlTablo = sql_tablo_olustur(32);
+    degisken tbl_sehir: *SqlTablo = sql_tablo_olustur(32);
+
+    # Kullanicilar: id, yas, sehir_kodu
+    # Ali (id 1, yas 25, sehir 34 Istanbul)
+    # Veli (id 2, yas 30, sehir 6 Ankara)
+    # Ayse (id 3, yas 28, sehir 35 Izmir)
+    # Fatma (id 4, yas 22, sehir 34 Istanbul)
+    sql_satir_ekle_gelismis(tbl_kullanici, 1, 25, 34);
+    sql_satir_ekle_gelismis(tbl_kullanici, 2, 30, 6);
+    sql_satir_ekle_gelismis(tbl_kullanici, 3, 28, 35);
+    sql_satir_ekle_gelismis(tbl_kullanici, 4, 22, 34);
+
+    # Sehirler: sehir_kodu, plaka_degeri, bolge
+    # 34: 16000000 (Marmara)
+    # 6:  6000000 (Ic Anadolu)
+    # 35: 4500000 (Ege)
+    sql_satir_ekle_gelismis(tbl_sehir, 34, 16000000, 1);
+    sql_satir_ekle_gelismis(tbl_sehir, 6, 6000000, 2);
+    sql_satir_ekle_gelismis(tbl_sehir, 35, 4500000, 3);
+
+    ekrana_yaz("Tablolar Olusturuldu ve Kayitlar Eklendi.\n".ptr);
+
+    # 2. Hash Index Testi: Sehirler tablosunda sehir_kodu (sutun 0) uzerinde O(1) indeks
+    degisken idx: *SqlIndeks = sql_indeks_olustur(tbl_sehir, 0);
+    eger idx == 0 ise {
+        ekrana_yaz("HATA: Hash indeksi olusturulamadi!\n".ptr);
+        dondu 1;
+    }
+
+    degisken row_34: tamsayi = sql_indeks_ara(idx, 34);
+    degisken row_6: tamsayi = sql_indeks_ara(idx, 6);
+    degisken row_99: tamsayi = sql_indeks_ara(idx, 99);
+
+    eger row_34 != 0 veya row_6 != 1 veya row_99 != (0 - 1) ise {
+        ekrana_yaz("HATA: Hash indeks arama sonuclari yanlis!\n".ptr);
+        dondu 2;
+    }
+    ekrana_yaz("Hash Indeks O(1) Noktasal Arama BASARILI.\n".ptr);
+    sql_indeks_serbest_birak(idx);
+
+    # 3. Volcano Hash Join Boru Hatti:
+    # SELECT kullanicilar.id, sehirler.nufus FROM kullanicilar JOIN sehirler ON kullanicilar.sehir_kodu = sehirler.sehir_kodu
+    degisken scan_it: *SqlIterator = sql_seq_scan_olustur(tbl_kullanici);
+    degisken hash_join_it: *SqlIterator = sql_hash_join_olustur_iter(scan_it, tbl_sehir, 2, 0);
+
+    sql_iter_ac(hash_join_it);
+
+    degisken eslesen_adet: tamsayi = 0;
+    degisken toplam_nufus: tamsayi = 0;
+    degisken out_id: tamsayi = 0;
+    degisken out_val: tamsayi = 0;
+
+    dongu sql_iter_sonraki(hash_join_it, &out_id, &out_val) == 1 {
+        eslesen_adet = eslesen_adet + 1;
+        toplam_nufus = toplam_nufus + out_val;
+    }
+
+    sql_iter_kapat(hash_join_it);
+
+    # 4 kullanici var, hepsi eslesmeli:
+    # Ali (34 -> 16M), Veli (6 -> 6M), Ayse (35 -> 4.5M), Fatma (34 -> 16M)
+    # Toplam = 16M + 6M + 4.5M + 16M = 42500000
+    eger eslesen_adet != 4 ise {
+        ekrana_yaz("HATA: Hash Join eslesen satir sayisi yanlis!\n".ptr);
+        dondu 3;
+    }
+    eger toplam_nufus != 42500000 ise {
+        ekrana_yaz("HATA: Hash Join kumulatif join degerleri yanlis!\n".ptr);
+        dondu 4;
+    }
+    ekrana_yaz("Volcano O(N + M) Hash Join Boru Hatti BASARILI (4 kayit, toplam nufus 42500000).\n".ptr);
+
+    ekrana_yaz("FAZ 5 SQL HASH JOIN & INDEKSLEME TESTI TAMAMLANDI!\n".ptr);
+    dondu 0;
+}
+

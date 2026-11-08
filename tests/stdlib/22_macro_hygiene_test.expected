@@ -1,0 +1,4 @@
+TEST HYGIENE: hesapla(5)=30 OK
+TEST HYGIENE: dis taban=100 korundu OK
+TEST HYGIENE: cift cagri OK
+MACRO-HYGIENE-PASS

@@ -1,0 +1,14 @@
+# Test Turkish float with f64 type alias
+isv ekrana_yaz(m: *u8) {}
+isv ana() -> tamsayi {
+    degisken x: f64 = 7.0;
+    degisken y: f64 = 2.0;
+    degisken z: f64 = x + y;           # 9.0
+    degisken w: tamsayi = tamsayi(z);   # 9
+    eger w == 9 ise {
+        ekrana_yaz("f64-PASS\n".ptr);
+    } yoksa {
+        ekrana_yaz("f64-FAIL\n".ptr);
+    }
+    dondu 0;
+}

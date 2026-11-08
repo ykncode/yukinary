@@ -1,0 +1,10 @@
+# Saf YKN generated DNS wire-protocol probe.
+ice_aktar "std/ag/soket.ykn";
+
+isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
+    degisken adres: [4]u8;
+    degisken sonuc: tamsayi = dns_coz_sunucu("example.test".ptr, ipv4_adres(127, 0, 0, 1), 53535, adres);
+    eger sonuc != 0 ise { dondu 10; }
+    eger adres[0] != 203 veya adres[1] != 0 veya adres[2] != 113 veya adres[3] != 7 ise { dondu 11; }
+    dondu 0;
+}

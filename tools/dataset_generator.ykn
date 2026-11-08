@@ -1,0 +1,293 @@
+# ============================================================
+# tools/dataset_generator.ykn
+# Saf YKN YKDS v1 repair dataset ureticisi
+#
+# Bu arac urun datasetini JSONL/Python kullanmadan uretir:
+#   1) curated YKN repair pairs -> YKDS binary
+#   2) ayni sample ID/content -> YKLM provenance + license sidecar
+#   3) iki artifact'i ayni process icinde reader/validator ile kontrol eder
+#   4) hesaplanmis kategori/split raporunu diske yazar
+#
+# Kategori dagilimi: syntax, type, nullable, ownership, generic, runtime.
+# Her kategori 10 gercek YKN repair ornegi icerir.
+# ============================================================
+
+harici isv ekrana_yaz(mesaj: *u8);
+ice_aktar "../std/ai/dataset.ykn";
+ice_aktar "../std/ai/dataset_manifest.ykn";
+ice_aktar "../std/ai/dataset_batch.ykn";
+
+degisken g_basari: tamsayi = 0;
+degisken g_hata: tamsayi = 0;
+degisken g_manifest: *YKNDatasetManifest = 0;
+degisken g_kategori_sayaci: [6]tamsayi;
+degisken g_split_sayaci: [3]tamsayi;
+degisken g_rapor: [8192]u8;
+degisken g_rapor_pos: tamsayi = 0;
+degisken g_manifest_icerik: [32768]u8;
+degisken g_batch_sayaci: tamsayi = 0;
+
+isv kayit_ekle(w: *YKNDatasetWriter, id: tamsayi, kategori_no: tamsayi,
+              kategori: *u8, kaynak: *u8, hedef: *u8, tani: *u8) {
+    eger w == 0 veya g_manifest == 0 veya kategori_no < 0 veya kategori_no > 5 ise {
+        g_hata = 1;
+        dondu;
+    }
+    # YKDS tanilari kategori provenance'ini de payload icinde tasir.
+    degisken sonuc: tamsayi = ykn_dataset_append(
+        w, id, kaynak, hedef, tani, "tools/dataset_generator.ykn".ptr);
+    eger sonuc == 0 ise {
+        g_hata = 1;
+        dondu;
+    }
+    degisken kaynak_len: tamsayi = ykn_ds_str_uzunluk(kaynak);
+    degisken hedef_len: tamsayi = ykn_ds_str_uzunluk(hedef);
+    eger kaynak_len <= 0 veya hedef_len <= 0 veya kaynak_len + hedef_len + 1 >= 32768 ise {
+        g_hata = 1;
+        dondu;
+    }
+    degisken i: tamsayi = 0;
+    dongu i < kaynak_len {
+        g_manifest_icerik[i] = kaynak[i];
+        i = i + 1;
+    }
+    # Hash girdisi source ve target arasinda NUL ayirici tasir.
+    g_manifest_icerik[kaynak_len] = 0;
+    i = 0;
+    dongu i < hedef_len {
+        g_manifest_icerik[kaynak_len + 1 + i] = hedef[i];
+        i = i + 1;
+    }
+    degisken split: tamsayi = ykn_dataset_split(id, 42);
+    eger ykn_dataset_manifest_append_kategori(
+        g_manifest, id, split, "tools/dataset_generator.ykn".ptr,
+        "MIT".ptr, kategori, g_manifest_icerik,
+        kaynak_len + 1 + hedef_len) == 0 ise {
+        g_hata = 1;
+        dondu;
+    }
+    g_basari = g_basari + 1;
+    g_kategori_sayaci[kategori_no] = g_kategori_sayaci[kategori_no] + 1;
+    g_split_sayaci[split] = g_split_sayaci[split] + 1;
+}
+
+isv rapor_metin(metin: *u8) {
+    eger metin == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 {
+        eger g_rapor_pos >= 8191 ise { g_hata = 1; dondu; }
+        g_rapor[g_rapor_pos] = metin[i];
+        g_rapor_pos = g_rapor_pos + 1;
+        i = i + 1;
+    }
+}
+
+isv rapor_sayi(deger: tamsayi) {
+    degisken rakamlar: [20]u8;
+    degisken n: tamsayi = 0;
+    eger deger == 0 ise {
+        rapor_metin("0".ptr);
+        dondu;
+    }
+    eger deger < 0 ise {
+        rapor_metin("-".ptr);
+        deger = 0 - deger;
+    }
+    dongu deger > 0 {
+        rakamlar[n] = (deger % 10) + 48;
+        n = n + 1;
+        deger = deger / 10;
+    }
+    dongu n > 0 {
+        n = n - 1;
+        eger g_rapor_pos >= 8191 ise { g_hata = 1; dondu; }
+        g_rapor[g_rapor_pos] = rakamlar[n];
+        g_rapor_pos = g_rapor_pos + 1;
+    }
+}
+
+isv raporu_uret(dataset_boyut: tamsayi, manifest_boyut: tamsayi) {
+    rapor_metin("YKDS_GENERATOR_REPORT_V1\n".ptr);
+    rapor_metin("seed=42\nrecords="); rapor_sayi(g_basari); rapor_metin("\n".ptr);
+    rapor_metin("dataset_bytes="); rapor_sayi(dataset_boyut); rapor_metin("\n".ptr);
+    rapor_metin("batch_records="); rapor_sayi(g_batch_sayaci); rapor_metin("\n".ptr);
+    rapor_metin("manifest_bytes="); rapor_sayi(manifest_boyut); rapor_metin("\n".ptr);
+    rapor_metin("category.syntax="); rapor_sayi(g_kategori_sayaci[0]); rapor_metin("\n".ptr);
+    rapor_metin("category.type="); rapor_sayi(g_kategori_sayaci[1]); rapor_metin("\n".ptr);
+    rapor_metin("category.nullable="); rapor_sayi(g_kategori_sayaci[2]); rapor_metin("\n".ptr);
+    rapor_metin("category.ownership="); rapor_sayi(g_kategori_sayaci[3]); rapor_metin("\n".ptr);
+    rapor_metin("category.generic="); rapor_sayi(g_kategori_sayaci[4]); rapor_metin("\n".ptr);
+    rapor_metin("category.runtime="); rapor_sayi(g_kategori_sayaci[5]); rapor_metin("\n".ptr);
+    rapor_metin("split.train="); rapor_sayi(g_split_sayaci[0]); rapor_metin("\n".ptr);
+    rapor_metin("split.validation="); rapor_sayi(g_split_sayaci[1]); rapor_metin("\n".ptr);
+    rapor_metin("split.heldout="); rapor_sayi(g_split_sayaci[2]); rapor_metin("\n".ptr);
+    rapor_metin("provenance=tools/dataset_generator.ykn\nlicense=MIT\n".ptr);
+    rapor_metin("category_provenance=MIT|category=<name>\n".ptr);
+    g_rapor[g_rapor_pos] = 0;
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("YKN saf dataset generator basliyor (60 repair pair)\n".ptr);
+    degisken dataset_yolu: *u8 = "build/datasets/self_healing.ykds".ptr;
+    degisken manifest_yolu: *u8 = "build/datasets/self_healing.yklm".ptr;
+    degisken rapor_yolu: *u8 = "build/datasets/self_healing.report".ptr;
+    degisken w: *YKNDatasetWriter = ykn_dataset_writer_olustur(42);
+    g_manifest = ykn_dataset_manifest_olustur();
+    eger w == 0 veya g_manifest == 0 ise {
+        ekrana_yaz("FAIL: YKDS/YKLM writer baslatilamadi\n".ptr);
+        dondu 1;
+    }
+
+    # syntax: parser/lexer onarimlari
+    kayit_ekle(w, 1001, 0, "syntax".ptr, "isv ana() -> tamsayi { dondu 0 }".ptr, "isv ana() -> tamsayi { dondu 0; }".ptr, "E001|category=syntax".ptr);
+    kayit_ekle(w, 1002, 0, "syntax".ptr, "isv topla(a: tamsayi b: tamsayi) -> tamsayi { dondu a + b; }".ptr, "isv topla(a: tamsayi, b: tamsayi) -> tamsayi { dondu a + b; }".ptr, "E002|category=syntax".ptr);
+    kayit_ekle(w, 1003, 0, "syntax".ptr, "isv ana() -> tamsayi { dondu x + 1; }".ptr, "isv ana() -> tamsayi { degisken x: tamsayi = 0; dondu x + 1; }".ptr, "E003|category=syntax".ptr);
+    kayit_ekle(w, 1004, 0, "syntax".ptr, "isv ana() -> tamsayi { dondu x }".ptr, "isv ana() -> tamsayi { dondu x; }".ptr, "E004|category=syntax".ptr);
+    kayit_ekle(w, 1005, 0, "syntax".ptr, "isv ana( -> tamsayi { dondu 0; }".ptr, "isv ana() -> tamsayi { dondu 0; }".ptr, "E005|category=syntax".ptr);
+    kayit_ekle(w, 1006, 0, "syntax".ptr, "isv ana() tamsayi { dondu 0; }".ptr, "isv ana() -> tamsayi { dondu 0; }".ptr, "E006|category=syntax".ptr);
+    kayit_ekle(w, 1007, 0, "syntax".ptr, "eger x > 0 { dondu 1; }".ptr, "eger x > 0 ise { dondu 1; }".ptr, "E007|category=syntax".ptr);
+    kayit_ekle(w, 1008, 0, "syntax".ptr, "dongu i < 3 ise { i = i + 1; }".ptr, "dongu i < 3 { i = i + 1; }".ptr, "E008|category=syntax".ptr);
+    kayit_ekle(w, 1009, 0, "syntax".ptr, "d_cevirici;".ptr, "d_cevirici(0);".ptr, "E009|category=syntax".ptr);
+    kayit_ekle(w, 1010, 0, "syntax".ptr, "yapi Nokta { x: tamsayi y: tamsayi; }".ptr, "yapi Nokta { x: tamsayi; y: tamsayi; }".ptr, "E010|category=syntax".ptr);
+
+    # type: tip uyumsuzlugu ve fonksiyon imzasi
+    kayit_ekle(w, 1011, 1, "type".ptr, "degisken x: tamsayi = gercek_deger;".ptr, "degisken x: gercek = gercek_deger;".ptr, "E011|category=type".ptr);
+    kayit_ekle(w, 1012, 1, "type".ptr, "degisken x: tamsayi = metin_deger;".ptr, "degisken x: *u8 = metin_deger;".ptr, "E012|category=type".ptr);
+    kayit_ekle(w, 1013, 1, "type".ptr, "isv sayi() -> tamsayi { dondu; }".ptr, "isv sayi() -> tamsayi { dondu 0; }".ptr, "E013|category=type".ptr);
+    kayit_ekle(w, 1014, 1, "type".ptr, "isv bayrak() -> mantiksal { dondu 1; }".ptr, "isv bayrak() -> mantiksal { dondu dogru; }".ptr, "E014|category=type".ptr);
+    kayit_ekle(w, 1015, 1, "type".ptr, "degisken sonuc: tamsayi = dogru;".ptr, "degisken sonuc: mantiksal = dogru;".ptr, "E015|category=type".ptr);
+    kayit_ekle(w, 1016, 1, "type".ptr, "isv birlestir(x: tamsayi) { dondu x; }".ptr, "isv birlestir(x: tamsayi) -> tamsayi { dondu x; }".ptr, "E016|category=type".ptr);
+    kayit_ekle(w, 1017, 1, "type".ptr, "degisken p: *u8 = 4;".ptr, "degisken p: *u8 = 0;".ptr, "E017|category=type".ptr);
+    kayit_ekle(w, 1018, 1, "type".ptr, "degisken liste: [4]tamsayi = 1;".ptr, "degisken liste: [4]tamsayi;".ptr, "E018|category=type".ptr);
+    kayit_ekle(w, 1019, 1, "type".ptr, "degisken x: gercek = 1; dondu x + metin;".ptr, "degisken x: gercek = 1; dondu x + 1;".ptr, "E019|category=type".ptr);
+    kayit_ekle(w, 1020, 1, "type".ptr, "isv al(x: tamsayi) -> tamsayi { dondu x; } dondu al();".ptr, "isv al(x: tamsayi) -> tamsayi { dondu x; } dondu al(0);".ptr, "E020|category=type".ptr);
+
+    # nullable/null safety
+    kayit_ekle(w, 1021, 2, "nullable".ptr, "isv oku(p: ?*tamsayi) -> tamsayi { dondu *p; }".ptr, "isv oku(p: ?*tamsayi) -> tamsayi { eger p != bos ise { dondu *p; } dondu 0; }".ptr, "E021|category=nullable".ptr);
+    kayit_ekle(w, 1022, 2, "nullable".ptr, "isv ptr_al() -> *tamsayi { dondu bos; }".ptr, "isv ptr_al() -> ?*tamsayi { dondu bos; }".ptr, "E022|category=nullable".ptr);
+    kayit_ekle(w, 1023, 2, "nullable".ptr, "degisken p: ?*u8 = bos; p[0] = 65;".ptr, "degisken p: ?*u8 = bos; eger p != bos ise { p[0] = 65; }".ptr, "E023|category=nullable".ptr);
+    kayit_ekle(w, 1024, 2, "nullable".ptr, "eger p ise { ekrana_yaz(p); }".ptr, "eger p != bos ise { ekrana_yaz(p); }".ptr, "E024|category=nullable".ptr);
+    kayit_ekle(w, 1025, 2, "nullable".ptr, "degisken q: ?*tamsayi = p; dondu *q;".ptr, "degisken q: ?*tamsayi = p; eger q != bos ise { dondu *q; } dondu 0;".ptr, "E025|category=nullable".ptr);
+    kayit_ekle(w, 1026, 2, "nullable".ptr, "isv uzunluk(p: ?*u8) -> tamsayi { dondu metin_uzunluk(p); }".ptr, "isv uzunluk(p: ?*u8) -> tamsayi { eger p != bos ise { dondu metin_uzunluk(p); } dondu 0; }".ptr, "E026|category=nullable".ptr);
+    kayit_ekle(w, 1027, 2, "nullable".ptr, "degisken buffer: ?*u8 = bellek_tahsis_et(32); buffer[0] = 1;".ptr, "degisken buffer: ?*u8 = bellek_tahsis_et(32); eger buffer != bos ise { buffer[0] = 1; }".ptr, "E027|category=nullable".ptr);
+    kayit_ekle(w, 1028, 2, "nullable".ptr, "isv ilk(p: ?*tamsayi) -> tamsayi { dondu p[0]; }".ptr, "isv ilk(p: ?*tamsayi) -> tamsayi { eger p != bos ise { dondu p[0]; } dondu 0; }".ptr, "E028|category=nullable".ptr);
+    kayit_ekle(w, 1029, 2, "nullable".ptr, "degisken adres: *u8 = bos;".ptr, "degisken adres: ?*u8 = bos;".ptr, "E029|category=nullable".ptr);
+    kayit_ekle(w, 1030, 2, "nullable".ptr, "eger p == bos ise { dondu 0; } dondu *p;".ptr, "eger p != bos ise { dondu *p; } dondu 0;".ptr, "E030|category=nullable".ptr);
+
+    # ownership/borrow
+    kayit_ekle(w, 1031, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); bellek_serbest(p); ekrana_yaz(p);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); ekrana_yaz(p); bellek_serbest(p);".ptr, "E040|category=ownership".ptr);
+    kayit_ekle(w, 1032, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); bellek_serbest(p); bellek_serbest(p);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); bellek_serbest(p);".ptr, "E041|category=ownership".ptr);
+    kayit_ekle(w, 1033, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; bellek_serbest(p); ekrana_yaz(q);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; ekrana_yaz(q); bellek_serbest(p);".ptr, "E042|category=ownership".ptr);
+    kayit_ekle(w, 1034, 3, "ownership".ptr, "isv kullan(p: *u8) { bellek_serbest(p); } degisken q: *u8 = p; kullan(p); ekrana_yaz(q);".ptr, "isv kullan(p: *u8) { ekrana_yaz(p); } degisken q: *u8 = p; kullan(p); bellek_serbest(p);".ptr, "E043|category=ownership".ptr);
+    kayit_ekle(w, 1035, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; bellek_serbest(q); bellek_serbest(p);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; bellek_serbest(q);".ptr, "E044|category=ownership".ptr);
+    kayit_ekle(w, 1036, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); dondu p; bellek_serbest(p);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); dondu p;".ptr, "E045|category=ownership".ptr);
+    kayit_ekle(w, 1037, 3, "ownership".ptr, "isv devret(p: *u8) -> *u8 { bellek_serbest(p); dondu p; }".ptr, "isv devret(p: *u8) -> *u8 { dondu p; }".ptr, "E046|category=ownership".ptr);
+    kayit_ekle(w, 1038, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); bellek_serbest(p); p[0] = 1;".ptr, "degisken p: *u8 = bellek_tahsis_et(8); p[0] = 1; bellek_serbest(p);".ptr, "E047|category=ownership".ptr);
+    kayit_ekle(w, 1039, 3, "ownership".ptr, "isv yaz(p: *u8) { ekrana_yaz(p); } bellek_serbest(p); yaz(p);".ptr, "isv yaz(p: *u8) { ekrana_yaz(p); } yaz(p); bellek_serbest(p);".ptr, "E048|category=ownership".ptr);
+    kayit_ekle(w, 1040, 3, "ownership".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; bellek_serbest(p); bellek_serbest(q);".ptr, "degisken p: *u8 = bellek_tahsis_et(8); degisken q: *u8 = p; bellek_serbest(q);".ptr, "E049|category=ownership".ptr);
+
+    # generic
+    kayit_ekle(w, 1041, 4, "generic".ptr, "isv ilk<T>(x: T) -> T { dondu; }".ptr, "isv ilk<T>(x: T) -> T { dondu x; }".ptr, "E050|category=generic".ptr);
+    kayit_ekle(w, 1042, 4, "generic".ptr, "isv kopyala<T>(x: T) -> T { dondu x; } degisken y: tamsayi = kopyala();".ptr, "isv kopyala<T>(x: T) -> T { dondu x; } degisken y: tamsayi = kopyala(0);".ptr, "E051|category=generic".ptr);
+    kayit_ekle(w, 1043, 4, "generic".ptr, "isv esle<T>(x: T, y: T) -> T { dondu x; } esle(1, dogru);".ptr, "isv esle<T>(x: T, y: T) -> T { dondu x; } esle(1, 2);".ptr, "E052|category=generic".ptr);
+    kayit_ekle(w, 1044, 4, "generic".ptr, "yapi Kutu<T> { deger: T; } degisken k: Kutu;".ptr, "yapi Kutu<T> { deger: T; } degisken k: Kutu<tamsayi>;".ptr, "E053|category=generic".ptr);
+    kayit_ekle(w, 1045, 4, "generic".ptr, "isv donustur<T>(x: T) -> T { dondu x; } donustur(1);".ptr, "isv donustur<T>(x: T) -> T { dondu x; } degisken y: tamsayi = donustur(1);".ptr, "E054|category=generic".ptr);
+    kayit_ekle(w, 1046, 4, "generic".ptr, "isv bir<T, U>(x: T, y: U) -> T { dondu y; }".ptr, "isv bir<T, U>(x: T, y: U) -> T { dondu x; }".ptr, "E055|category=generic".ptr);
+    kayit_ekle(w, 1047, 4, "generic".ptr, "isv ekle<T>(v: Vec<T>, x: T) { dondu; }".ptr, "isv ekle<T>(v: Vec<T>, x: T) { v.push(x); }".ptr, "E056|category=generic".ptr);
+    kayit_ekle(w, 1048, 4, "generic".ptr, "isv esle<T: Goster>(x: T) -> T { dondu x; }".ptr, "isv esle<T>(x: T) -> T { dondu x; }".ptr, "E057|category=generic".ptr);
+    kayit_ekle(w, 1049, 4, "generic".ptr, "degisken v: Vec<tamsayi>; v.push(dogru);".ptr, "degisken v: Vec<tamsayi>; v.push(0);".ptr, "E058|category=generic".ptr);
+    kayit_ekle(w, 1050, 4, "generic".ptr, "isv kimlik<T>(x: T) -> T { dondu x; } degisken y: *u8 = kimlik(1);".ptr, "isv kimlik<T>(x: T) -> T { dondu x; } degisken y: tamsayi = kimlik(1);".ptr, "E059|category=generic".ptr);
+
+    # runtime/bounds ve kaynak hatalari
+    kayit_ekle(w, 1051, 5, "runtime".ptr, "degisken arr: [2]tamsayi; dondu arr[2];".ptr, "degisken arr: [2]tamsayi; dondu arr[1];".ptr, "E060|category=runtime".ptr);
+    kayit_ekle(w, 1052, 5, "runtime".ptr, "degisken arr: [2]tamsayi; dondu arr[-1];".ptr, "degisken arr: [2]tamsayi; dondu arr[0];".ptr, "E061|category=runtime".ptr);
+    kayit_ekle(w, 1053, 5, "runtime".ptr, "degisken p: *u8 = bellek_tahsis_et(0);".ptr, "degisken p: *u8 = bellek_tahsis_et(1);".ptr, "E062|category=runtime".ptr);
+    kayit_ekle(w, 1054, 5, "runtime".ptr, "dongu i < 4 { arr[i] = i; }".ptr, "dongu i < 2 { arr[i] = i; }".ptr, "E063|category=runtime".ptr);
+    kayit_ekle(w, 1055, 5, "runtime".ptr, "degisken pay: tamsayi = toplam / 0;".ptr, "degisken pay: tamsayi = 0;".ptr, "E064|category=runtime".ptr);
+    kayit_ekle(w, 1056, 5, "runtime".ptr, "degisken n: tamsayi = metin_sayi(".ptr, "degisken n: tamsayi = 0;".ptr, "E065|category=runtime".ptr);
+    kayit_ekle(w, 1057, 5, "runtime".ptr, "dosya_oku(yol, buffer, -1);".ptr, "dosya_oku(yol, buffer, kapasite);".ptr, "E066|category=runtime".ptr);
+    kayit_ekle(w, 1058, 5, "runtime".ptr, "socket_baglan(host, -1);".ptr, "socket_baglan(host, 80);".ptr, "E067|category=runtime".ptr);
+    kayit_ekle(w, 1059, 5, "runtime".ptr, "dongu dogru { dondu; }".ptr, "dongu dogru { dondu 0; }".ptr, "E068|category=runtime".ptr);
+    kayit_ekle(w, 1060, 5, "runtime".ptr, "degisken kapasite: tamsayi = -1; buffer[kapasite] = 0;".ptr, "degisken kapasite: tamsayi = 0;".ptr, "E069|category=runtime".ptr);
+
+    eger g_hata == 1 veya g_basari != 60 ise {
+        ekrana_yaz("FAIL: dataset kayit/provenance sayisi 60 degil\n".ptr);
+        dondu 2;
+    }
+    degisken dataset_boyut: tamsayi = ykn_dataset_writer_bitir(w, dataset_yolu);
+    degisken manifest_boyut: tamsayi = ykn_dataset_manifest_kapat(g_manifest, manifest_yolu);
+    eger dataset_boyut <= 0 veya manifest_boyut <= 0 ise {
+        ekrana_yaz("FAIL: YKDS/YKLM diske yazilamadi\n".ptr);
+        dondu 3;
+    }
+
+    degisken dataset_buffer: *u8 = bellek_tahsis_et(YKN_DS_MAX_BYTES);
+    degisken dataset_count: tamsayi = 0;
+    eger dataset_buffer == 0 veya ykn_dataset_read_file(dataset_yolu, dataset_buffer,
+        YKN_DS_MAX_BYTES, &dataset_count) == 0 veya dataset_count != 60 ise {
+        ekrana_yaz("FAIL: YKDS reader/validator kabul etmedi\n".ptr);
+        dondu 4;
+    }
+
+    # YKDS'nin tamamini bounded batch iterator'dan geçir. 32 kayitlik
+    # kapasite doldugunda segment devam API'si ayni byte akisini surdurur.
+    degisken batch: *YKNDatasetBatch = bellek_tahsis_et(64);
+    degisken batch_output: *YKNDatasetBatchOutput = bellek_tahsis_et(96);
+    degisken batch_source: *u8 = bellek_tahsis_et(YKN_DS_BATCH_MAX_TEXT + 1);
+    degisken batch_target: *u8 = bellek_tahsis_et(YKN_DS_BATCH_MAX_TEXT + 1);
+    degisken batch_diagnostic: *u8 = bellek_tahsis_et(YKN_DS_BATCH_MAX_TEXT + 1);
+    degisken batch_provenance: *u8 = bellek_tahsis_et(YKN_DS_BATCH_MAX_TEXT + 1);
+    eger batch == 0 veya batch_output == 0 veya batch_source == 0 veya batch_target == 0 veya
+       batch_diagnostic == 0 veya batch_provenance == 0 veya
+       ykn_dataset_batch_open(dataset_buffer, dataset_boyut, YKN_DS_BATCH_ALL_SPLITS, 32, batch) == 0 ise {
+        ekrana_yaz("FAIL: YKDS batch pipeline baslatilamadi\n".ptr);
+        dondu 7;
+    }
+    batch_output->source_out = batch_source;
+    batch_output->source_capacity = YKN_DS_BATCH_MAX_TEXT + 1;
+    batch_output->target_out = batch_target;
+    batch_output->target_capacity = YKN_DS_BATCH_MAX_TEXT + 1;
+    batch_output->diagnostic_out = batch_diagnostic;
+    batch_output->diagnostic_capacity = YKN_DS_BATCH_MAX_TEXT + 1;
+    batch_output->provenance_out = batch_provenance;
+    batch_output->provenance_capacity = YKN_DS_BATCH_MAX_TEXT + 1;
+    batch_output->split_out = 0;
+    batch_output->sample_id_out = 0;
+    degisken batch_seen: tamsayi = 0;
+    dongu batch_seen < 60 {
+        eger ykn_dataset_batch_next(batch, batch_output) == 0 ise {
+            eger batch_seen == 32 ve ykn_dataset_batch_segment_devam(batch) == 1 ise {
+                devam;
+            }
+            ekrana_yaz("FAIL: YKDS batch segment erken bitti\n".ptr);
+            dondu 8;
+        }
+        eger batch_source[0] == 0 veya batch_target[0] == 0 veya batch_provenance[0] == 0 ise {
+            ekrana_yaz("FAIL: YKDS batch bounded copy bos kayit verdi\n".ptr);
+            dondu 9;
+        }
+        batch_seen = batch_seen + 1;
+    }
+    eger batch_seen != 60 veya ykn_dataset_batch_next(batch, batch_output) != 0 ise {
+        ekrana_yaz("FAIL: YKDS batch fazla kayit kabul etti\n".ptr);
+        dondu 10;
+    }
+    g_batch_sayaci = batch_seen;
+
+    degisken manifest_buffer: *u8 = bellek_tahsis_et(YKN_LM_MAX_BYTES);
+    eger manifest_buffer == 0 veya dosya_oku(manifest_yolu, manifest_buffer, YKN_LM_MAX_BYTES) != manifest_boyut veya
+       ykn_dataset_manifest_dogrula(manifest_buffer, manifest_boyut) == 0 veya
+       ykn_ds_buf_u32_oku(manifest_buffer, 8) != 60 ise {
+        ekrana_yaz("FAIL: YKLM reader/validator kabul etmedi\n".ptr);
+        dondu 5;
+    }
+
+    raporu_uret(dataset_boyut, manifest_boyut);
+    eger diske_bas_ve_kapat(rapor_yolu, g_rapor, g_rapor_pos) != g_rapor_pos ise {
+        ekrana_yaz("FAIL: hesaplanmis split raporu yazilamadi\n".ptr);
+        dondu 6;
+    }
+    ekrana_yaz("YKN_DATASET_GENERATOR_NATIVE_YKDS_YKLM_PASS\n".ptr);
+    ekrana_yaz("60 kayit, 6 kategori, YKDS+YKLM+split raporu native yazildi ve dogrulandi\n".ptr);
+    dondu 0;
+}
