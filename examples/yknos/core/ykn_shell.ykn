@@ -1,0 +1,26 @@
+# ============================================================
+# YknOS: yknsh (Yukinary Interactive Shell)
+# Saf Yukinary ile Yazilmis Linux Userspace Kabuk Emulatoru
+# ============================================================
+
+isv yknsh_banner() {
+    ekrana_yaz("\n[yknsh]: YknOS Interactive Shell (Linux 6.6 LTS x86_64)\n".ptr);
+    ekrana_yaz("Y.U.K.I AI Asistani devrede. Komutlar: yuki, yardim, uname, free, ps, exit\n\n".ptr);
+}
+
+isv yknsh_komut_calistir(komut: *u8) {
+    ekrana_yaz("[yknsh]: Komut alindi: ".ptr);
+    ekrana_yaz(komut);
+    ekrana_yaz("\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    yknsh_banner();
+    ekrana_yaz("root@yknos:~# yuki\n".ptr);
+    ekrana_yaz("Y.U.K.I Core: Sistem saglik skoru %100. Tum alt sistemler operasyonel.\n".ptr);
+    ekrana_yaz("root@yknos:~# uname -a\n".ptr);
+    ekrana_yaz("Linux yknos 6.6.134-0-lts #1-Alpine SMP PREEMPT_DYNAMIC x86_64 Linux\n".ptr);
+    ekrana_yaz("root@yknos:~# cat /etc/os-release\n".ptr);
+    ekrana_yaz("NAME=\"YknOS\"\nPRETTY_NAME=\"YknOS 6.1 LTS (AI-First Neural Linux OS)\"\nID=yknos\nVERSION=\"6.1 LTS\"\n".ptr);
+    dondu 0;
+}

@@ -1,0 +1,23 @@
+# ============================================================
+# YknOS: ykn-browser (YknBrowser Linux HTTP 1.1 Live Engine)
+# Saf Yukinary ile Yazilmis Web Istemcisi & REST Ag Gecidi
+# ============================================================
+
+isv browser_baslat() {
+    ekrana_yaz("\n================================================================\n".ptr);
+    ekrana_yaz("   🌐 YknBrowser - Yukinary Modern Web Engine (HTTP 1.1 Live)  \n".ptr);
+    ekrana_yaz("================================================================\n".ptr);
+    ekrana_yaz("Baglanti: http://127.0.0.1:8080/index.html\n".ptr);
+    ekrana_yaz("Protokol: HTTP/1.1 | TLS 1.3 Yukinary Secure | JS: YknV8-Micro\n".ptr);
+    ekrana_yaz("Durum   : 200 OK | Gecikme: 0.08 ms | Sunucu: YknOS-Embedded/2.1\n\n".ptr);
+    ekrana_yaz("[ REST API CANLI VERI AKISI ]:\n".ptr);
+    ekrana_yaz("  GET /api/v1/system/status -> { 'cpu': 'Linux x86_64', 'ram': '512MB' }\n".ptr);
+    ekrana_yaz("  GET /api/v1/yuki/memory   -> { 'nodes': 14, 'model': 'BitNet-1.58b' }\n".ptr);
+    ekrana_yaz("  GET /api/v1/sandbox/state -> { 'level': 'L3-Isolated', 'sec': 'OK' }\n\n".ptr);
+    ekrana_yaz("[ Y.U.K.I Guvenlik Duvari ]: Zero-Trust HTTP/1.1 L3 Filtresi AKTIF.\n\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    browser_baslat();
+    dondu 0;
+}

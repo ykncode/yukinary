@@ -1,26 +1,28 @@
 # ============================================================
-# YknOS Bare-Metal QEMU Sanal Makine Baslatici (PowerShell)
+# YknOS: AI-First Neural Linux Operating System (QEMU Boot)
+# Linux LTS Kernel 6.6 x86_64 + Pure YKN Userspace + Alpine Minirootfs
 # ============================================================
 
-$QemuPath = "C:\Program Files\qemu\qemu-system-x86_64.exe"
-$BinTarget = Join-Path $PSScriptRoot "yknos_baremetal.bin"
+$ScriptDir = $PSScriptRoot
+Push-Location $ScriptDir
 
-if (-not (Test-Path $BinTarget)) {
-    Write-Host "[YknOS] Cekirdek ikilisi bulunamadi, derleniyor..." -ForegroundColor Yellow
-    & "$PSScriptRoot\build_qemu.ps1"
+try {
+    $QemuBin = "C:\Program Files\qemu\qemu-system-x86_64.exe"
+    if (-not (Test-Path $QemuBin)) {
+        $QemuBin = "qemu-system-x86_64"
+    }
+
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  Booting YknOS 6.1 LTS (Linux Kernel + Pure YKN Userspace)  " -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Cyan
+
+    & $QemuBin `
+        -kernel "kernel\vmlinuz-lts" `
+        -initrd "kernel\yknos_initramfs.cpio.gz" `
+        -m 512M `
+        -vga std `
+        -serial stdio `
+        -append "console=tty0 console=ttyS0,115200 init=/init quiet loglevel=3"
+} finally {
+    Pop-Location
 }
-
-if (-not (Test-Path $QemuPath)) {
-    Write-Error "[HATA] QEMU yuklu degil: $QemuPath"
-    exit 1
-}
-
-Write-Host "`n============================================================" -ForegroundColor Cyan
-Write-Host "  YknOS QEMU Bare-Metal Sanal Makinesinde Baslatiliyor..." -ForegroundColor Cyan
-Write-Host "  Mavi VGA 80x25 ekrani ayri bir pencerede acilacaktir." -ForegroundColor Green
-Write-Host "  QEMU penceresine tiklayip klavyenizle komut yazabilirsiniz!" -ForegroundColor Yellow
-Write-Host "  Seri port (COM1 0x3F8) gunlukleri bu terminale akacaktir." -ForegroundColor Cyan
-Write-Host "============================================================`n" -ForegroundColor Cyan
-
-& $QemuPath -kernel $BinTarget -serial stdio
-

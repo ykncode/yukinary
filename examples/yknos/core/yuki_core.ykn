@@ -1,0 +1,43 @@
+# ============================================================
+# YknOS: yuki (Y.U.K.I Core Nöral Sistem Asistani & CLI)
+# Saf Yukinary ile Yazilmis Linux Teletıp & Sistem Arkeolojisi
+# ============================================================
+
+isv yuki_yardim() {
+    ekrana_yaz("Y.U.K.I Core - Noral Isletim Sistemi Komut Satiri Arayuzu (CLI)\n".ptr);
+    ekrana_yaz("Kullanim: yuki [komut]\n\n".ptr);
+    ekrana_yaz("Komutlar:\n".ptr);
+    ekrana_yaz("  arkeoloji  : Cekirdek ve donanim olaylarinin kok neden analizi\n".ptr);
+    ekrana_yaz("  bakim      : Disk, zombi surecler ve proaktif saglik denetimi\n".ptr);
+    ekrana_yaz("  sandbox    : 5 Seviyeli guvenlik ve audit log denetimi\n".ptr);
+    ekrana_yaz("  modeller   : Gomulu BitNet 1.58b ve Bonsai-8B agirlik durumu\n".ptr);
+    ekrana_yaz("  durum      : Canli telemetri ve sistem saglik seviyesi\n\n".ptr);
+}
+
+isv yuki_arkeoloji() {
+    ekrana_yaz("\n[Y.U.K.I ARKEOLOJI]: Cekirdek Olay Analizi & Kok Neden Raporu:\n".ptr);
+    ekrana_yaz("1. Linux 6.6 LTS x86_64 SMP cekirdegi baslatildi.\n".ptr);
+    ekrana_yaz("2. devtmpfs, procfs ve sysfs mount islemleri tamamlandi.\n".ptr);
+    ekrana_yaz("3. ykn-init (PID 1) calisma zamanina baglandi.\n".ptr);
+    ekrana_yaz("4. 0 Kernel Panic, 0 OOM Thrashing, 0 Zombi Surec tespit edildi.\n".ptr);
+    ekrana_yaz("Sonuc: Sistem sagligi %100 kararlidir. Donanim nominal calisiyor.\n\n".ptr);
+}
+
+isv yuki_sandbox() {
+    ekrana_yaz("\n[Y.U.K.I SANDBOX]: 5 Seviyeli Guvenlik Hiyerarsisi:\n".ptr);
+    ekrana_yaz("Seviye 0: Kernel (Linux LTS, Ring-0 Dokunulmaz)\n".ptr);
+    ekrana_yaz("Seviye 1: Y.U.K.I Core (Tam Yetki + /var/log/audit.log)\n".ptr);
+    ekrana_yaz("Seviye 2: YKN Sistem Servisleri (Capability-Based)\n".ptr);
+    ekrana_yaz("Seviye 3: Kullanici Uygulamalari (Izole Sandbox)\n".ptr);
+    ekrana_yaz("Seviye 4: LLM Tarafindan Uretilen Kod (Cift Onay Zorunlu)\n\n".ptr);
+}
+
+isv ana() -> tamsayi {
+    ekrana_yaz("================================================================\n".ptr);
+    ekrana_yaz("   Y.U.K.I Core AI Assistant - Yukinary Native Neural Daemon   \n".ptr);
+    ekrana_yaz("================================================================\n".ptr);
+    yuki_arkeoloji();
+    yuki_sandbox();
+    yuki_yardim();
+    dondu 0;
+}

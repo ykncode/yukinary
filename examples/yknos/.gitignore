@@ -1,0 +1,21 @@
+# Binaries and compiled files
+*.exe
+*.bin
+*.iso
+*.o
+*.obj
+*.pdb
+*.ilk
+*.ppm
+*.log
+rootfs/
+kernel/alpine-minirootfs.tar.gz
+
+# System and editor files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+

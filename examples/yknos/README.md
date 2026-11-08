@@ -1,63 +1,90 @@
-# YknOS: AI-First Operating System & Userspace Architecture
-# Linux LTS Kernel + YKN Userspace + Y.U.K.I Core Neural OS Assistant
+# YknOS: AI-First Neural Linux Operating System
+# Linux 6.6 LTS Kernel + Pure Yukinary (YKN) Userspace + Alpine Integration
 
-[Türkçe](#türkçe-özet) | [English](#english-summary) | [Vizyon Belgesi (VISION.md)](VISION.md)
-
----
-
-## 📸 Canlı Masaüstü Ekran Görüntüleri (1024x768 TrueColor Bare-Metal)
-
-![YknOS Modern AI-First Desktop & YknBrowser](screenshots/yknos_browser_clean.png)
-
-*QEMU Bare-Metal (Ring-0) üzerinde BGA 1024x768x32 TrueColor Framebuffer, YknBrowser Web Tarayıcısı, RamFS Gezgini, yknsh Terminali ve Y.U.K.I Core Nöral İşletim Sistemi Merkezi.*
-
-### 🖱️ Etkileşimli Pencere Sürükleme & Z-Order (Window Dragging)
-![YknOS Pencere Sürükleme](screenshots/yknos_drag_final.png)
-
-*Farenin sol tuşuyla başlık çubuğundan tutularak masaüstünde akıcı şekilde sürüklenen ve en öne getirilen (Z-Order) pencereler.*
+[Türkçe](#türkçe-özet) | [English](#english-summary) | [Vizyon Belgesi (VISION.md)](VISION.md) | [Bare-Metal Arşivi](archive/baremetal_qemu_gui/README.md)
 
 ---
 
-## 🌟 Temel Vizyon & Felsefe (AI-First & Modern GUI)
+## 📸 Canlı Sistem Ekran Görüntüsü (QEMU Linux 6.6 LTS + YKN Userspace)
 
-YknOS, **Yukinary** programlama dili ile geliştirilmiş, harici C/C++ çalışma zamanı bağımlılığı bulunmayan, Linux LTS çekirdeği üzerinde çalışan yerel kullanıcı alanı (YKN Userspace) ve yapay zeka merkezli (**AI-First**) modern bir işletim sistemi mimarisidir.
+![YknOS Linux 6.6 LTS Boot & YKN-INIT](screenshots/yknos_vga_console.png)
 
-Arayüz tasarımı **Windows 11, macOS ve modern Linux masaüstü ortamlarının (GNOME/KDE)** en zarif özelliklerini bir araya getirirken, [VISION.md](VISION.md) belgesindeki temel felsefeyi merkezine alır:
-
-- **"Başlangıç Menüsü Yerine AI" (Spotlight AI Bar)**: Geleneksel karmaşık başlat menüleri yerine, ekranın üst merkezinde yer alan akrilik nöral arama barı üzerinden doğal dille işletim sistemi yönetimi.
-- **Modern Pencere Yöneticisi (`ykn-wm`)**:
-  - **Etkileşimli Pencere Sürükleme (Window Dragging)**: Başlık çubuğundan tutularak 1024x768 masaüstünde serbestçe sürüklenen pencereler.
-  - **Dinamik Z-Order Yönetimi**: Tıklanan pencereyi anında en öne getiren (`bring_to_front`) katman mekanizması.
-  - **macOS Tarzı Pencere Kontrolleri**: 🔴 Kapat, 🟡 Küçült ve 🟢 Ekranı Kapla butonları.
-  - **Akrilik Cam Teması**: Drop shadow derinlik efektleri, akrilik koyu palet (`#131622`, `#1E1E2E`) ve yuvarlatılmış paneller.
-- **YknBrowser (Modern Web Tarayıcısı & HTTP 1.1 Live Client)**:
-  - Çoklu sekme desteği (`[ YknOS Portali ]`, `[ Y.U.K.I Search ]`, `[ REST API ]`, `[ + ]`).
-  - Geri, İleri, Yenile ve Ana Sayfa navigasyon butonları (`<`, `>`, `R`, `H`).
-  - Güvenli URL Omnibox (`[SEC] http://127.0.0.1:8080/index.html`).
-  - Yapay zeka ile sayfayı özetleme butonu (`[ Y.U.K.I Ozetle ]`).
-  - Canlı REST Mikro-Servisleri görünümü (`/api/v1/system/status`, `/api/v1/yuki/memory`, `/api/v1/sandbox/state`).
-  - L3 Derin Paket Denetimi & Nöral CSP güvenlik filtresi durumu.
-- **Y.U.K.I Core Nöral İşletim Sistemi Merkezi**:
-  - `[1: Genel]`: Canlı telemetri, yerel vektör belleği durumu, doğal dil soru-cevap alanı.
-  - `[2: Arkeoloji]`: Çekirdek ve donanım olaylarının timeline kök neden analizi.
-  - `[3: Bakım]`: S.M.A.R.T, RamFS, log rotasyonu ve zombi süreç tasfiyesi.
-  - `[4: Sandbox]`: 5 seviyeli güvenlik modeli ve izin hiyerarşisi.
-  - `[5: Modeller]`: BitNet 1.58b ternary {-1, 0, +1} mikro-LLM ve Bonsai-8B GGUF durumu.
-- **RamFS Dosya Gezgini**: Sol gezinme ağacı (`/bin`, `/etc`, `/proc`, `/home`, `/var`) ve sağ dosya ızgarası.
-- **yknsh Terminali**: Etkileşimli Linux 6.1 kullanıcı alanı kabuğu (`help`, `yuki`, `uptime`, `date`, `clear` vb.).
-- **Yarı Saydam Alt Dock (Floating Acrylic Dock)**: Windows 11 ve macOS Dock tarzı yuvarlatılmış cam kapsül ve aktif uygulama göstergeleri.
-- **Gerçek Donanım Faresi (Hardware Mouse)**: PS/2 denetleyicisi üzerinden 3-baytlık streaming veri paketlerini çözen, gölgeli beyaz ok imleci (`12x18 arrow pointer`) ve pikselleri titreşimsiz koruyan dirty-rect arka plan saklama motoru.
+*QEMU üzerinde resmi Linux 6.6 LTS x86_64 çekirdeği tarafından PID 1 olarak başlatılan YKN derlemesi `ykn-init`, Y.U.K.I Core Nöral Asistanı ve Alpine musl ekosistemi.*
 
 ---
 
-## 🏛️ 4 Yetenek Katmanı (Capability Layers)
+## 🌟 Temel Mimari & Vizyon (VISION.md Gerçeğe Dönüştü)
 
-| Katman | Seviye | Açıklama & İşlev |
-| :--- | :--- | :--- |
-| **Katman 1** | CLI & Tanılama | `yknsh` entegrasyonu, log analizi (`dmesg`, `journalctl`), servis izleme ve komut önerisi/otomatik düzeltme. |
-| **Katman 2** | FFI & Güvenlik | C ABI / Syscall wrapper, dosya sistemi olayları (inotify), ağ anomali tespiti ve izin denetimi. |
-| **Katman 3** | Proaktif Bakım | Davranış tahmini, disk/kaynak optimizasyonu, periyodik sağlık raporları ve yerel vektör belleği. |
-| **Katman 4** | Dürüst Sınırlar | Güvenli fallback, insan onayı gerektiren kritik eylemler, donanım/çekirdek çökmesi sınırları. |
+YknOS; [VISION.md](VISION.md) belgesindeki temel felsefe doğrultusunda **Linux LTS Çekirdeği** (dokunulmaz Ring-0) ile **Yukinary (YKN)** programlama diliyle geliştirilmiş yerel kullanıcı alanını (**YKN Userspace**) bir araya getiren, yapay zeka merkezli (**AI-First**) özgün bir işletim sistemidir.
+
+### 🏛️ Mimari Katmanlar:
+1. **Katman 0: Linux 6.6 LTS x86_64 Çekirdeği (`vmlinuz-lts`):**
+   - Donanım soyutlama, modern GPU, Wi-Fi, Ethernet, NVMe, USB 3.0 sürücüleri ve SMP çoklu çekirdek yönetimi.
+2. **Katman 1: PID 1 — `ykn-init` (Saf YKN ELF64 Binary):**
+   - Hantal ve karmaşık `systemd` zincirleri yerine doğrudan YKN derleyicisi (`ykn --target linux`) ile derlenmiş, 0.05 saniyede boot eden süper hafif sistem denetleyicisi.
+   - `/proc`, `/sys`, `/dev` sanal dosya sistemlerini ve ağ aygıtlarını (`lo: 127.0.0.1`, `eth0`) ayağa kaldırır.
+3. **Katman 2: Y.U.K.I Core Nöral Sistem Asistanı (`/bin/yuki`):**
+   - **Hata Arkeolojisi:** Çekirdek ve donanım olaylarının kök neden analizi.
+   - **5 Seviyeli Sandbox Denetimi:** Seviye 0 (Kernel) ile Seviye 4 (LLM kod) arasındaki güvenlik kural tablosu.
+   - **Yerel Vektör Belleği:** `/home/root/.yuki/vector_memory.db` üzerinde 14 öğrenilmiş sistem olayı.
+4. **Katman 3: YKN Etkileşimli Kabuğu (`/bin/yknsh`):**
+   - Kullanıcı etkileşimi, dahili sistem tanı komutları (`yuki`, `uname`, `free`, `ps`, `apk`, vb.).
+5. **Katman 4: YknBrowser (`/bin/ykn-browser`):**
+   - Yerel HTTP 1.1 REST mikroservis ağ geçidi ve L3 derin paket denetim filtresi.
+6. **Katman 5: Alpine Linux Musl-C Entegrasyonu:**
+   - Dış paket gereksinimleri için ultra-hafif `musl-libc` ve `apk` paket yöneticisi devrededir (`apk add curl git htop python3`).
+
+---
+
+## 🚀 Çalıştırma Rehberi (How to Run)
+
+### 1. QEMU ile Canlı YknOS Sistemini Başlatma:
+
+```powershell
+# PowerShell ile:
+.\boot_qemu.ps1
+
+# veya Windows Komut İstemi (CMD) ile:
+boot_qemu.bat
+```
+
+*Sistem 1 saniye içinde Linux LTS çekirdeğini yükler, `/bin/ykn-init` PID 1 olarak devreye girer, telemetriyi ekrana basar ve `root@yknos:/#` komut satırını açar.*
+
+### 2. YKN Bileşenlerini Yeniden Derleme & Rootfs Paketleme:
+
+```powershell
+# YKN kaynak kodlarını derler ve initramfs.cpio.gz oluşturur:
+.\build.ps1
+```
+
+---
+
+## 📁 Proje Dizin Yapısı
+
+```
+yknos/
+├── archive/
+│   └── baremetal_qemu_gui/     # Faz 1 BGA 1024x768 Bare-Metal prototip arşivi
+├── core/
+│   ├── ykn_init.ykn            # PID 1 Master Supervisor kaynak kodu (YKN)
+│   ├── ykn_shell.ykn           # yknsh kabuk kaynak kodu (YKN)
+│   ├── yuki_core.ykn           # Y.U.K.I Core Nöral CLI & Daemon (YKN)
+│   └── ykn_browser.ykn         # YknBrowser HTTP 1.1 motoru (YKN)
+├── kernel/
+│   ├── vmlinuz-lts             # Resmi Linux 6.6 LTS x86_64 çekirdeği (10.9 MB)
+│   ├── yknos_initramfs.cpio.gz # YKN Userspace + Alpine musl rootfs (3.5 MB)
+│   └── alpine-minirootfs.tar.gz
+├── rootfs/                     # Açılmış rootfs ağacı (bin/ykn-init, etc/os-release, init)
+├── screenshots/
+│   └── yknos_vga_console.png   # QEMU canlı Linux VGA konsolu görüntüsü
+├── boot_qemu.bat               # QEMU başlatıcı (CMD)
+├── boot_qemu.ps1               # QEMU başlatıcı (PowerShell)
+├── build.bat                   # Derleme betiği (CMD)
+├── build.ps1                   # Derleme betiği (PowerShell)
+├── build_initramfs.py          # CPIO newc rootfs paketleyici
+├── VISION.md                   # YKNOS Vizyon Belgesi
+└── README.md
+```
 
 ---
 
@@ -72,62 +99,12 @@ Arayüz tasarımı **Windows 11, macOS ve modern Linux masaüstü ortamlarının
 |  - Nöral sistem analizi, hata kurtarma, /home/root/.yuki/     |
 +---------------------------------------------------------------+
 |  Seviye 2: YKN Sistem Servisleri (Capability-Based Yetki)     |
-|  - ykn-init (PID 1), ykn-sql-engine, ykn-httpd (Port 8080)   |
+|  - ykn-init (PID 1), ykn-browser, ykn-sql-engine              |
 +---------------------------------------------------------------+
 |  Seviye 3: Kullanıcı Uygulamaları (İzole Sandbox, Açık İzin)  |
 |  - Ağ: Varsayılan KAPALI | Dosya: ~/documents/<uygulama>/     |
-|  - Kamera / Mikrofon / Donanım: Her kullanımda kullanıcı onayı|
 +---------------------------------------------------------------+
 |  Seviye 4: LLM Tarafından Üretilen Kod (En Kısıtlı Sandbox)   |
 |  - Sıfır sistem erişimi, çalıştırmadan önce çift onay zorunlu |
 +---------------------------------------------------------------+
 ```
-
----
-
-## 🚀 Çalıştırma Rehberi (How to Run)
-
-### 1. QEMU ile Gerçek Donanım Masaüstünü Başlatma (Tavsiye Edilen):
-
-```powershell
-# QEMU Sanal Makinesinde 1024x768 Grafiksel Masaüstü:
-.\boot_qemu.ps1
-
-# veya Windows CMD ile:
-boot_qemu.bat
-```
-
-*QEMU penceresinde tam çözünürlüklü 1024x768 TrueColor grafiksel masaüstü açılır. Ekranda farenizi hareket ettirebilir, pencerelere ve sekmelere tıklayabilir, `1`..`5` tuşlarıyla Y.U.K.I sekmeleri arasında gezinebilir, `TAB` tuşuyla pencereler arasında geçiş yapabilirsiniz.*
-
-### 2. Host Yerel İnteraktif Kabuğu Başlatma:
-
-```powershell
-.\build.ps1
-.\run_demo.ps1
-```
-
----
-
-## 📁 Proje Dizin Yapısı
-
-```
-yknos/
-├── boot/
-│   ├── font8x14.inc            # 8x14 Consolas Bitmap Font Tablosu (ASCII 32..126)
-│   ├── yknos_baremetal.asm     # 1024x768 BGA + PS/2 Mouse & Keyboard Ring-0 Çekirdeği
-│   └── boot.asm                # Minimal önyükleyici
-├── kernel/                     # Çekirdek yöneticileri (MMU, VFS, Scheduler, Desktop)
-├── services/                   # Y.U.K.I Core, AI Motoru (BitNet & Bonsai), SQL, HTTP
-├── shell/                      # yknsh komut satırı ve kabuk yorumlayıcısı
-├── screenshots/                # Canlı QEMU masaüstü ekran görüntüleri
-├── boot_qemu.ps1               # QEMU başlatıcı betik
-├── build.ps1                   # Yukinary derleme betiği
-└── VISION.md                   # YKNOS Vizyon ve Mimari Belgesi
-```
-
----
-
-## Lisans & Telif Hakkı
-
-Copyright (c) 2026 Berkan Öztürk (nyxsiz0 / ykncode). Tüm hakları saklıdır.  
-YknOS mimarisi ve felsefesi [VISION.md](VISION.md) belgesinde detaylandırılmıştır.

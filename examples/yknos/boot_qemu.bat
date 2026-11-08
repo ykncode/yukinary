@@ -1,28 +1,16 @@
 @echo off
-rem ============================================================
-rem YknOS Bare-Metal QEMU Sanal Makine Baslatici
-rem ============================================================
+REM ============================================================
+REM YknOS: AI-First Neural Linux Operating System (QEMU Boot)
+REM Linux LTS Kernel 6.6 x86_64 + Pure YKN Userspace + Alpine Minirootfs
+REM ============================================================
 
-set QEMU_EXE="C:\Program Files\qemu\qemu-system-x86_64.exe"
-set BIN_FILE="%~dp0yknos_baremetal.bin"
+set QEMU="C:\Program Files\qemu\qemu-system-x86_64.exe"
+if not exist %QEMU% set QEMU="qemu-system-x86_64"
 
-if not exist %BIN_FILE% (
-    echo [YknOS] Cekirdek ikilisi bulunamadi, derleniyor...
-    call "%~dp0build_qemu.bat"
-)
-
-if not exist %QEMU_EXE% (
-    echo [HATA] QEMU bulunamadi: %QEMU_EXE%
-    exit /b 1
-)
-
-echo.
 echo ============================================================
-echo   YknOS QEMU Sanal Makinesinde Baslatiliyor...
-echo   Ekranda YknOS VGA Konsolu acilacak.
-echo   Seri port (COM1) ciktilari bu terminale akacaktir.
+echo   Booting YknOS 6.1 LTS in QEMU (Linux Kernel + YKN Userspace)
 echo ============================================================
-echo.
 
-%QEMU_EXE% -kernel %BIN_FILE% -serial stdio
+%QEMU% -kernel kernel\vmlinuz-lts -initrd kernel\yknos_initramfs.cpio.gz -m 512M -vga std -serial stdio -append "console=tty0 console=ttyS0,115200 init=/init quiet loglevel=3"
 
+pause
