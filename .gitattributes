@@ -19,6 +19,12 @@ vscode-eklentisi/** linguist-vendored=true
 *.json linguist-vendored=true
 *.expected linguist-vendored=true
 *.stdout linguist-vendored=true
+*.asm linguist-vendored=true
+*.ld linguist-vendored=true
+*.inc linguist-vendored=true
+*.cfg linguist-vendored=true
+*.c linguist-vendored=true
+
 
 # Documentation
 docs/** linguist-documentation=true
