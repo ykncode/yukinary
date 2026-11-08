@@ -266,12 +266,29 @@ Harici modüller veya AI tarafından üretilen kodlar AST seviyesinde denetlenir
 
 ---
 
-## 12. Dahili 16 KB Nöral Beyin: Micro-LLM
+## 12. Yapay Zeka Mimarisi: Micro-LLM ve Full LLM Ayrımı
 
-YKN binary'sinin içine doğrudan gömülü **16.448 baytlık BitNet 1.58b ternary {-1, 0, +1} Transformer** motoru bulunur.
-* **Always-On:** Hiçbir komut veya prompt vermeden arka planda çalışır.
-* **Sıfır Donanım Yükü:** GPU, Python veya harici model gerektirmez; CPU'da 0.1 ms'de çalışır.
-* **GGUF Desteği:** İhtiyaç halinde `--llm-model model.gguf` ile harici büyük modelleri de bağlayabilirsiniz.
+YKN'de yapay zeka iki tamamlayıcı katmandan oluşur. Bu iki katmanın görevleri ve donanım gereksinimleri birbirinden tamamen farklıdır:
+
+### İki Katmanlı Yapay Zeka Özeti
+
+| Kriter | 🧠 Gömülü Micro-LLM (16 KB) | 🚀 Harici Full LLM (1B – 70B GGUF) |
+| :--- | :--- | :--- |
+| **Konum & Bellek** | Derleyici ikilisinin (`ykn.exe`) `.rodata` veri kesitine gömülü | Kullanıcının diskten gösterdiği harici `.gguf` dosyası |
+| **Boyut & Ağırlıklar** | **16.448 Bayt (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet omurgası | **1 GB – 40 GB** (Llama-3, Mistral, Qwen, BitNet b1.58 vb.) |
+| **Donanım Şartı** | **Sıfır GPU, Sıfır Python, Sıfır İnternet.** Her standart CPU'da çalışır | Model boyutuna göre 4 GB – 32 GB RAM veya GPU gerektirir |
+| **Gecikme (Latency)** | **0.1 milisaniye (insan gözünün algılayamayacağı kadar anlık)** | Token başına 10 – 50 milisaniye |
+| **Kullanım Amacı** | **Derleyicinin Refleksleri:**<br>• Sözdizimi onarımı (`Self-Healing`: noktalı virgül, parantez)<br>• Çökmeleri önleyen `null-guard` enjeksiyonu<br>• VSCode'da anlık kod ve struct alanı tamamlama<br>• C/Python/Rust kodunu YKN'ye anında çevirme (`#convert`) | **Geliştiricinin Üretkenliği:**<br>• Sıfırdan karmaşık veri yapıları veya algoritmalar tasarlama<br>• Doğal dilden YKN kodu üretme (`#prompt "HTTP sunucusu yaz"`)<br>• Büyük projelerde mimari refactoring |
+| **Kullanıcı Hisseder mi?** | **Hayır.** Arka planda sessiz, kesintisiz ve her daim aktiftir ("Always-On") | **Evet.** Geliştirici komut satırından özellikle model dosyasını vererek çağırır |
+
+### 1. Gömülü Micro-LLM Nasıl Çalışır?
+Her derleme anında arka planda otomatik devreye girer. Kullanıcının model indirmesine gerek yoktur. Kodda bir hata varsa Levenshtein mesafesi ve nöral logitler birleşerek anında en olası tamiri sunar.
+
+### 2. Harici Full LLM Nasıl Çalışır?
+Geliştirici diskteki bir GGUF modelini bağlayarak sıfırdan modül ürettirebilir:
+```powershell
+ykn.exe ana.ykn --llm-model models/bitnet-b1.58-2B-4T.gguf --prompt "Bana hızlı bir hashmap yapısı yaz"
+```
 
 ---
 

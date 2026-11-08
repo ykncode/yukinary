@@ -1,3 +1,0 @@
-isv foo32(x: tamsayi) -> tamsayi { dondu x + 32; }
-isv f33(x: tamsayi) -> tamsayi { dondu foo32(x) + 33; }
-isv ana() -> tamsayi { dondu f33(10); }

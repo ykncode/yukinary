@@ -6,17 +6,17 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE-MIT)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE-APACHE)
-[![Platform: Windows x86_64](https://img.shields.io/badge/Platform-Windows_PE32%2B-blue)](https://github.com/ykncode/yukinary)
-[![Platform: Linux x86_64](https://img.shields.io/badge/Platform-Linux_ELF64-orange)](https://github.com/ykncode/yukinary)
+[![Platform: Windows x86_64](https://img.shields.io/badge/Platform-Windows_PE32%2B-blue)](https://github.com/ykncode/yukinary/releases)
+[![Platform: Linux x86_64](https://img.shields.io/badge/Platform-Linux_ELF64-orange)](https://github.com/ykncode/yukinary/releases)
 [![Self-Hosting: Bit-Identical Fixpoint](https://img.shields.io/badge/Self--Hosting-Bit--Identical_Fixpoint-brightgreen)](https://github.com/ykncode/yukinary)
-[![Architecture: Zero C-Runtime](https://img.shields.io/badge/Runtime-Zero_C_Runtime-red)](https://github.com/ykncode/yukinary)
+[![Architecture: 100% Pure YKN](https://img.shields.io/badge/Language-100%25_Pure_YKN-purple)](https://github.com/ykncode/yukinary)
 
 <p align="center">
+  <a href="#-quick-start--releases">Download & Releases</a> •
   <a href="#-language-documentation--dil-kılavuzları">Documentation</a> •
+  <a href="#-micro-llm-vs-full-llm-architecture">Micro-LLM vs Full LLM</a> •
   <a href="#-key-features">Key Features</a> •
-  <a href="#-polyglot-convert-and-ffi-interop">Polyglot & FFI</a> •
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-two-repository-ecosystem">Ecosystem</a> •
+  <a href="#-four-repository-ecosystem">Ecosystem</a> •
   <a href="#-dual-license">License</a>
 </p>
 
@@ -24,13 +24,44 @@
 
 </div>
 
+## 🚀 Quick Start & Releases
+
+You **do not need** a C++ compiler or external toolchain to run Yukinary. Standalone, single-file native binaries are pre-compiled and ready to download:
+
+### 1. Download Standalone Compiler
+👉 [**Download Yukinary from GitHub Releases**](https://github.com/ykncode/yukinary/releases)
+
+* **Windows:** Download `ykn.exe` (Standalone PE32+ binary)
+* **Linux:** Download `ykn` (Standalone ELF64 binary, `chmod +x ykn`)
+
+### 2. Write Your First Program (`hello.ykn`)
+```ykn
+isv ana() -> tamsayi {
+    ekrana_yaz("Merhaba, Yukinary Dunyasi!\n".ptr);
+    dondu 0;
+}
+```
+
+### 3. Compile Directly to Native Machine Code
+```powershell
+# Windows
+.\ykn.exe hello.ykn -o hello.exe
+.\hello.exe
+
+# Linux
+./ykn hello.ykn -o hello
+./hello
+```
+
+---
+
 ## 🌐 Language Documentation / Dil Kılavuzları
 
 Yukinary provides comprehensive, beginner-friendly ("mala anlatır gibi") complete guides for all supported spoken languages:
 
 | Language | File | Description |
 | :--- | :--- | :--- |
-| 🇹🇷 **Türkçe** | [**`docs/kullanim_rehberi_tr.md`**](docs/kullanim_rehberi_tr.md) | Detaylı Türkçe Kullanım Kılavuzu, sözdizimi, `#convert`, self-healing ve AI motoru |
+| 🇹🇷 **Türkçe** | [**`docs/kullanim_rehberi_tr.md`**](docs/kullanim_rehberi_tr.md) | Detaylı Türkçe Kullanım Kılavuzu, sözdizimi, `#convert`, Micro-LLM ve FFI motoru |
 | 🇬🇧 **English** | [**`docs/guide_en.md`**](docs/guide_en.md) | Complete Developer Guide, Syntax Reference, `#convert` Engine, Architecture, and Tooling |
 | 🇷🇺 **Русский** | [**`docs/guide_ru.md`**](docs/guide_ru.md) | Полное руководство разработчика, многоязычный синтаксис, `#convert` и архитектура |
 | 🇯🇵 **日本語** | [**`docs/guide_ja.md`**](docs/guide_ja.md) | 開発者ガイド、日本語ネイティブ構文、`#convert`変換、自己修復機能、AIエンジン解説 |
@@ -39,15 +70,46 @@ Yukinary provides comprehensive, beginner-friendly ("mala anlatır gibi") comple
 
 ---
 
-## ⚡ What is Yukinary?
+## 🧠 Micro-LLM vs. Full LLM Architecture
 
-**Yukinary (YKN)** is an independent, statically-typed, self-hosting systems programming language designed from the ground up to compile directly to executable machine code (**Windows PE32+** and **Linux ELF64**) without relying on external C libraries (libc/msvcrt), LLVM, or third-party linkers.
+Yukinary integrates artificial intelligence into the compilation pipeline through **two distinct, complementary layers**. Understanding the difference removes all misconceptions:
 
-Yukinary introduces a unique balance between **high-performance systems programming**, **first-class multi-lingual grammar**, **autonomous compiler resilience**, and **instant access to the world's existing libraries via FFI and AI-driven code transpilation**.
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        YUKINARY AI MOTOR MİMARİSİ                      │
+└────────────────────────────────────────────────────────────────────────┘
+                                    │
+         ┌──────────────────────────┴──────────────────────────┐
+         ▼                                                     ▼
+┌───────────────────────────────────┐       ┌───────────────────────────────────┐
+│     1. GÖMÜLÜ (EMBEDDED)          │       │       2. HARİCİ (EXTERNAL)        │
+│          MICRO-LLM                │       │         FULL LLM MOTORU           │
+├───────────────────────────────────┤       ├───────────────────────────────────┤
+│ 📁 std/ai/micro_llm.ykn           │       │ 📁 src/llm.ykn                    │
+│ 📁 std/ai/embedded_weights.ykn    │       │ 📁 std/ai/gguf_loader.ykn         │
+│ • Boyut: 16.448 Bayt (~16 KB)     │       │ • Boyut: 1 GB – 40 GB             │
+│ • Derleyici binary (.rodata) içi  │       │ • Dışarıdan model dosyası yükler  │
+│ • Sıfır dosya, sıfır internet     │       │ • `--llm-model model.gguf`        │
+│ • 0.1 milisaniyede tamamlama      │       │ • Doğal dilden sıfırdan karmaşık  │
+│ • Görev: Refleksler, Self-Heal,   │       │   algoritmalar ve modüller üretir │
+│   LSP tamamlama, C/Python convert │       │   (`#prompt "..."`)               │
+└───────────────────────────────────┘       └───────────────────────────────────┘
+```
+
+### Karşılaştırma ve Kullanım Amaçları Tablosu:
+
+| Kriter | 🧠 Gömülü Micro-LLM (16 KB) | 🚀 Harici Full LLM (1B – 70B GGUF) |
+| :--- | :--- | :--- |
+| **Konum & Bellek** | Derleyici ikilisinin (`ykn.exe`) `.rodata` veri kesiti içine gömülü | Kullanıcının diskten gösterdiği harici `.gguf` dosyası |
+| **Boyut & Ağırlıklar** | **16.448 Bayt (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet omurgası | **1 GB – 40 GB** (Llama-3, Mistral, Qwen, BitNet b1.58 vb.) |
+| **Donanım Şartı** | **Sıfır GPU, Sıfır Python, Sıfır İnternet.** Her standart CPU'da çalışır | Model boyutuna göre 4 GB – 32 GB RAM veya GPU gerektirir |
+| **Gecikme (Latency)** | **0.1 milisaniye (insan gözünün algılayamayacağı kadar anlık)** | Token başına 10 – 50 milisaniye |
+| **Kullanım Amacı** | **Derleyicinin Refleksleri:**<br>• Sözdizimi onarımı (`Self-Healing`: noktalı virgül, parantez)<br>• Çökmeleri önleyen `null-guard` enjeksiyonu<br>• VSCode'da anlık kod ve struct alanı tamamlama<br>• C/Python/Rust kodunu YKN'ye anında çevirme (`#convert`) | **Geliştiricinin Üretkenliği:**<br>• Sıfırdan karmaşık veri yapıları veya algoritmalar tasarlama<br>• Doğal dilden YKN kodu üretme (`#prompt "HTTP sunucusu yaz"`)<br>• Büyük projelerde mimari refactoring |
+| **Kullanıcı Hisseder mi?** | **Hayır.** Arka planda sessiz, kesintisiz ve her daim aktiftir ("Always-On") | **Evet.** Geliştirici komut satırından özellikle model dosyasını vererek çağırır |
 
 ---
 
-## 🚀 Key Features
+## ⚡ Key Features
 
 ### 1. Direct Native Code Generation (Zero C-Runtime)
 * Emits standalone executables directly from the AST.
@@ -82,7 +144,6 @@ YKN never suffers from the "no libraries yet" dilemma:
 * **Zero-Cost FFI (`harici isv`):** Directly invoke compiled C/C++/Rust shared libraries (`.dll` / `.so`) via OS dynamic loaders (`LoadLibraryA` / `dlopen`).
 * **Direct Convert Directives (`#C-convert`, `#PY-convert`, `#JS-convert`, etc.):** Embed code from other languages directly into your source files. The convert engine translates them to idiomatic YKN and caches them with two-level SHA-256 in `.ykn_cache/convert/`.
 * **In-Compiler Polyglot Transpiler:** The embedded neural engine translates C functions, structs, types, Python `def`s, and Rust syntax directly into YKN.
-* **Bridge Runtimes:** Supports embedded Python (`PYTHON_EMBED`) and Node.js JSON-RPC (`JS_RPC_IPC`) IPC process bridges.
 
 ### 4. Tagged Enums (Algebraic Data Types) & Pattern Matching
 Supports variants with and without payloads with 16-byte aligned `{ discriminant, payload }` representations:
@@ -127,88 +188,43 @@ Acts as an automated code mechanic:
 ### 8. Sandbox Gate Security
 Restricts untrusted scripts and external plugins at the AST level from executing unauthorized system calls (`CreateProcess`, `socket`, `send`, `LoadLibrary`, `dlopen`).
 
-### 9. Always-On 16 KB BitNet 1.58b Micro-LLM & External Full LLM Runtime
-* Features an embedded 16,448-byte ternary $\{-1, 0, +1\}$ Transformer directly inside the compiler binary for zero-latency offline self-healing and linting.
-* Can also load massive external GGUF models (7B, 13B, 70B BitNet / LLaMA / Mistral) via `--llm-model model.gguf` with custom IQ2_S and BPE tokenizer execution engines.
-
-### 10. High-Performance Register Allocation
+### 9. High-Performance Register Allocation
 * Loop induction variables are automatically assigned to machine callee-saved registers (`RBX`, `R12`..`R15`), minimizing stack memory roundtrips.
 
-### 11. Self-Hosting Reproducible Build Fixpoint
+### 10. Self-Hosting Reproducible Build Fixpoint
 * The compiler compiles itself! Stage 2 and Stage 3 executables produce **100% bit-for-bit identical SHA-256 hashes**:
   `EF607B9A47F8586970C7F7C68404B96BF7E58B1C2BC6B25C51DA280522B4A225`
 
 ---
 
-## 🛠️ Quick Start
+## 🏛️ Four-Repository Ecosystem
 
-### 1. Build the Bootstrap Compiler
-On Windows (using MinGW GCC or Clang):
-```powershell
-g++ -O2 -std=c++17 -o app_full.exe app_full.cpp -lws2_32
-```
-
-On Linux:
-```bash
-g++ -O2 -std=c++17 -o app_full app_full.cpp -lpthread
-```
-
-### 2. Compile Your First Program
-Create `hello.ykn`:
-```ykn
-isv ana() -> tamsayi {
-    ekrana_yaz("Merhaba, Yukinary Dunyasi!\n".ptr);
-    dondu 0;
-}
-```
-
-Compile and run:
-```powershell
-# Windows
-.\app_full.exe hello.ykn -o hello.exe
-.\hello.exe
-
-# Linux
-./app_full hello.ykn -o hello
-./hello
-```
-
-### 3. Run the Unified Test Suite
-Run tests across both Windows native and Docker Alpine Linux:
-```powershell
-powershell -ExecutionPolicy Bypass -File scratch/verify_all.ps1
-```
-
----
-
-## 📦 Two-Repository Ecosystem
-
-Yukinary is structured into two clean repositories:
+The Yukinary ecosystem is organized into four purpose-built repositories:
 
 ```
-┌──────────────────────────────────────┐       ┌──────────────────────────────────────┐
-│        1. COMPILER CORE REPO         │       │       2. PACKAGE REGISTRY REPO       │
-│         yukinary/yukinary            │       │          yukinary/packages           │
-├──────────────────────────────────────┤       ├──────────────────────────────────────┤
-│ • Bootstrap (app_full.cpp)           │       │ • Official & Community Libraries     │
-│ • Self-Hosted Compiler (src/)        │       │ • Net, HTTP, Crypto, GUI, Math       │
-│ • Standard Library (std/)            │       │ • Managed by `ykn add <pkg>`         │
-│ • Language Server Protocol (ykn_lsp) │       │ • Synced via `yukinary.toml`         │
-└──────────────────────────────────────┘       └──────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        YKNCODE GITHUB ECOSYSTEM                        │
+└────────────────────────────────────────────────────────────────────────┘
+                                    │
+    ┌───────────────────┬───────────┴───────────┬───────────────────┐
+    ▼                   ▼                       ▼                   ▼
+┌──────────────┐ ┌──────────────┐       ┌──────────────┐     ┌──────────────┐
+│ ykncode/     │ │ ykncode/     │       │ ykncode/     │     │ ykncode/     │
+│   yukinary   │ │   packages   │       │  bootstrap   │     │  benchmarks  │
+├──────────────┤ ├──────────────┤       ├──────────────┤     ├──────────────┤
+│ • 100% Pure  │ │ • Package    │       │ • app_full   │     │ • Systems    │
+│   YKN Source │ │   Registry   │       │   .cpp seed  │     │   benchmarks │
+│ • src/ & std/│ │ • Community  │       │ • Standalone │     │ • C, Rust,   │
+│ • docs/ &    │ │   libraries  │       │   C++17 seed │     │   Go, Python │
+│   tests/     │ │ • ykn add    │       │ • Porting    │     │   comparison │
+│ • Releases   │ │   support    │       │   targets    │     │ • Cold-start │
+└──────────────┘ └──────────────┘       └──────────────┘     └──────────────┘
 ```
 
-### Managing Dependencies in `yukinary.toml`:
-```toml
-[package]
-name = "my_project"
-version = "0.1.0"
-main = "main.ykn"
-output = "build/app.exe"
-
-[dependencies]
-math = "1.0.0"
-http = { git = "https://github.com/ykncode/packages", path = "net/http" }
-```
+1. [**`ykncode/yukinary`**](https://github.com/ykncode/yukinary): Pure, 100% Yukinary self-hosting compiler, standard library, and multi-lingual documentation.
+2. [**`ykncode/packages`**](https://github.com/ykncode/packages): Official package registry for modular libraries (`net/http`, `math`, `crypto/sha256`, `data/json`, `terminal/colors`).
+3. [**`ykncode/bootstrap`**](https://github.com/ykncode/bootstrap): C++17 single-file seed for bootstrapping Yukinary from scratch on new hardware architectures.
+4. [**`ykncode/benchmarks`**](https://github.com/ykncode/benchmarks): Industrial performance comparisons, cold-start latency measurements, and competitor workloads.
 
 ---
 

@@ -268,12 +268,29 @@ Ensures untrusted scripts or AI-generated modules cannot compromise the host:
 
 ---
 
-## 12. Embedded AI Engine: Micro-LLM
+## 12. AI Architecture: Micro-LLM vs. Full LLM Engine
 
-An embedded 16,448-byte BitNet 1.58b ternary Transformer resides in the compiler `.rodata`:
-* **Zero Dependencies:** Operates without GPU, Python, or external model files.
-* **Always-On:** Continuously provides code intent completion and diagnostic suggestions.
-* **External GGUF Model Support:** Larger models can be attached via `--llm-model model.gguf`.
+Yukinary embeds artificial intelligence through two complementary tiers designed for completely different operational goals:
+
+### Comparison & Purpose Overview
+
+| Dimension | 🧠 Embedded Micro-LLM (16 KB) | 🚀 External Full LLM (1B – 70B GGUF) |
+| :--- | :--- | :--- |
+| **Location & Memory** | Embedded directly inside compiler binary (`.rodata`) | External `.gguf` file loaded dynamically from disk |
+| **Size & Weights** | **16,448 Bytes (~16 KB)** ternary $\{-1, 0, +1\}$ BitNet backbone | **1 GB – 40 GB** (Llama-3, Mistral, Qwen, BitNet b1.58, etc.) |
+| **Hardware Prerequisites** | **Zero GPU, Zero Python, Zero Internet.** Runs on any standard CPU | Requires 4 GB – 32 GB RAM or dedicated GPU |
+| **Latency** | **0.1 milliseconds (sub-perceptual instant execution)** | 10 – 50 milliseconds per token |
+| **Primary Goal** | **Compiler Reflextive Automation:**<br>• Syntax repair (`Self-Healing`: semicolons, braces)<br>• Protective `null-guard` injection<br>• Real-time VSCode structure field and intent completion<br>• In-compiler C/Python/Rust transpilation (`#convert`) | **Developer Generation:**<br>• Generating complex data structures and modules from scratch<br>• Natural language to YKN code synthesis (`#prompt "write a web server"`)<br>• Large-scale architectural refactoring |
+| **User Invocations** | **Transparent (Always-On).** Operates silently in the background | **Explicit.** Invoked via `--llm-model model.gguf --prompt "..."` |
+
+### 1. Embedded Micro-LLM
+Runs automatically on every compile cycle. Requires no user configuration or downloads. It guarantees that self-healing, type narrowing, and basic completions function on offline or air-gapped environments.
+
+### 2. External Full LLM Runtime
+Allows developers to attach heavyweight models for large-scale generative coding:
+```powershell
+ykn.exe main.ykn --llm-model models/bitnet-b1.58-2B-4T.gguf --prompt "Implement a fast B-Tree index"
+```
 
 ---
 
