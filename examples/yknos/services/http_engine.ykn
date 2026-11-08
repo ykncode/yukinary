@@ -134,3 +134,4 @@ isv http_ornek_istekleri_calistir() {
 
     ekrana_yaz("==================================================\n".ptr);
 }
+

@@ -13,3 +13,4 @@ if %ERRORLEVEL% EQU 0 (
 ) else (
     echo [YknOS] Derleme basarisiz oldu! Kod: %ERRORLEVEL%
 )
+

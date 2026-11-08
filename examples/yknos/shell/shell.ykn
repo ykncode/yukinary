@@ -1,6 +1,6 @@
 # ============================================================
 # YknOS Cekirdek Etkilesimli Kabuk (Kernel Interactive Shell)
-# Komut Yorumlayici, Servis Yonetimi ve Sistem Komutlari
+# Komut Yorumlayici, Servis Yonetimi ve Canli Klavye Dongusu
 # ============================================================
 
 ice_aktar "../kernel/utils.ykn";
@@ -27,7 +27,8 @@ isv kabuk_yardim_yaz() {
     ekrana_yaz("  vga                : 80x25 VGA metin bellegi durumunu ekrana yansitir\n".ptr);
     ekrana_yaz("  dmesg              : COM1 UART 16550 seri port gunluk halkasini listeler\n".ptr);
     ekrana_yaz("  demo               : Tum isletim sistemi yeteneklerini sirasiyla gosterir\n".ptr);
-    ekrana_yaz("  kapat              : YknOS oturumunu guvenli sekilde sonlandirir\n".ptr);
+    ekrana_yaz("  temizle            : Konsol ekranini temizler\n".ptr);
+    ekrana_yaz("  kapat / cikis      : YknOS oturumunu guvenli sekilde sonlandirir\n".ptr);
     ekrana_yaz("==========================================\n".ptr);
 }
 
@@ -35,11 +36,11 @@ isv kabuk_bilgi_yaz() {
     ekrana_yaz("\n=== YknOS Isletim Sistemi Bilgileri ===\n".ptr);
     ekrana_yaz("Isletim Sistemi : YknOS (Yukinary Native Operating System)\n".ptr);
     ekrana_yaz("Cekirdek Tipi   : Monolitik Hibrit / Micro-Kernel Servis Modeli\n".ptr);
-    ekrana_yaz("Hedef Mimari    : x86_64 Long Mode (Multiboot 1 / Multiboot 2 Uyumlu)\n".ptr);
-    ekrana_yaz("Dil             : %100 Saf Yukinary (C, Rust veya C++ bagimliligi yok)\n".ptr);
+    ekrana_yaz("Hedef Mimari    : x86_64 Long Mode & Bare-Metal Multiboot1\n".ptr);
+    ekrana_yaz("Dil             : %100 Saf Yukinary (Sifir C/C++ Bagimliligi)\n".ptr);
     ekrana_yaz("Gomulu SQL      : Aktif (In-Memory B-Tree ve Iliskisel Tablolar)\n".ptr);
     ekrana_yaz("Gomulu HTTP     : Aktif (Port 8080 Dinlemede, REST JSON Yonlendirici)\n".ptr);
-    ekrana_yaz("Surum           : 0.1.0-alpha (Build 20261108)\n".ptr);
+    ekrana_yaz("Surum           : 0.1.0-alpha (Dual-Mode: Bare-Metal QEMU + Host Native)\n".ptr);
     ekrana_yaz("=======================================\n".ptr);
 }
 
@@ -64,23 +65,23 @@ isv kabuk_vga_guncelle() {
 isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     seri_gunluk_yaz("SHELL".ptr, komut);
 
-    eger ykn_metin_esit_mi(komut, "yardim".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "yardim".ptr) == 1 veya ykn_metin_esit_mi(komut, "help".ptr) == 1 ise {
         kabuk_yardim_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "bilgi".ptr) == 1 veya ykn_metin_esit_mi(komut, "uname".ptr) == 1 ise {
         kabuk_bilgi_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "bellek".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "bellek".ptr) == 1 veya ykn_metin_esit_mi(komut, "free".ptr) == 1 ise {
         bellek_raporu_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "gorevler".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "gorevler".ptr) == 1 veya ykn_metin_esit_mi(komut, "ps".ptr) == 1 ise {
         gorev_listesi_yaz();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "sql hepsi".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "sql hepsi".ptr) == 1 veya ykn_metin_esit_mi(komut, "sql".ptr) == 1 ise {
         sql_sorgula_metrikler_tumu();
         dondu 1;
     }
@@ -96,7 +97,7 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         sql_sorgula_kullanicilar_tumu();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "http durum".ptr) == 1 ise {
+    eger ykn_metin_esit_mi(komut, "http durum".ptr) == 1 veya ykn_metin_esit_mi(komut, "http".ptr) == 1 ise {
         http_istek_isle("/api/v1/durum".ptr);
         dondu 1;
     }
@@ -120,8 +121,12 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
         kabuk_tam_demo_calistir();
         dondu 1;
     }
-    eger ykn_metin_esit_mi(komut, "kapat".ptr) == 1 veya ykn_metin_esit_mi(komut, "cikis".ptr) == 1 ise {
-        ekrana_yaz("\n[YknOS] Cekirdek kapatiliyor... Tum servisler durduruldu.\n".ptr);
+    eger ykn_metin_esit_mi(komut, "temizle".ptr) == 1 veya ykn_metin_esit_mi(komut, "clear".ptr) == 1 veya ykn_metin_esit_mi(komut, "cls".ptr) == 1 ise {
+        ekrana_yaz("\x1B[2J\x1B[H".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "kapat".ptr) == 1 veya ykn_metin_esit_mi(komut, "cikis".ptr) == 1 veya ykn_metin_esit_mi(komut, "exit".ptr) == 1 ise {
+        ekrana_yaz("\n[YknOS] Cekirdek kapatiliyor... Tum servisler guvenle durduruldu.\n".ptr);
         dondu 0;
     }
 
@@ -129,6 +134,30 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     ekrana_yaz(komut);
     ekrana_yaz("'. Komut listesi icin 'yardim' yazin.\n".ptr);
     dondu 1;
+}
+
+isv kabuk_etkilesimli_dongu() {
+    ekrana_yaz("\n================================================================\n".ptr);
+    ekrana_yaz("  YknOS Canli Cekirdek Etkilesimli Kabugu Baslatildi (Live Shell)\n".ptr);
+    ekrana_yaz("  Komut listesi icin 'yardim', tam demo icin 'demo', cikmak icin 'kapat'\n".ptr);
+    ekrana_yaz("================================================================\n\n".ptr);
+
+    degisken calisiyor: tamsayi = 1;
+    dongu calisiyor == 1 {
+        ekrana_yaz("yknos> ".ptr);
+        degisken komut: *u8 = ykn_satir_oku();
+        eger komut == 0 ise {
+            # EOF (Kanal kapandi veya Ctrl+C/Ctrl+D)
+            calisiyor = 0;
+            devam_et;
+        }
+        degisken len: tamsayi = ykn_metin_uzunluk(komut);
+        eger len == 0 ise {
+            devam_et;
+        }
+        calisiyor = kabuk_komut_calistir(komut);
+    }
+    ekrana_yaz("\n[YknOS] Oturum basariyla tamamlandi.\n".ptr);
 }
 
 isv kabuk_tam_demo_calistir() {

@@ -36,17 +36,15 @@ isv cekirdek_onyukleme() {
     ekrana_yaz("[0.05s] [NET]  Gomulu HTTP 1.1 mikroservisi 0.0.0.0:8080 baslatildi.\n".ptr);
     http_servisi_baslat(8080);
 
-    ekrana_yaz("[0.06s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n\n".ptr);
+    ekrana_yaz("[0.06s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
 }
 
 isv ana() -> tamsayi {
     # 1. Cekirdek Onyukleme Baslat
     cekirdek_onyukleme();
 
-    # 2. Otomatik Demo Senaryosunu Calistir (VGA + Bellek + Surecler + SQL + HTTP + Dmesg)
-    kabuk_tam_demo_calistir();
+    # 2. Canli Etkilesimli Cekirdek Kabugunu Baslat (Klavye Girdi Dongusu)
+    kabuk_etkilesimli_dongu();
 
-    # 3. Kapanis
-    ekrana_yaz("\n[YknOS] Sistem saglikli sekilde tamamlandi.\n".ptr);
     dondu 0;
 }

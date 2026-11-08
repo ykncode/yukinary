@@ -62,3 +62,4 @@ isv bellek_raporu_yaz() {
     ekrana_yaz(" adet\n".ptr);
     ekrana_yaz("=============================================\n".ptr);
 }
+

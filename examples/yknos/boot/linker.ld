@@ -37,3 +37,4 @@ SECTIONS
 
     _kernel_end = .;
 }
+

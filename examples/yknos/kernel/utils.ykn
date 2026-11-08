@@ -3,6 +3,12 @@
 # Saf Yukinary, sifir harici bagimlilik
 # ============================================================
 
+extern isv GetStdHandle(nStdHandle: tamsayi) -> tamsayi;
+extern isv ReadFile(hFile: tamsayi, lpBuffer: *u8, nNumberOfBytesToRead: tamsayi, lpNumberOfBytesRead: *tamsayi, lpOverlapped: tamsayi) -> tamsayi;
+
+degisken g_okunan_bayt_dizisi: [1]tamsayi;
+degisken g_satir_girdi_tamponu: [256]u8;
+
 isv ykn_sayi_yaz(sayi: tamsayi) {
     degisken buf: [32]u8;
     degisken i: tamsayi = 0;
@@ -79,4 +85,24 @@ isv ykn_bellek_sifirla(hedef: *u8, boyut: tamsayi) {
         hedef[i] = 0;
         i = i + 1;
     }
+}
+
+# Standart girdiden (klavye) satir okur ve sondaki \r, \n temizler
+isv ykn_satir_oku() -> *u8 {
+    degisken hStdin: tamsayi = GetStdHandle(0 - 10); # STD_INPUT_HANDLE = -10
+    g_okunan_bayt_dizisi[0] = 0;
+    degisken res: tamsayi = ReadFile(hStdin, g_satir_girdi_tamponu, 250, g_okunan_bayt_dizisi, 0);
+
+    degisken n: tamsayi = g_okunan_bayt_dizisi[0];
+    eger res == 0 veya n <= 0 ise {
+        dondu 0; # EOF
+    }
+
+    # Sondaki \r veya \n veya bosluklari temizle
+    dongu n > 0 ve (g_satir_girdi_tamponu[n - 1] == 10 veya g_satir_girdi_tamponu[n - 1] == 13 veya g_satir_girdi_tamponu[n - 1] == 32) {
+        g_satir_girdi_tamponu[n - 1] = 0;
+        n = n - 1;
+    }
+    g_satir_girdi_tamponu[n] = 0;
+    dondu g_satir_girdi_tamponu;
 }

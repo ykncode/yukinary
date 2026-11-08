@@ -14,3 +14,4 @@ echo.
 echo [YknOS] Canli Isletim Sistemi Calisma Zamani Baslatiliyor...
 echo.
 "examples\yknos\yknos.exe"
+
