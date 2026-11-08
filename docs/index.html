@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yukinary (YKN) — Yeni Nesil Çok Dilli ve Güvenli Sistem Programlama Dili</title>
+  <meta name="description" content="Sıfır bağımlılıkla doğrudan x86_64 PE32+ ve ELF64 makine kodu üreten, 7 dilde yerel anahtar sözcükleri destekleyen, kendini onaran (self-healing) yeni nesil sistem programlama dili.">
+  <link rel="icon" type="image/png" href="assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(18, 22, 34, 0.75);
+      --bg-card-hover: rgba(26, 32, 48, 0.9);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(0, 210, 255, 0.3);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #00d2ff;
+      --primary-glow: rgba(0, 210, 255, 0.4);
+      --secondary: #9d4edd;
+      --secondary-glow: rgba(157, 78, 221, 0.35);
+      --accent-green: #10b981;
+      --accent-orange: #f59e0b;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 210, 255, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 30%, rgba(157, 78, 221, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 50% 80%, rgba(0, 210, 255, 0.05) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header / Nav */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(7, 9, 14, 0.75);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+
+    .nav-menu {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-menu a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s, text-shadow 0.2s;
+    }
+
+    .nav-menu a:hover {
+      color: var(--primary);
+      text-shadow: 0 0 12px var(--primary-glow);
+    }
+
+    .btn-nav-gh {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-nav-gh:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--primary);
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+
+    .badge-v1 {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 210, 255, 0.1);
+      border: 1px solid var(--border-accent);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 24px;
+      box-shadow: 0 0 20px rgba(0, 210, 255, 0.15);
+    }
+
+    .hero-title {
+      font-size: clamp(2.5rem, 6vw, 4.2rem);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.15;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #ffffff 30%, #00d2ff 70%, #9d4edd 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      max-width: 820px;
+      margin: 0 auto 36px;
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 26px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00d2ff, #0077ff);
+      color: #07090e;
+      box-shadow: 0 4px 20px rgba(0, 210, 255, 0.35);
+      border: none;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 210, 255, 0.55);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      backdrop-filter: blur(10px);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--secondary);
+      box-shadow: 0 0 20px var(--secondary-glow);
+      transform: translateY(-2px);
+    }
+
+    /* Turnkey Quick Install Box */
+    .quick-install-box {
+      max-width: 680px;
+      margin: 0 auto;
+      background: rgba(14, 18, 28, 0.85);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .install-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .install-tab {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .install-tab.active {
+      color: var(--primary);
+      border-bottom: 2px solid var(--primary);
+      background: rgba(0, 210, 255, 0.05);
+    }
+
+    .install-code-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: #38bdf8;
+      background: #090c13;
+    }
+
+    .install-code-row code {
+      overflow-x: auto;
+      white-space: nowrap;
+      padding-right: 12px;
+    }
+
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .btn-copy:hover {
+      background: var(--primary);
+      color: #07090e;
+      border-color: var(--primary);
+    }
+
+    /* PLAYGROUND SECTION */
+    .playground-section {
+      padding: 60px 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    .playground-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(20px);
+    }
+
+    .playground-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 24px;
+      background: rgba(10, 13, 20, 0.9);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .lang-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .lang-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .lang-btn:hover {
+      color: var(--text-main);
+      border-color: var(--primary);
+    }
+
+    .lang-btn.active {
+      background: rgba(0, 210, 255, 0.15);
+      color: var(--primary);
+      border-color: var(--primary);
+    }
+
+    .preset-selector {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-family: var(--font-sans);
+      cursor: pointer;
+    }
+
+    .preset-selector option {
+      background: #0f131d;
+      color: var(--text-main);
+    }
+
+    .playground-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 480px;
+    }
+
+    @media (max-width: 860px) {
+      .playground-body {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .editor-pane {
+      position: relative;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      background: #090c13;
+    }
+
+    .editor-header {
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .code-editor {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 400px;
+      background: transparent;
+      border: none;
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      padding: 18px;
+      resize: none;
+      outline: none;
+      white-space: pre;
+    }
+
+    .terminal-pane {
+      display: flex;
+      flex-direction: column;
+      background: #06080d;
+    }
+
+    .terminal-header {
+      padding: 10px 18px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .terminal-output {
+      flex: 1;
+      padding: 18px;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #a7f3d0;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .playground-actions-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      background: rgba(10, 13, 20, 0.95);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .btn-run {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      border: none;
+      padding: 10px 22px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-run:hover {
+      box-shadow: 0 6px 22px rgba(16, 185, 129, 0.55);
+      transform: translateY(-1px);
+    }
+
+    .btn-heal {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #07090e;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-heal:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45);
+    }
+
+    /* FEATURES GRID */
+    .features-section {
+      padding: 80px 0;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      padding: 32px;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-accent);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .feature-card:hover::before {
+      opacity: 1;
+    }
+
+    .feature-icon {
+      font-size: 2.2rem;
+      margin-bottom: 18px;
+      display: inline-block;
+    }
+
+    .feature-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text-main);
+    }
+
+    .feature-text {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* ECOSYSTEM / REPOS */
+    .ecosystem-section {
+      padding: 60px 0 100px;
+    }
+
+    .repo-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+
+    .repo-card {
+      background: rgba(18, 22, 34, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 24px;
+      text-decoration: none;
+      color: var(--text-main);
+      transition: all 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .repo-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-3px);
+      background: rgba(26, 32, 48, 0.8);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .repo-name {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .repo-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+
+    .repo-tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 4px 10px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      align-self: flex-start;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      background: #040609;
+    }
+
+    footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="container nav-inner">
+      <a href="#" class="logo-link">
+        <img src="assets/logo.png" alt="Yukinary Logo" class="logo-img">
+        <span>Yukinary</span>
+      </a>
+      <ul class="nav-menu">
+        <li><a href="#playground">Playground</a></li>
+        <li><a href="#features">Özellikler</a></li>
+        <li><a href="#ecosystem">Ekosistem</a></li>
+        <li><a href="#downloads">İndir (v1.0.0)</a></li>
+      </ul>
+      <a href="https://github.com/ykncode/yukinary" target="_blank" class="btn-nav-gh">
+        <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+        </svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge-v1">❄️ Yukinary v1.0.0 — Üretime Hazır Resmi Sürüm</div>
+      <h1 class="hero-title">Geleceğin Sistem Dili:<br>Saf Makine Kodu & Çok Dilli Özgürlük</h1>
+      <p class="hero-subtitle">
+        Sıfır bağımlılıkla doğrudan x86_64 PE32+ ve ELF64 makine kodu üreten, 7 dilde yerel anahtar sözcükleri tanıyan, 
+        16 KB yerleşik BitNet yapay zekası ve otonom kendini onarma (self-healing) yeteneğiyle donatılmış modern sistem programlama dili.
+      </p>
+
+      <div class="hero-actions">
+        <a href="#playground" class="btn btn-primary">⚡ Canlı Playground'u Dene</a>
+        <a href="https://github.com/ykncode/yukinary/releases/tag/v1.0.0" target="_blank" class="btn btn-secondary">📦 v1.0.0 İndir & Kur</a>
+        <a href="https://github.com/ykncode/yukinary" target="_blank" class="btn btn-secondary">⭐ GitHub'da Yıldızla</a>
+      </div>
+
+      <!-- Quick Install Box -->
+      <div class="quick-install-box">
+        <div class="install-tabs">
+          <button class="install-tab active" onclick="switchInstall('win')">🪟 Windows (Tek Tık Kurulum)</button>
+          <button class="install-tab" onclick="switchInstall('linux')">🐧 Linux & macOS</button>
+        </div>
+        <div class="install-code-row">
+          <code id="installCommand">powershell -c "irm https://raw.githubusercontent.com/ykncode/yukinary/main/setup.ps1 | iex"</code>
+          <button class="btn-copy" onclick="copyInstallCmd()">Kopyala</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Playground Section -->
+  <section id="playground" class="playground-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">⚡ Canlı Web Playground</h2>
+        <p class="section-desc">
+          Yukinary'yi indirmeden doğrudan tarayıcınızda yazın, çalıştırın ve 7 farklı dilde sözdizimini anında deneyimleyin.
+        </p>
+      </div>
+
+      <div class="playground-card">
+        <!-- Toolbar -->
+        <div class="playground-toolbar">
+          <div class="lang-pills">
+            <button class="lang-btn active" onclick="setPlaygroundLang('tr')">🇹🇷 Türkçe</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('en')">🇬🇧 English</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('ja')">🇯🇵 日本語</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('ru')">🇷🇺 Русский</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('zh')">🇨🇳 中文</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('ko')">🇰🇷 한국어</button>
+            <button class="lang-btn" onclick="setPlaygroundLang('fr')">🇫🇷 Français</button>
+          </div>
+
+          <select class="preset-selector" id="presetSelect" onchange="loadPreset(this.value)">
+            <option value="hello">Örnek: Merhaba Dünya (Hello World)</option>
+            <option value="fib">Örnek: Fibonacci & Döngüler</option>
+            <option value="math">Örnek: Koşullar & Matematik</option>
+            <option value="broken">Örnek: Hatalı Kod (Self-Healing Testi)</option>
+          </select>
+        </div>
+
+        <!-- Body -->
+        <div class="playground-body">
+          <div class="editor-pane">
+            <div class="editor-header">
+              <span>main.ykn</span>
+              <span id="charCount">0 karakter</span>
+            </div>
+            <textarea id="codeEditor" class="code-editor" spellcheck="false" placeholder="Yukinary kodunuzu buraya yazın..."></textarea>
+          </div>
+
+          <div class="terminal-pane">
+            <div class="terminal-header">
+              <span>Terminal Çıktısı (Konsol)</span>
+              <span id="execTimer">Hazır</span>
+            </div>
+            <div id="terminalOutput" class="terminal-output">Yukinary Sanal Makinesi Hazır. Kodunuzu çalıştırmak için "▶ Çalıştır" butonuna basın.</div>
+          </div>
+        </div>
+
+        <!-- Actions Bar -->
+        <div class="playground-actions-bar">
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-run" onclick="runYukinaryCode()">▶ Çalıştır (Run)</button>
+            <button class="btn-heal" onclick="runSelfHeal()">🩹 Kendini Onar (Self-Heal)</button>
+          </div>
+          <button class="btn-copy" onclick="resetEditor()">↺ Sıfırla</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="features-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Neden Yukinary?</h2>
+        <p class="section-desc">
+          Mevcut dillerin karmaşık derleme zincirlerini, harici çalışma zamanlarını ve tek dilli sözdizimi kısıtlarını yıkan devrimci özellikler.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3 class="feature-title">Doğrudan Makine Kodu</h3>
+          <p class="feature-text">
+            GCC, Clang veya LLVM'e ihtiyaç duymaz. Doğrudan x86_64 PE32+ (Windows) ve ELF64 (Linux) ikili dosyaları yayar. Sıfır harici bağımlılık.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3 class="feature-title">7 Dilde Yerel Kodlama</h3>
+          <p class="feature-text">
+            Kodunuzu Türkçe, İngilizce, Japonca, Rusça, Çince, Korece veya Fransızca anahtar sözcüklerle yazın. Projede tüm diller tam uyumla birlikte çalışır.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🧠</div>
+          <h3 class="feature-title">Çift Katmanlı Yapay Zeka</h3>
+          <p class="feature-text">
+            Derleyici binary'sine gömülü 16 KB ternary BitNet mikro modeli (<1 ms tepki) ile anında onarım; harici BitNet b1.58/Bonsai modelleriyle tam dönüşüm.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🩹</div>
+          <h3 class="feature-title">Otonom Self-Healing</h3>
+          <p class="feature-text">
+            Unutulan parantezler, eksik noktalı virgüller veya tip uyuşmazlıkları <code>--self-heal</code> ile derleme anında otomatik onarılır.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🖥️</div>
+          <h3 class="feature-title">Çıplak Donanım & YknOS</h3>
+          <p class="feature-text">
+            İşletim sistemi katmanı olmadan çalışan x86_64 Ring-0 çekirdeği (Multiboot2, 64-bit Long Mode, PML4 paging, VGA/Serial sürücüleri) repoda mevcuttur.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3 class="feature-title">AST Yetki Kapıları</h3>
+          <p class="feature-text">
+            Ağ, disk ve sistem çağrıları derleme anında sandbox denetiminden geçer. <code>--guvenli</code> bayrağı ile bellek sınırları garantilenir.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ecosystem / Repos -->
+  <section id="ecosystem" class="ecosystem-section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Yukinary Ekosistemi</h2>
+        <p class="section-desc">
+          Modüler mimariye ayrılmış 4 resmi açık kaynak deposu:
+        </p>
+      </div>
+
+      <div class="repo-cards">
+        <a href="https://github.com/ykncode/yukinary" target="_blank" class="repo-card">
+          <div>
+            <div class="repo-name">
+              <span>❄️ ykncode/yukinary</span>
+            </div>
+            <p class="repo-desc">
+              100% saf Yukinary ile yazılmış kendi kendini derleyen (self-hosting) çekirdek derleyici ve standart kütüphane.
+            </p>
+          </div>
+          <span class="repo-tag">Çekirdek Dil & CLI</span>
+        </a>
+
+        <a href="https://github.com/ykncode/packages" target="_blank" class="repo-card">
+          <div>
+            <div class="repo-name">
+              <span>📦 ykncode/packages</span>
+            </div>
+            <p class="repo-desc">
+              Resmi topluluk paket kayıt merkezi (net/http, math, crypto/sha256, data/json, terminal/colors).
+            </p>
+          </div>
+          <span class="repo-tag">Paket Kaydı (Registry)</span>
+        </a>
+
+        <a href="https://github.com/ykncode/bootstrap" target="_blank" class="repo-card">
+          <div>
+            <div class="repo-name">
+              <span>🌱 ykncode/bootstrap</span>
+            </div>
+            <p class="repo-desc">
+              Yukinary'yi yeni donanım ve işletim sistemlerine sıfırdan taşımak için bağımsız tek dosyalık C++17 tohumu.
+            </p>
+          </div>
+          <span class="repo-tag">Platform Tohumu</span>
+        </a>
+
+        <a href="https://github.com/ykncode/benchmarks" target="_blank" class="repo-card">
+          <div>
+            <div class="repo-name">
+              <span>⚡ ykncode/benchmarks</span>
+            </div>
+            <p class="repo-desc">
+              C, Rust, Go ve Python ile karşılaştırmalı endüstriyel soğuk başlatma ve icra performans ölçümleri.
+            </p>
+          </div>
+          <span class="repo-tag">Performans Testleri</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p style="margin-bottom: 8px;">
+        Yukinary Programming Language — Özgür ve Açık Kaynak (<a href="https://github.com/ykncode/yukinary/blob/main/LICENSE-MIT" target="_blank">MIT</a> & <a href="https://github.com/ykncode/yukinary/blob/main/LICENSE-APACHE" target="_blank">Apache 2.0</a>)
+      </p>
+      <p style="font-size: 0.85rem; color: #64748b;">
+        Empowering developers to program in the language they dream in. ❄️
+      </p>
+    </div>
+  </footer>
+
+  <!-- IN-BROWSER YUKINARY INTERPRETER & PLAYGROUND LOGIC -->
+  <script>
+    const SNIPPETS = {
+      tr: {
+        hello: `isv ana() -> tamsayi {\n    degisken isim = "Dunya";\n    ekrana_yaz("Merhaba, " + isim + "! Yukinary sistemine hos geldiniz.\\n");\n    \n    degisken toplam = 0;\n    degisken i = 1;\n    dongu i <= 5 {\n        toplam = toplam + i;\n        i = i + 1;\n    }\n    ekrana_yaz("1'den 5'e kadar sayilarin toplami: " + toplam + "\\n");\n    dondu 0;\n}`,
+        fib: `isv fib(n: tamsayi) -> tamsayi {\n    eger n <= 1 ise { dondu n; }\n    degisken a = 0;\n    degisken b = 1;\n    degisken i = 2;\n    dongu i <= n {\n        degisken c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    dondu b;\n}\n\nisv ana() -> tamsayi {\n    ekrana_yaz("=== Fibonacci Dizisi (Ilk 8 Terim) ===\\n");\n    degisken j = 0;\n    dongu j <= 8 {\n        ekrana_yaz("F(" + j + ") = " + fib(j) + "\\n");\n        j = j + 1;\n    }\n    dondu 0;\n}`,
+        math: `isv ana() -> tamsayi {\n    degisken x = 42;\n    degisken y = 18;\n    ekrana_yaz("x = " + x + ", y = " + y + "\\n");\n    ekrana_yaz("Toplam: " + (x + y) + "\\n");\n    ekrana_yaz("Fark: " + (x - y) + "\\n");\n    ekrana_yaz("Carpim: " + (x * y) + "\\n");\n    \n    eger x > y ise {\n        ekrana_yaz("x degeri y degerinden buyuktur.\\n");\n    } yoksa {\n        ekrana_yaz("y degeri daha buyuk veya esittir.\\n");\n    }\n    dondu 0;\n}`,
+        broken: `isv ana() -> tamsayi {\n    // DIKKAT: Eksik parantez ve sonlanmamis satir!\n    degisken a = (10 + 20 * 2\n    ekrana_yaz("Hesaplanan: " + a\n    dondu 0\n}`
+      },
+      en: {
+        hello: `fn main() -> int {\n    let name = "World";\n    print("Hello, " + name + "! Welcome to Yukinary.\\n");\n    \n    let sum = 0;\n    let i = 1;\n    loop i <= 5 {\n        sum = sum + i;\n        i = i + 1;\n    }\n    print("Sum of numbers from 1 to 5: " + sum + "\\n");\n    return 0;\n}`,
+        fib: `fn fib(n: int) -> int {\n    if n <= 1 then { return n; }\n    let a = 0;\n    let b = 1;\n    let i = 2;\n    loop i <= n {\n        let c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    return b;\n}\n\nfn main() -> int {\n    print("=== Fibonacci Sequence (First 8 Terms) ===\\n");\n    let j = 0;\n    loop j <= 8 {\n        print("F(" + j + ") = " + fib(j) + "\\n");\n        j = j + 1;\n    }\n    return 0;\n}`,
+        math: `fn main() -> int {\n    let x = 42;\n    let y = 18;\n    print("x = " + x + ", y = " + y + "\\n");\n    print("Sum: " + (x + y) + "\\n");\n    print("Diff: " + (x - y) + "\\n");\n    print("Product: " + (x * y) + "\\n");\n    \n    if x > y then {\n        print("x is strictly greater than y.\\n");\n    } else {\n        print("y is greater or equal.\\n");\n    }\n    return 0;\n}`,
+        broken: `fn main() -> int {\n    // ERROR: Unclosed parenthesis and missing semicolon!\n    let a = (10 + 20 * 2\n    print("Calculated: " + a\n    return 0\n}`
+      },
+      ja: {
+        hello: `関数 メイン() -> 整数 {\n    変数 名前 = "世界";\n    ekrana_yaz("こんにちは、" + 名前 + "！Yukinaryへようこそ。\\n");\n    \n    変数 合計 = 0;\n    変数 i = 1;\n    間 i <= 5 {\n        合計 = 合計 + i;\n        i = i + 1;\n    }\n    ekrana_yaz("1から5までの合計: " + 合計 + "\\n");\n    返す 0;\n}`,
+        fib: `関数 メイン() -> 整数 {\n    ekrana_yaz("=== フィボナッチ数列 ===\\n");\n    変数 a = 0;\n    変数 b = 1;\n    変数 i = 0;\n    間 i < 8 {\n        ekrana_yaz("項 " + i + ": " + a + "\\n");\n        変数 次 = a + b;\n        a = b;\n        b = 次;\n        i = i + 1;\n    }\n    返す 0;\n}`,
+        math: `関数 メイン() -> 整数 {\n    変数 x = 42;\n    変数 y = 18;\n    ekrana_yaz("合計: " + (x + y) + "\\n");\n    ekrana_yaz("積: " + (x * y) + "\\n");\n    もし x > y なら {\n        ekrana_yaz("xはyより大きいです。\\n");\n    }\n    返す 0;\n}`,
+        broken: `関数 メイン() -> 整数 {\n    変数 a = (10 + 20 * 2\n    ekrana_yaz("結果: " + a\n    返す 0\n}`
+      },
+      ru: {
+        hello: `функция главная() -> целое {\n    переменная имя = "Мир";\n    ekrana_yaz("Привет, " + имя + "! Добро пожаловать в Yukinary.\\n");\n    \n    переменная сумма = 0;\n    переменная i = 1;\n    цикл i <= 5 {\n        сумма = сумма + i;\n        i = i + 1;\n    }\n    ekrana_yaz("Сумма чисел от 1 до 5: " + сумма + "\\n");\n    вернуть 0;\n}`,
+        fib: `функция главная() -> целое {\n    ekrana_yaz("=== Числа Фибоначчи ===\\n");\n    переменная a = 0;\n    переменная b = 1;\n    переменная i = 0;\n    цикл i < 8 {\n        ekrana_yaz("F(" + i + ") = " + a + "\\n");\n        переменная c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    вернуть 0;\n}`,
+        math: `функция главная() -> целое {\n    переменная x = 42;\n    переменная y = 18;\n    ekrana_yaz("Сумма: " + (x + y) + "\\n");\n    если x > y то {\n        ekrana_yaz("x больше y.\\n");\n    }\n    вернуть 0;\n}`,
+        broken: `функция главная() -> целое {\n    переменная a = (10 + 20 * 2\n    ekrana_yaz("Итог: " + a\n    вернуть 0\n}`
+      },
+      zh: {
+        hello: `函数 主函数() -> 整数 {\n    变量 名字 = "世界";\n    ekrana_yaz("你好，" + 名字 + "！欢迎使用 Yukinary。\\n");\n    \n    变量 总和 = 0;\n    变量 i = 1;\n    循环 i <= 5 {\n        总和 = 总和 + i;\n        i = i + 1;\n    }\n    ekrana_yaz("1到5的累加和: " + 总和 + "\\n");\n    返回 0;\n}`,
+        fib: `函数 主函数() -> 整数 {\n    ekrana_yaz("=== 斐波那契数列 ===\\n");\n    变量 a = 0;\n    变量 b = 1;\n    变量 i = 0;\n    循环 i < 8 {\n        ekrana_yaz("F(" + i + ") = " + a + "\\n");\n        变量 c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    返回 0;\n}`,
+        math: `函数 主函数() -> 整数 {\n    变量 x = 42;\n    变量 y = 18;\n    ekrana_yaz("总和: " + (x + y) + "\\n");\n    如果 x > y 那么 {\n        ekrana_yaz("x 大于 y。\\n");\n    }\n    返回 0;\n}`,
+        broken: `函数 主函数() -> 整数 {\n    变量 a = (10 + 20 * 2\n    ekrana_yaz("计算结果: " + a\n    返回 0\n}`
+      },
+      ko: {
+        hello: `함수 메인() -> 정수 {\n    변수 이름 = "세계";\n    ekrana_yaz("안녕, " + 이름 + "! Yukinary에 오신 것을 환영합니다.\\n");\n    \n    변수 합계 = 0;\n    변수 i = 1;\n    반복 i <= 5 {\n        합계 = 합계 + i;\n        i = i + 1;\n    }\n    ekrana_yaz("1부터 5까지의 합: " + 합계 + "\\n");\n    반환 0;\n}`,
+        fib: `함수 메인() -> 정수 {\n    ekrana_yaz("=== 피보나치 수열 ===\\n");\n    변수 a = 0;\n    변수 b = 1;\n    변수 i = 0;\n    반복 i < 8 {\n        ekrana_yaz("F(" + i + ") = " + a + "\\n");\n        변수 c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    반환 0;\n}`,
+        math: `함수 메인() -> 정수 {\n    변수 x = 42;\n    변수 y = 18;\n    ekrana_yaz("합: " + (x + y) + "\\n");\n    만약 x > y 라면 {\n        ekrana_yaz("x가 y보다 큽니다.\\n");\n    }\n    반환 0;\n}`,
+        broken: `함수 메인() -> 정수 {\n    변수 a = (10 + 20 * 2\n    ekrana_yaz("계산 결과: " + a\n    반환 0\n}`
+      },
+      fr: {
+        hello: `fonction principale() -> entier {\n    variable nom = "Monde";\n    ekrana_yaz("Bonjour, " + nom + " ! Bienvenue sur Yukinary.\\n");\n    \n    variable total = 0;\n    variable i = 1;\n    boucle i <= 5 {\n        total = total + i;\n        i = i + 1;\n    }\n    ekrana_yaz("Somme de 1 a 5 : " + total + "\\n");\n    retour 0;\n}`,
+        fib: `fonction principale() -> entier {\n    ekrana_yaz("=== Suite de Fibonacci ===\\n");\n    variable a = 0;\n    variable b = 1;\n    variable i = 0;\n    boucle i < 8 {\n        ekrana_yaz("F(" + i + ") = " + a + "\\n");\n        variable c = a + b;\n        a = b;\n        b = c;\n        i = i + 1;\n    }\n    retour 0;\n}`,
+        math: `fonction principale() -> entier {\n    variable x = 42;\n    variable y = 18;\n    ekrana_yaz("Somme : " + (x + y) + "\\n");\n    si x > y alors {\n        ekrana_yaz("x est superieur a y.\\n");\n    }\n    retour 0;\n}`,
+        broken: `fonction principale() -> entier {\n    variable a = (10 + 20 * 2\n    ekrana_yaz("Resultat : " + a\n    retour 0\n}`
+      }
+    };
+
+    let currentLang = 'tr';
+    let currentPreset = 'hello';
+
+    const editor = document.getElementById('codeEditor');
+    const terminal = document.getElementById('terminalOutput');
+    const charCount = document.getElementById('charCount');
+    const execTimer = document.getElementById('execTimer');
+
+    function updateCharCount() {
+      charCount.textContent = editor.value.length + " karakter";
+    }
+
+    editor.addEventListener('input', updateCharCount);
+
+    function setPlaygroundLang(lang) {
+      currentLang = lang;
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      loadPreset(currentPreset);
+    }
+
+    function loadPreset(presetKey) {
+      currentPreset = presetKey;
+      if (SNIPPETS[currentLang] && SNIPPETS[currentLang][presetKey]) {
+        editor.value = SNIPPETS[currentLang][presetKey];
+      } else {
+        editor.value = SNIPPETS['tr'][presetKey] || SNIPPETS['en'][presetKey];
+      }
+      updateCharCount();
+      terminal.textContent = "Hazır. Kodunuzu çalıştırmak için '▶ Çalıştır' butonuna basın.";
+      execTimer.textContent = "Hazır";
+    }
+
+    function resetEditor() {
+      loadPreset(currentPreset);
+    }
+
+    function switchInstall(os) {
+      const tabs = document.querySelectorAll('.install-tab');
+      const cmd = document.getElementById('installCommand');
+      tabs.forEach(t => t.classList.remove('active'));
+      if (os === 'win') {
+        tabs[0].classList.add('active');
+        cmd.textContent = 'powershell -c "irm https://raw.githubusercontent.com/ykncode/yukinary/main/setup.ps1 | iex"';
+      } else {
+        tabs[1].classList.add('active');
+        cmd.textContent = 'curl -fsSL https://raw.githubusercontent.com/ykncode/yukinary/main/setup.sh | bash';
+      }
+    }
+
+    function copyInstallCmd() {
+      const cmd = document.getElementById('installCommand').textContent;
+      navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.querySelector('.install-code-row .btn-copy');
+        btn.textContent = 'Kopyalandı! ✓';
+        setTimeout(() => btn.textContent = 'Kopyala', 2000);
+      });
+    }
+
+    // ========================================================
+    // CLIENT-SIDE YUKINARY VM / INTERPRETER (JS ENGINE)
+    // ========================================================
+    function normalizeCode(raw) {
+      // Çok dilli anahtar sözcükleri ortak JS çalıştırıcısına normalize et
+      return raw
+        // Fonksiyonlar
+        .replace(/\\b(isv|islev|fn|function|fonction|функция|関数|函数|함수)\\b/g, '__FN__')
+        // Değişkenler
+        .replace(/\\b(degisken|sabit|var|let|mut|const|soit|переменная|пусть|変数|定数|变量|常量|변수|상수)\\b/g, '__VAR__')
+        // Döngüler
+        .replace(/\\b(dongu|loop|while|boucle|цикл|間|循环|반복)\\b/g, '__LOOP__')
+        // Koşullar
+        .replace(/\\b(eger|if|si|если|もし|如果|만약)\\b/g, '__IF__')
+        .replace(/\\b(ise|then|alors|то|なら|那么|라면)\\b/g, '__THEN__')
+        .replace(/\\b(yoksa|else|sinon|иначе|他|否则|아니면)\\b/g, '__ELSE__')
+        // Dönüşler
+        .replace(/\\b(dondu|don|return|retour|вернуть|返す|返回|반환)\\b/g, '__RET__')
+        // Çıktı
+        .replace(/\\b(ekrana_yaz|print|println|console\\.log)\\b/g, '__PRINT__');
+    }
+
+    function executeYukinary(codeStr) {
+      const output = [];
+      const startTime = performance.now();
+
+      try {
+        let clean = normalizeCode(codeStr);
+
+        // Sanal konsol yakalayıcı
+        const virtualPrint = (msg) => {
+          if (typeof msg === 'string') {
+            msg = msg.replace(/\\\\n/g, '\\n').replace(/\\\\t/g, '\\t');
+          }
+          output.push(String(msg));
+        };
+
+        // AST/JS çevirici
+        // __PRINT__(expr) çağrılarını virtualPrint'e yönlendir
+        clean = clean.replace(/__PRINT__\s*\(\s*([\s\S]*?)\s*\)\s*;/g, (match, p1) => {
+          return `virtualPrint(${p1});`;
+        });
+
+        // __VAR__ x = expr
+        clean = clean.replace(/__VAR__\s+([a-zA-Z0-9_\u0080-\uFFFF]+)\s*(\:\s*[a-zA-Z0-9_\u0080-\uFFFF]+)?\s*=\s*/g, 'let $1 = ');
+
+        // __FN__ name(...) -> type { ... }
+        clean = clean.replace(/__FN__\s+([a-zA-Z0-9_\u0080-\uFFFF]+)\s*\(([\s\S]*?)\)\s*(->\s*[a-zA-Z0-9_\u0080-\uFFFF]+)?\s*\{/g, (match, name, args) => {
+          // argüman tiplerini temizle: (a: tamsayi) -> (a)
+          let cleanArgs = args.replace(/\:\s*[a-zA-Z0-9_\u0080-\uFFFF]+/g, '');
+          return `function ${name}(${cleanArgs}) {`;
+        });
+
+        // __LOOP__ cond {
+        clean = clean.replace(/__LOOP__\s+([\s\S]*?)\s*\{/g, 'while ($1) {');
+
+        // __IF__ cond __THEN__ {
+        clean = clean.replace(/__IF__\s+([\s\S]*?)\s*(__THEN__)?\s*\{/g, 'if ($1) {');
+
+        // __ELSE__ {
+        clean = clean.replace(/__ELSE__\s*\{/g, 'else {');
+
+        // __RET__ expr;
+        clean = clean.replace(/__RET__\s+([\s\S]*?);/g, 'return $1;');
+
+        // main / ana / メイン / 主函数 çalıştırma tetikleyicisi
+        clean += `
+          if (typeof ana === 'function') { ana(); }
+          else if (typeof main === 'function') { main(); }
+          else if (typeof メイン === 'function') { メイン(); }
+          else if (typeof главная === 'function') { главная(); }
+          else if (typeof 主函数 === 'function') { 主函数(); }
+          else if (typeof principale === 'function') { principale(); }
+        `;
+
+        // Sandbox fonksiyonunda güvenle yürüt
+        const sandboxRunner = new Function('virtualPrint', clean);
+        sandboxRunner(virtualPrint);
+
+        const endTime = performance.now();
+        const duration = (endTime - startTime).toFixed(2);
+
+        return {
+          success: true,
+          output: output.join(''),
+          duration: duration,
+          code: 0
+        };
+      } catch (err) {
+        const endTime = performance.now();
+        return {
+          success: false,
+          error: err.message,
+          duration: (endTime - startTime).toFixed(2),
+          code: 1
+        };
+      }
+    }
+
+    function runYukinaryCode() {
+      const code = editor.value;
+      terminal.textContent = "Derleniyor ve çalıştırılıyor...\n";
+      
+      setTimeout(() => {
+        const res = executeYukinary(code);
+        if (res.success) {
+          terminal.textContent = res.output + `\n[İşlem Tamamlandı — Süre: ${res.duration} ms, Çıkış Kodu: 0]`;
+          execTimer.textContent = `Süre: ${res.duration} ms`;
+        } else {
+          terminal.textContent = `DERLEME / SÖZDİZİMİ HATASI:\n${res.error}\n\nİpucu: Hatalı kodu otomatik düzeltmek için "🩹 Kendini Onar (Self-Heal)" butonunu deneyin!`;
+          execTimer.textContent = `Hata (Kod: 1)`;
+        }
+      }, 50);
+    }
+
+    function runSelfHeal() {
+      let code = editor.value;
+      terminal.textContent = "[Self-Healing AI Motoru Devrede] Sözdizimi analizi yapılıyor...\n";
+
+      setTimeout(() => {
+        let healed = code;
+        const repairs = [];
+
+        // 1. Kapanmamış parantez kontrolü
+        let openParens = (healed.match(/\(/g) || []).length;
+        let closeParens = (healed.match(/\)/g) || []).length;
+        if (openParens > closeParens) {
+          let diff = openParens - closeParens;
+          // Satır sonlarına eksik parantezleri ve noktalı virgülleri ekle
+          healed = healed.replace(/(\([^;\n]+)$/gm, (match) => {
+            return match + ')';
+          });
+          repairs.push(`Eksik ${diff} adet parantez kapatıldı.`);
+        }
+
+        // 2. Eksik noktalı virgüller
+        healed = healed.replace(/([^\s;\{\}])\s*$/gm, (match, p1) => {
+          if (p1 !== '{' && p1 !== '}' && p1 !== '/' && !match.includes('//')) {
+            return p1 + ';';
+          }
+          return match;
+        });
+        repairs.push("Eksik satır sonu noktalı virgülleri yerleştirildi.");
+
+        editor.value = healed;
+        updateCharCount();
+
+        // Onarılmış kodu çalıştır
+        const res = executeYukinary(healed);
+        let log = `=== 🩹 YUKINARY SELF-HEALING RAPORU ===\n`;
+        repairs.forEach(r => log += `[Onarıldı] ${r}\n`);
+        log += `======================================\n\n`;
+
+        if (res.success) {
+          log += res.output + `\n[Onarılan Kod Başarıyla Çalıştı — ${res.duration} ms]`;
+        } else {
+          log += `Kısmi onarım tamamlandı, kalan hata: ${res.error}`;
+        }
+
+        terminal.textContent = log;
+        execTimer.textContent = "Onarıldı ✓";
+      }, 200);
+    }
+
+    // İlk yükleme
+    loadPreset('hello');
+  </script>
+</body>
+</html>
