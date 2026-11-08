@@ -5,12 +5,13 @@
 ; Inspired by Windows 11, macOS, and modern Linux Desktop Environments
 ; Strict adherence to YKNOS_VISION.md:
 ;   - AI-First Interface: Spotlight-like Central Y.U.K.I Search Bar
-;   - Window Manager (ykn-wm): Modern acrylic windows with macOS-style traffic lights
-;   - 5-Level Security Sandbox Model view
-;   - System Error Archaeology timeline view
-;   - Proactive Maintenance & Local Vector Memory (/home/root/.yuki/vector_memory.db)
-;   - Full Terminal Shell emulator (yknsh) with interactive commands
-;   - Bottom Floating Glass Dock
+;   - Window Manager (ykn-wm): Interactive Window Dragging, Z-Order, Acrylic Style
+;   - Window 1: Y.U.K.I Core Neural OS Center (5 Tabs: Genel, Arkeoloji, Bakim, Sandbox, Modeller)
+;   - Window 2: RamFS File Explorer (Dizin Agaci & Dosya Izgarasi)
+;   - Window 3: yknsh Interactive Terminal (Bash/Linux emulator)
+;   - Window 4: YknBrowser (Yukinary Modern Web Engine, HTTP 1.1 Live Client)
+;   - macOS-style Traffic Lights (🔴 Close, 🟡 Minimize, 🟢 Maximize)
+;   - Bottom Floating Glass Dock with Active App Indicators
 ; ============================================================
 
 [BITS 32]
@@ -61,8 +62,42 @@ _start:
     mov dword [mouse_y], 384
     mov dword [prev_mouse_x], 512
     mov dword [prev_mouse_y], 384
-    mov byte [active_window], 1
+
+    ; Pencere Baslangic Pozisyonlari
+    mov dword [w1_x], 190
+    mov dword [w1_y], 85
+    mov dword [w1_w], 620
+    mov dword [w1_h], 410
+    mov byte [w1_state], 1
+
+    mov dword [w2_x], 50
+    mov dword [w2_y], 140
+    mov dword [w2_w], 460
+    mov dword [w2_h], 350
+    mov byte [w2_state], 1
+
+    mov dword [w3_x], 480
+    mov dword [w3_y], 190
+    mov dword [w3_w], 500
+    mov dword [w3_h], 360
+    mov byte [w3_state], 1
+
+    mov dword [w4_x], 130
+    mov dword [w4_y], 95
+    mov dword [w4_w], 740
+    mov dword [w4_h], 490
+    mov byte [w4_state], 1
+
+    ; Z-Order: Window 2 -> Window 3 -> Window 1 -> Window 4 (Browser on top!)
+    mov byte [win_z_order + 0], 2
+    mov byte [win_z_order + 1], 3
+    mov byte [win_z_order + 2], 1
+    mov byte [win_z_order + 3], 4
+    mov byte [active_window], 4
+
     mov byte [yuki_active_tab], 1
+    mov byte [browser_active_tab], 1
+    mov byte [is_dragging], 0
 
     ; 6. Ilk Tam Masaustu Cizimi
     call gui_render_all
@@ -218,6 +253,9 @@ ps2_mouse_init:
     mov byte [mouse_cycle], 0
     ret
 
+; ------------------------------------------------------------
+; Fare Paketi Isleme & Surukleme & Tiklama Yonetimi
+; ------------------------------------------------------------
 handle_mouse_byte:
     push eax
     push ebx
@@ -261,6 +299,7 @@ handle_mouse_byte:
     mov edx, [mouse_y]
     mov [prev_mouse_y], edx
 
+    ; X Delta
     movsx eax, bl
     mov edx, [mouse_x]
     add edx, eax
@@ -274,6 +313,7 @@ handle_mouse_byte:
 .x_not_over:
     mov [mouse_x], edx
 
+    ; Y Delta (PS/2 Y ters yondedir)
     movsx eax, cl
     mov edx, [mouse_y]
     sub edx, eax
@@ -287,34 +327,64 @@ handle_mouse_byte:
 .y_not_over:
     mov [mouse_y], edx
 
+    ; Buton Durumlari: bl = onceki, dl = simdiki
     mov al, [mouse_pkt0]
     mov dl, al
     and dl, 0x01
     mov bl, [mouse_btn_left]
     mov [mouse_btn_left], dl
 
+    ; 1. DURUM: FARE SURUKLEME DEVAM EDIYOR MU?
+    cmp byte [is_dragging], 0
+    je .check_button_transitions
+
+    ; Fare basili tutulmaya devam ediyorsa surukle
+    cmp dl, 1
+    jne .drag_released
+
+    ; Fare hareket etti mi?
+    mov eax, [mouse_x]
+    cmp eax, [prev_mouse_x]
+    jne .do_drag_update
+    mov eax, [mouse_y]
+    cmp eax, [prev_mouse_y]
+    jne .do_drag_update
+    jmp .done
+
+.do_drag_update:
+    call update_window_drag
+    jmp .done
+
+.drag_released:
+    mov byte [is_dragging], 0
+
+.check_button_transitions:
+    ; 2. DURUM: TIKLAMA OLAYI (Button Pressed 0 -> 1)
+    cmp bl, 0
+    jne .check_mouse_move
+    cmp dl, 1
+    jne .check_mouse_move
+
+    ; Sol tiklama algilandi!
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    call gui_handle_click
+    jmp .done
+
+.check_mouse_move:
+    ; Normal fare hareketi (Surukleme yokken hafif cursor yenileme)
     mov eax, [mouse_x]
     cmp eax, [prev_mouse_x]
     jne .redraw_cursor
     mov eax, [mouse_y]
     cmp eax, [prev_mouse_y]
     jne .redraw_cursor
-    jmp .check_click
+    jmp .done
 
 .redraw_cursor:
     call cursor_restore_bg
     call cursor_save_bg
     call cursor_draw
-
-.check_click:
-    cmp bl, 0
-    jne .done
-    cmp dl, 1
-    jne .done
-
-    mov eax, [mouse_x]
-    mov ebx, [mouse_y]
-    call gui_handle_click
     jmp .done
 
 .reset:
@@ -324,6 +394,183 @@ handle_mouse_byte:
     pop edx
     pop ecx
     pop ebx
+    pop eax
+    ret
+
+; ------------------------------------------------------------
+; Pencere Surukleme Konum Guncelleme
+; ------------------------------------------------------------
+update_window_drag:
+    pushad
+    movzx edx, byte [is_dragging]
+    cmp edx, 1
+    je .drag_w1
+    cmp edx, 2
+    je .drag_w2
+    cmp edx, 3
+    je .drag_w3
+    cmp edx, 4
+    je .drag_w4
+    jmp .done_drag
+
+.drag_w1:
+    mov eax, [mouse_x]
+    sub eax, [drag_off_x]
+    ; Sinirlar: 0 <= x <= 1024 - w1_w
+    cmp eax, 0
+    jge .w1_x_ok
+    xor eax, eax
+.w1_x_ok:
+    mov ecx, 1024
+    sub ecx, [w1_w]
+    cmp eax, ecx
+    jle .w1_x_max
+    mov eax, ecx
+.w1_x_max:
+    mov [w1_x], eax
+
+    mov eax, [mouse_y]
+    sub eax, [drag_off_y]
+    ; Sinirlar: 28 <= y <= 712 - 28
+    cmp eax, 28
+    jge .w1_y_ok
+    mov eax, 28
+.w1_y_ok:
+    cmp eax, 680
+    jle .w1_y_max
+    mov eax, 680
+.w1_y_max:
+    mov [w1_y], eax
+    jmp .redraw_all_drag
+
+.drag_w2:
+    mov eax, [mouse_x]
+    sub eax, [drag_off_x]
+    cmp eax, 0
+    jge .w2_x_ok
+    xor eax, eax
+.w2_x_ok:
+    mov ecx, 1024
+    sub ecx, [w2_w]
+    cmp eax, ecx
+    jle .w2_x_max
+    mov eax, ecx
+.w2_x_max:
+    mov [w2_x], eax
+
+    mov eax, [mouse_y]
+    sub eax, [drag_off_y]
+    cmp eax, 28
+    jge .w2_y_ok
+    mov eax, 28
+.w2_y_ok:
+    cmp eax, 680
+    jle .w2_y_max
+    mov eax, 680
+.w2_y_max:
+    mov [w2_y], eax
+    jmp .redraw_all_drag
+
+.drag_w3:
+    mov eax, [mouse_x]
+    sub eax, [drag_off_x]
+    cmp eax, 0
+    jge .w3_x_ok
+    xor eax, eax
+.w3_x_ok:
+    mov ecx, 1024
+    sub ecx, [w3_w]
+    cmp eax, ecx
+    jle .w3_x_max
+    mov eax, ecx
+.w3_x_max:
+    mov [w3_x], eax
+
+    mov eax, [mouse_y]
+    sub eax, [drag_off_y]
+    cmp eax, 28
+    jge .w3_y_ok
+    mov eax, 28
+.w3_y_ok:
+    cmp eax, 680
+    jle .w3_y_max
+    mov eax, 680
+.w3_y_max:
+    mov [w3_y], eax
+    jmp .redraw_all_drag
+
+.drag_w4:
+    mov eax, [mouse_x]
+    sub eax, [drag_off_x]
+    cmp eax, 0
+    jge .w4_x_ok
+    xor eax, eax
+.w4_x_ok:
+    mov ecx, 1024
+    sub ecx, [w4_w]
+    cmp eax, ecx
+    jle .w4_x_max
+    mov eax, ecx
+.w4_x_max:
+    mov [w4_x], eax
+
+    mov eax, [mouse_y]
+    sub eax, [drag_off_y]
+    cmp eax, 28
+    jge .w4_y_ok
+    mov eax, 28
+.w4_y_ok:
+    cmp eax, 680
+    jle .w4_y_max
+    mov eax, 680
+.w4_y_max:
+    mov [w4_y], eax
+
+.redraw_all_drag:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+
+.done_drag:
+    popad
+    ret
+
+; ============================================================
+; Z-Order (Pencere Siralama & En One Getirme)
+; ============================================================
+; AL = win_id (1..4)
+bring_to_front:
+    push eax
+    push ecx
+    push edx
+    mov [active_window], al
+
+    ; win_z_order dizisinde AL'nin indeksini bul
+    mov ecx, 0
+.find_idx:
+    cmp ecx, 4
+    jge .done_btf
+    cmp byte [win_z_order + ecx], al
+    je .found_idx
+    inc ecx
+    jmp .find_idx
+
+.found_idx:
+    ; ecx indeksindeki elemani en sona tasi
+.shift_loop:
+    cmp ecx, 3
+    jge .set_last
+    mov dl, [win_z_order + ecx + 1]
+    mov [win_z_order + ecx], dl
+    inc ecx
+    jmp .shift_loop
+
+.set_last:
+    mov [win_z_order + 3], al
+
+.done_btf:
+    pop edx
+    pop ecx
     pop eax
     ret
 
@@ -342,6 +589,7 @@ handle_keyboard:
     cmp al, 0x0F ; TAB
     je .key_tab
 
+    ; Sayi tuslari ile sekme / pencere degisimi
     cmp al, 0x02 ; 1
     je .tab1
     cmp al, 0x03 ; 2
@@ -393,6 +641,7 @@ handle_keyboard:
     jge .mu_ok
     xor edx, edx
 .mu_ok:
+    mov [prev_mouse_y], edx
     mov [mouse_y], edx
     call move_cursor_refresh
     jmp .done_kbd
@@ -404,6 +653,7 @@ handle_keyboard:
     jle .md_ok
     mov edx, 760
 .md_ok:
+    mov [prev_mouse_y], edx
     mov [mouse_y], edx
     call move_cursor_refresh
     jmp .done_kbd
@@ -415,6 +665,7 @@ handle_keyboard:
     jge .ml_ok
     xor edx, edx
 .ml_ok:
+    mov [prev_mouse_x], edx
     mov [mouse_x], edx
     call move_cursor_refresh
     jmp .done_kbd
@@ -426,6 +677,7 @@ handle_keyboard:
     jle .mr_ok
     mov edx, 1020
 .mr_ok:
+    mov [prev_mouse_x], edx
     mov [mouse_x], edx
     call move_cursor_refresh
     jmp .done_kbd
@@ -436,14 +688,23 @@ handle_keyboard:
     call gui_handle_click
     jmp .done_kbd
 
+.key_enter:
+    call term_execute_cmd
+    jmp .done_kbd
+
+.key_backspace:
+    call term_backspace
+    jmp .done_kbd
+
 .key_tab:
+    ; Pencereler arasi gecis (1 -> 2 -> 3 -> 4 -> 1)
     mov al, [active_window]
     inc al
-    cmp al, 3
-    jbe .tab_ok
+    cmp al, 4
+    jle .set_win
     mov al, 1
-.tab_ok:
-    mov [active_window], al
+.set_win:
+    call bring_to_front
     call gui_render_all
     call cursor_save_bg
     call cursor_draw
@@ -451,41 +712,33 @@ handle_keyboard:
 
 .tab1:
     mov byte [yuki_active_tab], 1
-    call gui_draw_window_1
+    call gui_render_all
     call cursor_save_bg
     call cursor_draw
     jmp .done_kbd
 .tab2:
     mov byte [yuki_active_tab], 2
-    call gui_draw_window_1
+    call gui_render_all
     call cursor_save_bg
     call cursor_draw
     jmp .done_kbd
 .tab3:
     mov byte [yuki_active_tab], 3
-    call gui_draw_window_1
+    call gui_render_all
     call cursor_save_bg
     call cursor_draw
     jmp .done_kbd
 .tab4:
     mov byte [yuki_active_tab], 4
-    call gui_draw_window_1
+    call gui_render_all
     call cursor_save_bg
     call cursor_draw
     jmp .done_kbd
 .tab5:
     mov byte [yuki_active_tab], 5
-    call gui_draw_window_1
+    call gui_render_all
     call cursor_save_bg
     call cursor_draw
-    jmp .done_kbd
-
-.key_enter:
-    call term_execute_cmd
-    jmp .done_kbd
-
-.key_backspace:
-    call term_backspace
     jmp .done_kbd
 
 .done_kbd:
@@ -720,8 +973,6 @@ isr_timer:
 ; ============================================================
 ; 2D Grafik Cizim Motoru (1024x768x32 TrueColor)
 ; ============================================================
-; GFX: Tek Piksel Boya
-; EAX = X, EBX = Y, EDX = Renk (0x00RRGGBB)
 gfx_put_pixel:
     cmp eax, 1024
     jae .out
@@ -739,8 +990,6 @@ gfx_put_pixel:
 .out:
     ret
 
-; GFX: Doldurulmus Dikdortgen Ciz
-; EAX = X, EBX = Y, ECX = W, EDX = H, ESI = Renk
 gfx_fill_rect:
     push ebp
     push edi
@@ -754,21 +1003,20 @@ gfx_fill_rect:
     jle .done_fill
     dec ebp
 
-    ; Satir baslangic adresi
     mov edi, [fb_addr]
     mov edx, ebx
-    add edx, ebp ; Y + current_row
+    add edx, ebp
     cmp edx, 768
     jae .row_loop
     shl edx, 10
-    add edx, eax ; X
+    add edx, eax
     cmp eax, 1024
     jae .row_loop
     lea edi, [edi + edx*4]
 
     push ecx
     push eax
-    mov eax, esi ; Renk
+    mov eax, esi
     rep stosd
     pop eax
     pop ecx
@@ -782,8 +1030,6 @@ gfx_fill_rect:
     pop ebp
     ret
 
-; GFX: Dikdortgen Kenarligi Ciz
-; EAX = X, EBX = Y, ECX = W, EDX = H, ESI = Kenar Rengi
 gfx_draw_rect_outline:
     push eax
     push ebx
@@ -791,13 +1037,11 @@ gfx_draw_rect_outline:
     push edx
     push ebp
 
-    ; 1. Ust kenar (X, Y, W, 1)
     push edx
     mov edx, 1
     call gfx_fill_rect
     pop edx
 
-    ; 2. Alt kenar (X, Y+H-1, W, 1)
     push ebx
     add ebx, edx
     dec ebx
@@ -807,13 +1051,11 @@ gfx_draw_rect_outline:
     pop edx
     pop ebx
 
-    ; 3. Sol kenar (X, Y, 1, H)
     push ecx
     mov ecx, 1
     call gfx_fill_rect
     pop ecx
 
-    ; 4. Sag kenar (X+W-1, Y, 1, H)
     push eax
     add eax, ecx
     dec eax
@@ -830,83 +1072,6 @@ gfx_draw_rect_outline:
     pop eax
     ret
 
-; GFX: Dikey Gradyan Ciz (Masaustu Duvar Kagidi & Panel Cam Efekti)
-; EAX = X, EBX = Y, ECX = W, EDX = H, ESI = RenkUst, EDI = RenkAlt
-gfx_draw_gradient_v:
-    push ebp
-    push dword [fb_addr]
-    push ebx
-    push ecx
-    push edx
-
-    ; Basit, yuksek performansli 8 adimli gradyan
-    mov ebp, 0 ; Adim
-.grad_step:
-    cmp ebp, 8
-    jge .done_grad
-
-    ; Alt dilim yuksekligi = H / 8
-    push eax
-    push ebx
-    push ecx
-    push edx
-
-    mov eax, edx
-    shr eax, 3 ; H / 8
-    mov [grad_slice_h], eax
-
-    ; Dilim Y = Y + ebp * slice_h
-    mov eax, ebp
-    mul dword [grad_slice_h]
-    add ebx, eax
-
-    ; Dilim Rengi hesapla
-    ; R, G, B interpolasyonu
-    mov eax, esi
-    cmp ebp, 4
-    jb .use_top
-    mov eax, edi
-.use_top:
-    mov [grad_cur_color], eax
-
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-    mov eax, eax
-    push eax
-    mov eax, ebp
-    mul dword [grad_slice_h]
-    add ebx, eax
-    pop eax
-    mov edx, [grad_slice_h]
-    mov esi, [grad_cur_color]
-    call gfx_fill_rect
-    pop esi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-
-    inc ebp
-    jmp .grad_step
-
-.done_grad:
-    pop edx
-    pop ecx
-    pop ebx
-    pop dword [fb_addr]
-    pop ebp
-    ret
-
-; GFX: Dolgulu Yuvarlak Daire Ciz (macOS 🔴🟡🟢 Butonlari & Durum Noktalari)
-; EAX = CX, EBX = CY, ECX = Radius, EDX = Renk
 gfx_draw_circle_filled:
     pushad
     mov [circle_cx], eax
@@ -915,49 +1080,47 @@ gfx_draw_circle_filled:
     mov [circle_col], edx
 
     mov ebp, ecx
-    imul ebp, ecx ; ebp = r * r
-
-    mov esi, [circle_r]
-    neg esi ; dy = -r
-.dy_loop:
-    cmp esi, [circle_r]
+    neg ebp ; dy = -r
+.loop_y:
+    cmp ebp, [circle_r]
     jg .done_circle
 
     mov edi, [circle_r]
     neg edi ; dx = -r
-.dx_loop:
+.loop_x:
     cmp edi, [circle_r]
-    jg .next_dy
+    jg .next_y
 
     mov eax, edi
     imul eax, edi
-    mov ebx, esi
-    imul ebx, esi
+    mov ebx, ebp
+    imul ebx, ebp
     add eax, ebx
-    cmp eax, ebp
-    jg .skip_cpix
+
+    mov ebx, [circle_r]
+    imul ebx, ebx
+    cmp eax, ebx
+    jg .skip_pixel
 
     mov eax, [circle_cx]
     add eax, edi
     mov ebx, [circle_cy]
-    add ebx, esi
+    add ebx, ebp
     mov edx, [circle_col]
     call gfx_put_pixel
 
-.skip_cpix:
+.skip_pixel:
     inc edi
-    jmp .dx_loop
+    jmp .loop_x
 
-.next_dy:
-    inc esi
-    jmp .dy_loop
+.next_y:
+    inc ebp
+    jmp .loop_y
 
 .done_circle:
     popad
     ret
 
-; GFX: 8x14 Karakter Ciz
-; EAX = Karakter, EBX = X, ECX = Y, EDX = On Renk, ESI = Arka Renk (0xFFFFFFFF = Saydam)
 gfx_draw_char:
     pushad
     mov [char_x], ebx
@@ -991,7 +1154,7 @@ gfx_draw_char:
     cmp ecx, 8
     jge .next_row
 
-    movzx edx, byte [char_row_bits] ; Her sutun icin satir bitlerini tekrar yukle
+    movzx edx, byte [char_row_bits]
     mov eax, 0x80
     push ecx
     shr eax, cl
@@ -1030,8 +1193,6 @@ gfx_draw_char:
     popad
     ret
 
-; GFX: Metin Dizisi Ciz
-; ESI = Metin Adresi, EAX = X, EBX = Y, EDX = On Renk, ECX = Arka Renk
 gfx_draw_string:
     pushad
     mov [str_draw_x], eax
@@ -1053,7 +1214,7 @@ gfx_draw_string:
     call gfx_draw_char
     pop esi
 
-    add dword [str_draw_x], 8 ; 8 piksel yana kay
+    add dword [str_draw_x], 8
     jmp .str_loop
 
 .str_done:
@@ -1075,12 +1236,12 @@ cursor_save_bg:
     mov ebp, [mouse_y]
 
     mov edi, cursor_bg_buf
-    mov ebx, 0 ; Row = 0..17
+    mov ebx, 0
 .save_row:
     cmp ebx, 18
     jge .done_save
 
-    mov eax, 0 ; Col = 0..11
+    mov eax, 0
 .save_col:
     cmp eax, 12
     jge .next_srow
@@ -1090,7 +1251,6 @@ cursor_save_bg:
 
     add eax, esi
     add ebx, ebp
-    ; Ekran sınır kontrolü
     cmp eax, 1024
     jae .out_of_screen
     cmp ebx, 768
@@ -1192,13 +1352,13 @@ cursor_draw:
     mov esi, [mouse_x]
     mov ebp, [mouse_y]
 
-    mov ebx, 0 ; Row = 0..17
+    mov ebx, 0
 .crow:
     cmp ebx, 18
     jge .done_cdraw
 
     movzx ecx, word [cursor_bitmap + ebx*2]
-    mov eax, 0 ; Col = 0..11
+    mov eax, 0
 .ccol:
     cmp eax, 12
     jge .next_crow
@@ -1230,7 +1390,6 @@ cursor_draw:
     jmp .next_pix
 
 .check_shadow:
-    ; Golge / Kenarlik kontrolu
     movzx ecx, word [cursor_outline + ebx*2]
     mov edx, 11
     sub edx, eax
@@ -1247,7 +1406,7 @@ cursor_draw:
     cmp dl, 1
     jne .next_pix
 
-    ; Siyah golge/kenarlik
+    ; Siyah golge
     push eax
     push ebx
     add eax, esi
@@ -1274,46 +1433,45 @@ cursor_draw:
     pop eax
     ret
 
-; Imlec Sekil Haritasi (12x18 Arrow)
 cursor_bitmap:
-    dw 0x8000 ; #...........
-    dw 0xC000 ; ##..........
-    dw 0xE000 ; ###.........
-    dw 0xF000 ; ####........
-    dw 0xF800 ; #####.......
-    dw 0xFC00 ; ######......
-    dw 0xFE00 ; #######.....
-    dw 0xFF00 ; ########....
-    dw 0xFF80 ; #########...
-    dw 0xFFC0 ; ##########..
-    dw 0xF800 ; #####.......
-    dw 0xD800 ; ##.##.......
-    dw 0x8C00 ; #...##......
-    dw 0x0C00 ; ....##......
-    dw 0x0600 ; .....##.....
-    dw 0x0600 ; .....##.....
-    dw 0x0300 ; ......##....
-    dw 0x0000 ; ............
+    dw 0x8000
+    dw 0xC000
+    dw 0xE000
+    dw 0xF000
+    dw 0xF800
+    dw 0xFC00
+    dw 0xFE00
+    dw 0xFF00
+    dw 0xFF80
+    dw 0xFFC0
+    dw 0xF800
+    dw 0xD800
+    dw 0x8C00
+    dw 0x0C00
+    dw 0x0600
+    dw 0x0600
+    dw 0x0300
+    dw 0x0000
 
 cursor_outline:
-    dw 0xC000 ; ##..........
-    dw 0xE000 ; ###.........
-    dw 0xF000 ; ####........
-    dw 0xF800 ; #####.......
-    dw 0xFC00 ; ######......
-    dw 0xFE00 ; #######.....
-    dw 0xFF00 ; ########....
-    dw 0xFF80 ; #########...
-    dw 0xFFC0 ; ##########..
-    dw 0xFFE0 ; ###########.
-    dw 0xFFC0 ; ##########..
-    dw 0xFDC0 ; #####.###...
-    dw 0xDFE0 ; ##.######...
-    dw 0x8FE0 ; #..######...
-    dw 0x0FE0 ; ...######...
-    dw 0x07F0 ; ....######..
-    dw 0x07F0 ; ....######..
-    dw 0x0380 ; .....###....
+    dw 0xC000
+    dw 0xE000
+    dw 0xF000
+    dw 0xF800
+    dw 0xFC00
+    dw 0xFE00
+    dw 0xFF00
+    dw 0xFF80
+    dw 0xFFC0
+    dw 0xFFE0
+    dw 0xFFC0
+    dw 0xFDC0
+    dw 0xDFE0
+    dw 0x8FE0
+    dw 0x0FE0
+    dw 0x07F0
+    dw 0x07F0
+    dw 0x0380
 
 ; ============================================================
 ; Masaustu Grafiksel Arayuz Katmani (Desktop GUI & Window Manager)
@@ -1321,7 +1479,7 @@ cursor_outline:
 gui_render_all:
     pushad
 
-    ; 1. Masaustu Duvar Kagidi (Iki Tonlu Derin Dark Theme)
+    ; 1. Masaustu Duvar Kagidi (Derin Dark Tema)
     mov eax, 0
     mov ebx, 0
     mov ecx, 1024
@@ -1336,7 +1494,7 @@ gui_render_all:
     mov esi, 0x001A2033
     call gfx_fill_rect
 
-    ; Masaustu Tech Grid Vurgulari (Her 128 pikselde hafif grid noktasi)
+    ; Tech Grid Vurgulari
     mov ebx, 64
 .grid_y:
     cmp ebx, 700
@@ -1362,7 +1520,6 @@ gui_render_all:
     mov esi, 0x00161824
     call gfx_fill_rect
 
-    ; 1px Alt Kenarlik
     mov eax, 0
     mov ebx, 27
     mov ecx, 1024
@@ -1379,7 +1536,7 @@ gui_render_all:
     call gfx_draw_string
 
     mov esi, str_menu_items
-    mov eax, 80
+    mov eax, 74
     mov ebx, 7
     mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
@@ -1401,7 +1558,7 @@ gui_render_all:
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; 3. Spotlight AI Arama Bari ("Baslangic Menusu Yerine AI" - Y.U.K.I Core)
+    ; 3. Spotlight AI Arama Bari ("Baslangic Menusu Yerine AI")
     mov eax, 212
     mov ebx, 36
     mov ecx, 600
@@ -1423,16 +1580,64 @@ gui_render_all:
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; 4. Sol Masaustu Simgeleri (Desktop Icons)
+    ; 4. Sol Masaustu Simgeleri
     call gui_draw_desktop_icons
 
-    ; 5. Pencereler (Z-Order: Inaktif pencereler once, aktif pencere en ustte)
-    call gui_draw_window_2 ; RamFS
-    call gui_draw_window_3 ; Terminal
-    call gui_draw_window_1 ; Y.U.K.I (Aktif)
+    ; 5. Pencereler: Z-Order Sirasina Gore Ciz (win_z_order[0] -> [3])
+    mov ecx, 0
+.draw_win_loop:
+    cmp ecx, 4
+    jge .done_win_draw
+    push ecx
 
-    ; 6. Alt Dock
+    movzx eax, byte [win_z_order + ecx]
+    cmp eax, 1
+    je .call_w1
+    cmp eax, 2
+    je .call_w2
+    cmp eax, 3
+    je .call_w3
+    cmp eax, 4
+    je .call_w4
+    jmp .next_w_draw
+
+.call_w1:
+    cmp byte [w1_state], 0
+    je .next_w_draw
+    call gui_draw_window_1
+    jmp .next_w_draw
+
+.call_w2:
+    cmp byte [w2_state], 0
+    je .next_w_draw
+    call gui_draw_window_2
+    jmp .next_w_draw
+
+.call_w3:
+    cmp byte [w3_state], 0
+    je .next_w_draw
+    call gui_draw_window_3
+    jmp .next_w_draw
+
+.call_w4:
+    cmp byte [w4_state], 0
+    je .next_w_draw
+    call gui_draw_window_4
+
+.next_w_draw:
+    pop ecx
+    inc ecx
+    jmp .draw_win_loop
+
+.done_win_draw:
+    ; 6. Alt Dock (Her zaman pencerelerin ustunde!)
     call gui_draw_dock
+
+    ; 7. Acik ise Baslat Menusu
+    cmp byte [menu_open], 1
+    jne .skip_menu
+    call gui_draw_dropdown_menu
+.skip_menu:
 
     popad
     ret
@@ -1519,7 +1724,7 @@ gui_draw_desktop_icons:
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Simge 4: Sandbox
+    ; Simge 4: Web Tarayici (YknBrowser)
     mov eax, 24
     mov ebx, 320
     mov ecx, 52
@@ -1530,22 +1735,22 @@ gui_draw_desktop_icons:
     mov ebx, 320
     mov ecx, 52
     mov edx, 52
-    mov esi, 0x00B48EAD
+    mov esi, 0x0088C0D0
     call gfx_draw_rect_outline
-    mov esi, str_ico_sec
+    mov esi, str_ico_web
     mov eax, 34
     mov ebx, 336
-    mov edx, 0x00B48EAD
+    mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    mov esi, str_lbl_sec
+    mov esi, str_lbl_web
     mov eax, 18
     mov ebx, 376
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Simge 5: SQL Studio
+    ; Simge 5: Sandbox
     mov eax, 24
     mov ebx, 400
     mov ecx, 52
@@ -1556,15 +1761,15 @@ gui_draw_desktop_icons:
     mov ebx, 400
     mov ecx, 52
     mov edx, 52
-    mov esi, 0x00D08770
+    mov esi, 0x00B48EAD
     call gfx_draw_rect_outline
-    mov esi, str_ico_sql
+    mov esi, str_ico_sec
     mov eax, 34
     mov ebx, 416
-    mov edx, 0x00D08770
+    mov edx, 0x00B48EAD
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    mov esi, str_lbl_sql
+    mov esi, str_lbl_sec
     mov eax, 18
     mov ebx, 456
     mov edx, 0x00ECEFF4
@@ -1576,81 +1781,96 @@ gui_draw_desktop_icons:
 ; Pencere 1: Y.U.K.I Core AI Nöral Merkezi (VISION.md)
 ; ------------------------------------------------------------
 gui_draw_window_1:
-    ; Golge (Drop Shadow)
-    mov eax, 214
-    mov ebx, 90
-    mov ecx, 620
-    mov edx, 416
+    pushad
+
+    ; Golge
+    mov eax, [w1_x]
+    add eax, 4
+    mov ebx, [w1_y]
+    add ebx, 4
+    mov ecx, [w1_w]
+    mov edx, [w1_h]
     mov esi, 0x00080A10
     call gfx_fill_rect
 
-    ; Pencere Govdesi
-    mov eax, 210
-    mov ebx, 86
-    mov ecx, 620
-    mov edx, 416
-    mov esi, 0x001E1E2E ; Acrylic Dark
+    ; Govde
+    mov eax, [w1_x]
+    mov ebx, [w1_y]
+    mov ecx, [w1_w]
+    mov edx, [w1_h]
+    mov esi, 0x001E1E2E
     call gfx_fill_rect
 
     ; Kenarlik
-    mov eax, 210
-    mov ebx, 86
-    mov ecx, 620
-    mov edx, 416
+    mov eax, [w1_x]
+    mov ebx, [w1_y]
+    mov ecx, [w1_w]
+    mov edx, [w1_h]
     mov esi, 0x003B4252
     cmp byte [active_window], 1
     jne .w1_outline
-    mov esi, 0x005E81AC ; Aktif Vurgu
+    mov esi, 0x005E81AC
 .w1_outline:
     call gfx_draw_rect_outline
 
-    ; Baslik Cubugu (y=86..114, h=28)
-    mov eax, 210
-    mov ebx, 86
-    mov ecx, 620
+    ; Baslik Cubugu
+    mov eax, [w1_x]
+    mov ebx, [w1_y]
+    mov ecx, [w1_w]
     mov edx, 28
     mov esi, 0x002E3440
     call gfx_fill_rect
 
-    ; macOS Traffic Light Butonlari (🔴 🟡 🟢)
-    mov eax, 224 ; Kapat (Red)
-    mov ebx, 100
+    ; macOS Traffic Lights (🔴 🟡 🟢)
+    mov eax, [w1_x]
+    add eax, 14
+    mov ebx, [w1_y]
+    add ebx, 14
     mov ecx, 5
     mov edx, 0x00BF616A
     call gfx_draw_circle_filled
 
-    mov eax, 240 ; Kucult (Yellow)
-    mov ebx, 100
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 14
     mov ecx, 5
     mov edx, 0x00EBCB8B
     call gfx_draw_circle_filled
 
-    mov eax, 256 ; Buyut (Green)
-    mov ebx, 100
+    mov eax, [w1_x]
+    add eax, 46
+    mov ebx, [w1_y]
+    add ebx, 14
     mov ecx, 5
     mov edx, 0x00A3BE8C
     call gfx_draw_circle_filled
 
     ; Baslik Metni
     mov esi, str_w1_title
-    mov eax, 274
-    mov ebx, 93
+    mov eax, [w1_x]
+    add eax, 64
+    mov ebx, [w1_y]
+    add ebx, 7
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Sekme Cubugu (Tabs: y=114..138, h=24)
-    mov eax, 210
-    mov ebx, 114
-    mov ecx, 620
+    ; Sekme Cubugu (Tabs)
+    mov eax, [w1_x]
+    mov ebx, [w1_y]
+    add ebx, 28
+    mov ecx, [w1_w]
     mov edx, 24
     mov esi, 0x0024283B
     call gfx_fill_rect
 
     ; Sekme 1..5 Metinleri
     mov esi, str_tab_w1_1
-    mov eax, 222
-    mov ebx, 120
+    mov eax, [w1_x]
+    add eax, 12
+    mov ebx, [w1_y]
+    add ebx, 34
     mov edx, 0x00D8DEE9
     cmp byte [yuki_active_tab], 1
     jne .t1_c
@@ -1660,8 +1880,10 @@ gui_draw_window_1:
     call gfx_draw_string
 
     mov esi, str_tab_w1_2
-    mov eax, 318
-    mov ebx, 120
+    mov eax, [w1_x]
+    add eax, 108
+    mov ebx, [w1_y]
+    add ebx, 34
     mov edx, 0x00D8DEE9
     cmp byte [yuki_active_tab], 2
     jne .t2_c
@@ -1671,8 +1893,10 @@ gui_draw_window_1:
     call gfx_draw_string
 
     mov esi, str_tab_w1_3
-    mov eax, 446
-    mov ebx, 120
+    mov eax, [w1_x]
+    add eax, 236
+    mov ebx, [w1_y]
+    add ebx, 34
     mov edx, 0x00D8DEE9
     cmp byte [yuki_active_tab], 3
     jne .t3_c
@@ -1682,8 +1906,10 @@ gui_draw_window_1:
     call gfx_draw_string
 
     mov esi, str_tab_w1_4
-    mov eax, 540
-    mov ebx, 120
+    mov eax, [w1_x]
+    add eax, 330
+    mov ebx, [w1_y]
+    add ebx, 34
     mov edx, 0x00D8DEE9
     cmp byte [yuki_active_tab], 4
     jne .t4_c
@@ -1693,8 +1919,10 @@ gui_draw_window_1:
     call gfx_draw_string
 
     mov esi, str_tab_w1_5
-    mov eax, 652
-    mov ebx, 120
+    mov eax, [w1_x]
+    add eax, 442
+    mov ebx, [w1_y]
+    add ebx, 34
     mov edx, 0x00D8DEE9
     cmp byte [yuki_active_tab], 5
     jne .t5_c
@@ -1703,15 +1931,16 @@ gui_draw_window_1:
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Sekme Alt cizgisi
-    mov eax, 210
-    mov ebx, 137
-    mov ecx, 620
+    ; Sekme Alt Cizgisi
+    mov eax, [w1_x]
+    mov ebx, [w1_y]
+    add ebx, 51
+    mov ecx, [w1_w]
     mov edx, 1
     mov esi, 0x003B4252
     call gfx_fill_rect
 
-    ; Icerik Cizimi (Aktif Sekmeye Gore)
+    ; Icerik Cizimi
     cmp byte [yuki_active_tab], 2
     je .draw_tab_2
     cmp byte [yuki_active_tab], 3
@@ -1721,349 +1950,482 @@ gui_draw_window_1:
     cmp byte [yuki_active_tab], 5
     je .draw_tab_5
 
-    ; --- SEKME 1: GENEL & CANLI AI ASISTANI ---
+    ; --- SEKME 1: GENEL ---
 .draw_tab_1:
     mov esi, str_w1_status
-    mov eax, 226
-    mov ebx, 150
-    mov edx, 0x00A3BE8C ; Yesil Durum
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 64
+    mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_w1_vm
-    mov eax, 226
-    mov ebx, 172
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 86
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Soru / Cevap Kutusu
-    mov eax, 226
-    mov ebx, 200
-    mov ecx, 588
+    ; QA Box
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 114
+    mov ecx, [w1_w]
+    sub ecx, 32
     mov edx, 180
     mov esi, 0x00141620
     call gfx_fill_rect
-    mov eax, 226
-    mov ebx, 200
-    mov ecx, 588
+
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 114
+    mov ecx, [w1_w]
+    sub ecx, 32
     mov edx, 180
     mov esi, 0x00434C5E
     call gfx_draw_rect_outline
 
     mov esi, str_qa_prompt
-    mov eax, 240
-    mov ebx, 214
-    mov edx, 0x00EBCB8B ; Sari Prompt
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 128
+    mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_qa_line1
-    mov eax, 240
-    mov ebx, 238
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 152
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_qa_line2
-    mov eax, 240
-    mov ebx, 256
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 170
     mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_qa_line3
-    mov eax, 240
-    mov ebx, 274
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 188
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_qa_line4
-    mov eax, 240
-    mov ebx, 292
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 206
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_qa_line5
-    mov eax, 240
-    mov ebx, 310
+    mov eax, [w1_x]
+    add eax, 30
+    mov ebx, [w1_y]
+    add ebx, 224
     mov edx, 0x00B48EAD
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Hizli Butonlar
-    mov eax, 226
-    mov ebx, 396
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 310
     mov ecx, 180
     mov edx, 32
     mov esi, 0x002E3440
     call gfx_fill_rect
     mov esi, str_btn_ark
-    mov eax, 256
-    mov ebx, 406
+    mov eax, [w1_x]
+    add eax, 46
+    mov ebx, [w1_y]
+    add ebx, 320
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    mov eax, 420
-    mov ebx, 396
+    mov eax, [w1_x]
+    add eax, 210
+    mov ebx, [w1_y]
+    add ebx, 310
     mov ecx, 180
     mov edx, 32
     mov esi, 0x002E3440
     call gfx_fill_rect
     mov esi, str_btn_bakim
-    mov eax, 450
-    mov ebx, 406
+    mov eax, [w1_x]
+    add eax, 240
+    mov ebx, [w1_y]
+    add ebx, 320
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    mov eax, 614
-    mov ebx, 396
+    mov eax, [w1_x]
+    add eax, 404
+    mov ebx, [w1_y]
+    add ebx, 310
     mov ecx, 200
     mov edx, 32
     mov esi, 0x002E3440
     call gfx_fill_rect
     mov esi, str_btn_sand
-    mov eax, 644
-    mov ebx, 406
+    mov eax, [w1_x]
+    add eax, 434
+    mov ebx, [w1_y]
+    add ebx, 320
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ret
+    jmp .done_w1
 
-    ; --- SEKME 2: HATA ARKEOLOJISI ---
 .draw_tab_2:
     mov esi, str_ark_h1
-    mov eax, 226
-    mov ebx, 150
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 64
     mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_l1
-    mov eax, 226
-    mov ebx, 176
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 88
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_l2
-    mov eax, 226
-    mov ebx, 198
-    mov edx, 0x00ECEFF4
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 110
+    mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_l3
-    mov eax, 226
-    mov ebx, 220
-    mov edx, 0x00ECEFF4
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 132
+    mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_l4
-    mov eax, 226
-    mov ebx, 242
-    mov edx, 0x00ECEFF4
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 154
+    mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_l5
-    mov eax, 226
-    mov ebx, 264
-    mov edx, 0x00ECEFF4
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 176
+    mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
+    ; Arkeoloji Sonuc Kutusu
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 204
+    mov ecx, [w1_w]
+    sub ecx, 32
+    mov edx, 90
+    mov esi, 0x00161E28
+    call gfx_fill_rect
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 204
+    mov ecx, [w1_w]
+    sub ecx, 32
+    mov edx, 90
+    mov esi, 0x00A3BE8C
+    call gfx_draw_rect_outline
+
     mov esi, str_ark_h2
-    mov eax, 226
-    mov ebx, 300
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 218
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_r1
-    mov eax, 226
-    mov ebx, 324
-    mov edx, 0x00D8DEE9
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 240
+    mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_ark_r2
-    mov eax, 226
-    mov ebx, 344
-    mov edx, 0x00D8DEE9
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 262
+    mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ret
+    jmp .done_w1
 
-    ; --- SEKME 3: PROAKTIF BAKIM ---
 .draw_tab_3:
     mov esi, str_bak_h1
-    mov eax, 226
-    mov ebx, 150
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 64
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_bak_l1
-    mov eax, 226
-    mov ebx, 178
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 92
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_bak_l2
-    mov eax, 226
-    mov ebx, 202
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 116
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_bak_l3
-    mov eax, 226
-    mov ebx, 226
-    mov edx, 0x00ECEFF4
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 140
+    mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 172
+    mov ecx, [w1_w]
+    sub ecx, 32
+    mov edx, 100
+    mov esi, 0x0019202E
+    call gfx_fill_rect
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 172
+    mov ecx, [w1_w]
+    sub ecx, 32
+    mov edx, 100
+    mov esi, 0x0088C0D0
+    call gfx_draw_rect_outline
+
     mov esi, str_bak_h2
-    mov eax, 226
-    mov ebx, 260
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 186
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_bak_t1
-    mov eax, 226
-    mov ebx, 286
-    mov edx, 0x00D8DEE9
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 210
+    mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_bak_t2
-    mov eax, 226
-    mov ebx, 308
-    mov edx, 0x00D8DEE9
+    mov eax, [w1_x]
+    add eax, 28
+    mov ebx, [w1_y]
+    add ebx, 234
+    mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ret
+    jmp .done_w1
 
-    ; --- SEKME 4: SANDBOX GUVENLIK MODELI ---
 .draw_tab_4:
     mov esi, str_snd_h1
-    mov eax, 226
-    mov ebx, 150
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 64
     mov edx, 0x00B48EAD
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_l0
-    mov eax, 226
-    mov ebx, 176
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 90
     mov edx, 0x00BF616A
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_l1
-    mov eax, 226
-    mov ebx, 202
-    mov edx, 0x0088C0D0
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 114
+    mov edx, 0x00D08770
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_l2
-    mov eax, 226
-    mov ebx, 228
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 138
     mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_l3
-    mov eax, 226
-    mov ebx, 254
-    mov edx, 0x00A3BE8C
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 162
+    mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_l4
-    mov eax, 226
-    mov ebx, 280
-    mov edx, 0x00D08770
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 186
+    mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_snd_pol
-    mov eax, 226
-    mov ebx, 316
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 220
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ret
+    jmp .done_w1
 
-    ; --- SEKME 5: MODELLER (BITNET & BONSAI) ---
 .draw_tab_5:
     mov esi, str_mod_h1
-    mov eax, 226
-    mov ebx, 150
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 64
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_mod_m1
-    mov eax, 226
-    mov ebx, 178
-    mov edx, 0x00ECEFF4
-    mov ecx, 0xFFFFFFFF
-    call gfx_draw_string
-
-    mov esi, str_mod_m2
-    mov eax, 226
-    mov ebx, 202
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 92
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    mov esi, str_mod_b1
-    mov eax, 226
-    mov ebx, 236
+    mov esi, str_mod_m2
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 114
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    mov esi, str_mod_b2
-    mov eax, 226
-    mov ebx, 260
-    mov edx, 0x00EBCB8B
+    mov esi, str_mod_b1
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 148
+    mov edx, 0x00B48EAD
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
+    mov esi, str_mod_b2
+    mov eax, [w1_x]
+    add eax, 16
+    mov ebx, [w1_y]
+    add ebx, 170
+    mov edx, 0x00ECEFF4
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+.done_w1:
+    popad
     ret
 
 ; ------------------------------------------------------------
 ; Pencere 2: RamFS Dosya Gezgini
 ; ------------------------------------------------------------
 gui_draw_window_2:
-    mov eax, 64
-    mov ebx, 144
-    mov ecx, 460
-    mov edx, 350
+    pushad
+
+    mov eax, [w2_x]
+    add eax, 4
+    mov ebx, [w2_y]
+    add ebx, 4
+    mov ecx, [w2_w]
+    mov edx, [w2_h]
     mov esi, 0x00080A10
     call gfx_fill_rect
 
-    mov eax, 60
-    mov ebx, 140
-    mov ecx, 460
-    mov edx, 350
+    mov eax, [w2_x]
+    mov ebx, [w2_y]
+    mov ecx, [w2_w]
+    mov edx, [w2_h]
     mov esi, 0x001B1E2E
     call gfx_fill_rect
 
-    mov eax, 60
-    mov ebx, 140
-    mov ecx, 460
-    mov edx, 350
+    mov eax, [w2_x]
+    mov ebx, [w2_y]
+    mov ecx, [w2_w]
+    mov edx, [w2_h]
     mov esi, 0x003B4252
     cmp byte [active_window], 2
     jne .w2_out
@@ -2072,215 +2434,813 @@ gui_draw_window_2:
     call gfx_draw_rect_outline
 
     ; Baslik
-    mov eax, 60
-    mov ebx, 140
-    mov ecx, 460
+    mov eax, [w2_x]
+    mov ebx, [w2_y]
+    mov ecx, [w2_w]
     mov edx, 26
     mov esi, 0x0024283B
     call gfx_fill_rect
 
-    mov eax, 74
-    mov ebx, 153
+    mov eax, [w2_x]
+    add eax, 14
+    mov ebx, [w2_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00BF616A
     call gfx_draw_circle_filled
-    mov eax, 88
-    mov ebx, 153
+
+    mov eax, [w2_x]
+    add eax, 28
+    mov ebx, [w2_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00EBCB8B
     call gfx_draw_circle_filled
-    mov eax, 102
-    mov ebx, 153
+
+    mov eax, [w2_x]
+    add eax, 42
+    mov ebx, [w2_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00A3BE8C
     call gfx_draw_circle_filled
 
     mov esi, str_w2_title
-    mov eax, 116
-    mov ebx, 146
+    mov eax, [w2_x]
+    add eax, 56
+    mov ebx, [w2_y]
+    add ebx, 6
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Sol Dizin Agaci (w=120)
-    mov eax, 60
-    mov ebx, 166
+    ; Sol Dizin Agaci
+    mov eax, [w2_x]
+    mov ebx, [w2_y]
+    add ebx, 26
     mov ecx, 120
-    mov edx, 324
+    mov edx, [w2_h]
+    sub edx, 50
     mov esi, 0x00141624
     call gfx_fill_rect
 
     mov esi, str_fs_dir1
-    mov eax, 72
-    mov ebx, 180
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, 40
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_dir2
-    mov eax, 72
-    mov ebx, 204
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, 64
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_dir3
-    mov eax, 72
-    mov ebx, 228
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, 88
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_dir4
-    mov eax, 72
-    mov ebx, 252
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, 112
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_dir5
-    mov eax, 72
-    mov ebx, 276
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, 136
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Sag Dosya Izgarasi
     mov esi, str_fs_f1
-    mov eax, 196
-    mov ebx, 180
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 40
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_f2
-    mov eax, 196
-    mov ebx, 204
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 64
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_f3
-    mov eax, 196
-    mov ebx, 228
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 88
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_f4
-    mov eax, 196
-    mov ebx, 252
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 112
     mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_f5
-    mov eax, 196
-    mov ebx, 276
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 136
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
     mov esi, str_fs_f6
-    mov eax, 196
-    mov ebx, 300
+    mov eax, [w2_x]
+    add eax, 136
+    mov ebx, [w2_y]
+    add ebx, 160
     mov edx, 0x00D08770
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Durum Cubugu
-    mov eax, 60
-    mov ebx, 466
-    mov ecx, 460
+    mov eax, [w2_x]
+    mov ebx, [w2_y]
+    add ebx, [w2_h]
+    sub ebx, 24
+    mov ecx, [w2_w]
     mov edx, 24
     mov esi, 0x00141624
     call gfx_fill_rect
+
     mov esi, str_fs_status
-    mov eax, 72
-    mov ebx, 472
+    mov eax, [w2_x]
+    add eax, 12
+    mov ebx, [w2_y]
+    add ebx, [w2_h]
+    sub ebx, 18
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+
+    popad
     ret
 
 ; ------------------------------------------------------------
 ; Pencere 3: yknsh Terminali
 ; ------------------------------------------------------------
 gui_draw_window_3:
-    mov eax, 464
-    mov ebx, 214
-    mov ecx, 520
-    mov edx, 370
+    pushad
+
+    mov eax, [w3_x]
+    add eax, 4
+    mov ebx, [w3_y]
+    add ebx, 4
+    mov ecx, [w3_w]
+    mov edx, [w3_h]
     mov esi, 0x00080A10
     call gfx_fill_rect
 
-    mov eax, 460
-    mov ebx, 210
-    mov ecx, 520
-    mov edx, 370
-    mov esi, 0x000D1117 ; Derin Siyah Terminal
+    mov eax, [w3_x]
+    mov ebx, [w3_y]
+    mov ecx, [w3_w]
+    mov edx, [w3_h]
+    mov esi, 0x000D1117
     call gfx_fill_rect
 
-    mov eax, 460
-    mov ebx, 210
-    mov ecx, 520
-    mov edx, 370
+    mov eax, [w3_x]
+    mov ebx, [w3_y]
+    mov ecx, [w3_w]
+    mov edx, [w3_h]
     mov esi, 0x003B4252
     cmp byte [active_window], 3
     jne .w3_out
-    mov esi, 0x00A3BE8C ; Aktif Yesil Vurgu
+    mov esi, 0x00A3BE8C
 .w3_out:
     call gfx_draw_rect_outline
 
     ; Baslik
-    mov eax, 460
-    mov ebx, 210
-    mov ecx, 520
+    mov eax, [w3_x]
+    mov ebx, [w3_y]
+    mov ecx, [w3_w]
     mov edx, 26
     mov esi, 0x00161B22
     call gfx_fill_rect
 
-    mov eax, 474
-    mov ebx, 223
+    mov eax, [w3_x]
+    add eax, 14
+    mov ebx, [w3_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00BF616A
     call gfx_draw_circle_filled
-    mov eax, 488
-    mov ebx, 223
+
+    mov eax, [w3_x]
+    add eax, 28
+    mov ebx, [w3_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00EBCB8B
     call gfx_draw_circle_filled
-    mov eax, 502
-    mov ebx, 223
+
+    mov eax, [w3_x]
+    add eax, 42
+    mov ebx, [w3_y]
+    add ebx, 13
     mov ecx, 4
     mov edx, 0x00A3BE8C
     call gfx_draw_circle_filled
 
     mov esi, str_w3_title
-    mov eax, 516
-    mov ebx, 216
+    mov eax, [w3_x]
+    add eax, 56
+    mov ebx, [w3_y]
+    add ebx, 6
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; Terminal Ciktisi (Son 8 satir)
+    ; Terminal Ciktisi
     call term_render_lines
+
+    popad
+    ret
+
+; ------------------------------------------------------------
+; Pencere 4: YknBrowser (Yukinary Modern Web Engine)
+; ------------------------------------------------------------
+gui_draw_window_4:
+    pushad
+
+    ; Golge
+    mov eax, [w4_x]
+    add eax, 4
+    mov ebx, [w4_y]
+    add ebx, 4
+    mov ecx, [w4_w]
+    mov edx, [w4_h]
+    mov esi, 0x00080A10
+    call gfx_fill_rect
+
+    ; Govde
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    mov ecx, [w4_w]
+    mov edx, [w4_h]
+    mov esi, 0x00131622
+    call gfx_fill_rect
+
+    ; Kenarlik
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    mov ecx, [w4_w]
+    mov edx, [w4_h]
+    mov esi, 0x003B4252
+    cmp byte [active_window], 4
+    jne .w4_out
+    mov esi, 0x0088C0D0
+.w4_out:
+    call gfx_draw_rect_outline
+
+    ; 1. Baslik Cubugu (y=0..27)
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    mov ecx, [w4_w]
+    mov edx, 28
+    mov esi, 0x00222638
+    call gfx_fill_rect
+
+    ; Traffic Lights 🔴 🟡 🟢
+    mov eax, [w4_x]
+    add eax, 14
+    mov ebx, [w4_y]
+    add ebx, 14
+    mov ecx, 5
+    mov edx, 0x00BF616A
+    call gfx_draw_circle_filled
+
+    mov eax, [w4_x]
+    add eax, 30
+    mov ebx, [w4_y]
+    add ebx, 14
+    mov ecx, 5
+    mov edx, 0x00EBCB8B
+    call gfx_draw_circle_filled
+
+    mov eax, [w4_x]
+    add eax, 46
+    mov ebx, [w4_y]
+    add ebx, 14
+    mov ecx, 5
+    mov edx, 0x00A3BE8C
+    call gfx_draw_circle_filled
+
+    ; Baslik
+    mov esi, str_w4_title
+    mov eax, [w4_x]
+    add eax, 64
+    mov ebx, [w4_y]
+    add ebx, 7
+    mov edx, 0x00ECEFF4
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; 2. Tarayici Sekme Cubugu (y=28..53, h=26)
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    add ebx, 28
+    mov ecx, [w4_w]
+    mov edx, 26
+    mov esi, 0x001A1D2B
+    call gfx_fill_rect
+
+    ; Sekme 1 (Aktif Sekme)
+    mov eax, [w4_x]
+    add eax, 8
+    mov ebx, [w4_y]
+    add ebx, 28
+    mov ecx, 155
+    mov edx, 26
+    mov esi, 0x00252A3D
+    call gfx_fill_rect
+
+    ; Sekme 1 Alt Vurgu
+    mov eax, [w4_x]
+    add eax, 8
+    mov ebx, [w4_y]
+    add ebx, 52
+    mov ecx, 155
+    mov edx, 2
+    mov esi, 0x0088C0D0
+    call gfx_fill_rect
+
+    mov esi, str_web_tab1
+    mov eax, [w4_x]
+    add eax, 16
+    mov ebx, [w4_y]
+    add ebx, 34
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Sekme 2
+    mov esi, str_web_tab2
+    mov eax, [w4_x]
+    add eax, 172
+    mov ebx, [w4_y]
+    add ebx, 34
+    mov edx, 0x00D8DEE9
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Sekme 3
+    mov esi, str_web_tab3
+    mov eax, [w4_x]
+    add eax, 332
+    mov ebx, [w4_y]
+    add ebx, 34
+    mov edx, 0x00D8DEE9
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Sekme 4 (+)
+    mov esi, str_web_tab4
+    mov eax, [w4_x]
+    add eax, 452
+    mov ebx, [w4_y]
+    add ebx, 34
+    mov edx, 0x00A3BE8C
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; 3. Navigasyon ve Omnibox Adres Cubugu (y=54..87, h=34)
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    add ebx, 54
+    mov ecx, [w4_w]
+    mov edx, 34
+    mov esi, 0x001D2130
+    call gfx_fill_rect
+
+    ; Navigasyon Butonlari (<, >, R, H)
+    ; Buton <
+    mov eax, [w4_x]
+    add eax, 10
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x00252A3D
+    call gfx_fill_rect
+    mov eax, [w4_x]
+    add eax, 10
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x003B4252
+    call gfx_draw_rect_outline
+    mov esi, str_nav_back
+    mov eax, [w4_x]
+    add eax, 18
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Buton >
+    mov eax, [w4_x]
+    add eax, 38
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x00252A3D
+    call gfx_fill_rect
+    mov eax, [w4_x]
+    add eax, 38
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x003B4252
+    call gfx_draw_rect_outline
+    mov esi, str_nav_fwd
+    mov eax, [w4_x]
+    add eax, 46
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x004C566A
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Buton R (Reload)
+    mov eax, [w4_x]
+    add eax, 66
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x00252A3D
+    call gfx_fill_rect
+    mov eax, [w4_x]
+    add eax, 66
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x003B4252
+    call gfx_draw_rect_outline
+    mov esi, str_nav_reload
+    mov eax, [w4_x]
+    add eax, 74
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Buton H (Home)
+    mov eax, [w4_x]
+    add eax, 94
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x00252A3D
+    call gfx_fill_rect
+    mov eax, [w4_x]
+    add eax, 94
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 24
+    mov edx, 26
+    mov esi, 0x003B4252
+    call gfx_draw_rect_outline
+    mov esi, str_nav_home
+    mov eax, [w4_x]
+    add eax, 102
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x00EBCB8B
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Omnibox URL Alani (🔒 http://127.0.0.1:8080/index.html)
+    mov eax, [w4_x]
+    add eax, 124
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 436
+    mov edx, 26
+    mov esi, 0x00121420
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    add eax, 124
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 436
+    mov edx, 26
+    mov esi, 0x00434C5E
+    call gfx_draw_rect_outline
+
+    mov esi, str_web_url
+    mov eax, [w4_x]
+    add eax, 134
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x00A3BE8C
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; AI Ozetle Aksiyon Butonu
+    mov eax, [w4_x]
+    add eax, 570
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 110
+    mov edx, 26
+    mov esi, 0x002E3440
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    add eax, 570
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 110
+    mov edx, 26
+    mov esi, 0x005E81AC
+    call gfx_draw_rect_outline
+
+    mov esi, str_btn_summarize
+    mov eax, [w4_x]
+    add eax, 578
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Sandbox L3 Guvenlik Simgesi
+    mov eax, [w4_x]
+    add eax, 688
+    mov ebx, [w4_y]
+    add ebx, 58
+    mov ecx, 42
+    mov edx, 26
+    mov esi, 0x0024283B
+    call gfx_fill_rect
+
+    mov esi, str_ico_l3
+    mov eax, [w4_x]
+    add eax, 694
+    mov ebx, [w4_y]
+    add ebx, 64
+    mov edx, 0x00B48EAD
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; 4. Web Icerik Govdesi (HTML Viewport)
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    add ebx, 88
+    mov ecx, [w4_w]
+    mov edx, [w4_h]
+    sub edx, 110
+    mov esi, 0x000E1018
+    call gfx_fill_rect
+
+    ; Web Hero Banner (Kart 0)
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 98
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 54
+    mov esi, 0x00171A26
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 98
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 54
+    mov esi, 0x003B4252
+    call gfx_draw_rect_outline
+
+    mov esi, str_hero_t1
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 106
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_hero_t2
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 126
+    mov edx, 0x00A3BE8C
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Kart 1: RamFS REST Mikroservisleri
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 160
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 92
+    mov esi, 0x00141622
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 160
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 92
+    mov esi, 0x002E3440
+    call gfx_draw_rect_outline
+
+    mov esi, str_c1_hdr
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 168
+    mov edx, 0x00EBCB8B
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_c1_l1
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 188
+    mov edx, 0x00ECEFF4
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_c1_l2
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 208
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_c1_l3
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 228
+    mov edx, 0x00A3BE8C
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Kart 2: Y.U.K.I Guvenlik Duvari & Derin Paket Filtresi
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 260
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 74
+    mov esi, 0x00141622
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, 260
+    mov ecx, [w4_w]
+    sub ecx, 24
+    mov edx, 74
+    mov esi, 0x002E3440
+    call gfx_draw_rect_outline
+
+    mov esi, str_c2_hdr
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 268
+    mov edx, 0x00B48EAD
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_c2_l1
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 288
+    mov edx, 0x00D8DEE9
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    mov esi, str_c2_l2
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 308
+    mov edx, 0x00A3BE8C
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; Hizli Baglantilar / Aksiyon Bari
+    mov esi, str_web_links
+    mov eax, [w4_x]
+    add eax, 24
+    mov ebx, [w4_y]
+    add ebx, 344
+    mov edx, 0x00ECEFF4
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    ; 5. Tarayici Durum Cubugu (Browser Status Bar)
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    add ebx, [w4_h]
+    sub ebx, 22
+    mov ecx, [w4_w]
+    mov edx, 22
+    mov esi, 0x00161824
+    call gfx_fill_rect
+
+    mov eax, [w4_x]
+    mov ebx, [w4_y]
+    add ebx, [w4_h]
+    sub ebx, 22
+    mov ecx, [w4_w]
+    mov edx, 1
+    mov esi, 0x002E3440
+    call gfx_fill_rect
+
+    mov esi, str_web_status
+    mov eax, [w4_x]
+    add eax, 12
+    mov ebx, [w4_y]
+    add ebx, [w4_h]
+    sub ebx, 17
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+
+    popad
     ret
 
 ; ------------------------------------------------------------
 ; Alt Dock (Floating Acrylic Capsule)
 ; ------------------------------------------------------------
 gui_draw_dock:
-    ; Dock Paneli (x=282, y=712, w=460, h=46)
-    mov eax, 282
+    ; Dock Paneli (x=246, y=712, w=532, h=46)
+    mov eax, 246
     mov ebx, 712
-    mov ecx, 460
+    mov ecx, 532
     mov edx, 46
     mov esi, 0x00181A26
     call gfx_fill_rect
 
-    mov eax, 282
+    mov eax, 246
     mov ebx, 712
-    mov ecx, 460
+    mov ecx, 532
     mov edx, 46
     mov esi, 0x004C566A
     call gfx_draw_rect_outline
 
-    ; Simgeler (8 Adet, Aralik = 52 px)
     ; 1: Baslat
     mov esi, str_ico_d1
-    mov eax, 298
+    mov eax, 260
     mov ebx, 726
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
@@ -2288,67 +3248,87 @@ gui_draw_dock:
 
     ; 2: Y.U.K.I AI
     mov esi, str_ico_d2
-    mov eax, 350
+    mov eax, 324
     mov ebx, 726
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ; Aktif nokta
-    mov eax, 362
+    cmp byte [w1_state], 0
+    je .skip_dot1
+    mov eax, 336
     mov ebx, 746
     mov ecx, 2
     mov edx, 0x0088C0D0
     call gfx_draw_circle_filled
+.skip_dot1:
 
-    ; 3: Dosyalar
+    ; 3: Dosyalar (RamFS)
     mov esi, str_ico_d3
-    mov eax, 402
+    mov eax, 388
     mov ebx, 726
     mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
+    cmp byte [w2_state], 0
+    je .skip_dot2
+    mov eax, 400
+    mov ebx, 746
+    mov ecx, 2
+    mov edx, 0x00EBCB8B
+    call gfx_draw_circle_filled
+.skip_dot2:
 
     ; 4: Terminal
     mov esi, str_ico_d4
-    mov eax, 454
+    mov eax, 452
     mov ebx, 726
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
-    ; Aktif nokta
-    mov eax, 466
+    cmp byte [w3_state], 0
+    je .skip_dot3
+    mov eax, 464
     mov ebx, 746
     mov ecx, 2
     mov edx, 0x00A3BE8C
     call gfx_draw_circle_filled
+.skip_dot3:
 
-    ; 5: Sandbox
+    ; 5: Web Tarayici (YknBrowser)
     mov esi, str_ico_d5
-    mov eax, 506
+    mov eax, 516
+    mov ebx, 726
+    mov edx, 0x0088C0D0
+    mov ecx, 0xFFFFFFFF
+    call gfx_draw_string
+    cmp byte [w4_state], 0
+    je .skip_dot4
+    mov eax, 528
+    mov ebx, 746
+    mov ecx, 2
+    mov edx, 0x0088C0D0
+    call gfx_draw_circle_filled
+.skip_dot4:
+
+    ; 6: Sandbox
+    mov esi, str_ico_d6
+    mov eax, 580
     mov ebx, 726
     mov edx, 0x00B48EAD
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; 6: SQL
-    mov esi, str_ico_d6
-    mov eax, 558
+    ; 7: SQL
+    mov esi, str_ico_d7
+    mov eax, 644
     mov ebx, 726
     mov edx, 0x00D08770
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
-    ; 7: Ag (HTTP)
-    mov esi, str_ico_d7
-    mov eax, 610
-    mov ebx, 726
-    mov edx, 0x0081A1C1
-    mov ecx, 0xFFFFFFFF
-    call gfx_draw_string
-
     ; 8: Ayarlar
     mov esi, str_ico_d8
-    mov eax, 662
+    mov eax, 708
     mov ebx, 726
     mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
@@ -2447,8 +3427,11 @@ gui_handle_click:
     jb .check_dock
     cmp eax, 812
     ja .check_dock
+
     ; Y.U.K.I Penceresine Odaklan ve Sekme 1'e Gec
-    mov byte [active_window], 1
+    mov al, 1
+    call bring_to_front
+    mov byte [w1_state], 1
     mov byte [yuki_active_tab], 1
     call gui_render_all
     call cursor_save_bg
@@ -2456,20 +3439,20 @@ gui_handle_click:
     jmp .done_click
 
 .check_dock:
-    ; 3. Alt Dock Tiklamasi (y=712..758, x=282..742)
+    ; 3. Alt Dock Tiklamasi (y=712..758, x=246..778)
     cmp ebx, 712
-    jb .check_w1
+    jb .check_windows_hit
     cmp ebx, 758
-    ja .check_w1
-    cmp eax, 282
-    jb .check_w1
-    cmp eax, 742
-    ja .check_w1
+    ja .check_windows_hit
+    cmp eax, 246
+    jb .check_windows_hit
+    cmp eax, 778
+    ja .check_windows_hit
 
-    ; Dock Simgesi Secimi
-    sub eax, 282
+    ; Dock Simgesi Hesabi: index = (x - 246) / 64
+    sub eax, 246
     mov edx, 0
-    mov ecx, 52
+    mov ecx, 64
     div ecx ; EAX = 0..7
 
     cmp eax, 0
@@ -2480,6 +3463,10 @@ gui_handle_click:
     je .dock_fs
     cmp eax, 3
     je .dock_term
+    cmp eax, 4
+    je .dock_browser
+    cmp eax, 5
+    je .dock_sec
     jmp .done_click
 
 .dock_menu:
@@ -2490,102 +3477,220 @@ gui_handle_click:
     jmp .done_click
 
 .dock_yuki:
-    mov byte [active_window], 1
-    call gui_render_all
-    call cursor_save_bg
-    call cursor_draw
+    mov al, 1
+    call toggle_or_focus_win
     jmp .done_click
 
 .dock_fs:
-    mov byte [active_window], 2
-    call gui_render_all
-    call cursor_save_bg
-    call cursor_draw
+    mov al, 2
+    call toggle_or_focus_win
     jmp .done_click
 
 .dock_term:
-    mov byte [active_window], 3
-    call gui_render_all
-    call cursor_save_bg
-    call cursor_draw
+    mov al, 3
+    call toggle_or_focus_win
     jmp .done_click
 
-.check_w1:
-    ; 4. Pencere 1 (Y.U.K.I) Tiklamasi (x=210..830, y=86..502)
-    cmp eax, 210
-    jb .check_w2
-    cmp eax, 830
-    ja .check_w2
-    cmp ebx, 86
-    jb .check_w2
-    cmp ebx, 502
-    ja .check_w2
+.dock_browser:
+    mov al, 4
+    call toggle_or_focus_win
+    jmp .done_click
 
-    ; Pencereyi Aktif Yap
-    mov byte [active_window], 1
-
-    ; Sekme cubugu tiklamasi mi? (y=114..138)
-    cmp ebx, 114
-    jb .redraw_w1
-    cmp ebx, 138
-    ja .redraw_w1
-
-    ; Sekme Koordinatlari
-    cmp eax, 310
-    jb .w1_tab1
-    cmp eax, 440
-    jb .w1_tab2
-    cmp eax, 530
-    jb .w1_tab3
-    cmp eax, 640
-    jb .w1_tab4
-    mov byte [yuki_active_tab], 5
-    jmp .redraw_w1
-.w1_tab1:
-    mov byte [yuki_active_tab], 1
-    jmp .redraw_w1
-.w1_tab2:
-    mov byte [yuki_active_tab], 2
-    jmp .redraw_w1
-.w1_tab3:
-    mov byte [yuki_active_tab], 3
-    jmp .redraw_w1
-.w1_tab4:
+.dock_sec:
+    mov al, 1
+    call bring_to_front
+    mov byte [w1_state], 1
     mov byte [yuki_active_tab], 4
-
-.redraw_w1:
-    call gui_draw_window_1
-    call cursor_save_bg
-    call cursor_draw
-    jmp .done_click
-
-.check_w2:
-    ; 5. Pencere 2 (RamFS) Tiklamasi (x=60..520, y=140..490)
-    cmp eax, 60
-    jb .check_w3
-    cmp eax, 520
-    ja .check_w3
-    cmp ebx, 140
-    jb .check_w3
-    cmp ebx, 490
-    ja .check_w3
-    mov byte [active_window], 2
     call gui_render_all
     call cursor_save_bg
     call cursor_draw
     jmp .done_click
 
-.check_w3:
-    ; 6. Pencere 3 (Terminal) Tiklamasi (x=460..980, y=210..580)
-    cmp eax, 460
+; ------------------------------------------------------------
+; Z-Order Hit Testing: En Ustteki Pencereden En Alta Dogru (3 -> 0)
+; ------------------------------------------------------------
+.check_windows_hit:
+    mov ecx, 3
+.hit_loop:
+    cmp ecx, 0
+    jl .check_desktop_icons_hit
+    push ecx
+
+    movzx edx, byte [win_z_order + ecx] ; edx = win_id (1..4)
+    cmp edx, 1
+    je .test_w1
+    cmp edx, 2
+    je .test_w2
+    cmp edx, 3
+    je .test_w3
+    cmp edx, 4
+    je .test_w4
+    jmp .next_hit_cand
+
+.test_w1:
+    cmp byte [w1_state], 0
+    je .next_hit_cand
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    cmp eax, [w1_x]
+    jb .next_hit_cand
+    mov esi, [w1_x]
+    add esi, [w1_w]
+    cmp eax, esi
+    jae .next_hit_cand
+    cmp ebx, [w1_y]
+    jb .next_hit_cand
+    mov esi, [w1_y]
+    add esi, [w1_h]
+    cmp ebx, esi
+    jae .next_hit_cand
+
+    ; Pencere 1 Vuruldu!
+    pop ecx
+    mov al, 1
+    call bring_to_front
+    call handle_click_w1
+    jmp .done_click
+
+.test_w2:
+    cmp byte [w2_state], 0
+    je .next_hit_cand
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    cmp eax, [w2_x]
+    jb .next_hit_cand
+    mov esi, [w2_x]
+    add esi, [w2_w]
+    cmp eax, esi
+    jae .next_hit_cand
+    cmp ebx, [w2_y]
+    jb .next_hit_cand
+    mov esi, [w2_y]
+    add esi, [w2_h]
+    cmp ebx, esi
+    jae .next_hit_cand
+
+    ; Pencere 2 Vuruldu!
+    pop ecx
+    mov al, 2
+    call bring_to_front
+    call handle_click_w2
+    jmp .done_click
+
+.test_w3:
+    cmp byte [w3_state], 0
+    je .next_hit_cand
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    cmp eax, [w3_x]
+    jb .next_hit_cand
+    mov esi, [w3_x]
+    add esi, [w3_w]
+    cmp eax, esi
+    jae .next_hit_cand
+    cmp ebx, [w3_y]
+    jb .next_hit_cand
+    mov esi, [w3_y]
+    add esi, [w3_h]
+    cmp ebx, esi
+    jae .next_hit_cand
+
+    ; Pencere 3 Vuruldu!
+    pop ecx
+    mov al, 3
+    call bring_to_front
+    call handle_click_w3
+    jmp .done_click
+
+.test_w4:
+    cmp byte [w4_state], 0
+    je .next_hit_cand
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    cmp eax, [w4_x]
+    jb .next_hit_cand
+    mov esi, [w4_x]
+    add esi, [w4_w]
+    cmp eax, esi
+    jae .next_hit_cand
+    cmp ebx, [w4_y]
+    jb .next_hit_cand
+    mov esi, [w4_y]
+    add esi, [w4_h]
+    cmp ebx, esi
+    jae .next_hit_cand
+
+    ; Pencere 4 Vuruldu!
+    pop ecx
+    mov al, 4
+    call bring_to_front
+    call handle_click_w4
+    jmp .done_click
+
+.next_hit_cand:
+    pop ecx
+    dec ecx
+    jmp .hit_loop
+
+.check_desktop_icons_hit:
+    ; Sol Masaustu Simgeleri Tiklamasi (x=24..76)
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+    cmp eax, 24
     jb .done_click
-    cmp eax, 980
+    cmp eax, 76
     ja .done_click
-    cmp ebx, 210
+
+    ; Simge 1: Y.U.K.I (y=80..132)
+    cmp ebx, 80
     jb .done_click
-    cmp ebx, 580
+    cmp ebx, 132
+    ja .check_dico_2
+    mov al, 1
+    call bring_to_front
+    mov byte [w1_state], 1
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    jmp .done_click
+
+.check_dico_2:
+    ; Simge 2: RamFS (y=160..212)
+    cmp ebx, 160
+    jb .done_click
+    cmp ebx, 212
+    ja .check_dico_3
+    mov al, 2
+    call bring_to_front
+    mov byte [w2_state], 1
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    jmp .done_click
+
+.check_dico_3:
+    ; Simge 3: Terminal (y=240..292)
+    cmp ebx, 240
+    jb .done_click
+    cmp ebx, 292
+    ja .check_dico_4
+    mov al, 3
+    call bring_to_front
+    mov byte [w3_state], 1
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    jmp .done_click
+
+.check_dico_4:
+    ; Simge 4: Web Tarayici (y=320..372)
+    cmp ebx, 320
+    jb .done_click
+    cmp ebx, 372
     ja .done_click
-    mov byte [active_window], 3
+    mov al, 4
+    call bring_to_front
+    mov byte [w4_state], 1
     call gui_render_all
     call cursor_save_bg
     call cursor_draw
@@ -2596,6 +3701,416 @@ gui_handle_click:
     pop esi
     pop edi
     pop ebp
+    ret
+
+; ------------------------------------------------------------
+; Pencere 1 Olay Isleme (Baslik, Surukleme, Sekmeler, Butonlar)
+; ------------------------------------------------------------
+handle_click_w1:
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+
+    ; Baslik cubugu mu? (y < w1_y + 28)
+    mov esi, [w1_y]
+    add esi, 28
+    cmp ebx, esi
+    jae .w1_body_click
+
+    ; Traffic Lights kontrolu
+    ; 🔴 Kapat (w1_x + 8 .. w1_x + 20)
+    mov edx, [w1_x]
+    add edx, 8
+    cmp eax, edx
+    jb .start_drag_w1
+    add edx, 14
+    cmp eax, edx
+    ja .check_w1_min
+    mov byte [w1_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.check_w1_min:
+    ; 🟡 Simge Durumu (w1_x + 24 .. w1_x + 36)
+    mov edx, [w1_x]
+    add edx, 24
+    cmp eax, edx
+    jb .start_drag_w1
+    add edx, 14
+    cmp eax, edx
+    ja .start_drag_w1
+    mov byte [w1_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.start_drag_w1:
+    ; Pencereyi Suruklemeye Basla!
+    mov byte [is_dragging], 1
+    mov eax, [mouse_x]
+    sub eax, [w1_x]
+    mov [drag_off_x], eax
+    mov eax, [mouse_y]
+    sub eax, [w1_y]
+    mov [drag_off_y], eax
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w1_body_click:
+    ; Sekme Cubugu Tiklamasi (y < w1_y + 52)
+    mov esi, [w1_y]
+    add esi, 52
+    cmp ebx, esi
+    ja .w1_content_click
+
+    ; Sekme X Koordinatlari
+    mov eax, [mouse_x]
+    sub eax, [w1_x]
+    cmp eax, 100
+    jb .set_t1
+    cmp eax, 220
+    jb .set_t2
+    cmp eax, 320
+    jb .set_t3
+    cmp eax, 430
+    jb .set_t4
+    mov byte [yuki_active_tab], 5
+    jmp .refresh_w1
+
+.set_t1:
+    mov byte [yuki_active_tab], 1
+    jmp .refresh_w1
+.set_t2:
+    mov byte [yuki_active_tab], 2
+    jmp .refresh_w1
+.set_t3:
+    mov byte [yuki_active_tab], 3
+    jmp .refresh_w1
+.set_t4:
+    mov byte [yuki_active_tab], 4
+
+.refresh_w1:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w1_content_click:
+    ; Sekme 1 Hizli Butonlar (y = w1_y + 310 .. w1_y + 342)
+    cmp byte [yuki_active_tab], 1
+    jne .w1_just_focus
+    mov esi, [w1_y]
+    add esi, 310
+    cmp ebx, esi
+    jb .w1_just_focus
+    add esi, 32
+    cmp ebx, esi
+    ja .w1_just_focus
+
+    mov eax, [mouse_x]
+    sub eax, [w1_x]
+    cmp eax, 16
+    jb .w1_just_focus
+    cmp eax, 196
+    jbe .btn_to_t2
+    cmp eax, 210
+    jb .w1_just_focus
+    cmp eax, 390
+    jbe .btn_to_t3
+    cmp eax, 404
+    jb .w1_just_focus
+    cmp eax, 604
+    jbe .btn_to_t4
+    jmp .w1_just_focus
+
+.btn_to_t2:
+    mov byte [yuki_active_tab], 2
+    jmp .refresh_w1
+.btn_to_t3:
+    mov byte [yuki_active_tab], 3
+    jmp .refresh_w1
+.btn_to_t4:
+    mov byte [yuki_active_tab], 4
+    jmp .refresh_w1
+
+.w1_just_focus:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+; ------------------------------------------------------------
+; Pencere 2 Olay Isleme (RamFS)
+; ------------------------------------------------------------
+handle_click_w2:
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+
+    mov esi, [w2_y]
+    add esi, 26
+    cmp ebx, esi
+    jae .w2_body_click
+
+    ; Traffic Lights
+    mov edx, [w2_x]
+    add edx, 8
+    cmp eax, edx
+    jb .start_drag_w2
+    add edx, 14
+    cmp eax, edx
+    ja .check_w2_min
+    mov byte [w2_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.check_w2_min:
+    mov edx, [w2_x]
+    add edx, 24
+    cmp eax, edx
+    jb .start_drag_w2
+    add edx, 14
+    cmp eax, edx
+    ja .start_drag_w2
+    mov byte [w2_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.start_drag_w2:
+    mov byte [is_dragging], 2
+    mov eax, [mouse_x]
+    sub eax, [w2_x]
+    mov [drag_off_x], eax
+    mov eax, [mouse_y]
+    sub eax, [w2_y]
+    mov [drag_off_y], eax
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w2_body_click:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+; ------------------------------------------------------------
+; Pencere 3 Olay Isleme (Terminal)
+; ------------------------------------------------------------
+handle_click_w3:
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+
+    mov esi, [w3_y]
+    add esi, 26
+    cmp ebx, esi
+    jae .w3_body_click
+
+    ; Traffic Lights
+    mov edx, [w3_x]
+    add edx, 8
+    cmp eax, edx
+    jb .start_drag_w3
+    add edx, 14
+    cmp eax, edx
+    ja .check_w3_min
+    mov byte [w3_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.check_w3_min:
+    mov edx, [w3_x]
+    add edx, 24
+    cmp eax, edx
+    jb .start_drag_w3
+    add edx, 14
+    cmp eax, edx
+    ja .start_drag_w3
+    mov byte [w3_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.start_drag_w3:
+    mov byte [is_dragging], 3
+    mov eax, [mouse_x]
+    sub eax, [w3_x]
+    mov [drag_off_x], eax
+    mov eax, [mouse_y]
+    sub eax, [w3_y]
+    mov [drag_off_y], eax
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w3_body_click:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+; ------------------------------------------------------------
+; Pencere 4 Olay Isleme (YknBrowser)
+; ------------------------------------------------------------
+handle_click_w4:
+    mov eax, [mouse_x]
+    mov ebx, [mouse_y]
+
+    mov esi, [w4_y]
+    add esi, 28
+    cmp ebx, esi
+    jae .w4_body_click
+
+    ; Traffic Lights
+    mov edx, [w4_x]
+    add edx, 8
+    cmp eax, edx
+    jb .start_drag_w4
+    add edx, 14
+    cmp eax, edx
+    ja .check_w4_min
+    mov byte [w4_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.check_w4_min:
+    mov edx, [w4_x]
+    add edx, 24
+    cmp eax, edx
+    jb .start_drag_w4
+    add edx, 14
+    cmp eax, edx
+    ja .start_drag_w4
+    mov byte [w4_state], 0
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.start_drag_w4:
+    mov byte [is_dragging], 4
+    mov eax, [mouse_x]
+    sub eax, [w4_x]
+    mov [drag_off_x], eax
+    mov eax, [mouse_y]
+    sub eax, [w4_y]
+    mov [drag_off_y], eax
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w4_body_click:
+    ; Tarayici Sekme Tiklamasi (y < w4_y + 54)
+    mov esi, [w4_y]
+    add esi, 54
+    cmp ebx, esi
+    ja .w4_toolbar_click
+
+    mov eax, [mouse_x]
+    sub eax, [w4_x]
+    cmp eax, 170
+    jb .set_wtab1
+    cmp eax, 330
+    jb .set_wtab2
+    cmp eax, 450
+    jb .set_wtab3
+    mov byte [browser_active_tab], 4
+    jmp .refresh_w4
+
+.set_wtab1:
+    mov byte [browser_active_tab], 1
+    jmp .refresh_w4
+.set_wtab2:
+    mov byte [browser_active_tab], 2
+    jmp .refresh_w4
+.set_wtab3:
+    mov byte [browser_active_tab], 3
+
+.refresh_w4:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w4_toolbar_click:
+    ; Sayfayi Ozetle Butonu Tiklamasi (y < w4_y + 88)
+    mov esi, [w4_y]
+    add esi, 88
+    cmp ebx, esi
+    ja .w4_content_click
+
+    mov eax, [mouse_x]
+    sub eax, [w4_x]
+    cmp eax, 570
+    jb .w4_content_click
+    cmp eax, 680
+    ja .w4_content_click
+
+    ; AI Ozetleme Yapildi Bildirimi: Y.U.K.I penceresine gec
+    mov al, 1
+    call bring_to_front
+    mov byte [w1_state], 1
+    mov byte [yuki_active_tab], 1
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+.w4_content_click:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
+    ret
+
+; ------------------------------------------------------------
+; Dock Simgesi Tiklandiginda Pencere Ac/Odaklan
+; ------------------------------------------------------------
+toggle_or_focus_win:
+    ; AL = win_id (1..4)
+    push eax
+    call bring_to_front
+    pop eax
+    cmp al, 1
+    je .t_w1
+    cmp al, 2
+    je .t_w2
+    cmp al, 3
+    je .t_w3
+    cmp al, 4
+    je .t_w4
+    ret
+
+.t_w1:
+    mov byte [w1_state], 1
+    jmp .redraw_toggle
+.t_w2:
+    mov byte [w2_state], 1
+    jmp .redraw_toggle
+.t_w3:
+    mov byte [w3_state], 1
+    jmp .redraw_toggle
+.t_w4:
+    mov byte [w4_state], 1
+
+.redraw_toggle:
+    call gui_render_all
+    call cursor_save_bg
+    call cursor_draw
     ret
 
 ; ============================================================
@@ -2609,7 +4124,6 @@ term_add_char:
     inc byte [term_buf_len]
     mov byte [term_buffer + ecx + 1], 0
 
-    ; Terminali yeniden ciz
     call term_render_lines
     call cursor_save_bg
     call cursor_draw
@@ -2632,78 +4146,100 @@ term_backspace:
 
 term_render_lines:
     ; Terminal Arka Plani Temizle
-    mov eax, 462
-    mov ebx, 238
-    mov ecx, 516
-    mov edx, 340
+    mov eax, [w3_x]
+    add eax, 2
+    mov ebx, [w3_y]
+    add ebx, 28
+    mov ecx, [w3_w]
+    sub ecx, 4
+    mov edx, [w3_h]
+    sub edx, 30
     mov esi, 0x000D1117
     call gfx_fill_rect
 
-    ; Sabit Hatirlatma
+    ; Sabit Banner
     mov esi, str_term_banner
-    mov eax, 472
-    mov ebx, 246
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 36
     mov edx, 0x0088C0D0
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Onceki Cikti Satirlari
     mov esi, str_term_l1
-    mov eax, 472
-    mov ebx, 268
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 58
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_term_l2
-    mov eax, 472
-    mov ebx, 288
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 78
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_term_l3
-    mov eax, 472
-    mov ebx, 308
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 98
     mov edx, 0x00EBCB8B
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_term_l4
-    mov eax, 472
-    mov ebx, 328
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 118
     mov edx, 0x00D8DEE9
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, str_term_l5
-    mov eax, 472
-    mov ebx, 348
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 138
     mov edx, 0x0081A1C1
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Prompt ve Kullanici Girdisi
     mov esi, str_term_prompt
-    mov eax, 472
-    mov ebx, 376
+    mov eax, [w3_x]
+    add eax, 12
+    mov ebx, [w3_y]
+    add ebx, 166
     mov edx, 0x00A3BE8C
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     mov esi, term_buffer
-    mov eax, 576
-    mov ebx, 376
+    mov eax, [w3_x]
+    add eax, 116
+    mov ebx, [w3_y]
+    add ebx, 166
     mov edx, 0x00ECEFF4
     mov ecx, 0xFFFFFFFF
     call gfx_draw_string
 
     ; Yanip Sonen Imlec
-    mov eax, 576
+    mov eax, [w3_x]
+    add eax, 116
     movzx ecx, byte [term_buf_len]
-    shl ecx, 3 ; ecx * 8
+    shl ecx, 3
     add eax, ecx
-    mov ebx, 376
+    mov ebx, [w3_y]
+    add ebx, 166
     mov ecx, 8
     mov edx, 14
     mov esi, 0x00A3BE8C
@@ -2711,7 +4247,6 @@ term_render_lines:
     ret
 
 term_execute_cmd:
-    ; Komut kontrolu
     mov esi, term_buffer
     mov edi, str_cmd_help
     call strcmp
@@ -2728,11 +4263,15 @@ term_execute_cmd:
     jz .do_uptime_cmd
 
     mov esi, term_buffer
+    mov edi, str_cmd_web
+    call strcmp
+    jz .do_web_cmd
+
+    mov esi, term_buffer
     mov edi, str_cmd_clear
     call strcmp
     jz .do_clear_cmd
 
-    ; Bilinmeyen komut
     mov esi, msg_term_unknown
     call copy_to_term_l5
     jmp .finish_cmd
@@ -2750,6 +4289,14 @@ term_execute_cmd:
 .do_uptime_cmd:
     mov esi, msg_term_uptime
     call copy_to_term_l5
+    jmp .finish_cmd
+
+.do_web_cmd:
+    mov esi, msg_term_web
+    call copy_to_term_l5
+    mov al, 4
+    call bring_to_front
+    mov byte [w4_state], 1
     jmp .finish_cmd
 
 .do_clear_cmd:
@@ -2800,16 +4347,16 @@ strcmp:
 ; ============================================================
 msg_serial_boot:  db 10, "================================================================", 10
                   db "  YknOS 6.1 LTS - TrueColor 1024x768 Graphical Desktop Active   ", 10
-                  db "  Linux LTS Kernel + YKN Userspace + Y.U.K.I Core AI Assistant ", 10
+                  db "  Linux LTS Kernel + YKN Userspace + YknBrowser Live Web Engine ", 10
                   db "================================================================", 10, 0
 msg_serial_ready: db "[YknOS]: Hardware PS/2 Mouse, Keyboard, BGA & PIT 100Hz ONLINE.", 10, 0
 
 str_menu_brand:   db "YknOS", 0
-str_menu_items:   db "Dosya  Duzenle  Gorunum  Sistem  Yardim", 0
-str_os_title_top: db "YknOS 6.1 LTS  |  AI-First Desktop", 0
-str_tray_items:   db "WiFi [ON]  |  Sandbox L0-L4  |  22:30", 0
+str_menu_items:   db "Dosya  Duzenle  Gorunum  Pencere  Yardim", 0
+str_os_title_top: db "YknOS 6.1 LTS | Web & AI Desktop", 0
+str_tray_items:   db "WiFi [ON] | Sandbox L0-L4 | 22:30", 0
 
-str_spotlight_text: db "Y.U.K.I: 'Sistem sagligi nasil?', 'wifi kapat', 'yuki arkeoloji'...", 0
+str_spotlight_text: db "Y.U.K.I: 'Sistem sagligi nasil?', 'tarayici ac', 'yuki arkeoloji'...", 0
 
 str_ico_ai:   db "[AI]", 0
 str_lbl_ai:   db "Y.U.K.I", 0
@@ -2817,10 +4364,10 @@ str_ico_fs:   db "[DIR]", 0
 str_lbl_fs:   db "RamFS", 0
 str_ico_term: db "[>_]", 0
 str_lbl_term: db "Terminal", 0
+str_ico_web:  db "[WEB]", 0
+str_lbl_web:  db "Browser", 0
 str_ico_sec:  db "[SEC]", 0
 str_lbl_sec:  db "Sandbox", 0
-str_ico_sql:  db "[SQL]", 0
-str_lbl_sql:  db "Veritabani", 0
 
 str_w1_title: db "Y.U.K.I Core Noral Isletim Sistemi Beyni (BitNet + Bonsai-8B)", 0
 str_tab_w1_1: db "[1: Genel]", 0
@@ -2891,31 +4438,63 @@ str_fs_f6:     db "veritabani.sql      8.5 KB", 0
 str_fs_status: db "6 dosya, 5 dizin  |  RamFS Toplam: 64 MB  |  Serbest: 61 MB", 0
 
 str_w3_title:     db "yknsh - root@yknos:/# (Linux 6.1.0-yknos x86_64)", 0
-str_term_banner:  db "YknOS GNU/Linux 6.1.0-yknos Interactive Shell. Komutlar: help, yuki, uptime", 0
+str_term_banner:  db "YknOS GNU/Linux 6.1 Interactive Shell. Komutlar: help, yuki, web, uptime", 0
 str_term_l1:      db "[0.00s] Linux LTS cekirdek Long Mode & MMU aktif.", 0
 str_term_l2:      db "[0.02s] 8259 PIC ve 100 Hz PIT timer kesmeleri devrede.", 0
 str_term_l3:      db "[0.04s] RamFS VFS ve dinamik /proc sanal tablosu yuklendi.", 0
-str_term_l4:      db "[0.08s] Y.U.K.I Core Nöral Isletim Sistemi Beyni aktif.", 0
+str_term_l4:      db "[0.08s] Y.U.K.I Core Noral Isletim Sistemi Beyni aktif.", 0
 str_term_l5:      db "Sistem hazir. Komut yazabilirsiniz...", 0
 str_term_prompt:  db "root@yknos:/#", 0
 
-msg_term_help:    db "Komutlar: help, yuki, uptime, date, uname, free, clear", 0
+msg_term_help:    db "Komutlar: help, yuki, web, uptime, date, uname, free, clear", 0
 msg_term_yuki:    db "Y.U.K.I: Sistem %100 nominal. Tum alt sistemler operasyonel.", 0
 msg_term_uptime:  db "22:30:15 up 25 min, 1 user, load average: 0.12, 0.08, 0.02", 0
+msg_term_web:     db "[HTTP]: YknBrowser penceresi odaklandi -> http://127.0.0.1:8080", 0
 msg_term_unknown: db "Bilinmeyen komut. Yardim icin 'help' yazin.", 0
 
 str_cmd_help:   db "help", 0
 str_cmd_yuki:   db "yuki", 0
 str_cmd_uptime: db "uptime", 0
+str_cmd_web:    db "web", 0
 str_cmd_clear:  db "clear", 0
+
+; Window 4 (YknBrowser) Metinleri
+str_w4_title:       db "YknBrowser - Yukinary Modern Web Engine (HTTP 1.1 Live Client)", 0
+str_web_tab1:       db "[ YknOS Portali ]", 0
+str_web_tab2:       db "[ Y.U.K.I Search ]", 0
+str_web_tab3:       db "[ REST API ]", 0
+str_web_tab4:       db "[ + ]", 0
+
+str_nav_back:       db "<", 0
+str_nav_fwd:        db ">", 0
+str_nav_reload:     db "R", 0
+str_nav_home:       db "H", 0
+str_web_url:        db "[SEC] http://127.0.0.1:8080/index.html", 0
+str_btn_summarize:  db "[ Y.U.K.I Ozetle ]", 0
+str_ico_l3:         db "[L3]", 0
+
+str_hero_t1:        db "Yukinary OS - Noral Web Ag Gecidi (Port 8080 Live)", 0
+str_hero_t2:        db "* 200 OK | Sunucu: YknOS-Embedded/2.1 | Gecikme: 0.08 ms | TLS 1.3", 0
+
+str_c1_hdr:         db "[ REST API ENDPOINTS - CANLI VERI SUNUCUSU ]", 0
+str_c1_l1:          db "GET /api/v1/system/status -> 200 OK { 'cpu': 'x86_64', 'ram_free': '61MB' }", 0
+str_c1_l2:          db "GET /api/v1/yuki/memory   -> 200 OK { 'vector_nodes': 14, 'mode': 'BitNet' }", 0
+str_c1_l3:          db "GET /api/v1/sandbox/state -> 200 OK { 'level': 'L3-Isolated', 'sec': 'OK' }", 0
+
+str_c2_hdr:         db "[ SIFIR GUVENILIRLIK (ZERO-TRUST) & NORAL CSP FILTRESI ]", 0
+str_c2_l1:          db "[OK] Zero-Trust HTTP/1.1 ve WebSocket oturum izolasyonu devrede.", 0
+str_c2_l2:          db "[OK] Yerel Noral Filtre: XSS, SQLi ve yetkisiz bellek erisimi engellendi.", 0
+
+str_web_links:      db "[ /api/telemetry ]   [ Guvenlik Raporu ]   [ RamFS Indir ]   [ Konsol ]", 0
+str_web_status:     db "* Bagli: 127.0.0.1:8080 | TLS 1.3 Yukinary Secure | JS: YknV8-Micro | 60 FPS", 0
 
 str_ico_d1: db "[*]", 0
 str_ico_d2: db "[AI]", 0
 str_ico_d3: db "[DIR]", 0
 str_ico_d4: db "[>_]", 0
-str_ico_d5: db "[SEC]", 0
-str_ico_d6: db "[SQL]", 0
-str_ico_d7: db "[NET]", 0
+str_ico_d5: db "[WEB]", 0
+str_ico_d6: db "[SEC]", 0
+str_ico_d7: db "[SQL]", 0
 str_ico_d8: db "[SET]", 0
 
 str_dm_1:   db "Hakkinda: YknOS 6.1", 0
@@ -2961,9 +4540,43 @@ cursor_saved:    resb 1
 alignb 4
 cursor_bg_buf:   resd 18 * 12
 
-active_window:   resb 1 ; 1: Y.U.K.I, 2: RamFS, 3: Terminal
+; Pencere Durumlari ve Pozisyonlari
+alignb 4
+w1_x:            resd 1
+w1_y:            resd 1
+w1_w:            resd 1
+w1_h:            resd 1
+w1_state:        resb 1 ; 1: normal, 0: gizli/kucuk
+
+w2_x:            resd 1
+w2_y:            resd 1
+w2_w:            resd 1
+w2_h:            resd 1
+w2_state:        resb 1
+
+w3_x:            resd 1
+w3_y:            resd 1
+w3_w:            resd 1
+w3_h:            resd 1
+w3_state:        resb 1
+
+w4_x:            resd 1
+w4_y:            resd 1
+w4_w:            resd 1
+w4_h:            resd 1
+w4_state:        resb 1
+
+win_z_order:     resb 4 ; [0..3]: sira ile cizilen pencere ID'leri (en sondaki en ustte)
+active_window:   resb 1 ; 1: Y.U.K.I, 2: RamFS, 3: Terminal, 4: Browser
 yuki_active_tab: resb 1 ; 1..5
+browser_active_tab: resb 1 ; 1..4
 menu_open:       resb 1
+
+; Surukleme Durumu
+is_dragging:     resb 1 ; 0: yok, 1..4: suruklenen pencere
+alignb 4
+drag_off_x:      resd 1
+drag_off_y:      resd 1
 
 term_buf_len:    resb 1
 term_buffer:     resb 64

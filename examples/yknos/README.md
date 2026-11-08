@@ -7,9 +7,14 @@
 
 ## 📸 Canlı Masaüstü Ekran Görüntüleri (1024x768 TrueColor Bare-Metal)
 
-![YknOS Modern AI-First Desktop](screenshots/yknos_final.png)
+![YknOS Modern AI-First Desktop & YknBrowser](screenshots/yknos_browser_clean.png)
 
-*QEMU Bare-Metal (Ring-0) üzerinde BGA 1024x768x32 TrueColor Framebuffer, PS/2 Donanım Faresi ve Y.U.K.I Core Nöral İşletim Sistemi Arayüzü.*
+*QEMU Bare-Metal (Ring-0) üzerinde BGA 1024x768x32 TrueColor Framebuffer, YknBrowser Web Tarayıcısı, RamFS Gezgini, yknsh Terminali ve Y.U.K.I Core Nöral İşletim Sistemi Merkezi.*
+
+### 🖱️ Etkileşimli Pencere Sürükleme & Z-Order (Window Dragging)
+![YknOS Pencere Sürükleme](screenshots/yknos_drag_final.png)
+
+*Farenin sol tuşuyla başlık çubuğundan tutularak masaüstünde akıcı şekilde sürüklenen ve en öne getirilen (Z-Order) pencereler.*
 
 ---
 
@@ -20,7 +25,18 @@ YknOS, **Yukinary** programlama dili ile geliştirilmiş, harici C/C++ çalışm
 Arayüz tasarımı **Windows 11, macOS ve modern Linux masaüstü ortamlarının (GNOME/KDE)** en zarif özelliklerini bir araya getirirken, [VISION.md](VISION.md) belgesindeki temel felsefeyi merkezine alır:
 
 - **"Başlangıç Menüsü Yerine AI" (Spotlight AI Bar)**: Geleneksel karmaşık başlat menüleri yerine, ekranın üst merkezinde yer alan akrilik nöral arama barı üzerinden doğal dille işletim sistemi yönetimi.
-- **Modern Pencere Yöneticisi (`ykn-wm`)**: macOS tarzı 🔴🟡🟢 pencere kontrolleri, pencereler arası derinlik hissi veren drop shadow gölgelendirmeleri, akrilik koyu tema (`#1E1E2E`) ve yuvarlatılmış paneller.
+- **Modern Pencere Yöneticisi (`ykn-wm`)**:
+  - **Etkileşimli Pencere Sürükleme (Window Dragging)**: Başlık çubuğundan tutularak 1024x768 masaüstünde serbestçe sürüklenen pencereler.
+  - **Dinamik Z-Order Yönetimi**: Tıklanan pencereyi anında en öne getiren (`bring_to_front`) katman mekanizması.
+  - **macOS Tarzı Pencere Kontrolleri**: 🔴 Kapat, 🟡 Küçült ve 🟢 Ekranı Kapla butonları.
+  - **Akrilik Cam Teması**: Drop shadow derinlik efektleri, akrilik koyu palet (`#131622`, `#1E1E2E`) ve yuvarlatılmış paneller.
+- **YknBrowser (Modern Web Tarayıcısı & HTTP 1.1 Live Client)**:
+  - Çoklu sekme desteği (`[ YknOS Portali ]`, `[ Y.U.K.I Search ]`, `[ REST API ]`, `[ + ]`).
+  - Geri, İleri, Yenile ve Ana Sayfa navigasyon butonları (`<`, `>`, `R`, `H`).
+  - Güvenli URL Omnibox (`[SEC] http://127.0.0.1:8080/index.html`).
+  - Yapay zeka ile sayfayı özetleme butonu (`[ Y.U.K.I Ozetle ]`).
+  - Canlı REST Mikro-Servisleri görünümü (`/api/v1/system/status`, `/api/v1/yuki/memory`, `/api/v1/sandbox/state`).
+  - L3 Derin Paket Denetimi & Nöral CSP güvenlik filtresi durumu.
 - **Y.U.K.I Core Nöral İşletim Sistemi Merkezi**:
   - `[1: Genel]`: Canlı telemetri, yerel vektör belleği durumu, doğal dil soru-cevap alanı.
   - `[2: Arkeoloji]`: Çekirdek ve donanım olaylarının timeline kök neden analizi.
