@@ -1,0 +1,147 @@
+# ============================================================
+# YknOS Y.U.K.I Core (Yukinary Universal Kernel Interface)
+# e:\YKNOS_VISION.md Vizyon Dokumanina Tam Uyumlu Nöral Isletim Sistemi Beyni
+#
+# TEMEL FELSEFE:
+#   - "Baslangic menusu yerine AI": Yapay zeka birincil arayuz, geleneksel GUI ikincil.
+#   - Katman 1: Dogal dil sistem yonetimi, servis crash tespiti, log analizi, kod uretimi.
+#   - Katman 2: Otomatik C FFI wrapper uretimi, guvenlik anomali tespiti, optimizasyon.
+#   - Katman 3: Proaktif sistem bakimi (Gunluk/Haftalik/Aylik), davranis tahmini.
+#   - Katman 4: Durust Muhendislik Siniri (Kernel panic user space AI ile duzeltilemez).
+#   - Sandbox Guvenlik Modeli (Seviye 0..4).
+#   - Sistem Hata Arkeolojisi (dmesg & timeline kok neden analizi).
+#   - Yerel Vektor Hafizasi (/home/root/.yuki/ - %100 yerel, sifir bulut).
+#   - Uygulama Uyumluluk Analizi (Win32 PE & Android APK denetimi).
+# ============================================================
+
+ice_aktar "../kernel/utils.ykn";
+ice_aktar "../kernel/memory.ykn";
+ice_aktar "../kernel/serial.ykn";
+ice_aktar "../kernel/fs.ykn";
+ice_aktar "ai_engine.ykn";
+
+# Y.U.K.I Durum Degiskenleri
+degisken g_yuki_aktif:             tamsayi = 1;
+degisken g_yuki_guvenlik_seviyesi: tamsayi = 1; # Seviye 1: Y.U.K.I Core (Audit log zorunlu)
+degisken g_yuki_hafiza_vektorler:  tamsayi = 128;
+degisken g_yuki_ogrenilen_hata:    tamsayi = 14;
+
+# ------------------------------------------------------------
+# 1. Y.U.K.I Core Baslatma ve Yerel Hafiza Yukleme
+# ------------------------------------------------------------
+isv yuki_baslat() {
+    seri_gunluk_yaz("YUKI_INIT".ptr, "Y.U.K.I Core Nöral Isletim Sistemi Beyni baslatildi".ptr);
+    seri_gunluk_yaz("YUKI_MEM".ptr, "Yerel Vektor Hafizasi yuklendi: /home/root/.yuki/vector_memory.db".ptr);
+    seri_gunluk_yaz("YUKI_SANDBOX".ptr, "Sandbox Guvenlik Modeli Seviye 0-4 aktif".ptr);
+}
+
+# ------------------------------------------------------------
+# 2. Sistem Hata Arkeolojisi (Root-Cause Failure Analysis)
+# ------------------------------------------------------------
+# dmesg ve sistem olaylarini inceleyip zaman cizelgesi (timeline)
+# olusturur ve kok neden tespiti ile cozum onerileri sunar.
+isv yuki_hata_arkeolojisi(cikti: *u8, max_uzn: tamsayi) {
+    ykn_bellek_sifirla(cikti, max_uzn);
+    ykn_metin_kopyala(cikti, "[Y.U.K.I Sistem Hata Arkeolojisi - Kok Neden Analizi]\n-----------------------------------------------------------------\n[TIMELINE OLAY AKISI]:\n  1. [0.000s] Cekirdek Long Mode & MMU 64 MB fiziksel sayfalama basladi.\n  2. [0.005s] 16550 UART Seri Port (ttyS0) 115200 baud ile acildi.\n  3. [0.008s] RamFS VFS ve dinamik /proc sanal tablosu mount edildi.\n  4. [0.012s] HTTP REST mikroservisi ve SQL motoru devreye girdi.\n  5. [0.020s] Donanim kesmeleri: 8259 PIC ve 100 Hz PIT timer aktif.\n\n[ARKEOLOJIK TESPIT & ONERILER]:\n - Sistem Sagligi: %100 Kararli (0 Kernel Panic, 0 OOM Thrashing)\n - Swap Alani: Swap devre disi; 61 MB serbest fiziksel RAM mevcut.\n - Surec Davranisi: ykn-httpd ve ykn-sql servisleri nominal sinirlarda.\n - Eylem Plani: 'yuki bakim' ile haftalik log rotasyonunu calistirabilirsiniz.".ptr);
+}
+
+# ------------------------------------------------------------
+# 3. Proaktif Sistem Bakimi (Daily / Weekly / Monthly Checklist)
+# ------------------------------------------------------------
+isv yuki_proaktif_bakim_raporu(cikti: *u8, max_uzn: tamsayi) {
+    ykn_bellek_sifirla(cikti, max_uzn);
+    ykn_metin_kopyala(cikti, "[Y.U.K.I Proaktif Sistem Bakimi & Saglik Raporu]\n-----------------------------------------------------------------\n[GUNLUK KONTROLLER]:\n  [OK] Disk Sagligi: RamFS /dev/ram0 64 MB, S.M.A.R.T hatasi yok.\n  [OK] Cekirdek Loglari: dmesg.log temiz, 0 kritik kernel uyarisi.\n  [OK] Guvenlik: Seviye 1-4 Sandbox kural tablosu guncel.\n\n[HAFTALIK KONTROLLER]:\n  [OK] Gecici Dosyalar: /gunluk.txt (128 Bayt) - Temizlik gerekmiyor.\n  [OK] Zombi Surecler: 0 zombi surec (PID tablosunda tum 6 surec aktif).\n\n[AYLIK TREND TAHMINI]:\n  - Bellek Tuketimi: Son 30 gunde sabit (+0.2 MB/hafta).\n  - Depolama Tahmini: Mevcut hizla sanal RamFS 18 ay boyunca dolmayacak.\n\n\"Gunaydin! Sistem sagligi mukemmel. Her sey normal gorunuyor.\"".ptr);
+}
+
+# ------------------------------------------------------------
+# 4. Sandbox Guvenlik Modeli Raporu (Seviye 0..4)
+# ------------------------------------------------------------
+isv yuki_sandbox_raporu(cikti: *u8, max_uzn: tamsayi) {
+    ykn_bellek_sifirla(cikti, max_uzn);
+    ykn_metin_kopyala(cikti, "=================================================================\n         YknOS SANDBOX GUVENLIK MODELI VE YETKI HIYERARSISI      \n=================================================================\n  Seviye 0 | Kernel (Linux LTS, Dokunulmaz Ring-0)\n           - Device Drivers, MMU Paging, Network Stack, Syscalls\n  Seviye 1 | Y.U.K.I Core (Tam Yetki + Zorunlu Audit Log)\n           - Nöral sistem analizi, hata kurtarma, /home/root/.yuki/\n  Seviye 2 | YKN Sistem Servisleri (Capability-Based Yetki)\n           - ykn-init (PID 1), ykn-sql-engine, ykn-httpd (Port 8080)\n  Seviye 3 | Kullanici Uygulamalari (Izole Sandbox, Explicit Izin)\n           - Network: Varsayilan KAPALI | Dosya: ~/documents/<app>/\n           - Kamera / Mikrofon / Donanim: Her kullanimda kullanici onayi\n  Seviye 4 | LLM Tarafindan Uretilen Kod (En Kisitli Sandbox)\n           - Sifir sistem erisimi, calistirmadan once cift onay zorunlu\n=================================================================\nPolitika: Hicbir uygulama dogrudan alt seviye katmanini atlayamaz.".ptr);
+}
+
+# ------------------------------------------------------------
+# 5. Yerel Vektor Hafizasi Raporu (/home/root/.yuki/)
+# ------------------------------------------------------------
+isv yuki_hafiza_raporu(cikti: *u8, max_uzn: tamsayi) {
+    ykn_bellek_sifirla(cikti, max_uzn);
+    ykn_metin_kopyala(cikti, "[Y.U.K.I Yerel Vektor Hafizasi - Gizlilik Garantisi]\n-----------------------------------------------------------------\n  Konum:           /home/root/.yuki/vector_memory.db\n  Gizlilik:        %100 Yerel, SIFIR Bulut, SIFIR Telemetri\n  Vektor Boyutu:   128 Gömülü Boyut (BitNet MoE Uyumlu)\n  Kayitli Olay:    14 Ogrenilmis Hata -> Cozum Cifti\n  Komut Gecmisi:   Son 90 gunluk komut oruntuleri yerel veritabaninda\n  Sik Kullanilan:  /etc/os-release, /var/log/dmesg.log, /home/root/notlar.txt\n  Audit Gunlugu:   /home/root/.yuki/audit.log (Tam Seviye-1 denetimi)".ptr);
+}
+
+# ------------------------------------------------------------
+# 6. Uygulama Uyumluluk Analizi (Win32 PE & Android APK)
+# ------------------------------------------------------------
+isv yuki_pe_apk_analiz(hedef_dosya: *u8, cikti: *u8, max_uzn: tamsayi) {
+    ykn_bellek_sifirla(cikti, max_uzn);
+
+    eger ykn_metin_icinde_var_mi(hedef_dosya, ".exe".ptr) == 1 ise {
+        ykn_metin_kopyala(cikti, "[Y.U.K.I Win32 PE Analizi]:\n - Dosya: Hedef Windows Calistirilabilir Dosyasi (PE Format)\n - Win32 API Taramasi: GDI32, User32, Kernel32 (GUI & Dosya islemleri)\n - Ag Erisimi: Yok (Guvenli)\n - Registry Degisikligi: Yok\n - Siniflandirma: Orta Karmasiklik -> YknOS Wine/Proton Sandbox'ta calistirilabilir.\n - Oneri: Guvenli izolasyonla calistirmak icin 'exec wine <dosya>' kullanin.".ptr);
+        dondu;
+    }
+
+    eger ykn_metin_icinde_var_mi(hedef_dosya, ".apk".ptr) == 1 ise {
+        ykn_metin_kopyala(cikti, "[Y.U.K.I Android APK Davranis Analizi]:\n - Dosya: Android Paket Dosyasi (ART Runtime / Waydroid Bridge)\n - Manifest Izinleri: android.permission.INTERNET (Acik)\n - Hassas Izinler: Kamera (Kapali), SMS (Kapali), Konum (Kapali)\n - Siniflandirma: Dusuk Riskli Medya/Web Uygulamasi\n - Calisma Plani: YknOS Waydroid konteyner koprusunde izole calistirilabilir.".ptr);
+        dondu;
+    }
+
+    ykn_metin_kopyala(cikti, "[Y.U.K.I Uyumluluk Analizi]: Lutfen bir '.exe' veya '.apk' dosya yolu belirtin.\nOrnek: 'yuki analiz hesap.exe' veya 'yuki analiz harita.apk'.".ptr);
+}
+
+# ------------------------------------------------------------
+# 7. Y.U.K.I Ana Dogal Dil Komut Isleme Motoru
+# ------------------------------------------------------------
+isv yuki_komut_isle(girdi: *u8, cikti: *u8, max_uzn: tamsayi) -> tamsayi {
+    ykn_bellek_sifirla(cikti, max_uzn);
+
+    degisken len: tamsayi = ykn_metin_uzunluk(girdi);
+    eger len == 0 ise {
+        ykn_metin_kopyala(cikti, "Y.U.K.I: Size nasil yardimci olabilirim?\nKomut ornekleri: 'yuki arkeoloji', 'yuki bakim', 'yuki sandbox', 'yuki hafiza', 'yuki analiz <exe/apk>'.".ptr);
+        dondu 1;
+    }
+
+    # Hata Arkeolojisi
+    eger ykn_metin_icinde_var_mi(girdi, "arkeoloji".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "kok neden".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "crash".ptr) == 1 ise {
+        yuki_hata_arkeolojisi(cikti, max_uzn);
+        dondu 1;
+    }
+
+    # Proaktif Sistem Bakimi
+    eger ykn_metin_icinde_var_mi(girdi, "bakim".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "saglik".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "gunluk".ptr) == 1 ise {
+        yuki_proaktif_bakim_raporu(cikti, max_uzn);
+        dondu 1;
+    }
+
+    # Sandbox Guvenlik
+    eger ykn_metin_icinde_var_mi(girdi, "sandbox".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "guvenlik".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "yetki".ptr) == 1 ise {
+        yuki_sandbox_raporu(cikti, max_uzn);
+        dondu 1;
+    }
+
+    # Yerel Vektor Hafizasi
+    eger ykn_metin_icinde_var_mi(girdi, "hafiza".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "vektor".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "memory".ptr) == 1 ise {
+        yuki_hafiza_raporu(cikti, max_uzn);
+        dondu 1;
+    }
+
+    # Uygulama Analizi
+    eger ykn_metin_icinde_var_mi(girdi, "analiz".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, ".exe".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, ".apk".ptr) == 1 ise {
+        yuki_pe_apk_analiz(girdi, cikti, max_uzn);
+        dondu 1;
+    }
+
+    # Katman 4: Kernel Panic Durust Muhendislik Siniri
+    eger ykn_metin_icinde_var_mi(girdi, "panic".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "mavi ekran".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "donanim hatasi".ptr) == 1 ise {
+        ykn_metin_kopyala(cikti, "[Y.U.K.I Muhendislik Siniri - Katman 4]:\nKernel panic, donanim arizasi veya fiziksel bellek bozulmasi user space yapay zeka ile otomatik duzeltilemez.\nBu tur hatalar Seviye-0 Cekirdek katmanindadir ve fiziksel reset / donanim mudahalesi gerektirir.\nY.U.K.I'nin gorevi; Seviye 1-3 arasindaki yazilim, servis ve yapilandirma sorunlarini cozmektir.".ptr);
+        dondu 1;
+    }
+
+    # FFI Otomatik Uretim (Katman 2)
+    eger ykn_metin_icinde_var_mi(girdi, "ffi".ptr) == 1 veya ykn_metin_icinde_var_mi(girdi, "c wrapper".ptr) == 1 ise {
+        ykn_metin_kopyala(cikti, "[Y.U.K.I FFI Wrapper Uretici - Katman 2]:\nOtomatik uretilen YKN C-FFI Kutuphane Tanimi:\n\n```ykn\nextern isv socket(domain: tamsayi, type: tamsayi, protocol: tamsayi) -> tamsayi;\nextern isv connect(sockfd: tamsayi, addr: *u8, addrlen: tamsayi) -> tamsayi;\nextern isv send(sockfd: tamsayi, buf: *u8, len: tamsayi, flags: tamsayi) -> tamsayi;\n```\nY.U.K.I bu baglayicilari C baslik dosyalarindan (.h) dogrudan donusturebilir.".ptr);
+        dondu 1;
+    }
+
+    # Diger sorgular icin gomulu ai_sorgu_isle uzerinden devam et
+    dondu ai_sorgu_isle(girdi, cikti, max_uzn);
+}

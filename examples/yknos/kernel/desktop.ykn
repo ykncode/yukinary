@@ -300,17 +300,17 @@ isv desktop_ciz() {
         vga_metin_yaz(9, 18, "Komut istemine donmek icin 'cikis' veya 'q' tuslayin.     ".ptr, renk_cam);
 
     } yoksa eger g_gui_aktif_pencere == 7 ise {
-        # --- PENCERE 7: YKNAI ASISTANI (MIKRO-LLM & BONSAI-8B) ---
+        # --- PENCERE 7: Y.U.K.I CORE AI (BITNET MOE & BONSAI-8B) ---
         vga_kutu_ciz(1, 15, 61, renk_cam);
-        vga_metin_yaz(1, 18, "[ 🤖 YknAI Asistani (BitNet 1.58b & Bonsai) ]-----[ _ ][ X ]".ptr, renk_cam);
+        vga_metin_yaz(1, 18, "[ 🤖 Y.U.K.I Core AI (BitNet MoE & Bonsai) ]------[ _ ][ X ]".ptr, renk_cam);
         vga_metin_yaz(2, 18, "Motor: ".ptr, renk_sar);
         vga_metin_yaz(2, 25, ai_aktif_model_adi(), renk_yes);
-        vga_metin_yaz(3, 18, "[1] Mikro-LLM (BitNet)  [2] Bonsai-8B (Qwen)   [T] Telemetri".ptr, renk_cam);
+        vga_metin_yaz(3, 18, "[1] BitNet MoE  [2] Bonsai-8B  [A] Arkeoloji  [B] Bakim  [S] Sandbox".ptr, renk_cam);
         vga_metin_yaz(4, 18, "----------------------------------------------------------".ptr, renk_ark);
-        vga_metin_yaz(5, 18, "Mimari: BitNet 1.58b Ternary {-1,0,+1} | Q16.16 Sifir Carpma".ptr, renk_sar);
-        vga_metin_yaz(6, 18, "Bellek: Mikro 28 KB RAM | Bonsai 1.15 GB GGUF | Gecikme 0.2ms".ptr, renk_sar);
+        vga_metin_yaz(5, 18, "Vizyon: AI-First OS | Seviye 0-4 Sandbox | %100 Yerel Hafiza".ptr, renk_sar);
+        vga_metin_yaz(6, 18, "Hafiza: /home/root/.yuki/ (128 Vektor, 14 Hata-Cozum Kurali)".ptr, renk_sar);
         vga_metin_yaz(7, 18, "----------------------------------------------------------".ptr, renk_ark);
-        vga_metin_yaz(8, 18, "Son Sentezlenen Yanit (Canli Noral Uretim):                ".ptr, renk_yes);
+        vga_metin_yaz(8, 18, "Y.U.K.I Canli Noral Yaniti / Sistem Analizi:               ".ptr, renk_yes);
 
         # Yanitin ilk 4 satirini pencereye bas
         degisken y_buf: [56]u8;
@@ -335,7 +335,7 @@ isv desktop_ciz() {
             vga_metin_yaz(9 + y_satir, 18, y_buf, renk_ark);
         }
 
-        vga_metin_yaz(14, 18, "Kabukta 'ai <soru>' veya 'bonsai <soru>' ile soru sorun.  ".ptr, renk_cam);
+        vga_metin_yaz(14, 18, "Kabukta 'yuki <soru>' veya 'yuki arkeoloji/bakim' yazin.  ".ptr, renk_cam);
 
     } yoksa {
         # --- PENCERE KAPALI: SAF MASAÜSTÜ DUVAR KAĞIDI ---
@@ -357,13 +357,13 @@ isv desktop_ciz() {
         vga_metin_yaz(16, 2, "4. 💾 SQL Studio           ".ptr, renk_ark);
         vga_metin_yaz(17, 2, "5. 🌐 Web Sunucu & Ag      ".ptr, renk_ark);
         vga_metin_yaz(18, 2, "6. 💻 Terminal (yknsh)     ".ptr, renk_ark);
-        vga_metin_yaz(19, 2, "7. 🤖 YknAI Asistani (LLM) ".ptr, renk_ark);
+        vga_metin_yaz(19, 2, "7. 🤖 Y.U.K.I Core (AI)    ".ptr, renk_ark);
         vga_metin_yaz(20, 2, "---------------------------".ptr, renk_sar);
         vga_metin_yaz(21, 2, "0. ⚡ Bilgisayari Kapat    ".ptr, renk_mag);
     }
 
     # 4. Alt Gorev Cubugu (Taskbar - Satir 22)
-    vga_metin_yaz(22, 0, "+-[ ❖ BASLAT ]-[ 📁 VFS ]-[ 📝 Edit ]-[ 📊 Top ]-[ 🤖 AI ]-[ 💻 sh ]--[ 22:45 ]-+".ptr, renk_sar);
+    vga_metin_yaz(22, 0, "+-[ ❖ BASLAT ]-[ 📁 VFS ]-[ 📝 Edit ]-[ 📊 Top ]-[ 🤖 YUKI ]-[ 💻 sh ]--[ 22:45 ]-+".ptr, renk_sar);
 
     eger g_gui_baslat_acik == 1 ise {
         vga_metin_yaz(22, 2, "[* ❖ BASLAT *]".ptr, renk_yes);

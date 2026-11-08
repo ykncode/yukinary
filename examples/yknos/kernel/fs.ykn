@@ -15,7 +15,7 @@ yapi RamDosyasi {
     aktif:        tamsayi; # 1: Kullaniliyor, 0: Silinmis
 }
 
-degisken g_fs_dosyalar: [32]RamDosyasi;
+degisken g_fs_dosyalar: [48]RamDosyasi;
 degisken g_fs_dosya_sayisi: tamsayi = 0;
 degisken g_fs_su_anki_dizin: [48]u8;
 degisken g_fs_proc_tampon: [1024]u8;
@@ -33,6 +33,7 @@ isv fs_baslat() {
     fs_dizin_olustur_dahili("/dev".ptr);
     fs_dizin_olustur_dahili("/home".ptr);
     fs_dizin_olustur_dahili("/home/root".ptr);
+    fs_dizin_olustur_dahili("/home/root/.yuki".ptr);
     fs_dizin_olustur_dahili("/var".ptr);
     fs_dizin_olustur_dahili("/var/log".ptr);
 
@@ -48,6 +49,8 @@ isv fs_baslat() {
 
     # 4. /home/root Kullanici Dosyalari
     fs_dosya_yaz_dahili("/home/root/notlar.txt".ptr, "YknOS Gorev Plani:\n1. SQL veritabanini denetle\n2. Port 8080 HTTP sunucusunu test et\n3. /proc sanal dosya sistemini oku\n".ptr, 0);
+    fs_dosya_yaz_dahili("/home/root/.yuki/vector_memory.db".ptr, "[Y.U.K.I Local Vector Memory]\nversion=1.0\nvectors=128\nprivacy=100% local, zero cloud\nfrequent_paths=/etc/os-release,/var/log/dmesg.log,/home/root/notlar.txt\nlearned_fixes=oom:kill_rogue_process,network_down:restart_net,crash:respawn\n".ptr, 0);
+    fs_dosya_yaz_dahili("/home/root/.yuki/audit.log".ptr, "[AUDIT] Level 1 Y.U.K.I Core initialized with audit verification.\n[AUDIT] Security sandbox operational (Levels 0-4).\n".ptr, 0);
 
     # 5. Kok Dizin Servis Dosyalari
     fs_dosya_yaz_dahili("/sistem.cfg".ptr, "cekirdek=YknOS\nsurum=0.1.0-alpha\nmimari=x86_64\nbellek_mb=64\nhttp_port=8080\nsql_tablo_sayisi=2\n".ptr, 1);
@@ -59,7 +62,7 @@ isv fs_baslat() {
 }
 
 isv fs_dizin_olustur_dahili(yol: *u8) {
-    eger g_fs_dosya_sayisi >= 32 ise { dondu; }
+    eger g_fs_dosya_sayisi >= 48 ise { dondu; }
     degisken idx: tamsayi = g_fs_dosya_sayisi;
     ykn_metin_kopyala(g_fs_dosyalar[idx].isim, yol);
     g_fs_dosyalar[idx].dizin_mi = 1;
@@ -89,7 +92,7 @@ isv fs_dosya_yaz_dahili(yol: *u8, metin: *u8, salt_okunur: tamsayi) -> tamsayi {
         i = i + 1;
     }
 
-    eger g_fs_dosya_sayisi >= 32 ise {
+    eger g_fs_dosya_sayisi >= 48 ise {
         dondu 0 - 1;
     }
 

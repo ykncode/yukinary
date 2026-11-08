@@ -14,6 +14,7 @@ ice_aktar "../kernel/editor.ykn";
 ice_aktar "../services/sql_engine.ykn";
 ice_aktar "../services/http_engine.ykn";
 ice_aktar "../services/ai_engine.ykn";
+ice_aktar "../services/yuki_core.ykn";
 ice_aktar "../kernel/desktop.ykn";
 
 yapi GecmisKomut {
@@ -52,6 +53,7 @@ isv kabuk_yardim_yaz() {
     ekrana_yaz("  Ortam & Gunluk:  env, export KEY=VAL, history, dmesg\n".ptr);
     ekrana_yaz("  Gomulu Servisler:sql hepsi, sql ekle, http durum, http sunucu (Port 8080)\n".ptr);
     ekrana_yaz("  Yapay Zeka & LLM:ai <soru>, bonsai <soru>, llm <soru>, ai stats, ai model <1|2>\n".ptr);
+    ekrana_yaz("  Y.U.K.I AI Beyni:yuki <soru>, yuki arkeoloji, yuki bakim, yuki sandbox, yuki hafiza, yuki analiz <f>\n".ptr);
     ekrana_yaz("  Masaustu Arayuz: masaustu / gui, dosyalar / fm (Sekmeler ve Fare Imleci)\n".ptr);
     ekrana_yaz("  Cikis & Oturum:  clear, exit, shutdown, reboot, kapat\n".ptr);
     ekrana_yaz("=================================================================\n".ptr);
@@ -363,6 +365,50 @@ isv kabuk_komut_calistir(komut: *u8) -> tamsayi {
     }
     eger ykn_metin_baslangici_mi(komut, "llm ".ptr) == 1 ise {
         ai_sorgu_isle(komut + 4, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+
+    # 7.5. Y.U.K.I Core Nöral Isletim Sistemi Beyni (e:\YKNOS_VISION.md)
+    eger ykn_metin_esit_mi(komut, "yuki arkeoloji".ptr) == 1 ise {
+        yuki_hata_arkeolojisi(g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "yuki bakim".ptr) == 1 ise {
+        yuki_proaktif_bakim_raporu(g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "yuki sandbox".ptr) == 1 veya ykn_metin_esit_mi(komut, "sandbox".ptr) == 1 ise {
+        yuki_sandbox_raporu(g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "yuki hafiza".ptr) == 1 ise {
+        yuki_hafiza_raporu(g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "yuki analiz ".ptr) == 1 ise {
+        yuki_pe_apk_analiz(komut + 12, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_baslangici_mi(komut, "yuki ".ptr) == 1 ise {
+        yuki_komut_isle(komut + 5, g_ai_son_yanit, 1024);
+        ekrana_yaz(g_ai_son_yanit);
+        ekrana_yaz("\n".ptr);
+        dondu 1;
+    }
+    eger ykn_metin_esit_mi(komut, "yuki".ptr) == 1 ise {
+        yuki_komut_isle("".ptr, g_ai_son_yanit, 1024);
         ekrana_yaz(g_ai_son_yanit);
         ekrana_yaz("\n".ptr);
         dondu 1;

@@ -13,6 +13,7 @@ ice_aktar "kernel/env.ykn";
 ice_aktar "services/sql_engine.ykn";
 ice_aktar "services/http_engine.ykn";
 ice_aktar "services/ai_engine.ykn";
+ice_aktar "services/yuki_core.ykn";
 ice_aktar "shell/shell.ykn";
 
 isv cekirdek_onyukleme() {
@@ -46,7 +47,10 @@ isv cekirdek_onyukleme() {
     ekrana_yaz("[0.07s] [AI]   Gomulu Mikro-LLM (BitNet 1.58b) ve Bonsai-8B yuklendi.\n".ptr);
     ai_motoru_baslat();
 
-    ekrana_yaz("[0.08s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
+    ekrana_yaz("[0.08s] [YUKI] Y.U.K.I Core Nöral Isletim Sistemi Beyni aktif.\n".ptr);
+    yuki_baslat();
+
+    ekrana_yaz("[0.09s] [INIT] Tum cekirdek alt sistemleri basariyla baslatildi!\n".ptr);
 }
 
 isv ana() -> tamsayi {

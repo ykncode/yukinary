@@ -313,3 +313,4 @@ isv ai_telemetri_yaz() {
     ekrana_yaz("      - Kuantizasyon:   Q1_0 / IQ2_S Ultra-Dusuk Bit\n".ptr);
     ekrana_yaz("=================================================================\n".ptr);
 }
+

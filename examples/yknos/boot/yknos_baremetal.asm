@@ -404,6 +404,10 @@ dispatch_command:
     mov edi, str_llm
     call strcmp
     jz .do_ai
+    mov esi, cmd_buffer
+    mov edi, str_yuki
+    call strcmp
+    jz .do_yuki
 
     mov esi, cmd_buffer
     mov edi, str_uname_a
@@ -589,6 +593,13 @@ dispatch_command:
     mov esi, msg_bonsai
     call vga_print
     mov esi, msg_bonsai
+    call serial_print
+    ret
+
+.do_yuki:
+    mov esi, msg_yuki
+    call vga_print
+    mov esi, msg_yuki
     call serial_print
     ret
 
@@ -1544,6 +1555,7 @@ str_kapat:       db "kapat", 0
 str_ai:          db "ai", 0
 str_bonsai:      db "bonsai", 0
 str_llm:         db "llm", 0
+str_yuki:        db "yuki", 0
 
 ; GUI Sabit Dizeleri
 gui_top_bar:     db "+-[* BASLAT]--[1: Dosyalar]--[2: SQL]--[3: Ag]--[4: Term]--[5: AI]---[22:30]-+", 0
@@ -1635,6 +1647,7 @@ msg_ticks_tail:   db " kesme tiki", 10, 0
 msg_newline:      db 10, 0
 msg_ai:           db "[YknAI Bare-Metal]: BitNet 1.58b Ternary {-1,0,+1} | 16K Parametre | Q16.16 Sifir-Carpma | ONLINE", 10, 0
 msg_bonsai:       db "[YknAI Bonsai-8B]: Prism ML Bonsai 8B (Qwen) | 399 Tensor | 1.15 GB GGUF Disk Bagli | ONLINE", 10, 0
+msg_yuki:         db "[Y.U.K.I Core Bare-Metal]: AI-First Linux LTS Userspace | BitNet MoE + Bonsai | Seviye 0-4 Sandbox | ONLINE", 10, 0
 msg_date:         db "Sun Nov  8 22:30:15 UTC 2026", 10, 0
 msg_pwd:          db "/", 10, 0
 msg_ls_la:        db "drwxr-xr-x 2 root root 4096 /etc | drwxr-xr-x /proc | drwxr-xr-x /home | -rw-r--r-- /etc/os-release", 10, 0
