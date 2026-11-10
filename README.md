@@ -33,7 +33,7 @@
 **Yukinary (YKN)** is an independent, self-hosting systems programming language and native compiler. Rather than targeting LLVM IR or transpiling to C, Yukinary lowers its AST directly to standalone **x86_64 machine code**—writing PE32+ (Windows) and ELF64 (Linux) binary headers, syscalls, and opcodes from scratch with **zero external runtime dependencies** (`libc`, `msvcrt`, or external linkers).
 
 * **Bit-Identical Self-Hosting:** The compiler (written in Yukinary) compiles itself deterministically (`Stage 2 SHA-256 == Stage 3 SHA-256`).
-* **Canonical + Educational Multi-Lingual Syntax:** Keywords can be written in English, Turkish, Russian, Japanese, Simplified Chinese, Korean, or French—designed for localized programming education, with `ykn fmt` intended to normalize shared libraries to canonical form.
+* **Canonical + Educational Multi-Lingual Syntax:** Keywords can be written in English, Turkish, Russian, Japanese, Simplified Chinese, Korean, or French—designed for localized programming education, with `ykn fmt` currently handling layout formatting and canonical keyword/comment translation planned as future tooling.
 * **Freestanding Systems & OS Target:** Powers an experimental Linux-based OS userspace ([`examples/yknos`](examples/yknos)).
 
 ---
