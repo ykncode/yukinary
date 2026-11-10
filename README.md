@@ -4,105 +4,123 @@
 
 # Yukinary (YKN) Programming Language
 
-**Zero-Dependency • Direct Native Machine Code • Multi-Lingual Grammar • Self-Healing • Embedded BitNet AI • Polyglot `#convert` & FFI**
+**Self-Hosting x86_64 Compiler • Direct PE32+ & ELF64 Codegen (No LLVM / No C-Runtime) • Multi-Lingual Syntax • Experimental Self-Healing & Embedded AI**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE-MIT)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE-APACHE)
 [![Platform: Windows x86_64](https://img.shields.io/badge/Platform-Windows_PE32%2B-blue)](https://github.com/ykncode/yukinary/releases)
 [![Platform: Linux x86_64](https://img.shields.io/badge/Platform-Linux_ELF64-orange)](https://github.com/ykncode/yukinary/releases)
 [![Self-Hosting: Bit-Identical Fixpoint](https://img.shields.io/badge/Self--Hosting-Bit--Identical_Fixpoint-brightgreen)](https://github.com/ykncode/yukinary)
-[![Architecture: 100% Pure YKN](https://img.shields.io/badge/Language-100%25_Pure_YKN-purple)](https://github.com/ykncode/yukinary)
+[![Benchmarks: ykncode/benchmarks](https://img.shields.io/badge/Benchmarks-ykncode%2Fbenchmarks-38bdf8)](https://github.com/ykncode/benchmarks)
 
 <p align="center">
-  <a href="#-quick-start--releases">Download & Releases</a> •
-  <a href="#-language-documentation--dil-kılavuzları">Documentation</a> •
-  <a href="#-micro-llm-vs-full-llm-architecture">Micro-LLM vs Full LLM</a> •
-  <a href="#-how-to-download--use-full-llm-models-bitnet--bonsai">Models Guide</a> •
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-what-can-you-build-with-yukinary-target-domains">What to Build</a> •
+  <a href="#-benchmarks--performance-vs-c-rust-go-python">Benchmarks</a> •
+  <a href="#-quick-start--releases">Download & Quick Start</a> •
+  <a href="#-language-documentation">Documentation</a> •
+  <a href="#-micro-llm-vs-full-llm-architecture">AI Layer (Experimental)</a> •
+  <a href="#-key-features">Architecture</a> •
   <a href="#️-operating-system-development-the-yknos-architecture">YknOS</a> •
-  <a href="#️-production-readiness-honest-boundaries--guarantees">Guarantees</a> •
-  <a href="#-four-repository-ecosystem">Ecosystem</a> •
-  <a href="#-dual-license">License</a>
+  <a href="#️-production-readiness-honest-boundaries--guarantees">Honest Boundaries</a> •
+  <a href="#-four-repository-ecosystem">Ecosystem</a>
 </p>
 
 ---
 
 </div>
 
+## Overview
+
+**Yukinary (YKN)** is an independent, self-hosting systems programming language and native compiler. Rather than targeting LLVM IR or transpiling to C, Yukinary lowers its AST directly to standalone **x86_64 machine code**—writing PE32+ (Windows) and ELF64 (Linux) binary headers, syscalls, and opcodes from scratch with **zero external runtime dependencies** (`libc`, `msvcrt`, or external linkers).
+
+* **Bit-Identical Self-Hosting:** The compiler (written in Yukinary) compiles itself deterministically (`Stage 2 SHA-256 == Stage 3 SHA-256`).
+* **Canonical + Educational Multi-Lingual Syntax:** Keywords can be written in English, Turkish, Russian, Japanese, Simplified Chinese, Korean, or French—designed for localized programming education, with `ykn fmt` intended to normalize shared libraries to canonical form.
+* **Freestanding Systems & OS Target:** Powers an experimental Linux-based OS userspace ([`examples/yknos`](examples/yknos)).
+
+---
+
+## 📊 Benchmarks & Performance (vs. C, Rust, Go, Python)
+
+All benchmark harnesses, C/Rust/Python competitor implementations, and raw JSON telemetry are published in our dedicated benchmark repository:  
+👉 [**Official Benchmark Suite: `github.com/ykncode/benchmarks`**](https://github.com/ykncode/benchmarks) • [**Industrial Benchmark Report (TR)**](https://github.com/ykncode/benchmarks/blob/main/industrial/YUKINARY_ENDUSTRIYEL_BENCHMARK_RAPORU.md)
+
+<div align="center">
+  <img src="assets/bench_compile_speed.png" alt="Compiler Throughput: Yukinary vs GCC, Rustc, Go, G++" width="92%" />
+</div>
+
+<div align="center">
+  <img src="assets/bench_workloads.png" alt="Runtime Performance and Peak RSS: Systems Workload and BitNet Kernel" width="92%" />
+</div>
+
+### Summary of Measured Results (`ykncode/benchmarks`)
+
+| Benchmark | Yukinary (`ykn`) | C (`gcc -O3`) | Rust (`rustc -O3`) | Python (`3.13`) | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Compiler Build Time** (`optimizer`) | **18.6 ms** | 219.4 ms | 272.2 ms | — | Zero LLVM/linker overhead (**11x–31x faster builds**) |
+| **Systems B-Tree** (100k nodes, 50k search) | **213 ms** | 133 ms | 221 ms | 327 ms | Exact verified checksum (`19526` / `6363996222`) |
+| **BitNet b1.58** (3.35 GOP ternary kernel) | **0.71 GOP/s** | 1.79 GOP/s | 1.74 GOP/s | 0.02 GOP/s | Scalar native codegen (GCC/Rust use LLVM/GCC AVX2) |
+| **Peak Memory (BitNet RSS)** | **2.6 MB** | 4.8 MB | 5.2 MB | 22.4 MB | **Lowest footprint** (freestanding, zero libc) |
+| **Cold-Start Latency** | **5.4 ms** | 5.9 ms | 6.8 ms | 35.0 ms | Direct OS entry point (`ExitProcess` / `sys_exit`) |
+
+> **Engineering Note:** C (`gcc -O3`) and Rust (`rustc -O3`) remain ~2.5x faster on dense matrix arithmetic due to GCC/LLVM auto-vectorization (SIMD AVX2). Yukinary relies on a custom scalar x86_64 encoder with linear-scan register allocation, prioritizing instant compilation, small zero-libc footprint, and zero external toolchain dependencies. Browse all source workloads in [**`ykncode/benchmarks`**](https://github.com/ykncode/benchmarks).
+
+---
+
 ## 🚀 Quick Start & Releases
 
-You **do not need** a C++ compiler or external toolchain to run Yukinary. Standalone, single-file native binaries are pre-compiled and ready to download:
+You **do not need** a C++ compiler or external toolchain to run Yukinary. Standalone native binaries are available in Releases:
 
-### 1. Download & 1-Click Automated Setup
+### 1. Download & Setup
 👉 [**Download Yukinary from GitHub Releases**](https://github.com/ykncode/yukinary/releases)
 
-#### 🪟 Windows (1-Click Turnkey Setup)
+#### 🪟 Windows (1-Click Setup)
 1. Download **`yukinary-setup-windows-x86_64.zip`** from Releases and extract it.
 2. Double-click **`setup.cmd`** (or run `powershell -ExecutionPolicy Bypass -File setup.ps1`).
-
-> **What the installer does automatically:**
-> * Installs `ykn.exe`, `ykn_lsp.exe`, and `ykn.cmd` into `%USERPROFILE%\.yukinary\bin`.
-> * Installs the complete Yukinary Standard Library (`std/`) into `%USERPROFILE%\.yukinary\std`.
-> * Safely configures User `PATH` and broadcasts `WM_SETTINGCHANGE` so all new terminals immediately recognize `ykn`.
-> * Automatically detects and installs the **Yukinary Visual Studio Code Extension** (`.vsix`) with full syntax highlighting & LSP support.
 
 #### 🐧 Linux & macOS (1-Line Setup)
 1. Download **`yukinary-setup-linux-x86_64.tar.gz`** and extract it (`tar -xzf yukinary-setup-linux-x86_64.tar.gz`).
 2. Run **`./setup.sh`**.
 
-> Automatically installs `ykn` and `std/` into `~/.yukinary/`, patches `PATH` in `~/.bashrc` / `~/.zshrc`, and configures the VS Code extension.
+#### 🧩 Visual Studio Code Extension (`.vsix`)
+```bash
+code --install-extension yukinary-lang-1.0.0.vsix
+```
 
-#### 🧩 Visual Studio Code Extension (Standalone `.vsix`)
-* Download `yukinary-lang-1.0.0.vsix` and run:
-  ```bash
-  code --install-extension yukinary-lang-1.0.0.vsix
-  ```
-
----
-
-### 2. Standalone Single-File Binaries
-If you only need standalone compiler binaries without running the installer:
-* **Windows:** Download `ykn.exe` (Standalone PE32+ binary)
-* **Linux:** Download `ykn_linux` (Standalone ELF64 binary, `chmod +x ykn_linux`)
-
-### 3. Write Your First Program (`hello.ykn`)
+### 2. Write & Compile Your First Program (`hello.ykn`)
 ```ykn
-isv ana() -> tamsayi {
-    ekrana_yaz("Merhaba, Yukinary Dunyasi!\n".ptr);
-    dondu 0;
+# English syntax (canonical keywords; screens/stdio intrinsic: ekrana_yaz)
+fn main() -> i64 {
+    ekrana_yaz("Hello, Yukinary!\n".ptr);
+    return 0;
 }
 ```
 
-### 4. Compile Directly to Native Machine Code
+Compile directly to native Windows PE32+ or Linux ELF64 machine code:
 ```powershell
-# Windows
-ykn hello.ykn -o hello.exe
+# Windows PE32+
+ykn hello.ykn hello.exe
 .\hello.exe
 
-# Linux
-ykn hello.ykn -o hello
-./hello
+# Linux ELF64 cross-compile from Windows or native Linux
+ykn --target linux hello.ykn hello
 ```
 
 ---
 
-## 🌐 Language Documentation / Dil Kılavuzları
+## 🌐 Language Documentation
 
-Yukinary provides comprehensive, beginner-friendly ("mala anlatır gibi") complete guides for all supported spoken languages:
+Developer guides and syntax references are available across supported spoken languages:
 
 | Language | File | Description |
 | :--- | :--- | :--- |
-| 🇹🇷 **Türkçe** | [**`docs/kullanim_rehberi_tr.md`**](docs/kullanim_rehberi_tr.md) | Detaylı Türkçe Kullanım Kılavuzu, sözdizimi, `#convert`, Micro-LLM ve FFI motoru |
-| 🇬🇧 **English** | [**`docs/guide_en.md`**](docs/guide_en.md) | Complete Developer Guide, Syntax Reference, `#convert` Engine, Architecture, and Tooling |
-| 🇷🇺 **Русский** | [**`docs/guide_ru.md`**](docs/guide_ru.md) | Полное руководство разработчика, многоязычный синтаксис, `#convert` и архитектура |
-| 🇯🇵 **日本語** | [**`docs/guide_ja.md`**](docs/guide_ja.md) | 開発者ガイド、日本語ネイティブ構文、`#convert`変換、自己修復機能、AIエンジン解説 |
-| 🇨🇳 **简体中文** | [**`docs/guide_zh.md`**](docs/guide_zh.md) | 开发者完全指南、原生中文语法、`#convert`多语言转译、自愈编译机制与嵌入式 AI 引擎 |
-| 🇰🇷 **한국어** | [**`docs/guide_ko.md`**](docs/guide_ko.md) | 개발자 가이드, 한국어 네이티브 문법, `#convert` 변환 엔진, 메모리 안전성 및 임베디드 AI |
+| 🇬🇧 **English** | [**`docs/guide_en.md`**](docs/guide_en.md) | Developer Guide, Syntax Reference, `#convert` Engine, Architecture, and Tooling |
+| 🇹🇷 **Türkçe** | [**`docs/kullanim_rehberi_tr.md`**](docs/kullanim_rehberi_tr.md) | Türkçe Kullanım Kılavuzu, sözdizimi, `#convert`, Micro-LLM ve FFI motoru |
+| 🇷🇺 **Русский** | [**`docs/guide_ru.md`**](docs/guide_ru.md) | Руководство разработчика, многоязычный синтаксис, `#convert` и архитектура |
+| 🇯🇵 **日本語** | [**`docs/guide_ja.md`**](docs/guide_ja.md) | 開発者ガイド、日本語ネイティブ構文、`#convert`変換、自己修復機能 |
+| 🇨🇳 **简体中文** | [**`docs/guide_zh.md`**](docs/guide_zh.md) | 开发者完全指南、原生中文语法、`#convert`多语言转译与嵌入式 AI |
+| 🇰🇷 **한국어** | [**`docs/guide_ko.md`**](docs/guide_ko.md) | 개발자 가이드, 한국어 네이티브 문법, `#convert` 변환 엔진 및 메모리 안전성 |
 
 > [!TIP]
-> **🌍 Your Language Missing from the List? Add It Yourself in 15 Minutes!**  
-> Don't worry! In Yukinary, human language is just a syntax token. Follow our step-by-step community guide: [**`docs/Multi-lingual-add-language.md`**](docs/Multi-lingual-add-language.md) to add your mother tongue and submit a Pull Request!
+> **Localization Design Note:** Multi-lingual keywords use dynamic lexer token mappings (`docs/Multi-lingual-add-language.md`) to lower the barrier for students and non-English speakers. For collaborative open-source packages, we recommend English as the canonical standard.
 
 ---
 
