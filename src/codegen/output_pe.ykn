@@ -27,73 +27,135 @@ isv u16_patch(a: *MakineKoduArenasi, pos: tamsayi, val: tamsayi) {
 
 degisken g_cozulmeyen_harici_cagri_sayisi: tamsayi = 0;
 
+isv djb2_qual_hash(mod_ptr: *u8, mod_uzn: tamsayi, isim_ptr: *u8, isim_uzn: tamsayi) -> tamsayi {
+    degisken hash: tamsayi = 5381;
+    degisken i: tamsayi = 0;
+    dongu i < mod_uzn {
+        hash = ((hash * 33) + mod_ptr[i]);
+        i = i + 1;
+    }
+    hash = ((hash * 33) + 95);
+    hash = ((hash * 33) + 95);
+    i = 0;
+    dongu i < isim_uzn {
+        hash = ((hash * 33) + isim_ptr[i]);
+        i = i + 1;
+    }
+    dondu hash;
+}
+
 isv yamalari_uygula(a: *MakineKoduArenasi) {
     g_cozulmeyen_harici_cagri_sayisi = 0;
+
+    degisken kap: tamsayi = 64;
+    eger g_fonk_adet >= 32 ise { kap = 2048; }
+    degisken head_isim: *tamsayi = compiler_tahsis_et(kap * 8);
+    degisken head_qual: *tamsayi = compiler_tahsis_et(kap * 8);
+    degisken zi: tamsayi = 0;
+    dongu zi < kap {
+        head_isim[zi] = 0;
+        head_qual[zi] = 0;
+        zi = zi + 1;
+    }
+
+    degisken next_isim: *tamsayi = 0;
+    degisken next_qual: *tamsayi = 0;
+    eger g_fonk_adet > 0 ise {
+        next_isim = compiler_tahsis_et(g_fonk_adet * 8);
+        next_qual = compiler_tahsis_et(g_fonk_adet * 8);
+        degisken j: tamsayi = g_fonk_adet - 1;
+        dongu j >= 0 {
+            next_isim[j] = 0;
+            next_qual[j] = 0;
+            eger g_fonk_isim[j] != 0 ise {
+                degisken hi: tamsayi = djb2_hash(g_fonk_isim[j], g_fonk_uzunluk[j]) % kap;
+                eger hi < 0 ise { hi = 0 - hi; }
+                next_isim[j] = head_isim[hi];
+                head_isim[hi] = j + 1;
+                eger g_fonk_modul_isim[j] != 0 ise {
+                    degisken hq: tamsayi = djb2_qual_hash(g_fonk_modul_isim[j], g_fonk_modul_uzunluk[j], g_fonk_isim[j], g_fonk_uzunluk[j]) % kap;
+                    eger hq < 0 ise { hq = 0 - hq; }
+                    next_qual[j] = head_qual[hq];
+                    head_qual[hq] = j + 1;
+                }
+            }
+            j = j - 1;
+        }
+    }
 
     degisken i: tamsayi = 0;
     dongu i < g_yama_adet {
         degisken call_end: tamsayi = g_yama_cagri_pos[i] + 4;
-        degisken j: tamsayi = 0;
-        degisken bulundu: tamsayi = 0;
+        degisken eslesen: tamsayi = 0 - 1;
 
-        dongu j < g_fonk_adet ve bulundu == 0 {
+        eger g_yama_tip[i] == 99 ise {
+            # Ozel yama: bu dongude islenmez.
+            eslesen = 0 - 2;
+        } yoksa eger g_yama_tip[i] > 0 ve g_yama_adres[i] != 0 ise {
+            degisken qh: tamsayi = djb2_qual_hash(g_yama_adres[i], g_yama_tip[i], g_yama_isim[i], g_yama_uzunluk[i]) % kap;
+            eger qh < 0 ise { qh = 0 - qh; }
 
-            # Namespace metadata: g_yama_adres modul pointer'i,
-            # g_yama_tip modul uzunlugunu tasir. Inline fonksiyonlar kisa
-            # uye metadata'siyle; import edilmis fonksiyonlar modul__uye
-            # tam adi üzerinden ayni ABI'ye baglanir.
-            eger g_yama_tip[i] > 0 ve g_yama_tip[i] != 99 ve
-                g_yama_adres[i] != 0 ise {
-                eger g_fonk_modul_isim[j] != 0 ise {
-                    eger g_yama_tip[i] == g_fonk_modul_uzunluk[j] ve
-                        g_yama_uzunluk[i] == g_fonk_uzunluk[j] ve
-                        bellek_esit_mi(g_yama_adres[i], g_fonk_modul_isim[j], g_yama_tip[i]) == 1 ve
-                        bellek_esit_mi(g_yama_isim[i], g_fonk_isim[j], g_yama_uzunluk[i]) == 1 ise {
-                        int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
-                        bulundu = 1;
+            degisken cur_q: tamsayi = head_qual[qh];
+            dongu cur_q != 0 {
+                degisken jq: tamsayi = cur_q - 1;
+                eger g_yama_tip[i] == g_fonk_modul_uzunluk[jq] ve
+                    g_yama_uzunluk[i] == g_fonk_uzunluk[jq] ve
+                    bellek_esit_mi(g_yama_adres[i], g_fonk_modul_isim[jq], g_yama_tip[i]) == 1 ve
+                    bellek_esit_mi(g_yama_isim[i], g_fonk_isim[jq], g_yama_uzunluk[i]) == 1 ise {
+                    eslesen = jq;
+                    durdur;
+                }
+                cur_q = next_qual[jq];
+            }
+
+            degisken cur_f: tamsayi = head_isim[qh];
+            dongu cur_f != 0 {
+                degisken jf: tamsayi = cur_f - 1;
+                eger eslesen >= 0 ve jf >= eslesen ise { durdur; }
+                eger g_fonk_modul_isim[jf] == 0 ve
+                    g_fonk_uzunluk[jf] == g_yama_tip[i] + 2 + g_yama_uzunluk[i] ve
+                    bellek_esit_mi(g_fonk_isim[jf], g_yama_adres[i], g_yama_tip[i]) == 1 ve
+                    bellek_esit_mi(g_fonk_isim[jf] + g_yama_tip[i], "__".ptr, 2) == 1 ve
+                    bellek_esit_mi(g_fonk_isim[jf] + g_yama_tip[i] + 2, g_yama_isim[i], g_yama_uzunluk[i]) == 1 ise {
+                    eslesen = jf;
+                    durdur;
+                }
+                cur_f = next_isim[jf];
+            }
+        } yoksa eger g_yama_tip[i] == 0 ve g_yama_isim[i] != 0 ise {
+            degisken ih: tamsayi = djb2_hash(g_yama_isim[i], g_yama_uzunluk[i]) % kap;
+            eger ih < 0 ise { ih = 0 - ih; }
+
+            degisken cur_i: tamsayi = head_isim[ih];
+            dongu cur_i != 0 {
+                degisken ji: tamsayi = cur_i - 1;
+                eger g_fonk_uzunluk[ji] == g_yama_uzunluk[i] ve
+                    bellek_esit_mi(g_fonk_isim[ji], g_yama_isim[i], g_fonk_uzunluk[ji]) == 1 ise {
+                    eslesen = ji;
+                    durdur;
+                }
+                cur_i = next_isim[ji];
+            }
+
+            eger eslesen < 0 ise {
+                degisken cur_m: tamsayi = head_qual[ih];
+                dongu cur_m != 0 {
+                    degisken jm: tamsayi = cur_m - 1;
+                    eger g_yama_uzunluk[i] == g_fonk_modul_uzunluk[jm] + 2 + g_fonk_uzunluk[jm] ve
+                        bellek_esit_mi(g_yama_isim[i], g_fonk_modul_isim[jm], g_fonk_modul_uzunluk[jm]) == 1 ve
+                        bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[jm], "__".ptr, 2) == 1 ve
+                        bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[jm] + 2, g_fonk_isim[jm], g_fonk_uzunluk[jm]) == 1 ise {
+                        eslesen = jm;
+                        durdur;
                     }
-                } yoksa eger g_fonk_uzunluk[j] == g_yama_tip[i] + 2 + g_yama_uzunluk[i] ve
-                    bellek_esit_mi(g_fonk_isim[j], g_yama_adres[i], g_yama_tip[i]) == 1 ve
-                    bellek_esit_mi(g_fonk_isim[j] + g_yama_tip[i], "__".ptr, 2) == 1 ve
-                    bellek_esit_mi(g_fonk_isim[j] + g_yama_tip[i] + 2, g_yama_isim[i], g_yama_uzunluk[i]) == 1 ise {
-                    int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
-                    bulundu = 1;
+                    cur_m = next_qual[jm];
                 }
             }
-            eger bulundu == 0 ve g_yama_tip[i] == 0 ve
-                g_fonk_isim[j] != 0 ve g_yama_isim[i] != 0 ise {
-                eger g_fonk_uzunluk[j] == g_yama_uzunluk[i] ise {
-                    eger bellek_esit_mi(g_fonk_isim[j], g_yama_isim[i], g_fonk_uzunluk[j]) == 1 ise {
-                        int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
-                        bulundu = 1;
-                    }
-                }
-            }
-            j = j + 1;
         }
-        # Inline modul fonksiyonlari kisa isimle kaydedilir; cagri adi ise
-        # modul__uye seklindedir. Module metadata ile ikinci, ABI-guvenli
-        # eslestirme yapilir.
-        eger bulundu == 0 ve g_yama_tip[i] == 0 ise {
-            j = 0;
-            dongu j < g_fonk_adet ve bulundu == 0 {
-                eger g_fonk_modul_isim[j] != 0 ve g_fonk_isim[j] != 0 ise {
-                    eger g_yama_uzunluk[i] == g_fonk_modul_uzunluk[j] + 2 + g_fonk_uzunluk[j] ise {
-                        eger bellek_esit_mi(g_yama_isim[i], g_fonk_modul_isim[j], g_fonk_modul_uzunluk[j]) == 1 ise {
-                            eger bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[j], "__".ptr, 2) == 1 ise {
-                                eger bellek_esit_mi(g_yama_isim[i] + g_fonk_modul_uzunluk[j] + 2, g_fonk_isim[j], g_fonk_uzunluk[j]) == 1 ise {
-                                    int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[j] - call_end);
-                                    bulundu = 1;
-                                }
-                            }
-                        }
-                    }
-                }
-                j = j + 1;
-            }
-        }
 
-        eger bulundu == 0 ve g_yama_tip[i] != 99 ise {
+        eger eslesen >= 0 ise {
+            int32_patch(a, g_yama_cagri_pos[i], g_fonk_adres[eslesen] - call_end);
+        } yoksa eger eslesen == 0 - 1 ise {
             eger g_yama_uzunluk[i] == 10 ve bellek_esit_mi(g_yama_isim[i], "ekrana_yaz".ptr, 10) == 1 ise {
                 degisken cpos: tamsayi = g_yama_cagri_pos[i];
                 eger cpos > 0 ise {

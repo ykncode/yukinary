@@ -56,7 +56,7 @@ yapi NominalDugum {
     uzunluk: tamsayi;
     sonraki: *NominalDugum;
 }
-degisken g_nominal_liste: *NominalDugum = 0;
+degisken g_nominal_tablo: **NominalDugum = 0;
 degisken g_nominal_sayisi: tamsayi = 0;
 degisken g_tip_donusum_hatasi: tamsayi = 0;
 # Type/symbol arenasinda sessiz truncationi engelleyen fail-closed durum.
@@ -1006,18 +1006,16 @@ isv yapi_tanimini_bul(motor: *TipMotoru, tname: *u8, tlen: tamsayi) -> *AstDugum
     }
     degisken k: *Kapsam = motor.guncel_kapsam;
     dongu k != 0 {
-        degisken ki: tamsayi = 0;
-        dongu ki < k.kapasite {
-            degisken it: *SembolGirdisi = k.tablo[ki];
-            dongu it != 0 {
-                eger it.ast_tanimi != 0 ve (it.ast_tanimi.tip == AST_YAPI_TANIMI veya it.ast_tanimi.tip == 16) ve it.tanim_jetonu != 0 ise {
-                    eger it.tanim_jetonu.uzunluk == tlen ve bellek_esit_mi(it.tanim_jetonu.baslangic, tname, tlen) == 1 ise {
-                        dondu it.ast_tanimi;
-                    }
+        degisken ki: tamsayi = s_hash % k.kapasite;
+        eger ki < 0 ise { ki = 0 - ki; }
+        degisken it: *SembolGirdisi = k.tablo[ki];
+        dongu it != 0 {
+            eger it.ast_tanimi != 0 ve (it.ast_tanimi.tip == AST_YAPI_TANIMI veya it.ast_tanimi.tip == 16) ve it.tanim_jetonu != 0 ise {
+                eger it.tanim_jetonu.uzunluk == tlen ve bellek_esit_mi(it.tanim_jetonu.baslangic, tname, tlen) == 1 ise {
+                    dondu it.ast_tanimi;
                 }
-                it = it.sonraki;
             }
-            ki = ki + 1;
+            it = it.sonraki;
         }
         k = k.ust_kapsam;
     }
@@ -1492,19 +1490,18 @@ isv tc_builtin_traitleri_kaydet(motor: *TipMotoru) {
 isv tip_adi_tanimli_mi(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> tamsayi {
     eger motor == 0 veya ad == 0 veya uzunluk <= 0 ise { dondu 0; }
     eger uzunluk > 4 ve bellek_esit_mi(ad, "dyn ".ptr, 4) == 1 ise { dondu 1; }
+    degisken t_hash: tamsayi = djb2_sembol(ad, uzunluk);
     degisken k: *Kapsam = motor.guncel_kapsam;
     dongu k != 0 {
-        degisken idx: tamsayi = 0;
-        dongu idx < k.kapasite {
-            degisken iter: *SembolGirdisi = k.tablo[idx];
-            dongu iter != 0 {
-                eger iter.tanim_jetonu != 0 ve iter.tanim_jetonu.uzunluk == uzunluk ve
-                    bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 {
-                    eger iter.ast_tanimi != 0 ve (iter.ast_tanimi.tip == AST_YAPI_TANIMI veya iter.ast_tanimi.tip == AST_ENUM_TANIMI) ise { dondu 1; }
-                }
-                iter = iter.sonraki;
+        degisken idx: tamsayi = t_hash % k.kapasite;
+        eger idx < 0 ise { idx = 0 - idx; }
+        degisken iter: *SembolGirdisi = k.tablo[idx];
+        dongu iter != 0 {
+            eger iter.tanim_jetonu != 0 ve iter.tanim_jetonu.uzunluk == uzunluk ve
+                bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 {
+                eger iter.ast_tanimi != 0 ve (iter.ast_tanimi.tip == AST_YAPI_TANIMI veya iter.ast_tanimi.tip == AST_ENUM_TANIMI) ise { dondu 1; }
             }
-            idx = idx + 1;
+            iter = iter.sonraki;
         }
         k = k.ust_kapsam;
     }
@@ -1513,21 +1510,20 @@ isv tip_adi_tanimli_mi(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> tamsayi 
 
 isv tip_alias_tipi_bul(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
     eger motor == 0 veya ad == 0 veya uzunluk <= 0 ise { dondu 0; }
+    degisken t_hash: tamsayi = djb2_sembol(ad, uzunluk);
     degisken k: *Kapsam = motor.guncel_kapsam;
     dongu k != 0 {
-        degisken idx: tamsayi = 0;
-        dongu idx < k.kapasite {
-            degisken iter: *SembolGirdisi = k.tablo[idx];
-            dongu iter != 0 {
-                eger iter.tanim_jetonu != 0 ve iter.ast_tanimi != 0 ve
-                    iter.ast_tanimi.tip == AST_TIP_ALIAS ve
-                    iter.tanim_jetonu.uzunluk == uzunluk ve
-                    bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 ise {
-                    dondu iter.veri_tipi;
-                }
-                iter = iter.sonraki;
+        degisken idx: tamsayi = t_hash % k.kapasite;
+        eger idx < 0 ise { idx = 0 - idx; }
+        degisken iter: *SembolGirdisi = k.tablo[idx];
+        dongu iter != 0 {
+            eger iter.tanim_jetonu != 0 ve iter.ast_tanimi != 0 ve
+                iter.ast_tanimi.tip == AST_TIP_ALIAS ve
+                iter.tanim_jetonu.uzunluk == uzunluk ve
+                bellek_esit_mi(iter.tanim_jetonu.baslangic, ad, uzunluk) == 1 ise {
+                dondu iter.veri_tipi;
             }
-            idx = idx + 1;
+            iter = iter.sonraki;
         }
         k = k.ust_kapsam;
     }
@@ -1711,7 +1707,18 @@ isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
           bellek_esit_mi(ad, "Sonuc".ptr, 5) == 0)) ve
         (uzunluk != 6 veya bellek_esit_mi(ad, "Result".ptr, 6) == 0) ve
         (uzunluk != 9 veya bellek_esit_mi(ad, "EnumSonuc".ptr, 9) == 0) ise {
-        degisken curr_nom: *NominalDugum = g_nominal_liste;
+        eger g_nominal_tablo == 0 ise {
+            g_nominal_tablo = compiler_tahsis_et(1024 * 8);
+            degisken ni_z: tamsayi = 0;
+            dongu ni_z < 1024 {
+                g_nominal_tablo[ni_z] = 0;
+                ni_z = ni_z + 1;
+            }
+        }
+        degisken nom_hash: tamsayi = djb2_sembol(ad, uzunluk);
+        degisken nom_bucket: tamsayi = nom_hash % 1024;
+        eger nom_bucket < 0 ise { nom_bucket = 0 - nom_bucket; }
+        degisken curr_nom: *NominalDugum = g_nominal_tablo[nom_bucket];
         dongu curr_nom != 0 {
             eger curr_nom.uzunluk == uzunluk ve
                 bellek_esit_mi(curr_nom.ad, ad, uzunluk) == 1 ise {
@@ -1727,8 +1734,8 @@ isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
                 yeni_nom.nominal_id = nominal_id;
                 yeni_nom.ad = ad;
                 yeni_nom.uzunluk = uzunluk;
-                yeni_nom.sonraki = g_nominal_liste;
-                g_nominal_liste = yeni_nom;
+                yeni_nom.sonraki = g_nominal_tablo[nom_bucket];
+                g_nominal_tablo[nom_bucket] = yeni_nom;
                 g_nominal_sayisi = g_nominal_sayisi + 1;
             } yoksa {
                 typechecker_kapasite_reddet(4);
@@ -3686,7 +3693,7 @@ isv runtime_builtin_ekle(motor: *TipMotoru, isim: *u8, uzunluk: tamsayi, donus: 
 isv tip_denetimini_baslat_ve_don(arena: *AstArena, kok: *AstDugum) -> *TipMotoru {
     eger arena == 0 ise { dondu 0; }
     eger kok == 0 ise { dondu 0; }
-    g_nominal_liste = 0;
+    g_nominal_tablo = 0;
     g_nominal_sayisi = 0;
     g_recursive_hatasi = 0;
     g_recursive_butce = 0;
@@ -3740,7 +3747,7 @@ isv tip_denetimini_baslat_ve_don(arena: *AstArena, kok: *AstDugum) -> *TipMotoru
 
     motor.guncel_donus_tipi = motor.tip_hic;
 
-    kapsam_olustur(motor, 1024);
+    kapsam_olustur(motor, 4096);
 
     eger motor.guncel_kapsam == 0 ise {
         ekrana_yaz("HATA: Global kapsam olusturulamadi!\n".ptr);
