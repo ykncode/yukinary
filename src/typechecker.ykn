@@ -1582,6 +1582,7 @@ isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
         eger bellek_esit_mi(ad, "byte".ptr, 4) == 1 ise { temel_id = TIP_ID_U8; }
         eger bellek_esit_mi(ad, "bayt".ptr, 4) == 1 ise { temel_id = TIP_ID_U8; }
         eger bellek_esit_mi(ad, "void".ptr, 4) == 1 ise { temel_id = TIP_ID_HIC; }
+        eger bellek_esit_mi(ad, "vide".ptr, 4) == 1 ise { temel_id = TIP_ID_HIC; }
         eger bellek_esit_mi(ad, "null".ptr, 4) == 1 ise { temel_id = TIP_ID_HIC; }
     }
     # Uzunluk 5: "metin", "float", "sonuc"
@@ -1617,6 +1618,8 @@ isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
         eger bellek_esit_mi(ad, "소수".ptr, 6) == 1 ise { temel_id = TIP_ID_GERCEK; }
         eger bellek_esit_mi(ad, "mantik".ptr, 6) == 1 ise { temel_id = TIP_ID_MANTIK; }
         eger bellek_esit_mi(ad, "string".ptr, 6) == 1 ise { temel_id = TIP_ID_METIN; }
+        eger bellek_esit_mi(ad, "entier".ptr, 6) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
+        eger bellek_esit_mi(ad, "chaine".ptr, 6) == 1 ise { temel_id = TIP_ID_METIN; }
         eger bellek_esit_mi(ad, "整数".ptr, 6) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
         eger bellek_esit_mi(ad, "정수".ptr, 6) == 1 ise { temel_id = TIP_ID_TAMSAYI; }
         eger bellek_esit_mi(ad, "字节".ptr, 6) == 1 ise { temel_id = TIP_ID_U8; }
@@ -1640,6 +1643,7 @@ isv tip_adini_coz(motor: *TipMotoru, ad: *u8, uzunluk: tamsayi) -> *TipBilgisi {
         eger bellek_esit_mi(ad, "kesirli".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
         eger bellek_esit_mi(ad, "ondalik".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
         eger bellek_esit_mi(ad, "decimal".ptr, 7) == 1 ise { temel_id = TIP_ID_GERCEK; }
+        eger bellek_esit_mi(ad, "booleen".ptr, 7) == 1 ise { temel_id = TIP_ID_MANTIK; }
     }
     # Uzunluk 8: "flottant", "décimal"
     eger uzunluk == 8 ise {

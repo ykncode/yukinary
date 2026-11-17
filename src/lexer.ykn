@@ -552,11 +552,13 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "偽".ptr, 3) == 1 ise { dondu TIP_YANLIS; }
         # KO: "참"
         eger bellek_esit_mi(adres, "참".ptr, 3) == 1 ise { dondu TIP_DOGRU; }
-        # Multilingual Operators & Nulls: not, 非, 無, 널
+        # Multilingual Operators & Nulls: not, non, 非, 無, 널, 各
         eger bellek_esit_mi(adres, "not".ptr, 3) == 1 ise { dondu TIP_DEGIL; }
+        eger bellek_esit_mi(adres, "non".ptr, 3) == 1 ise { dondu TIP_DEGIL; }
         eger bellek_esit_mi(adres, "非".ptr, 3) == 1 ise { dondu TIP_DEGIL; }
         eger bellek_esit_mi(adres, "無".ptr, 3) == 1 ise { dondu TIP_BOS; }
         eger bellek_esit_mi(adres, "널".ptr, 3) == 1 ise { dondu TIP_BOS; }
+        eger bellek_esit_mi(adres, "各".ptr, 3) == 1 ise { dondu TIP_HER; }
     }
 
     # --------------------------------------------------------
@@ -619,9 +621,11 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "break".ptr, 5) == 1 ise { dondu TIP_DURDUR; }
         eger bellek_esit_mi(adres, "false".ptr, 5) == 1 ise { dondu TIP_YANLIS; }
         eger bellek_esit_mi(adres, "match".ptr, 5) == 1 ise { dondu TIP_ESLES; }
-        # FR: "sinon", "alors"
+        # FR: "sinon", "alors", "comme", "selon"
         eger bellek_esit_mi(adres, "sinon".ptr, 5) == 1 ise { dondu TIP_YOKSA; }
         eger bellek_esit_mi(adres, "alors".ptr, 5) == 1 ise { dondu TIP_ISE; }
+        eger bellek_esit_mi(adres, "comme".ptr, 5) == 1 ise { dondu TIP_OLARAK; }
+        eger bellek_esit_mi(adres, "selon".ptr, 5) == 1 ise { dondu TIP_ESLES; }
     }
 
     # --------------------------------------------------------
@@ -684,6 +688,39 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "或者".ptr, 6) == 1 ise { dondu TIP_VEYA; }
         eger bellek_esit_mi(adres, "또는".ptr, 6) == 1 ise { dondu TIP_VEYA; }
         eger bellek_esit_mi(adres, "否定".ptr, 6) == 1 ise { dondu TIP_DEGIL; }
+        # Multilingual round-trip tokens (len 6)
+        eger bellek_esit_mi(adres, "遍历".ptr, 6) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "마다".ptr, 6) == 1 ise { dondu TIP_HER; }
+        eger bellek_esit_mi(adres, "中断".ptr, 6) == 1 ise { dondu TIP_DURDUR; }
+        eger bellek_esit_mi(adres, "중단".ptr, 6) == 1 ise { dondu TIP_DURDUR; }
+        eger bellek_esit_mi(adres, "继续".ptr, 6) == 1 ise { dondu TIP_DEVAM_ET; }
+        eger bellek_esit_mi(adres, "계속".ptr, 6) == 1 ise { dondu TIP_DEVAM_ET; }
+        eger bellek_esit_mi(adres, "輸入".ptr, 6) == 1 ise { dondu TIP_ICE_AKTAR; }
+        eger bellek_esit_mi(adres, "导入".ptr, 6) == 1 ise { dondu TIP_ICE_AKTAR; }
+        eger bellek_esit_mi(adres, "一致".ptr, 6) == 1 ise { dondu TIP_ESLES; }
+        eger bellek_esit_mi(adres, "匹配".ptr, 6) == 1 ise { dondu TIP_ESLES; }
+        eger bellek_esit_mi(adres, "일치".ptr, 6) == 1 ise { dondu TIP_ESLES; }
+        eger bellek_esit_mi(adres, "模块".ptr, 6) == 1 ise { dondu TIP_MODUL; }
+        eger bellek_esit_mi(adres, "모듈".ptr, 6) == 1 ise { dondu TIP_MODUL; }
+        eger bellek_esit_mi(adres, "作为".ptr, 6) == 1 ise { dondu TIP_OLARAK; }
+        eger bellek_esit_mi(adres, "로서".ptr, 6) == 1 ise { dondu TIP_OLARAK; }
+        eger bellek_esit_mi(adres, "как".ptr, 6) == 1 ise { dondu TIP_OLARAK; }
+        eger bellek_esit_mi(adres, "公開".ptr, 6) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "公开".ptr, 6) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "공개".ptr, 6) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "既定".ptr, 6) == 1 ise { dondu TIP_VARSAYILAN; }
+        eger bellek_esit_mi(adres, "默认".ptr, 6) == 1 ise { dondu TIP_VARSAYILAN; }
+        eger bellek_esit_mi(adres, "기본".ptr, 6) == 1 ise { dondu TIP_VARSAYILAN; }
+        eger bellek_esit_mi(adres, "defaut".ptr, 6) == 1 ise { dondu TIP_VARSAYILAN; }
+        eger bellek_esit_mi(adres, "列挙".ptr, 6) == 1 ise { dondu TIP_ENUM; }
+        eger bellek_esit_mi(adres, "枚举".ptr, 6) == 1 ise { dondu TIP_ENUM; }
+        eger bellek_esit_mi(adres, "열거".ptr, 6) == 1 ise { dondu TIP_ENUM; }
+        eger bellek_esit_mi(adres, "特性".ptr, 6) == 1 ise { dondu TIP_TRAIT; }
+        eger bellek_esit_mi(adres, "特征".ptr, 6) == 1 ise { dondu TIP_TRAIT; }
+        eger bellek_esit_mi(adres, "특성".ptr, 6) == 1 ise { dondu TIP_TRAIT; }
+        eger bellek_esit_mi(adres, "実装".ptr, 6) == 1 ise { dondu TIP_UYGULA; }
+        eger bellek_esit_mi(adres, "实现".ptr, 6) == 1 ise { dondu TIP_UYGULA; }
+        eger bellek_esit_mi(adres, "구현".ptr, 6) == 1 ise { dondu TIP_UYGULA; }
     }
 
     # --------------------------------------------------------
@@ -744,6 +781,8 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "아니면".ptr, 9) == 1 ise { dondu TIP_YOKSA; }
         eger bellek_esit_mi(adres, "그리고".ptr, 9) == 1 ise { dondu TIP_VE; }
         eger bellek_esit_mi(adres, "または".ptr, 9) == 1 ise { dondu TIP_VEYA; }
+        eger bellek_esit_mi(adres, "として".ptr, 9) == 1 ise { dondu TIP_OLARAK; }
+        eger bellek_esit_mi(adres, "구조체".ptr, 9) == 1 ise { dondu TIP_YAPI; }
         eger bellek_esit_mi(adres, "아니다".ptr, 9) == 1 ise { dondu TIP_DEGIL; }
     }
 
@@ -753,11 +792,13 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
     eger uzunluk == 10 ise {
         # TR: "varsayilan"
         eger bellek_esit_mi(adres, "varsayilan".ptr, 10) == 1 ise { dondu TIP_VARSAYILAN; }
-        # RU: "пусть", "перем", "иначе"
+        # RU: "пусть", "перем", "иначе", "пусто", "выбор", "типаж"
         eger bellek_esit_mi(adres, "пусть".ptr, 10) == 1 ise { dondu TIP_DEGISKEN; }
         eger bellek_esit_mi(adres, "перем".ptr, 10) == 1 ise { dondu TIP_DEGISKEN; }
         eger bellek_esit_mi(adres, "иначе".ptr, 10) == 1 ise { dondu TIP_YOKSA; }
         eger bellek_esit_mi(adres, "пусто".ptr, 10) == 1 ise { dondu TIP_BOS; }
+        eger bellek_esit_mi(adres, "выбор".ptr, 10) == 1 ise { dondu TIP_ESLES; }
+        eger bellek_esit_mi(adres, "типаж".ptr, 10) == 1 ise { dondu TIP_TRAIT; }
     }
 
     # --------------------------------------------------------
@@ -766,9 +807,12 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
     eger uzunluk == 12 ise {
         # JA: "それ以外"
         eger bellek_esit_mi(adres, "それ以外".ptr, 12) == 1 ise { dondu TIP_YOKSA; }
-        # RU: "импорт", "истина"
+        # RU: "импорт", "истина", "модуль"
         eger bellek_esit_mi(adres, "импорт".ptr, 12) == 1 ise { dondu TIP_ICE_AKTAR; }
         eger bellek_esit_mi(adres, "истина".ptr, 12) == 1 ise { dondu TIP_DOGRU; }
+        eger bellek_esit_mi(adres, "модуль".ptr, 12) == 1 ise { dondu TIP_MODUL; }
+        # KO: "가져오기"
+        eger bellek_esit_mi(adres, "가져오기".ptr, 12) == 1 ise { dondu TIP_ICE_AKTAR; }
     }
 
     # --------------------------------------------------------
@@ -778,6 +822,14 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         # RU: "функция", "вернуть"
         eger bellek_esit_mi(adres, "функция".ptr, 14) == 1 ise { dondu TIP_ISLEV; }
         eger bellek_esit_mi(adres, "вернуть".ptr, 14) == 1 ise { dondu TIP_DONDUR; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 15
+    # --------------------------------------------------------
+    eger uzunluk == 15 ise {
+        # JA: "モジュール"
+        eger bellek_esit_mi(adres, "モジュール".ptr, 15) == 1 ise { dondu TIP_MODUL; }
     }
 
     # --------------------------------------------------------
@@ -792,17 +844,28 @@ isv kelime_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
     # Uzunluk: 18
     # --------------------------------------------------------
     eger uzunluk == 18 ise {
-        # RU: "структура", "константа"
+        # RU: "структура", "константа", "публичный", "умолчание"
         eger bellek_esit_mi(adres, "структура".ptr, 18) == 1 ise { dondu TIP_YAPI; }
         eger bellek_esit_mi(adres, "константа".ptr, 18) == 1 ise { dondu TIP_SABIT; }
+        eger bellek_esit_mi(adres, "публичный".ptr, 18) == 1 ise { dondu TIP_GENEL; }
+        eger bellek_esit_mi(adres, "умолчание".ptr, 18) == 1 ise { dondu TIP_VARSAYILAN; }
     }
 
     # --------------------------------------------------------
     # Uzunluk: 20
     # --------------------------------------------------------
     eger uzunluk == 20 ise {
-        # RU: "продолжить"
+        # RU: "продолжить", "реализация"
         eger bellek_esit_mi(adres, "продолжить".ptr, 20) == 1 ise { dondu TIP_DEVAM_ET; }
+        eger bellek_esit_mi(adres, "реализация".ptr, 20) == 1 ise { dondu TIP_UYGULA; }
+    }
+
+    # --------------------------------------------------------
+    # Uzunluk: 24
+    # --------------------------------------------------------
+    eger uzunluk == 24 ise {
+        # RU: "перечисление"
+        eger bellek_esit_mi(adres, "перечисление".ptr, 24) == 1 ise { dondu TIP_ENUM; }
     }
 
     dondu TIP_KIMLIK;
@@ -915,10 +978,23 @@ isv direktif_ismi_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "設定".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
         eger bellek_esit_mi(adres, "配置".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
         eger bellek_esit_mi(adres, "설정".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "ceviri".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "翻訳".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "翻译".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "번역".ptr, 6) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
     }
-    eger uzunluk == 7 ve bellek_esit_mi(adres, "ayarlar".ptr, 7) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
-    eger uzunluk == 9 ve bellek_esit_mi(adres, "configure".ptr, 9) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
-    eger uzunluk == 10 ve bellek_esit_mi(adres, "yapilandir".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    eger uzunluk == 7 ise {
+        eger bellek_esit_mi(adres, "ayarlar".ptr, 7) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "çeviri".ptr, 7) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
+    eger uzunluk == 9 ise {
+        eger bellek_esit_mi(adres, "configure".ptr, 9) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "translate".ptr, 9) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
+    eger uzunluk == 10 ise {
+        eger bellek_esit_mi(adres, "yapilandir".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+        eger bellek_esit_mi(adres, "traduction".ptr, 10) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
+    }
     eger uzunluk == 12 ise {
         eger bellek_esit_mi(adres, "конфиг".ptr, 12) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
         eger bellek_esit_mi(adres, "yapılandır".ptr, 12) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
@@ -927,6 +1003,7 @@ isv direktif_ismi_tipini_bul(adres: *u8, uzunluk: tamsayi) -> tamsayi {
         eger bellek_esit_mi(adres, "configuration".ptr, 13) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
         eger bellek_esit_mi(adres, "konfiguration".ptr, 13) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
     }
+    eger uzunluk == 14 ve bellek_esit_mi(adres, "перевод".ptr, 14) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
     eger uzunluk == 18 ve bellek_esit_mi(adres, "настройка".ptr, 18) == 1 ise { dondu TIP_DIREKTIF_CONFIG; }
 
     dondu 0;

@@ -224,9 +224,23 @@ degisken BITNET_BPE_ENIYI_SIRA: tamsayi = 0 - 1;
 degisken BITNET_BPE_WORK: [4096]u8;
 degisken BITNET_BPE_GROUPS: [4096]tamsayi;
 degisken BITNET_BPE_CIKTI_WORK: [4096]tamsayi;
+isv bitnet_gpt2_byte_to_codepoint(b: tamsayi) -> tamsayi {
+    eger bitnet_gpt2_direct_byte(b) == 1 ise { dondu b; }
+    degisken candidate: tamsayi = 0;
+    degisken missing_index: tamsayi = 0;
+    dongu candidate < 256 {
+        eger bitnet_gpt2_direct_byte(candidate) == 0 ise {
+            eger candidate == b ise { dondu 256 + missing_index; }
+            missing_index = missing_index + 1;
+        }
+        candidate = candidate + 1;
+    }
+    dondu b;
+}
+
 isv bitnet_bpe_ascii_kategori(b: tamsayi) -> tamsayi {
     eger b == 32 veya b == 9 veya b == 10 veya b == 13 ise { dondu 3; }
-    eger (b >= 65 ve b <= 90) veya (b >= 97 ve b <= 122) ise { dondu 1; }
+    eger (b >= 65 ve b <= 90) veya (b >= 97 ve b <= 122) veya b > 127 ise { dondu 1; }
     eger b >= 48 ve b <= 57 ise { dondu 2; }
     dondu 4;
 }
@@ -293,17 +307,30 @@ isv bitnet_bpe_ascii_kodla(buffer: *u8,
     dongu i < girdi_uzunlugu {
         degisken special_matched: tamsayi = 0;
         # GGUF vocabularies store control tokens (for example Qwen's
-        # <|im_start|>) as atomic entries, outside ordinary byte-level BPE.
+        # <|im_start|>, <think>, </think>) as atomic entries, outside ordinary byte-level BPE.
         # Recognize exact vocab entries before applying the GPT-2 regex.
-        eger girdi[i] == 60 ve i + 1 < girdi_uzunlugu ve girdi[i + 1] == 124 ise {
+        eger girdi[i] == 60 ve i + 1 < girdi_uzunlugu ve (
+            girdi[i + 1] == 124 veya
+            (i + 7 <= girdi_uzunlugu ve girdi[i + 1] == 116 ve girdi[i + 2] == 104 ve girdi[i + 3] == 105 ve girdi[i + 4] == 110 ve girdi[i + 5] == 107 ve girdi[i + 6] == 62) veya
+            (i + 8 <= girdi_uzunlugu ve girdi[i + 1] == 47 ve girdi[i + 2] == 116 ve girdi[i + 3] == 104 ve girdi[i + 4] == 105 ve girdi[i + 5] == 110 ve girdi[i + 6] == 107 ve girdi[i + 7] == 62)
+        ) ise {
             degisken special_end: tamsayi = i + 2;
-            dongu special_end + 1 < girdi_uzunlugu ve special_end - i < 254 ve
-                (girdi[special_end] != 124 veya girdi[special_end + 1] != 62) {
-                special_end = special_end + 1;
+            eger girdi[i + 1] == 124 ise {
+                dongu special_end + 1 < girdi_uzunlugu ve special_end - i < 254 ve
+                    (girdi[special_end] != 124 veya girdi[special_end + 1] != 62) {
+                    special_end = special_end + 1;
+                }
+            } yoksa {
+                dongu special_end < girdi_uzunlugu ve special_end - i < 254 ve girdi[special_end] != 62 {
+                    special_end = special_end + 1;
+                }
             }
-            eger special_end + 1 < girdi_uzunlugu ve
-               girdi[special_end] == 124 ve girdi[special_end + 1] == 62 ise {
-                degisken special_length: tamsayi = special_end + 2 - i;
+            eger (girdi[i + 1] == 124 ve special_end + 1 < girdi_uzunlugu ve
+                  girdi[special_end] == 124 ve girdi[special_end + 1] == 62) veya
+                 (girdi[i + 1] != 124 ve special_end < girdi_uzunlugu ve girdi[special_end] == 62) ise {
+                degisken special_step: tamsayi = 1;
+                eger girdi[i + 1] == 124 ise { special_step = 2; }
+                degisken special_length: tamsayi = special_end + special_step - i;
                 degisken special_i: tamsayi = 0;
                 dongu special_i < special_length {
                     special_token[special_i] = girdi[i + special_i];
@@ -318,7 +345,7 @@ isv bitnet_bpe_ascii_kodla(buffer: *u8,
                     BITNET_BPE_GROUPS[adet] = grup;
                     adet = adet + 1;
                     grup = grup + 1;
-                    i = special_end + 2;
+                    i = special_end + special_step;
                     special_matched = 1;
                 }
             }
@@ -352,18 +379,16 @@ isv bitnet_bpe_ascii_kodla(buffer: *u8,
         degisken j: tamsayi = bas;
         dongu j < i {
             eger adet >= 4096 ise { dondu 0; }
+            degisken ham_b: tamsayi = girdi[j];
+            eger ham_b < 0 ise { ham_b = ham_b + 256; }
+            degisken cp: tamsayi = bitnet_gpt2_byte_to_codepoint(ham_b);
             degisken tek_karakter_uzunlugu: tamsayi = 1;
-            eger girdi[j] == 32 ise {
-                tek_karakter[0] = 196; tek_karakter[1] = 160;
-                tek_karakter_uzunlugu = 2;
-            } yoksa eger girdi[j] == 10 ise {
-                tek_karakter[0] = 196; tek_karakter[1] = 138;
-                tek_karakter_uzunlugu = 2;
-            } yoksa eger girdi[j] == 9 ise {
-                tek_karakter[0] = 196; tek_karakter[1] = 137;
-                tek_karakter_uzunlugu = 2;
+            eger cp < 128 ise {
+                tek_karakter[0] = cp;
             } yoksa {
-                tek_karakter[0] = girdi[j];
+                tek_karakter[0] = 192 + (cp / 64);
+                tek_karakter[1] = 128 + (cp % 64);
+                tek_karakter_uzunlugu = 2;
             }
             degisken id: tamsayi = bitnet_token_id_bul(buffer, token_ofsetleri,
                 token_uzunluklari, token_sayisi, tek_karakter, tek_karakter_uzunlugu);

@@ -2075,7 +2075,7 @@ isv parse_satir(d: *ParserDurumu) -> *AstDugum {
         dondu conv_dugum;
     }
 
-    # --- #config / #yapilandir direktifleri (FAZ 5) ---
+    # --- #config / #yapilandir / #translate direktifleri (FAZ 5) ---
     eger j.tip == TIP_DIREKTIF_CONFIG veya (j.tip == 66) ise {
         degisken cfg_jeton: *Jeton = j;
         ilerle(d);
@@ -2084,12 +2084,20 @@ isv parse_satir(d: *ParserDurumu) -> *AstDugum {
         eger jeton_tipinde_mi(d, TIP_SOL_KUSLU) == 1 ise {
             ilerle(d); # '{'
             parantezli = 1;
+        } yoksa eger jeton_tipinde_mi(d, TIP_SOL_PARANTEZ) == 1 ise {
+            ilerle(d); # '('
+            parantezli = 2;
         }
         degisken ilk_kv: *AstDugum = 0;
         degisken son_kv: *AstDugum = 0;
         dongu suanki_jeton(d) != 0 ve suanki_jeton(d).tip != TIP_EOF {
             eger parantezli == 1 ve jeton_tipinde_mi(d, TIP_SAG_KUSLU) == 1 ise {
                 ilerle(d); # '}'
+                eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
+                durdur;
+            }
+            eger parantezli == 2 ve jeton_tipinde_mi(d, TIP_SAG_PARANTEZ) == 1 ise {
+                ilerle(d); # ')'
                 eger jeton_tipinde_mi(d, TIP_NOKTALI_VIRGUL) == 1 ise { ilerle(d); }
                 durdur;
             }

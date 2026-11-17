@@ -1,8 +1,18 @@
 # ============================================================
-# Yukinary Kod Bicimlendirici
+# Yukinary Kod Bicimlendirici ve Token-Tip Kontrollu Cevirmen
 # ============================================================
-# Formatter lexer tokenlarina degil kaynak baytlarina dayanir. Boylece
-# yorumlar ve string literalleri icerikleriyle birlikte korunur.
+# Formatter lexer tokenlarina ve kaynak baytlarina dayanir. Ceviri
+# modunda anahtar kelimeler kelime_tipini_bul uzerinden, yerlesik tipler
+# tip baglaminda ve yorumlar GGUF LLM (BitNet/Bonsai) ile cevrilir.
+
+degisken DIL_YOK = 0;
+degisken DIL_TR  = 1;
+degisken DIL_EN  = 2;
+degisken DIL_RU  = 3;
+degisken DIL_JA  = 4;
+degisken DIL_ZH  = 5;
+degisken DIL_KO  = 6;
+degisken DIL_FR  = 7;
 
 # FormatterDurumu alanlari 8-byte hizali tutulur. Bu, YKN'nin pointer ve
 # tamsayi alanlarini ayni runtime ABI ile kullanmasini saglar.
@@ -21,9 +31,15 @@ yapi FormatterDurumu {
     parantez_derinligi: tamsayi;
     kapanan_kuslu: tamsayi;
     tekli_operator_sonrasi: tamsayi;
+    hedef_dil: tamsayi;
+    tip_konumu: tamsayi;
+    cevrilen_kelime_sayisi: tamsayi;
+    cevrilen_yorum_sayisi: tamsayi;
 }
 
 degisken g_formatter_son_uzunluk: tamsayi = 0;
+degisken g_ceviri_son_kelime_sayisi: tamsayi = 0;
+degisken g_ceviri_son_yorum_sayisi: tamsayi = 0;
 
 isv formatter_ham_yaz(d: *FormatterDurumu, c: u8) {
     eger d == 0 ise { dondu; }
@@ -153,23 +169,200 @@ isv formatter_aralik_karsilastir(bas: *u8, uzn: tamsayi, ref: *u8, ref_uzn: tams
     dondu 1;
 }
 
+isv formatter_aralik_ci_esit(bas: *u8, uzn: tamsayi, ref: *u8, ref_uzn: tamsayi) -> tamsayi {
+    eger bas == 0 veya ref == 0 veya uzn != ref_uzn ise { dondu 0; }
+    degisken i: tamsayi = 0;
+    dongu i < uzn {
+        degisken a: u8 = bas[i];
+        degisken b: u8 = ref[i];
+        eger a >= 65 ve a <= 90 ise { a = a + 32; }
+        eger b >= 65 ve b <= 90 ise { b = b + 32; }
+        eger a != b ise { dondu 0; }
+        i = i + 1;
+    }
+    dondu 1;
+}
+
+isv ceviri_dil_kodunu_coz(bas: *u8, uzn: tamsayi) -> tamsayi {
+    eger bas == 0 veya uzn <= 0 ise { dondu DIL_YOK; }
+    eger formatter_aralik_ci_esit(bas, uzn, "tr".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "tur".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "turkish".ptr, 7) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "turkce".ptr, 6) == 1 ise { dondu DIL_TR; }
+    eger formatter_aralik_ci_esit(bas, uzn, "en".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "eu".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "eng".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "english".ptr, 7) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "ingilizce".ptr, 9) == 1 ise { dondu DIL_EN; }
+    eger formatter_aralik_ci_esit(bas, uzn, "ru".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "rus".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "russian".ptr, 7) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "rusca".ptr, 5) == 1 ise { dondu DIL_RU; }
+    eger formatter_aralik_ci_esit(bas, uzn, "ja".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "jp".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "jpn".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "japanese".ptr, 8) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "japonca".ptr, 7) == 1 ise { dondu DIL_JA; }
+    eger formatter_aralik_ci_esit(bas, uzn, "zh".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "cn".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "zh-cn".ptr, 5) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "zh_cn".ptr, 5) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "chinese".ptr, 7) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "cince".ptr, 5) == 1 ise { dondu DIL_ZH; }
+    eger formatter_aralik_ci_esit(bas, uzn, "ko".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "kr".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "kor".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "korean".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "korece".ptr, 6) == 1 ise { dondu DIL_KO; }
+    eger formatter_aralik_ci_esit(bas, uzn, "fr".ptr, 2) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "fra".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "fre".ptr, 3) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "french".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "fransizca".ptr, 9) == 1 ise { dondu DIL_FR; }
+    dondu DIL_YOK;
+}
+
+isv formatter_dil_sec(d: tamsayi, tr: *u8, en: *u8, ru: *u8, ja: *u8, zh: *u8, ko: *u8, fr: *u8) -> *u8 {
+    eger d == DIL_TR ise { dondu tr; }
+    eger d == DIL_EN ise { dondu en; }
+    eger d == DIL_RU ise { dondu ru; }
+    eger d == DIL_JA ise { dondu ja; }
+    eger d == DIL_ZH ise { dondu zh; }
+    eger d == DIL_KO ise { dondu ko; }
+    eger d == DIL_FR ise { dondu fr; }
+    dondu 0;
+}
+
+isv token_tipinden_hedef_kelime(tip: tamsayi, hd: tamsayi) -> *u8 {
+    eger hd <= 0 ise { dondu 0; }
+    eger tip == TIP_ISLEV ise { dondu formatter_dil_sec(hd, "isv".ptr, "fn".ptr, "функция".ptr, "関数".ptr, "函数".ptr, "함수".ptr, "fonction".ptr); }
+    eger tip == TIP_DEGISKEN ise { dondu formatter_dil_sec(hd, "degisken".ptr, "var".ptr, "пусть".ptr, "変数".ptr, "变量".ptr, "변수".ptr, "soit".ptr); }
+    eger tip == TIP_DONDUR ise { dondu formatter_dil_sec(hd, "dondu".ptr, "return".ptr, "вернуть".ptr, "返す".ptr, "返回".ptr, "반환".ptr, "retourner".ptr); }
+    eger tip == TIP_EGER ise { dondu formatter_dil_sec(hd, "eger".ptr, "if".ptr, "если".ptr, "もし".ptr, "如果".ptr, "만약".ptr, "si".ptr); }
+    eger tip == TIP_ISE ise { dondu formatter_dil_sec(hd, "ise".ptr, "then".ptr, "то".ptr, "なら".ptr, "则".ptr, "라면".ptr, "alors".ptr); }
+    eger tip == TIP_YOKSA ise { dondu formatter_dil_sec(hd, "yoksa".ptr, "else".ptr, "иначе".ptr, "それ以外".ptr, "否则".ptr, "아니면".ptr, "sinon".ptr); }
+    eger tip == TIP_DONGU ise { dondu formatter_dil_sec(hd, "dongu".ptr, "while".ptr, "пока".ptr, "間".ptr, "循环".ptr, "반복".ptr, "tantque".ptr); }
+    eger tip == TIP_HER ise { dondu formatter_dil_sec(hd, "her".ptr, "for".ptr, "для".ptr, "各".ptr, "遍历".ptr, "마다".ptr, "pour".ptr); }
+    eger tip == TIP_YAPI ise { dondu formatter_dil_sec(hd, "yapi".ptr, "struct".ptr, "структура".ptr, "構造体".ptr, "结构".ptr, "구조체".ptr, "structure".ptr); }
+    eger tip == TIP_DURDUR ise { dondu formatter_dil_sec(hd, "durdur".ptr, "break".ptr, "прервать".ptr, "停止".ptr, "中断".ptr, "중단".ptr, "arreter".ptr); }
+    eger tip == TIP_DEVAM_ET ise { dondu formatter_dil_sec(hd, "devam_et".ptr, "continue".ptr, "продолжить".ptr, "次へ".ptr, "继续".ptr, "계속".ptr, "continuer".ptr); }
+    eger tip == TIP_ICE_AKTAR ise { dondu formatter_dil_sec(hd, "ice_aktar".ptr, "import".ptr, "импорт".ptr, "輸入".ptr, "导入".ptr, "가져오기".ptr, "importer".ptr); }
+    eger tip == TIP_DOGRU ise { dondu formatter_dil_sec(hd, "dogru".ptr, "true".ptr, "истина".ptr, "真".ptr, "真".ptr, "참".ptr, "vrai".ptr); }
+    eger tip == TIP_YANLIS ise { dondu formatter_dil_sec(hd, "yanlis".ptr, "false".ptr, "ложь".ptr, "偽".ptr, "假".ptr, "거짓".ptr, "faux".ptr); }
+    eger tip == TIP_VE ise { dondu formatter_dil_sec(hd, "ve".ptr, "and".ptr, "и".ptr, "かつ".ptr, "并且".ptr, "그리고".ptr, "et".ptr); }
+    eger tip == TIP_VEYA ise { dondu formatter_dil_sec(hd, "veya".ptr, "or".ptr, "или".ptr, "または".ptr, "或者".ptr, "또는".ptr, "ou".ptr); }
+    eger tip == TIP_ESLES ise { dondu formatter_dil_sec(hd, "esles".ptr, "match".ptr, "выбор".ptr, "一致".ptr, "匹配".ptr, "일치".ptr, "selon".ptr); }
+    eger tip == TIP_MODUL ise { dondu formatter_dil_sec(hd, "modul".ptr, "modul".ptr, "модуль".ptr, "モジュール".ptr, "模块".ptr, "모듈".ptr, "modul".ptr); }
+    eger tip == TIP_OLARAK ise { dondu formatter_dil_sec(hd, "olarak".ptr, "as".ptr, "как".ptr, "として".ptr, "作为".ptr, "로서".ptr, "comme".ptr); }
+    eger tip == TIP_GENEL ise { dondu formatter_dil_sec(hd, "genel".ptr, "pub".ptr, "публичный".ptr, "公開".ptr, "公开".ptr, "공개".ptr, "public".ptr); }
+    eger tip == TIP_VARSAYILAN ise { dondu formatter_dil_sec(hd, "varsayilan".ptr, "default".ptr, "умолчание".ptr, "既定".ptr, "默认".ptr, "기본".ptr, "defaut".ptr); }
+    eger tip == TIP_ENUM ise { dondu formatter_dil_sec(hd, "sayim".ptr, "enum".ptr, "перечисление".ptr, "列挙".ptr, "枚举".ptr, "열거".ptr, "enum".ptr); }
+    eger tip == TIP_BOS ise { dondu formatter_dil_sec(hd, "bos".ptr, "null".ptr, "пусто".ptr, "無".ptr, "空".ptr, "널".ptr, "nul".ptr); }
+    eger tip == TIP_TRAIT ise { dondu formatter_dil_sec(hd, "ozellik".ptr, "trait".ptr, "типаж".ptr, "特性".ptr, "特征".ptr, "특성".ptr, "trait".ptr); }
+    eger tip == TIP_UYGULA ise { dondu formatter_dil_sec(hd, "uygula".ptr, "impl".ptr, "реализация".ptr, "実装".ptr, "实现".ptr, "구현".ptr, "impl".ptr); }
+    eger tip == TIP_DEGIL ise { dondu formatter_dil_sec(hd, "degil".ptr, "not".ptr, "не".ptr, "非".ptr, "否定".ptr, "아니다".ptr, "non".ptr); }
+    eger tip == TIP_SABIT ise { dondu formatter_dil_sec(hd, "sabit".ptr, "const".ptr, "константа".ptr, "定数".ptr, "常量".ptr, "상수".ptr, "const".ptr); }
+    dondu 0;
+}
+
+isv yerlesik_tip_kelimesini_cevir(bas: *u8, uzn: tamsayi, hd: tamsayi) -> *u8 {
+    eger bas == 0 veya uzn <= 0 veya hd <= 0 ise { dondu 0; }
+    # Tamsayi
+    eger formatter_aralik_karsilastir(bas, uzn, "tamsayi".ptr, 7) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "int".ptr, 3) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "sayi".ptr, 4) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "целое".ptr, 10) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "整数".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "정수".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "entier".ptr, 6) == 1 ise {
+        dondu formatter_dil_sec(hd, "tamsayi".ptr, "int".ptr, "целое".ptr, "整数".ptr, "整数".ptr, "정수".ptr, "entier".ptr);
+    }
+    # Gercek / Float
+    eger formatter_aralik_karsilastir(bas, uzn, "gercek".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "float".ptr, 5) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "double".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "kesirli".ptr, 7) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "ondalik".ptr, 7) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "kesirli32".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "kesirli64".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "decimal".ptr, 7) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "flottant".ptr, 8) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "décimal".ptr, 8) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "вещ".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "дробное".ptr, 14) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "浮動".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "実数".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "小数".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "浮点".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "소수".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "실수".ptr, 6) == 1 ise {
+        dondu formatter_dil_sec(hd, "gercek".ptr, "float".ptr, "дробное".ptr, "実数".ptr, "小数".ptr, "실수".ptr, "flottant".ptr);
+    }
+    # Metin / String
+    eger formatter_aralik_karsilastir(bas, uzn, "metin".ptr, 5) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "str".ptr, 3) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "string".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "строка".ptr, 12) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "文字列".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "字符串".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "문자열".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "chaine".ptr, 6) == 1 ise {
+        dondu formatter_dil_sec(hd, "metin".ptr, "str".ptr, "строка".ptr, "文字列".ptr, "字符串".ptr, "문자열".ptr, "chaine".ptr);
+    }
+    # Mantik / Bool
+    eger formatter_aralik_karsilastir(bas, uzn, "mantik".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "bool".ptr, 4) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "boolean".ptr, 7) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "mantiksal".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "логическое".ptr, 20) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "論理".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "布尔".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "논리".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "불리언".ptr, 9) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "booleen".ptr, 7) == 1 ise {
+        dondu formatter_dil_sec(hd, "mantik".ptr, "bool".ptr, "логическое".ptr, "論理".ptr, "布尔".ptr, "불리언".ptr, "booleen".ptr);
+    }
+    # Hic / Void
+    eger formatter_aralik_karsilastir(bas, uzn, "hic".ptr, 3) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "void".ptr, 4) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "bosluk".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "пусто".ptr, 10) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "空".ptr, 3) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "無".ptr, 3) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "없음".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "공백".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "vide".ptr, 4) == 1 ise {
+        dondu formatter_dil_sec(hd, "hic".ptr, "void".ptr, "пусто".ptr, "無".ptr, "空".ptr, "없음".ptr, "vide".ptr);
+    }
+    # Sonuc / Result
+    eger formatter_aralik_karsilastir(bas, uzn, "sonuc".ptr, 5) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "Sonuc".ptr, 5) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "Result".ptr, 6) == 1 ise {
+        dondu formatter_dil_sec(hd, "sonuc".ptr, "Result".ptr, "Result".ptr, "Result".ptr, "Result".ptr, "Result".ptr, "Result".ptr);
+    }
+    dondu 0;
+}
+
+isv formatter_cstr_yaz(d: *FormatterDurumu, metin: *u8) {
+    eger metin == 0 ise { dondu; }
+    degisken mi: tamsayi = 0;
+    dongu metin[mi] != 0 {
+        formatter_yaz(d, metin[mi]);
+        mi = mi + 1;
+    }
+}
+
 isv formatter_kontrol_kelimesi_mi(d: *FormatterDurumu) -> tamsayi {
     eger d.onceki_kelime == 0 ise { dondu 0; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "eger".ptr, 4) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "dongu".ptr, 5) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "her".ptr, 3) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "esles".ptr, 5) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "if".ptr, 2) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "while".ptr, 5) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "for".ptr, 3) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(d.onceki_kelime, d.onceki_kelime_uzunluk, "match".ptr, 5) == 1 ise { dondu 1; }
+    degisken ktip: tamsayi = kelime_tipini_bul(d.onceki_kelime, d.onceki_kelime_uzunluk);
+    eger ktip == TIP_EGER veya ktip == TIP_DONGU veya ktip == TIP_HER veya ktip == TIP_ESLES ise {
+        dondu 1;
+    }
     dondu 0;
 }
 
 isv formatter_kapanistan_sonra_kelime_mi(bas: *u8, uzn: tamsayi) -> tamsayi {
-    eger formatter_aralik_karsilastir(bas, uzn, "yoksa".ptr, 5) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(bas, uzn, "else".ptr, 4) == 1 ise { dondu 1; }
-    eger formatter_aralik_karsilastir(bas, uzn, "sinon".ptr, 5) == 1 ise { dondu 1; }
+    eger kelime_tipini_bul(bas, uzn) == TIP_YOKSA ise { dondu 1; }
     dondu 0;
 }
 
@@ -198,6 +391,7 @@ isv formatter_kapanan_kusluyu_isle(d: *FormatterDurumu) {
     d.kapanan_kuslu = 1;
     d.bosluk_bekliyor = 0;
     d.tekli_operator_sonrasi = 0;
+    d.tip_konumu = 0;
 }
 
 isv formatter_stringi_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
@@ -248,13 +442,57 @@ isv formatter_karakter_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi,
     dondu i;
 }
 
+isv formatter_direktif_satiri_mi(kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
+    eger baslangic >= boyut veya kaynak[baslangic] != 35 ise { dondu 0; }
+    degisken pos: tamsayi = baslangic + 1;
+    eger pos >= boyut ise { dondu 0; }
+    degisken ilk_c: u8 = kaynak[pos];
+    eger harf_mi(ilk_c) == 0 ve ilk_c != 95 ise { dondu 0; }
+    degisken d_uzn: tamsayi = 1;
+    pos = pos + 1;
+    dongu pos < boyut ve (kimlik_karakteri_mi(kaynak[pos]) == 1 veya kaynak[pos] == 45) {
+        d_uzn = d_uzn + 1;
+        pos = pos + 1;
+    }
+    degisken d_tip: tamsayi = direktif_ismi_tipini_bul(kaynak + baslangic + 1, d_uzn);
+    eger (d_tip >= 21 ve d_tip <= 26) veya d_tip == 64 veya
+         d_tip == TIP_DIREKTIF_CONVERT veya d_tip == TIP_DIREKTIF_CONFIG ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
 isv formatter_yorum_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
     formatter_sondaki_bosluklari_sil(d);
     eger d.satir_basinda == 0 ise {
         formatter_ham_yaz(d, 32);
     }
+    degisken bitis: tamsayi = baslangic;
+    dongu bitis < boyut ve kaynak[bitis] != 10 ve kaynak[bitis] != 0 {
+        bitis = bitis + 1;
+    }
+    degisken direk_mi: tamsayi = formatter_direktif_satiri_mi(kaynak, boyut, baslangic);
+    eger d.hedef_dil > 0 ve direk_mi == 0 ise {
+        degisken ceviri_yorum: *u8 = llm_yorum_metni_cevir(kaynak + baslangic, bitis - baslangic, d.hedef_dil);
+        eger ceviri_yorum != 0 ise {
+            eger kaynak[baslangic] == 47 ise {
+                formatter_cstr_yaz(d, "// ".ptr);
+            } yoksa {
+                formatter_cstr_yaz(d, "# ".ptr);
+            }
+            formatter_cstr_yaz(d, ceviri_yorum);
+            d.cevrilen_yorum_sayisi = d.cevrilen_yorum_sayisi + 1;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.bosluk_bekliyor = 0;
+            d.tip_konumu = 0;
+            dondu bitis;
+        }
+    }
     degisken i: tamsayi = baslangic;
-    dongu i < boyut ve kaynak[i] != 10 ve kaynak[i] != 0 {
+    dongu i < bitis {
         formatter_yaz(d, kaynak[i]);
         i = i + 1;
     }
@@ -263,12 +501,42 @@ isv formatter_yorum_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, ba
     d.onceki_kelime_uzunluk = 0;
     d.kapanan_kuslu = 0;
     d.bosluk_bekliyor = 0;
-    dondu i;
+    d.tip_konumu = 0;
+    dondu bitis;
 }
 
 isv formatter_blok_yorum_kopyala(d: *FormatterDurumu, kaynak: *u8, boyut: tamsayi, baslangic: tamsayi) -> tamsayi {
     formatter_boslugu_uygula(d);
     formatter_satir_basini_hazirla(d);
+    degisken bit: tamsayi = baslangic + 2;
+    degisken cok_satir: tamsayi = 0;
+    dongu bit < boyut {
+        eger kaynak[bit] == 10 ise { cok_satir = 1; }
+        eger kaynak[bit] == 42 ve (bit + 1) < boyut ve kaynak[bit + 1] == 47 ise {
+            bit = bit + 2;
+            durdur;
+        }
+        bit = bit + 1;
+    }
+    eger d.hedef_dil > 0 ve cok_satir == 0 ise {
+        degisken ceviri_blok: *u8 = llm_yorum_metni_cevir(kaynak + baslangic, bit - baslangic, d.hedef_dil);
+        eger ceviri_blok != 0 ise {
+            formatter_ham_yaz(d, 47);
+            formatter_ham_yaz(d, 42);
+            formatter_ham_yaz(d, 32);
+            formatter_cstr_yaz(d, ceviri_blok);
+            formatter_ham_yaz(d, 32);
+            formatter_ham_yaz(d, 42);
+            formatter_ham_yaz(d, 47);
+            d.cevrilen_yorum_sayisi = d.cevrilen_yorum_sayisi + 1;
+            d.onceki_sinif = 4;
+            d.onceki_kelime = 0;
+            d.onceki_kelime_uzunluk = 0;
+            d.kapanan_kuslu = 0;
+            d.bosluk_bekliyor = 0;
+            dondu bit;
+        }
+    }
     formatter_ham_yaz(d, 47);
     formatter_ham_yaz(d, 42);
     degisken i: tamsayi = baslangic + 2;
@@ -314,10 +582,41 @@ isv formatter_kelimeyi_isle(d: *FormatterDurumu, kaynak: *u8, baslangic: tamsayi
     } yoksa {
         formatter_boslugu_uygula(d);
     }
-    formatter_aralik_yaz(d, bas, uzn);
+    degisken yazilan_bas: *u8 = bas;
+    degisken yazilan_uzn: tamsayi = uzn;
+    degisken tok_tip: tamsayi = kelime_tipini_bul(bas, uzn);
+    eger tok_tip == TIP_DEGISKEN ve formatter_aralik_karsilastir(bas, uzn, "let".ptr, 3) == 1 ise {
+        tok_tip = TIP_SABIT;
+    }
+    eger d.hedef_dil > 0 ise {
+        degisken ceviri_str: *u8 = 0;
+        eger d.tip_konumu == 1 ise {
+            ceviri_str = yerlesik_tip_kelimesini_cevir(bas, uzn, d.hedef_dil);
+        }
+        eger ceviri_str == 0 ve tok_tip != TIP_KIMLIK ise {
+            ceviri_str = token_tipinden_hedef_kelime(tok_tip, d.hedef_dil);
+        }
+        eger ceviri_str != 0 ise {
+            formatter_cstr_yaz(d, ceviri_str);
+            degisken c_uzn: tamsayi = 0;
+            dongu ceviri_str[c_uzn] != 0 { c_uzn = c_uzn + 1; }
+            yazilan_bas = ceviri_str;
+            yazilan_uzn = c_uzn;
+            d.cevrilen_kelime_sayisi = d.cevrilen_kelime_sayisi + 1;
+        } yoksa {
+            formatter_aralik_yaz(d, bas, uzn);
+        }
+    } yoksa {
+        formatter_aralik_yaz(d, bas, uzn);
+    }
+    eger tok_tip == TIP_OLARAK ise {
+        d.tip_konumu = 1;
+    } yoksa eger tok_tip != TIP_KIMLIK ve tok_tip != TIP_DYN ise {
+        d.tip_konumu = 0;
+    }
     d.onceki_sinif = 1;
-    d.onceki_kelime = bas;
-    d.onceki_kelime_uzunluk = uzn;
+    d.onceki_kelime = yazilan_bas;
+    d.onceki_kelime_uzunluk = yazilan_uzn;
     d.tekli_operator_sonrasi = 0;
 }
 
@@ -337,15 +636,18 @@ isv formatter_acilan_kusluyu_isle(d: *FormatterDurumu) {
     d.onceki_kelime_uzunluk = 0;
     d.kapanan_kuslu = 0;
     d.tekli_operator_sonrasi = 0;
+    d.tip_konumu = 0;
 }
 
-isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
-    degisken kapasite: tamsayi = boyut * 3 + 4096;
+isv formatter_dosya_bicimlendir_hedefli(kaynak: *u8, boyut: tamsayi, hedef_dil: tamsayi) -> *u8 {
+    degisken kapasite: tamsayi = boyut * 4 + 4096;
     eger kapasite < 4096 ise { kapasite = 4096; }
-    degisken d: *FormatterDurumu = compiler_tahsis_et(128);
+    degisken d: *FormatterDurumu = compiler_tahsis_et(160);
     degisken cikti: *u8 = compiler_tahsis_et(kapasite);
     eger d == 0 veya cikti == 0 ise {
         g_formatter_son_uzunluk = 0;
+        g_ceviri_son_kelime_sayisi = 0;
+        g_ceviri_son_yorum_sayisi = 0;
         dondu 0;
     }
     d.kaynak = kaynak;
@@ -362,6 +664,10 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
     d.parantez_derinligi = 0;
     d.kapanan_kuslu = 0;
     d.tekli_operator_sonrasi = 0;
+    d.hedef_dil = hedef_dil;
+    d.tip_konumu = 0;
+    d.cevrilen_kelime_sayisi = 0;
+    d.cevrilen_yorum_sayisi = 0;
     d.bellek[0] = 0;
 
     degisken i: tamsayi = 0;
@@ -440,71 +746,85 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
         # Cok karakterli operatorler.
         eger c == 45 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
             formatter_ikili_operator(d, 45, 62);
+            d.tip_konumu = 1;
             i = i + 2;
             devam_et;
         }
         eger c == 61 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 61, 61);
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 43 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 43, 61); # +=
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 45 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 45, 61); # -=
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 42 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 42, 61); # *=
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 47 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 47, 61); # /=
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 60 ve i + 1 < boyut ve kaynak[i + 1] == 60 ise {
             formatter_ikili_operator(d, 60, 60); # <<
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 62 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
             formatter_ikili_operator(d, 62, 62); # >>
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 38 ve i + 1 < boyut ve kaynak[i + 1] == 38 ise {
             formatter_ikili_operator(d, 38, 38); # &&
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 124 ve i + 1 < boyut ve kaynak[i + 1] == 124 ise {
             formatter_ikili_operator(d, 124, 124); # ||
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 61 ve i + 1 < boyut ve kaynak[i + 1] == 62 ise {
             formatter_ikili_operator(d, 61, 62);
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 33 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 33, 61);
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 60 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 60, 61);
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
         eger c == 62 ve i + 1 < boyut ve kaynak[i + 1] == 61 ise {
             formatter_ikili_operator(d, 62, 61);
+            d.tip_konumu = 0;
             i = i + 2;
             devam_et;
         }
@@ -536,6 +856,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.onceki_kelime_uzunluk = 0;
             d.kapanan_kuslu = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -549,6 +870,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.kapanan_kuslu = 0;
             d.bosluk_bekliyor = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -589,6 +911,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.onceki_kelime_uzunluk = 0;
             d.kapanan_kuslu = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -601,6 +924,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.kapanan_kuslu = 0;
             d.bosluk_bekliyor = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 0;
             eger d.parantez_derinligi == 0 ise { formatter_yeni_satir(d); } yoksa { d.bosluk_bekliyor = 1; }
             i = i + 1;
             devam_et;
@@ -614,6 +938,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.onceki_kelime_uzunluk = 0;
             d.kapanan_kuslu = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -626,6 +951,7 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
             d.onceki_kelime_uzunluk = 0;
             d.kapanan_kuslu = 0;
             d.tekli_operator_sonrasi = 0;
+            d.tip_konumu = 1;
             i = i + 1;
             devam_et;
         }
@@ -645,12 +971,14 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
                 formatter_tekli_operator(d, c);
             } yoksa {
                 formatter_ikili_operator(d, c, 0);
+                eger c != 42 ise { d.tip_konumu = 0; }
             }
             i = i + 1;
             devam_et;
         }
         eger c == 47 veya c == 37 ise {
             formatter_ikili_operator(d, c, 0);
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -668,12 +996,14 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
                 d.onceki_sinif = 4;
             } yoksa {
                 formatter_ikili_operator(d, c, 0);
+                d.tip_konumu = 0;
             }
             i = i + 1;
             devam_et;
         }
         eger c == 61 ise {
             formatter_ikili_operator(d, c, 0);
+            d.tip_konumu = 0;
             i = i + 1;
             devam_et;
         }
@@ -700,7 +1030,141 @@ isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
         formatter_ham_yaz(d, 10);
     }
     g_formatter_son_uzunluk = d.yazilan;
+    g_ceviri_son_kelime_sayisi = d.cevrilen_kelime_sayisi;
+    g_ceviri_son_yorum_sayisi = d.cevrilen_yorum_sayisi;
     dondu cikti;
+}
+
+isv formatter_dosya_bicimlendir(kaynak: *u8, boyut: tamsayi) -> *u8 {
+    dondu formatter_dosya_bicimlendir_hedefli(kaynak, boyut, DIL_YOK);
+}
+
+isv direktif_ceviri_adi_mi(bas: *u8, uzn: tamsayi) -> tamsayi {
+    eger formatter_aralik_ci_esit(bas, uzn, "translate".ptr, 9) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "ceviri".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "çeviri".ptr, 7) == 1 veya
+         formatter_aralik_ci_esit(bas, uzn, "traduction".ptr, 10) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "перевод".ptr, 14) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "翻訳".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "翻译".ptr, 6) == 1 veya
+         formatter_aralik_karsilastir(bas, uzn, "번역".ptr, 6) == 1 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
+isv direktif_model_yolu_ayar_la(val_ptr: *u8, val_uzn: tamsayi) {
+    eger val_ptr == 0 veya val_uzn <= 0 ise { dondu; }
+    eger g_llm_cli_model_yolu != 0 ise { dondu; }
+    eger formatter_aralik_ci_esit(val_ptr, val_uzn, "bitnet".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(val_ptr, val_uzn, "bitnet-b1.58-2B".ptr, 15) == 1 ise {
+        g_llm_cli_model_yolu = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+        dondu;
+    }
+    eger formatter_aralik_ci_esit(val_ptr, val_uzn, "bonsai".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(val_ptr, val_uzn, "bonsai-8b".ptr, 9) == 1 ise {
+        g_llm_cli_model_yolu = "models/bonsai-8b/Bonsai-8B.gguf".ptr;
+        dondu;
+    }
+    degisken kopya: *u8 = compiler_tahsis_et(val_uzn + 1);
+    eger kopya == 0 ise { dondu; }
+    degisken i: tamsayi = 0;
+    dongu i < val_uzn { kopya[i] = val_ptr[i]; i = i + 1; }
+    kopya[val_uzn] = 0;
+    g_llm_cli_model_yolu = kopya;
+}
+
+isv kaynaktan_ceviri_direktifi_coz(kaynak: *u8, boyut: tamsayi) -> tamsayi {
+    eger kaynak == 0 veya boyut <= 0 ise { dondu DIL_YOK; }
+    degisken bulunan_dil: tamsayi = DIL_YOK;
+    degisken i: tamsayi = 0;
+    dongu i < boyut {
+        dongu i < boyut ve (kaynak[i] == 32 veya kaynak[i] == 9 veya kaynak[i] == 13 veya kaynak[i] == 10) {
+            i = i + 1;
+        }
+        eger i >= boyut ise { durdur; }
+        eger kaynak[i] == 35 ise {
+            degisken d_bas: tamsayi = i + 1;
+            degisken d_bit: tamsayi = d_bas;
+            dongu d_bit < boyut ve (kimlik_karakteri_mi(kaynak[d_bit]) == 1 veya kaynak[d_bit] == 45) {
+                d_bit = d_bit + 1;
+            }
+            degisken d_uzn: tamsayi = d_bit - d_bas;
+            degisken ceviri_dir: tamsayi = direktif_ceviri_adi_mi(kaynak + d_bas, d_uzn);
+            degisken config_dir: tamsayi = 0;
+            eger ceviri_dir == 0 ve direktif_ismi_tipini_bul(kaynak + d_bas, d_uzn) == TIP_DIREKTIF_CONFIG ise {
+                config_dir = 1;
+            }
+            eger ceviri_dir == 1 veya config_dir == 1 ise {
+                degisken p: tamsayi = d_bit;
+                degisken blok_sonu_c: u8 = 10;
+                dongu p < boyut ve (kaynak[p] == 32 veya kaynak[p] == 9) { p = p + 1; }
+                eger p < boyut ve kaynak[p] == 40 ise { blok_sonu_c = 41; p = p + 1; }
+                yoksa eger p < boyut ve kaynak[p] == 123 ise { blok_sonu_c = 125; p = p + 1; }
+                dongu p < boyut {
+                    eger kaynak[p] == blok_sonu_c ise { p = p + 1; durdur; }
+                    eger blok_sonu_c == 10 ve (kaynak[p] == 59 veya kaynak[p] == 10) ise { durdur; }
+                    eger kimlik_karakteri_mi(kaynak[p]) == 1 ise {
+                        degisken k_bas: tamsayi = p;
+                        dongu p < boyut ve kimlik_karakteri_mi(kaynak[p]) == 1 { p = p + 1; }
+                        degisken k_uzn: tamsayi = p - k_bas;
+                        dongu p < boyut ve (kaynak[p] == 32 veya kaynak[p] == 9) { p = p + 1; }
+                        eger p < boyut ve (kaynak[p] == 58 veya kaynak[p] == 61) ise {
+                            p = p + 1;
+                            dongu p < boyut ve (kaynak[p] == 32 veya kaynak[p] == 9) { p = p + 1; }
+                            degisken v_bas: tamsayi = p;
+                            degisken v_uzn: tamsayi = 0;
+                            eger p < boyut ve (kaynak[p] == 34 veya kaynak[p] == 39) ise {
+                                degisken q: u8 = kaynak[p];
+                                p = p + 1;
+                                v_bas = p;
+                                dongu p < boyut ve kaynak[p] != q ve kaynak[p] != 10 {
+                                    p = p + 1;
+                                }
+                                v_uzn = p - v_bas;
+                                eger p < boyut ve kaynak[p] == q ise { p = p + 1; }
+                            } yoksa {
+                                dongu p < boyut ve kimlik_karakteri_mi(kaynak[p]) == 1 { p = p + 1; }
+                                v_uzn = p - v_bas;
+                            }
+                            degisken dil_anahtar: tamsayi = 0;
+                            eger ceviri_dir == 1 ve (
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "to".ptr, 2) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "hedef".ptr, 5) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "target".ptr, 6) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "dil".ptr, 3) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "lang".ptr, 4) == 1
+                            ) ise {
+                                dil_anahtar = 1;
+                            }
+                            eger config_dir == 1 ve (
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "dil".ptr, 3) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "lang".ptr, 4) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "translate".ptr, 9) == 1 veya
+                                 formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "translate_to".ptr, 12) == 1
+                            ) ise {
+                                dil_anahtar = 1;
+                            }
+                            eger dil_anahtar == 1 ise {
+                                degisken cozulmus: tamsayi = ceviri_dil_kodunu_coz(kaynak + v_bas, v_uzn);
+                                eger cozulmus != DIL_YOK ise { bulunan_dil = cozulmus; }
+                            } yoksa eger formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "model".ptr, 5) == 1 veya
+                                      formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "llm".ptr, 3) == 1 veya
+                                      formatter_aralik_ci_esit(kaynak + k_bas, k_uzn, "ai_model".ptr, 8) == 1 ise {
+                                direktif_model_yolu_ayar_la(kaynak + v_bas, v_uzn);
+                            }
+                        }
+                    } yoksa {
+                        p = p + 1;
+                    }
+                }
+                i = p;
+                devam_et;
+            }
+        }
+        dongu i < boyut ve kaynak[i] != 10 { i = i + 1; }
+    }
+    dondu bulunan_dil;
 }
 
 isv formatter_bicim_karsilastir(a: *u8, a_uzn: tamsayi, b: *u8, b_uzn: tamsayi) -> tamsayi {
@@ -713,7 +1177,7 @@ isv formatter_bicim_karsilastir(a: *u8, a_uzn: tamsayi, b: *u8, b_uzn: tamsayi) 
     dondu 1;
 }
 
-isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
+isv yukinary_fmt_veya_cevir(kaynak_dosyasi: *u8, cikti_dosyasi: *u8, kontrol: tamsayi, hedef_dil: tamsayi) -> tamsayi {
     degisken kapasite: tamsayi = 33554432;
     degisken kaynak: *u8 = compiler_tahsis_et(kapasite + 1);
     eger kaynak == 0 ise {
@@ -729,11 +1193,20 @@ isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
     }
     kaynak[okunan] = 0;
 
-    degisken bicimli: *u8 = formatter_dosya_bicimlendir(kaynak, okunan);
+    degisken etkin_dil: tamsayi = hedef_dil;
+    degisken dosya_dili: tamsayi = kaynaktan_ceviri_direktifi_coz(kaynak, okunan);
+    eger etkin_dil <= 0 ve dosya_dili > 0 ise {
+        etkin_dil = dosya_dili;
+    }
+
+    degisken bicimli: *u8 = formatter_dosya_bicimlendir_hedefli(kaynak, okunan, etkin_dil);
     eger bicimli == 0 ise {
         ekrana_yaz("HATA: Formatter cikti tamponu tahsis edilemedi.\n".ptr);
         dondu 1;
     }
+    degisken yazilacak_hedef: *u8 = kaynak_dosyasi;
+    eger cikti_dosyasi != 0 ise { yazilacak_hedef = cikti_dosyasi; }
+
     degisken ayni: tamsayi = formatter_bicim_karsilastir(kaynak, okunan, bicimli, g_formatter_son_uzunluk);
     eger kontrol == 1 ise {
         eger ayni == 1 ise {
@@ -747,7 +1220,7 @@ isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
         ekrana_yaz("\n".ptr);
         dondu 1;
     }
-    eger ayni == 1 ise {
+    eger ayni == 1 ve cikti_dosyasi == 0 ise {
         ekrana_yaz("fmt: zaten bicimli: ".ptr);
         ekrana_yaz(kaynak_dosyasi);
         ekrana_yaz("\n".ptr);
@@ -756,9 +1229,23 @@ isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
 
     # diske_bas_ve_kapat legacy builtin'i yazilan byte sayisini degil 0 dondurur.
     # Yazma islemi tamamlandiktan sonra --check bir sonraki cagrida byte karsilastirir.
-    diske_bas_ve_kapat(kaynak_dosyasi, bicimli, g_formatter_son_uzunluk);
-    ekrana_yaz("fmt: bicimlendirildi: ".ptr);
-    ekrana_yaz(kaynak_dosyasi);
-    ekrana_yaz("\n".ptr);
+    diske_bas_ve_kapat(yazilacak_hedef, bicimli, g_formatter_son_uzunluk);
+    eger etkin_dil > 0 ise {
+        ekrana_yaz("translate: donusturuldu (kelime=".ptr);
+        sayiyi_ekrana_yaz(g_ceviri_son_kelime_sayisi);
+        ekrana_yaz(", yorum=".ptr);
+        sayiyi_ekrana_yaz(g_ceviri_son_yorum_sayisi);
+        ekrana_yaz("): ".ptr);
+        ekrana_yaz(yazilacak_hedef);
+        ekrana_yaz("\n".ptr);
+    } yoksa {
+        ekrana_yaz("fmt: bicimlendirildi: ".ptr);
+        ekrana_yaz(yazilacak_hedef);
+        ekrana_yaz("\n".ptr);
+    }
     dondu 0;
+}
+
+isv yukinary_fmt(kaynak_dosyasi: *u8, kontrol: tamsayi) -> tamsayi {
+    dondu yukinary_fmt_veya_cevir(kaynak_dosyasi, 0, kontrol, DIL_YOK);
 }

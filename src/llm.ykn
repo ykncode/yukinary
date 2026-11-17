@@ -93,6 +93,8 @@ degisken g_llm_uretim_adedi: tamsayi = 0;
 # üretebilmek için güvenli 2048 token varsayılanı kullanılır; CLI bunu 1..2048
 # aralığında açıkça daraltabilir.
 degisken g_llm_uretim_limiti: tamsayi = 2048;
+degisken g_llm_ceviri_modu: tamsayi = 0;
+degisken g_llm_ceviri_hedef_dil: tamsayi = 0;
 
 # Gerçek prompt telemetry: fazlar native monotonic clock ile ölçülür.
 degisken g_llm_prompt_tokenize_ns: tamsayi = 0;
@@ -459,9 +461,10 @@ isv llm_gguf_transformer_cli_baslat() -> tamsayi {
     degisken value: *tamsayi = compiler_tahsis_et(kvh * hd * 8);
     degisken attention: *tamsayi = compiler_tahsis_et(h * 8);
     # Compiler local-slot ABI'sindeki kısa isim/çarpım sapmalarından
-    # bağımsız sabit scratch arena. Mantıksal FFN uzunluğu paket alanında
-    # metadata'dan taşınır; mevcut modeller için 1 MiB yeterlidir.
-    degisken ffn_arena_ptr: *tamsayi = compiler_tahsis_et(1048576);
+    # bağımsız sabit scratch arena. Büyük modeller için ffn_uzunlugu * 8 ile ölçeklenir.
+    degisken ffn_bayt: tamsayi = ffn_uzunlugu * 8;
+    eger ffn_bayt < 1048576 ise { ffn_bayt = 1048576; }
+    degisken ffn_arena_ptr: *tamsayi = compiler_tahsis_et(ffn_bayt);
 
     degisken logits: *tamsayi = compiler_tahsis_et(g_llm_model_spec.vocab_boyutu * 8);
     degisken kv_bayt: tamsayi = g_llm_model_spec.katman_sayisi * ctx * kvh * hd * 8;
@@ -771,12 +774,62 @@ isv llm_prompt_encode(durum: *GGUFDurum,
     dondu bitnet_bpe_ascii_global();
 }
 
+isv llm_hedef_dil_ingilizce_adi(dil_kodu: tamsayi) -> *u8 {
+    eger dil_kodu == 1 ise { dondu "Turkish".ptr; }
+    eger dil_kodu == 2 ise { dondu "English".ptr; }
+    eger dil_kodu == 3 ise { dondu "Russian".ptr; }
+    eger dil_kodu == 4 ise { dondu "Japanese".ptr; }
+    eger dil_kodu == 5 ise { dondu "Simplified Chinese".ptr; }
+    eger dil_kodu == 6 ise { dondu "Korean".ptr; }
+    eger dil_kodu == 7 ise { dondu "French".ptr; }
+    dondu "English".ptr;
+}
+
+isv llm_sablon_metni_ekle(yazilan: tamsayi, metin: *u8) -> tamsayi {
+    eger metin == 0 ise { dondu yazilan; }
+    degisken mi: tamsayi = 0;
+    dongu metin[mi] != 0 ve yazilan + 1 < 4095 {
+        g_llm_prompt_girdi[yazilan] = metin[mi];
+        yazilan = yazilan + 1;
+        mi = mi + 1;
+    }
+    dondu yazilan;
+}
+
 # GGUF chat template varsa metadata sözleşmesine göre kullanıcı mesajını
 # modelin beklediği metne dönüştürür. Template yoksa kaynak prompt birebir
 # korunur; model çıktısı fixture koduyla değiştirilmez.
 isv llm_prompt_sablonla(prompt: *u8, prompt_uzn: tamsayi) -> tamsayi {
     eger prompt == 0 veya prompt_uzn <= 0 veya prompt_uzn >= 4096 veya
        g_llm_model_loader.durum == 0 ise { dondu 0; }
+    eger g_llm_ceviri_modu == 1 ise {
+        degisken hedef_ad: *u8 = llm_hedef_dil_ingilizce_adi(g_llm_ceviri_hedef_dil);
+        degisken cyazilan: tamsayi = 0;
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, "[INST] Translate this code comment into ".ptr);
+        } yoksa eger g_llm_model_loader.durum->chat_sablon_tipi == 1 ise {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, "Human: Translate this code comment into ".ptr);
+        } yoksa {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, "Translate this code comment into ".ptr);
+        }
+        cyazilan = llm_sablon_metni_ekle(cyazilan, hedef_ad);
+        cyazilan = llm_sablon_metni_ekle(cyazilan, ". Reply with only the translated single-line comment text: ".ptr);
+        degisken ci: tamsayi = 0;
+        dongu ci < prompt_uzn ve cyazilan + 1 < 4095 {
+            g_llm_prompt_girdi[cyazilan] = prompt[ci];
+            cyazilan = cyazilan + 1;
+            ci = ci + 1;
+        }
+        eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, " [/INST]".ptr);
+        } yoksa eger g_llm_model_loader.durum->chat_sablon_tipi == 1 ise {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, "\n\nBITNETAssistant: ".ptr);
+        } yoksa {
+            cyazilan = llm_sablon_metni_ekle(cyazilan, "\nTranslation: ".ptr);
+        }
+        g_llm_prompt_girdi[cyazilan] = 0;
+        dondu cyazilan;
+    }
     eger g_llm_model_loader.durum->chat_sablon_tipi != 1 ve
        g_llm_model_loader.durum->chat_sablon_tipi != 2 ise {
         degisken yazilan_raw: tamsayi = 0;
@@ -1013,4 +1066,281 @@ isv llm_kod_uret(sorgu: *u8, sorgu_uzunlugu: tamsayi) -> *u8 {
     ekrana_yaz("HATA [E015] [ERR_AI_MODEL] [class=llm]: Derleme zamani yapay zeka modeli bulunamadi (--model parametresi gereklidir).\n".ptr);
     g_llm_prompt_hatasi = 15;
     dondu "".ptr;
+}
+
+degisken g_llm_ceviri_cuda_denendi: tamsayi = 0;
+degisken g_llm_ceviri_debug: tamsayi = 0;
+
+isv llm_sayi_yaz(sayi: tamsayi) {
+    eger sayi == 0 ise { ekrana_yaz("0".ptr); dondu; }
+    degisken n: tamsayi = sayi;
+    eger n < 0 ise { ekrana_yaz("-".ptr); n = 0 - n; }
+    degisken rakam: [32]u8;
+    degisken adet: tamsayi = 0;
+    dongu n > 0 { rakam[adet] = 48 + (n % 10); adet = adet + 1; n = n / 10; }
+    dongu adet > 0 {
+        adet = adet - 1;
+        degisken ch: [2]u8;
+        ch[0] = rakam[adet]; ch[1] = 0;
+        ekrana_yaz(ch);
+    }
+}
+
+isv llm_yorum_tampona_ekle(buf: *u8, yazilan: tamsayi, maks: tamsayi, metin: *u8) -> tamsayi {
+    eger buf == 0 veya metin == 0 ise { dondu yazilan; }
+    degisken i: tamsayi = 0;
+    dongu metin[i] != 0 ve yazilan + 1 < maks {
+        buf[yazilan] = metin[i];
+        yazilan = yazilan + 1;
+        i = i + 1;
+    }
+    buf[yazilan] = 0;
+    dondu yazilan;
+}
+
+isv llm_yorum_metni_cevir(yorum_ptr: *u8, yorum_uzn: tamsayi, hedef_dil: tamsayi) -> *u8 {
+    eger yorum_ptr == 0 veya yorum_uzn <= 0 veya hedef_dil <= 0 ise { dondu 0; }
+
+    degisken bas: tamsayi = 0;
+    dongu bas < yorum_uzn ve (
+        yorum_ptr[bas] == 35 veya yorum_ptr[bas] == 47 veya
+        yorum_ptr[bas] == 42 veya yorum_ptr[bas] == 32 veya yorum_ptr[bas] == 9
+    ) {
+        bas = bas + 1;
+    }
+    degisken bit: tamsayi = yorum_uzn;
+    dongu bit > bas ve (
+        yorum_ptr[bit - 1] == 10 veya yorum_ptr[bit - 1] == 13 veya
+        yorum_ptr[bit - 1] == 32 veya yorum_ptr[bit - 1] == 9
+    ) {
+        bit = bit - 1;
+    }
+    eger bit >= bas + 2 ve yorum_ptr[bit - 2] == 42 ve yorum_ptr[bit - 1] == 47 ise {
+        bit = bit - 2;
+        dongu bit > bas ve (yorum_ptr[bit - 1] == 32 veya yorum_ptr[bit - 1] == 9) {
+            bit = bit - 1;
+        }
+    }
+
+    degisken ic_uzn: tamsayi = bit - bas;
+    eger ic_uzn <= 0 veya ic_uzn >= 2048 ise { dondu 0; }
+
+    degisken harf_var: tamsayi = 0;
+    degisken hi: tamsayi = bas;
+    dongu hi < bit {
+        degisken hc: u8 = yorum_ptr[hi];
+        eger (hc >= 65 ve hc <= 90) veya (hc >= 97 ve hc <= 122) veya hc > 127 ise {
+            harf_var = 1;
+            durdur;
+        }
+        hi = hi + 1;
+    }
+    eger harf_var == 0 ise { dondu 0; }
+
+    eger g_llm_transformer_aktif == 0 ve g_llm_cli_model_yolu != 0 ise {
+        degisken oto_durum: *GGUFDurum = compiler_tahsis_et(4096);
+        eger oto_durum != 0 ve llm_gguf_modeli_yukle(g_llm_cli_model_yolu, oto_durum) == 1 ise {
+            llm_gguf_transformer_cli_baslat();
+        }
+    }
+    eger g_llm_transformer_aktif == 0 veya g_llm_model_loader.durum == 0 veya
+       g_llm_vocab_buffer == 0 veya g_llm_vocab_sayisi <= 0 veya g_llm_merge_sayisi <= 0 ise {
+        dondu 0;
+    }
+
+    eger g_llm_ceviri_cuda_denendi == 0 ise {
+        g_llm_ceviri_cuda_denendi = 1;
+        eger ykn_cuda_backend_start() > 0 ise {
+            g_llm_native_simd_aktif = 0;
+            g_llm_tensor_icra = &g_llm_transformer_icra;
+            llm_cuda_preload_if_ready();
+        }
+    }
+
+    degisken hedef_ad: *u8 = llm_hedef_dil_ingilizce_adi(hedef_dil);
+    degisken prompt_metni: *u8 = compiler_tahsis_et(4096);
+    eger prompt_metni == 0 ise { dondu 0; }
+    degisken py: tamsayi = 0;
+    degisken append_bos: tamsayi = 0;
+    degisken append_eos: tamsayi = 0;
+
+    eger g_llm_model_spec.mimari == LLM_MIMARI_QWEN ise {
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "<|im_start|>user\nTranslate the following code comment into ".ptr);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, hedef_ad);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, " and reply with ONLY the translated single-line comment:\n".ptr);
+        degisken qi: tamsayi = 0;
+        dongu qi < ic_uzn ve py + 96 < 4096 { prompt_metni[py] = yorum_ptr[bas + qi]; py = py + 1; qi = qi + 1; }
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n".ptr);
+    } yoksa eger g_llm_model_loader.durum->chat_sablon_tipi == 1 ise {
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "Human: Translate to ".ptr);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, hedef_ad);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, ": ".ptr);
+        degisken bi: tamsayi = 0;
+        dongu bi < ic_uzn ve py + 64 < 4096 { prompt_metni[py] = yorum_ptr[bas + bi]; py = py + 1; bi = bi + 1; }
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "\n\nBITNETAssistant: ".ptr);
+        append_bos = 1;
+        append_eos = 1;
+    } yoksa eger g_llm_model_loader.durum->chat_sablon_tipi == 2 ise {
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "[INST] Translate this code comment to ".ptr);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, hedef_ad);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, ". Output only the translation: ".ptr);
+        degisken mi: tamsayi = 0;
+        dongu mi < ic_uzn ve py + 64 < 4096 { prompt_metni[py] = yorum_ptr[bas + mi]; py = py + 1; mi = mi + 1; }
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, " [/INST]".ptr);
+        append_bos = 1;
+    } yoksa {
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "Translate this code comment to ".ptr);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, hedef_ad);
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, ":\n\"".ptr);
+        degisken ri: tamsayi = 0;
+        dongu ri < ic_uzn ve py + 64 < 4096 { prompt_metni[py] = yorum_ptr[bas + ri]; py = py + 1; ri = ri + 1; }
+        py = llm_yorum_tampona_ekle(prompt_metni, py, 4096, "\"\nTranslation: \"".ptr);
+        append_bos = 1;
+    }
+
+    degisken ham_ids: *tamsayi = compiler_tahsis_et(512 * 8);
+    degisken full_ids: *tamsayi = compiler_tahsis_et(512 * 8);
+    degisken gen_ids: *tamsayi = compiler_tahsis_et(64 * 8);
+    eger ham_ids == 0 veya full_ids == 0 veya gen_ids == 0 ise { dondu 0; }
+
+    degisken ham_adet: tamsayi = bitnet_bpe_ascii_kodla(
+        g_llm_vocab_buffer, g_llm_token_ofsetleri, g_llm_token_uzunluklari, g_llm_vocab_sayisi,
+        g_llm_merge_ofsetleri, g_llm_merge_uzunluklari, g_llm_merge_sayisi,
+        prompt_metni, py, ham_ids, 480);
+    eger ham_adet <= 0 ise {
+        eger g_llm_ceviri_debug == 1 ise {
+            ekrana_yaz("[LLM-CEVIRI] BPE ham_adet=".ptr); llm_sayi_yaz(ham_adet); ekrana_yaz("\n".ptr);
+        }
+        dondu 0;
+    }
+
+    degisken prompt_adedi: tamsayi = 0;
+    eger append_bos == 1 ve g_llm_model_spec.bos_token_id >= 0 ve
+       g_llm_model_spec.bos_token_id < g_llm_vocab_sayisi ise {
+        full_ids[prompt_adedi] = g_llm_model_spec.bos_token_id;
+        prompt_adedi = prompt_adedi + 1;
+    }
+    degisken pi: tamsayi = 0;
+    dongu pi < ham_adet ve prompt_adedi < 508 {
+        full_ids[prompt_adedi] = ham_ids[pi];
+        prompt_adedi = prompt_adedi + 1;
+        pi = pi + 1;
+    }
+    eger append_eos == 1 ve g_llm_model_spec.eos_token_id >= 0 ve
+       g_llm_model_spec.eos_token_id < g_llm_vocab_sayisi ise {
+        full_ids[prompt_adedi] = g_llm_model_spec.eos_token_id;
+        prompt_adedi = prompt_adedi + 1;
+    }
+
+    g_llm_transformer_icra.token_konumu = 0;
+    g_llm_son_token_id = 0 - 1;
+    LLM_REPETITION_PENALTY_Q16 = 75366;
+
+    degisken req: LLMGreedyGenerationRequest;
+    req.icra = &g_llm_transformer_icra;
+    req.durum = g_llm_model_loader.durum;
+    req.prompt_tokenleri = full_ids;
+    req.prompt_adedi = prompt_adedi;
+    req.uretilen_tokenler = gen_ids;
+    req.uretilen_kapasitesi = 48;
+    req.max_yeni_token = 24;
+
+    degisken uretilen: tamsayi = llm_transformer_greedy_generate(&req);
+    eger g_llm_ceviri_debug == 1 ise {
+        ekrana_yaz("[LLM-CEVIRI] ham=".ptr); llm_sayi_yaz(ham_adet);
+        ekrana_yaz(" prompt=".ptr); llm_sayi_yaz(prompt_adedi);
+        ekrana_yaz(" uretilen=".ptr); llm_sayi_yaz(uretilen);
+        ekrana_yaz(" hata=".ptr); llm_sayi_yaz(TRANSFORMER_FORWARD_HATASI);
+        ekrana_yaz(" th=".ptr); llm_sayi_yaz(TRANSFORMER_TENSOR_HATASI);
+        eger uretilen > 0 ise {
+            ekrana_yaz(" t0=".ptr); llm_sayi_yaz(gen_ids[0]);
+        }
+        ekrana_yaz("\n".ptr);
+    }
+    eger uretilen <= 0 ise { dondu 0; }
+
+    degisken cikti_buf: *u8 = compiler_tahsis_et(1024);
+    degisken raw_piece: [256]u8;
+    degisken dec_piece: [256]u8;
+    eger cikti_buf == 0 ise { dondu 0; }
+    degisken yazilan: tamsayi = 0;
+    degisken ti: tamsayi = 0;
+    dongu ti < uretilen {
+        degisken tok: tamsayi = gen_ids[ti];
+        eger tok < 0 veya tok >= g_llm_vocab_sayisi veya tok == g_llm_model_spec.eos_token_id ise {
+            durdur;
+        }
+        degisken rlen: tamsayi = bitnet_token_kopyala(
+            g_llm_vocab_buffer, g_llm_token_ofsetleri, g_llm_token_uzunluklari, g_llm_vocab_sayisi,
+            tok, raw_piece, 256);
+        eger rlen <= 0 ise { durdur; }
+        eger rlen >= 2 ve raw_piece[0] == 60 ve raw_piece[1] == 124 ise {
+            eger (rlen == 10 ve raw_piece[2] == 101 ve raw_piece[3] == 111) veya
+                 (rlen == 10 ve raw_piece[2] == 105 ve raw_piece[3] == 109 ve raw_piece[5] == 101) veya
+                 (rlen >= 6 ve raw_piece[2] == 101 ve raw_piece[3] == 110 ve raw_piece[4] == 100) veya
+                 yazilan > 0 ise {
+                durdur;
+            }
+            ti = ti + 1;
+            devam_et;
+        }
+        eger (rlen == 7 ve raw_piece[0] == 60 ve raw_piece[1] == 116) veya
+             (rlen == 8 ve raw_piece[0] == 60 ve raw_piece[1] == 47 ve raw_piece[2] == 116) ise {
+            ti = ti + 1;
+            devam_et;
+        }
+        degisken dlen: tamsayi = bitnet_gpt2_byte_decode(raw_piece, rlen, dec_piece, 256);
+        degisken src_ptr: *u8 = dec_piece.ptr;
+        degisken src_len: tamsayi = dlen;
+        eger dlen < 0 ise {
+            src_ptr = raw_piece.ptr;
+            src_len = rlen;
+        }
+        degisken ki: tamsayi = 0;
+        degisken satir_sonu_gordu: tamsayi = 0;
+        dongu ki < src_len ve yazilan + 1 < 1020 {
+            degisken ch: u8 = src_ptr[ki];
+            eger ch == 10 veya ch == 13 ise {
+                eger yazilan > 0 ise {
+                    satir_sonu_gordu = 1;
+                    durdur;
+                }
+            } yoksa {
+                cikti_buf[yazilan] = ch;
+                yazilan = yazilan + 1;
+            }
+            ki = ki + 1;
+        }
+        eger satir_sonu_gordu == 1 ise { durdur; }
+        ti = ti + 1;
+    }
+    cikti_buf[yazilan] = 0;
+    eger yazilan <= 0 ise { dondu 0; }
+
+    degisken s_bas: tamsayi = 0;
+    dongu s_bas < yazilan ve (
+        cikti_buf[s_bas] == 32 veya cikti_buf[s_bas] == 9 veya
+        cikti_buf[s_bas] == 35 veya cikti_buf[s_bas] == 47 veya
+        cikti_buf[s_bas] == 34 veya cikti_buf[s_bas] == 39
+    ) {
+        s_bas = s_bas + 1;
+    }
+    degisken s_bit: tamsayi = yazilan;
+    dongu s_bit > s_bas ve (
+        cikti_buf[s_bit - 1] == 32 veya cikti_buf[s_bit - 1] == 9 veya
+        cikti_buf[s_bit - 1] == 34 veya cikti_buf[s_bit - 1] == 39
+    ) {
+        s_bit = s_bit - 1;
+    }
+    degisken temiz_uzn: tamsayi = s_bit - s_bas;
+    eger temiz_uzn <= 0 ise { dondu 0; }
+    eger llm_alt_metin_var_mi(cikti_buf + s_bas, temiz_uzn, "sorry".ptr, 5) == 1 veya
+         llm_alt_metin_var_mi(cikti_buf + s_bas, temiz_uzn, "cannot translate".ptr, 16) == 1 ise {
+        dondu 0;
+    }
+    degisken temiz: *u8 = compiler_tahsis_et(temiz_uzn + 1);
+    eger temiz == 0 ise { dondu 0; }
+    llm_bayt_kopyala(temiz, cikti_buf + s_bas, temiz_uzn);
+    temiz[temiz_uzn] = 0;
+    dondu temiz;
 }

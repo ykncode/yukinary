@@ -346,8 +346,11 @@ isv konfigurasyon_direktiflerini_islet(ctx: *CompilerContext, ast_koku: *AstDugu
                          (k_uzn == 6 ve bellek_esit_mi(k_ptr, "모델".ptr, 6) == 1) ise {
                         eger g_cli_llm_model_acikca_verildi == 0 ise {
                             eger (v_uzn == 6 ve bellek_esit_mi(v_ptr, "bitnet".ptr, 6) == 1) veya
-                                 (v_uzn == 14 ve bellek_esit_mi(v_ptr, "bitnet-b1.58-2B".ptr, 14) == 1) ise {
+                                 (v_uzn == 15 ve bellek_esit_mi(v_ptr, "bitnet-b1.58-2B".ptr, 15) == 1) ise {
                                 g_llm_cli_model_yolu = "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+                            } yoksa eger (v_uzn == 6 ve bellek_esit_mi(v_ptr, "bonsai".ptr, 6) == 1) veya
+                                 (v_uzn == 9 ve bellek_esit_mi(v_ptr, "bonsai-8b".ptr, 9) == 1) ise {
+                                g_llm_cli_model_yolu = "models/bonsai-8b/Bonsai-8B.gguf".ptr;
                             } yoksa {
                                 g_llm_cli_model_yolu = val_str;
                             }
@@ -1854,6 +1857,55 @@ isv allocasyon_fault_cli_ayarla(arguman_sayisi: tamsayi, argumanlar: **u8) -> ta
     dondu 0;
 }
 
+isv cli_model_kisaltma_coz(arg: *u8) -> *u8 {
+    eger arg == 0 ise { dondu 0; }
+    degisken u: tamsayi = metin_uzunlugu(arg);
+    eger formatter_aralik_ci_esit(arg, u, "bonsai".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(arg, u, "bonsai-8b".ptr, 9) == 1 ise {
+        dondu "models/bonsai-8b/Bonsai-8B.gguf".ptr;
+    }
+    eger formatter_aralik_ci_esit(arg, u, "bitnet".ptr, 6) == 1 veya
+         formatter_aralik_ci_esit(arg, u, "bitnet-b1.58-2B".ptr, 15) == 1 ise {
+        dondu "models/bitnet-b1.58-2B-4T/ggml-model-i2_s.gguf".ptr;
+    }
+    dondu arg;
+}
+
+isv cli_ceviri_on_ek_coz(arg: *u8) -> tamsayi {
+    eger arg == 0 ise { dondu 0 - 1; }
+    degisken arg_uzn: tamsayi = metin_uzunlugu(arg);
+    degisken ofset: tamsayi = 0;
+    eger arg_uzn > 12 ve bellek_esit_mi(arg, "--translate=".ptr, 12) == 1 ise { ofset = 12; }
+    yoksa eger arg_uzn > 12 ve bellek_esit_mi(arg, "--hedef-dil=".ptr, 12) == 1 ise { ofset = 12; }
+    yoksa eger arg_uzn > 9 ve bellek_esit_mi(arg, "--ceviri=".ptr, 9) == 1 ise { ofset = 9; }
+    yoksa eger arg_uzn > 6 ve bellek_esit_mi(arg, "--dil=".ptr, 6) == 1 ise { ofset = 6; }
+    yoksa eger arg_uzn > 5 ve bellek_esit_mi(arg, "--to=".ptr, 5) == 1 ise { ofset = 5; }
+    yoksa { dondu 0 - 1; }
+    dondu ceviri_dil_kodunu_coz(arg + ofset, arg_uzn - ofset);
+}
+
+isv cli_ceviri_sonraki_mi(arg: *u8) -> tamsayi {
+    eger arg == 0 ise { dondu 0; }
+    degisken uzn: tamsayi = metin_uzunlugu(arg);
+    eger str_tam_esit(arg, "--translate".ptr, 11) == 1 veya
+         str_tam_esit(arg, "--hedef-dil".ptr, 11) == 1 veya
+         str_tam_esit(arg, "--ceviri".ptr, 8) == 1 veya
+         str_tam_esit(arg, "--dil".ptr, 5) == 1 veya
+         str_tam_esit(arg, "--to".ptr, 4) == 1 ise {
+        eger uzn >= 4 ise { dondu 1; }
+    }
+    dondu 0;
+}
+
+isv dosya_ykn_uzantili_mi(yol: *u8) -> tamsayi {
+    eger yol == 0 ise { dondu 0; }
+    degisken u: tamsayi = metin_uzunlugu(yol);
+    eger u >= 4 ve yol[u - 4] == 46 ve yol[u - 3] == 121 ve yol[u - 2] == 107 ve yol[u - 1] == 110 ise {
+        dondu 1;
+    }
+    dondu 0;
+}
+
 isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
     eger allocasyon_fault_cli_ayarla(arguman_sayisi, argumanlar) != 0 ise {
         dondu 2;
@@ -1867,6 +1919,8 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
     degisken self_heal: tamsayi = 0; # Guvenlik geregi varsayilan kapali; --self-heal / --onar ile acilir
     degisken formatter_modu: tamsayi = 0;
     degisken formatter_kontrol: tamsayi = 0;
+    degisken formatter_hedef_dil: tamsayi = 0;
+    degisken formatter_cikti_dosyasi: *u8 = 0;
     degisken paket_build_modu: tamsayi = 0;
     degisken kaynak_indeksi: tamsayi = 0;
     degisken hedef_indeksi: tamsayi = 0;
@@ -1876,8 +1930,11 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
     degisken sonraki_llm_token_limiti: tamsayi = 0;
     degisken sonraki_allocasyon_fail: tamsayi = 0;
     degisken sonraki_ast_mutasyon: tamsayi = 0;
+    degisken sonraki_ceviri_dil: tamsayi = 0;
+    degisken sonraki_fmt_cikti: tamsayi = 0;
     degisken arg_i: tamsayi = 1;
     dongu arg_i < arguman_sayisi {
+        degisken on_ek_dil: tamsayi = cli_ceviri_on_ek_coz(argumanlar[arg_i]);
         eger sonraki_allocasyon_fail == 1 ise {
             sonraki_allocasyon_fail = 0;
         } yoksa eger sonraki_ast_mutasyon == 1 ise {
@@ -1890,7 +1947,7 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
             g_ast_mutasyon_aktif = 1;
             sonraki_ast_mutasyon = 0;
         } yoksa eger sonraki_llm_model == 1 ise {
-            g_llm_cli_model_yolu = argumanlar[arg_i];
+            g_llm_cli_model_yolu = cli_model_kisaltma_coz(argumanlar[arg_i]);
             sonraki_llm_model = 0;
         } yoksa eger sonraki_llm_rag == 1 ise {
             g_llm_cli_rag_yolu = argumanlar[arg_i];
@@ -1903,6 +1960,29 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
             }
             g_llm_cli_max_tokens = token_limiti;
             sonraki_llm_token_limiti = 0;
+        } yoksa eger sonraki_ceviri_dil == 1 ise {
+            degisken dil_u: tamsayi = metin_uzunlugu(argumanlar[arg_i]);
+            formatter_hedef_dil = ceviri_dil_kodunu_coz(argumanlar[arg_i], dil_u);
+            eger formatter_hedef_dil <= 0 ise {
+                ekrana_yaz("HATA: Gecersiz hedef dil. Desteklenenler: tr, en/eu, ru, ja, zh, ko, fr.\n".ptr);
+                dondu 2;
+            }
+            formatter_modu = 1;
+            sonraki_ceviri_dil = 0;
+        } yoksa eger sonraki_fmt_cikti == 1 ise {
+            formatter_cikti_dosyasi = argumanlar[arg_i];
+            sonraki_fmt_cikti = 0;
+        } yoksa eger on_ek_dil >= 0 ise {
+            eger on_ek_dil <= 0 ise {
+                ekrana_yaz("HATA: Gecersiz hedef dil. Desteklenenler: tr, en/eu, ru, ja, zh, ko, fr.\n".ptr);
+                dondu 2;
+            }
+            formatter_hedef_dil = on_ek_dil;
+            formatter_modu = 1;
+        } yoksa eger cli_ceviri_sonraki_mi(argumanlar[arg_i]) == 1 ise {
+            sonraki_ceviri_dil = 1;
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "-o".ptr, 2) == 1 veya str_tam_esit(argumanlar[arg_i], "--into-file".ptr, 11) == 1 ise {
+            sonraki_fmt_cikti = 1;
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--yardim".ptr, 8) == 1 veya
             str_tam_esit(argumanlar[arg_i], "--help".ptr, 6) == 1 veya
             str_tam_esit(argumanlar[arg_i], "-h".ptr, 2) == 1 veya
@@ -1926,7 +2006,8 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
             sonraki_allocasyon_fail = 1;
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--test-mutate-ast-node".ptr, 22) == 1 ise {
             sonraki_ast_mutasyon = 1;
-        } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-model".ptr, 11) == 1 ise {
+        } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-model".ptr, 11) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "--model".ptr, 7) == 1 ise {
             sonraki_llm_model = 1;
             g_cli_llm_model_acikca_verildi = 1;
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--llm-rag-context".ptr, 17) == 1 ise {
@@ -1984,14 +2065,40 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
         } yoksa eger str_tam_esit(argumanlar[arg_i], "cevir".ptr, 5) == 1 veya
             str_tam_esit(argumanlar[arg_i], "convert".ptr, 7) == 1 veya
             str_tam_esit(argumanlar[arg_i], "transpile".ptr, 9) == 1 veya
-            str_tam_esit(argumanlar[arg_i], "--cevir".ptr, 7) == 1 ise {
+            str_tam_esit(argumanlar[arg_i], "--cevir".ptr, 7) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "translate".ptr, 9) == 1 veya
+            str_tam_esit(argumanlar[arg_i], "ceviri".ptr, 6) == 1 ise {
             degisken girdi_hedef: *u8 = "def topla(a, b): return a + b".ptr;
-            degisken hedef_kayit_dosyasi: *u8 = 0;
+            degisken hedef_kayit_dosyasi: *u8 = formatter_cikti_dosyasi;
             degisken kaynak_dil_tipi: tamsayi = 0;
+            degisken yabanci_from_verildi: tamsayi = 0;
+            degisken hedef_human_dil: tamsayi = formatter_hedef_dil;
             degisken c_idx: tamsayi = arg_i + 1;
             dongu c_idx < arguman_sayisi {
                 degisken cur_arg: *u8 = argumanlar[c_idx];
-                eger str_tam_esit(cur_arg, "--into-std".ptr, 10) == 1 veya str_tam_esit(cur_arg, "--into-file".ptr, 11) == 1 veya str_tam_esit(cur_arg, "-o".ptr, 2) == 1 ise {
+                degisken c_on_ek_dil: tamsayi = cli_ceviri_on_ek_coz(cur_arg);
+                eger c_on_ek_dil >= 0 ise {
+                    eger c_on_ek_dil <= 0 ise {
+                        ekrana_yaz("HATA: Gecersiz hedef dil. Desteklenenler: tr, en/eu, ru, ja, zh, ko, fr.\n".ptr);
+                        dondu 2;
+                    }
+                    hedef_human_dil = c_on_ek_dil;
+                } yoksa eger cli_ceviri_sonraki_mi(cur_arg) == 1 ise {
+                    eger c_idx + 1 < arguman_sayisi ise {
+                        c_idx = c_idx + 1;
+                        degisken hd_arg: *u8 = argumanlar[c_idx];
+                        hedef_human_dil = ceviri_dil_kodunu_coz(hd_arg, metin_uzunlugu(hd_arg));
+                        eger hedef_human_dil <= 0 ise {
+                            ekrana_yaz("HATA: Gecersiz hedef dil. Desteklenenler: tr, en/eu, ru, ja, zh, ko, fr.\n".ptr);
+                            dondu 2;
+                        }
+                    }
+                } yoksa eger str_tam_esit(cur_arg, "--llm-model".ptr, 11) == 1 veya str_tam_esit(cur_arg, "--model".ptr, 7) == 1 ise {
+                    eger c_idx + 1 < arguman_sayisi ise {
+                        c_idx = c_idx + 1;
+                        g_llm_cli_model_yolu = cli_model_kisaltma_coz(argumanlar[c_idx]);
+                    }
+                } yoksa eger str_tam_esit(cur_arg, "--into-std".ptr, 10) == 1 veya str_tam_esit(cur_arg, "--into-file".ptr, 11) == 1 veya str_tam_esit(cur_arg, "-o".ptr, 2) == 1 ise {
                     eger c_idx + 1 < arguman_sayisi ise {
                         c_idx = c_idx + 1;
                         hedef_kayit_dosyasi = argumanlar[c_idx];
@@ -1999,6 +2106,7 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
                 } yoksa eger str_tam_esit(cur_arg, "--from".ptr, 6) == 1 ise {
                     eger c_idx + 1 < arguman_sayisi ise {
                         c_idx = c_idx + 1;
+                        yabanci_from_verildi = 1;
                         degisken f_dil: *u8 = argumanlar[c_idx];
                         eger str_tam_esit(f_dil, "python".ptr, 6) == 1 veya str_tam_esit(f_dil, "py".ptr, 2) == 1 ise { kaynak_dil_tipi = 1; }
                         yoksa eger str_tam_esit(f_dil, "c".ptr, 1) == 1 ise { kaynak_dil_tipi = 2; }
@@ -2011,6 +2119,9 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
                 }
                 c_idx = c_idx + 1;
             }
+            eger yabanci_from_verildi == 0 ve (hedef_human_dil > 0 veya dosya_ykn_uzantili_mi(girdi_hedef) == 1) ise {
+                dondu yukinary_fmt_veya_cevir(girdi_hedef, hedef_kayit_dosyasi, 0, hedef_human_dil);
+            }
             degisken g_buf: *u8 = compiler_tahsis_et(1048576);
             degisken okunan: tamsayi = dosya_oku(girdi_hedef, g_buf, 1048576);
             eger okunan > 0 ise {
@@ -2021,7 +2132,7 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
             }
         } yoksa eger str_tam_esit(argumanlar[arg_i], "build".ptr, 5) == 1 veya str_tam_esit(argumanlar[arg_i], "derle".ptr, 5) == 1 ise {
             paket_build_modu = 1;
-        } yoksa eger formatter_modu == 0 ve kaynak_indeksi == 0 ve str_tam_esit(argumanlar[arg_i], "fmt".ptr, 3) == 1 ise {
+        } yoksa eger kaynak_indeksi == 0 ve str_tam_esit(argumanlar[arg_i], "fmt".ptr, 3) == 1 ise {
             formatter_modu = 1;
         } yoksa eger formatter_modu == 1 ve (str_tam_esit(argumanlar[arg_i], "--check".ptr, 7) == 1 veya str_tam_esit(argumanlar[arg_i], "-c".ptr, 2) == 1) ise {
             formatter_kontrol = 1;
@@ -2071,6 +2182,7 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
             diagnostics_renkleri_baslat(0);
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--verbose".ptr, 9) == 1 veya str_tam_esit(argumanlar[arg_i], "--ayrintili".ptr, 11) == 1 ise {
             g_verbose = 1;
+            g_llm_ceviri_debug = 1;
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--dump-ir".ptr, 9) == 1 ise {
             g_dump_ir = 1;
         } yoksa eger str_tam_esit(argumanlar[arg_i], "--backend=ir".ptr, 12) == 1 ise {
@@ -2118,6 +2230,14 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
         ekrana_yaz("HATA: --test-mutate-ast-node sonrasinda 0..42 arasi AST ID bekleniyordu.\n".ptr);
         dondu 2;
     }
+    eger sonraki_ceviri_dil == 1 ise {
+        ekrana_yaz("HATA: --translate / --to sonrasinda dil kodu bekleniyordu (tr, en/eu, ru, ja, zh, ko, fr).\n".ptr);
+        dondu 2;
+    }
+    eger sonraki_fmt_cikti == 1 ise {
+        ekrana_yaz("HATA: -o sonrasinda cikti dosya yolu bekleniyordu.\n".ptr);
+        dondu 2;
+    }
     degisken kaynak_dosya: *u8 = 0;
     eger paket_build_modu == 1 ise {
         degisken m_durum: tamsayi = manifest_yukle("yukinary.toml".ptr);
@@ -2148,7 +2268,7 @@ isv ana(arguman_sayisi: tamsayi, argumanlar: **u8) -> tamsayi {
         ekrana_yaz("LLM RAG context yuklendi.\n".ptr);
     }
     eger formatter_modu == 1 ise {
-        dondu yukinary_fmt(kaynak_dosya, formatter_kontrol);
+        dondu yukinary_fmt_veya_cevir(kaynak_dosya, formatter_cikti_dosyasi, formatter_kontrol, formatter_hedef_dil);
     }
     
     eger g_llm_cli_model_yolu != 0 ise {
